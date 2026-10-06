@@ -1645,3 +1645,185 @@ Run: `npm run tauri build` — Expected: установщик в `src-tauri/targ
 - [ ] **Step 4: Написать `README.md`:** что это, требование borderless, установка, хоткеи, где лежат база, резервные копии и логи, как собрать из исходников.
 
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "chore: release 0.1.0"`
+
+---
+
+# Дополнение к плану (2026-10-07)
+
+### Task 19: Таймер количества
+
+Реализует раздел 14.3 спеки. Меняет общий смысл «количества»: в своих наблюдениях `0` — известный ноль, `null` — неизвестно.
+
+**Files:**
+- Create: `src/core/stock.ts`
+- Modify: `src/core/types.ts`, `src/core/settings.ts`, `src/core/estimate.ts`, `src/core/market.ts`, `src/core/routes.ts` (только `quantity`), `src/data/migrations.ts` (версия 2), `src/data/uex-client.ts`, `src/data/repo/uex-cache.ts`, `src/data/repo/diary.ts`, `src/data/suggest.ts`, `src/ui/vm/terminal-rows.ts`, `tests/helpers/factories.ts`
+- Test: `tests/core/stock.test.ts`, и правки в `tests/core/estimate.test.ts`, `tests/core/routes.test.ts`, `tests/data/migrations.test.ts`, `tests/data/uex-client.test.ts`, `tests/data/uex-cache.test.ts`, `tests/data/diary.test.ts`, `tests/data/suggest.test.ts`, `tests/ui/terminal-rows.test.ts`
+
+**Interfaces:**
+- Consumes: всё из задач 3, 5–8, 10 и вью-модель таблицы терминала.
+- Produces:
+```ts
+// src/core/types.ts — добавления
+export interface UexPrice { /* …как было… */ scuBuyMax: number; scuSellMax: number }   // наибольшее, что видел UEX; 0 — неизвестно
+export interface StockStats { maxScu: number | null; ratePerMin: number | null }       // выучено по своему дневнику
+export interface StockEstimate {
+  scu: number;                 // оценка сейчас
+  baseScu: number; baseAgeSec: number;
+  ratePerMin: number; rateSource: 'learned' | 'default' | 'none';
+  maxScu: number | null;
+}
+export interface Market { /* …как было… */ stock: Map<string, StockStats> }             // ключ obsKey
+export interface Estimate { /* …как было… */ stock: StockEstimate | null }              // не null, когда scu получено из своего наблюдения
+
+// src/core/settings.ts
+// Settings.refillFullMin: number;  DEFAULT_SETTINGS.refillFullMin = 75
+
+// src/core/stock.ts
+export const MIN_LEARN_GAP_SEC = 120;
+export const DEFAULT_REFILL_FULL_MIN = 75;
+export function maxSeenScu(history: Array<{ ts: number; scu: number | null }>): number | null;
+export function learnRatePerMin(history: Array<{ ts: number; scu: number | null }>): number | null;   // history по возрастанию ts
+export function estimateStock(i: { baseScu: number; baseTs: number; now: number; maxScu: number | null; learnedRatePerMin: number | null; refillFullMin: number }): StockEstimate;
+
+// src/core/estimate.ts
+export interface EstimateCtx { /* …как было… */ refillFullMin?: number }   // по умолчанию DEFAULT_REFILL_FULL_MIN
+
+// src/core/market.ts
+export function buildMarket(prices: UexPrice[], latestObs: Observation[], stock?: Map<string, StockStats>): Market;   // без третьего аргумента — пустая карта
+
+// src/data/repo/diary.ts
+export function stockStats(db: Db): Promise<Map<string, StockStats>>;   // по всей истории наблюдений с известным scu
+
+// src/ui/vm/terminal-rows.ts — Cell получает
+//   ownScuBase: { scu: number; age: string } | null   // «было 40 · 20 мин»; не null, когда оценка отличается от базы
+//   ownScuRate: 'learned' | 'default' | 'none' | null
+```
+
+Правила, которых нет в сигнатурах:
+
+- `learnRatePerMin`: пары соседних замеров с известным `scu`, разницей во времени не меньше `MIN_LEARN_GAP_SEC` и ростом количества; скорость пары = прирост / минуты; результат — наибольшая; пар нет — `null`.
+- `estimateStock`: `elapsedMin = max(0, now − baseTs) / 60`. Максимум: `maxScu`, но не меньше `baseScu`. Скорость: выученная (`'learned'`); иначе при известном максимуме и `refillFullMin > 0` — `максимум / refillFullMin` (`'default'`); иначе `0` (`'none'`). `scu = floor(min(максимум или ∞, baseScu + скорость × elapsedMin))`.
+- `estimate`: количество берётся из своего наблюдения, если оно не холодное и его `scu !== null` (ноль допустим). Тогда `stock = estimateStock(…)`, `scu = stock.scu`. Максимум для оценки — наибольшее из `Market.stock[key].maxScu` и `scuBuyMax` / `scuSellMax` строки UEX (нули игнорируются); если нет ни того ни другого — `null`. Иначе как раньше: количество UEX (`> 0`) или `null`, и `stock = null`.
+- `quantity`: неизвестно только `null`. Ноль остатка или спроса даёт объём 0.
+- Клиент UEX: `scuBuyMax = scu_buy_max_week`, а если там ноль — `scu_buy_max`; `scuSellMax` — так же по `scu_sell_*`.
+- Миграция версии 2: `uex_price` — это кэш, поэтому таблица пересоздаётся с двумя новыми колонками `scu_buy_max`, `scu_sell_max` (`REAL NOT NULL DEFAULT 0`) через `DROP TABLE IF EXISTS` и `CREATE TABLE IF NOT EXISTS`, и удаляется отметка `prices_synced_at`, чтобы цены скачались заново. Все выражения безопасны при повторном запуске.
+- `loadMarket` (в `suggest.ts`) передаёт `stockStats(db)` в `buildMarket`; `refillFullMin` из настроек попадает в контекст расчёта.
+- Таблица терминала: `ownScu` — оценка сейчас; своё количество известно, если оно не `null`.
+
+- [ ] **Step 1: Написать падающие тесты**
+
+```ts
+// tests/core/stock.test.ts
+const h = (...p: Array<[number, number | null]>) => p.map(([ts, scu]) => ({ ts, scu }));
+it('learns the fastest refill seen between neighbouring readings', () => {
+  expect(learnRatePerMin(h([0, 40], [600, 140], [1200, 150]))).toBe(10);       // +100 за 10 мин и +10 за 10 мин
+});
+it('ignores drops, unknown readings and readings closer than two minutes', () => {
+  expect(learnRatePerMin(h([0, 300], [600, 40]))).toBeNull();
+  expect(learnRatePerMin(h([0, 40], [600, null], [1200, 100]))).toBeNull();
+  expect(learnRatePerMin(h([0, 40], [119, 100]))).toBeNull();
+  expect(learnRatePerMin(h([0, 40], [120, 100]))).toBe(30);
+  expect(learnRatePerMin([])).toBeNull();
+});
+it('reports the largest known reading, zero included', () => {
+  expect(maxSeenScu(h([0, 40], [1, null], [2, 340]))).toBe(340);
+  expect(maxSeenScu(h([0, 0]))).toBe(0);
+  expect(maxSeenScu(h([0, null]))).toBeNull();
+});
+const base = { baseScu: 40, baseTs: 1000, now: 1000 + 20 * 60, maxScu: 340, learnedRatePerMin: null, refillFullMin: 75 };
+it('falls back to max / full-refill time while no rate is learned', () => {
+  expect(estimateStock(base)).toEqual({ scu: 130, baseScu: 40, baseAgeSec: 1200, ratePerMin: 340 / 75, rateSource: 'default', maxScu: 340 });
+});
+it('uses the learned rate and never exceeds the maximum', () => {
+  expect(estimateStock({ ...base, learnedRatePerMin: 10 })).toMatchObject({ scu: 240, rateSource: 'learned', ratePerMin: 10 });
+  expect(estimateStock({ ...base, learnedRatePerMin: 10, now: 1000 + 60 * 60 }).scu).toBe(340);
+});
+it('keeps the base when nothing is known, and grows without a cap when only the rate is', () => {
+  expect(estimateStock({ ...base, maxScu: null })).toMatchObject({ scu: 40, rateSource: 'none', ratePerMin: 0, maxScu: null });
+  expect(estimateStock({ ...base, maxScu: null, learnedRatePerMin: 10 }).scu).toBe(240);
+});
+it('treats a base above the known maximum as the new maximum, and a clock running backwards as no time passed', () => {
+  expect(estimateStock({ ...base, baseScu: 400 })).toMatchObject({ scu: 400, maxScu: 400 });
+  expect(estimateStock({ ...base, now: 500 })).toMatchObject({ scu: 40, baseAgeSec: 0 });
+});
+it('starts from a known empty stock', () => {
+  expect(estimateStock({ ...base, baseScu: 0, learnedRatePerMin: 10 }).scu).toBe(200);
+});
+```
+```ts
+// tests/core/estimate.test.ts — новые и изменённые случаи (терминал 2, товар 10, сторона sell, как в файле)
+it('extrapolates my own quantity with the refill timer', () => {
+  const m = buildMarket([px(2, 10, { sell: week, scuSell: 500, scuSellMax: 800 })], [own(20, 100)]);
+  const e = estimate(m, 2, 10, 'sell', { ...ctx, refillFullMin: 80 })!;      // 800 / 80 = 10 в минуту, прошло 20 минут
+  expect(e.scu).toBe(300);
+  expect(e.stock).toEqual({ scu: 300, baseScu: 100, baseAgeSec: 1200, ratePerMin: 10, rateSource: 'default', maxScu: 800 });
+});
+it('prefers the rate and the maximum learned from my own diary', () => {
+  const stock = new Map([[obsKey(2, 10, 'sell'), { maxScu: 1000, ratePerMin: 5 }]]);
+  const e = estimate(buildMarket([px(2, 10, { sell: week, scuSellMax: 800 })], [own(20, 100)], stock), 2, 10, 'sell', ctx)!;
+  expect(e.stock).toMatchObject({ scu: 200, ratePerMin: 5, rateSource: 'learned', maxScu: 1000 });
+});
+it('treats my own zero as known empty and a missing quantity as unknown', () => {
+  const m = (scu: number | null) => buildMarket([px(2, 10, { sell: week, scuSell: 500 })], [own(10, scu)]);
+  expect(estimate(m(0), 2, 10, 'sell', ctx)!.stock).toMatchObject({ baseScu: 0 });       // раньше ноль уводил к UEX
+  expect(estimate(m(null), 2, 10, 'sell', ctx)).toMatchObject({ scu: 500, stock: null });
+});
+it('does not extrapolate a cold quantity', () => {
+  expect(estimate(buildMarket([px(2, 10, { sell: week, scuSell: 500 })], [own(300, 100)]), 2, 10, 'sell', ctx)).toMatchObject({ scu: 500, stock: null });
+});
+```
+Существующий тест «takes quantity from own when known, else UEX, else null» меняется: случай `m(0, 500)` теперь ожидает оценку от базы 0, а не 500. Остальные ожидания с `toEqual` дополняются полем `stock`.
+```ts
+// tests/core/routes.test.ts — изменение
+it('quantity: a known zero limits, only null is unknown', () => {
+  expect(quantity({ freeScu: 696, stockScu: 0, demandScu: null, budget: null, buyPrice: 6120 })).toBe(0);
+  expect(quantity({ freeScu: 696, stockScu: null, demandScu: 0, budget: null, buyPrice: 6120 })).toBe(0);
+});
+```
+```ts
+// tests/data/diary.test.ts — добавление
+it('derives the largest quantity and the fastest refill per terminal, commodity and side', async () => {
+  for (const [ts, scu] of [[0, 40], [600, 140], [1200, 150]] as const)
+    await addObservation(db, log, { ts, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu });
+  await addObservation(db, log, { ts: 0, terminalId: 1, commodityId: 10, side: 'sell', price: 5000, scu: null });
+  const s = await stockStats(db);
+  expect(s.get(obsKey(1, 10, 'buy'))).toEqual({ maxScu: 150, ratePerMin: 10 });
+  expect(s.has(obsKey(1, 10, 'sell'))).toBe(false);
+});
+```
+```ts
+// tests/data/migrations.test.ts — изменение и добавление
+// версия схемы теперь 2 во всех существующих ожиданиях
+it('rebuilds the price cache with the stock maximum columns and forces a price re-sync', async () => {
+  const db = testDb(); const log = createLogger(memorySink());
+  await migrate(db, log);
+  const cols = (await db.select<{ name: string }>('PRAGMA table_info(uex_price)')).map(c => c.name);
+  expect(cols).toContain('scu_buy_max'); expect(cols).toContain('scu_sell_max');
+  expect(await db.select("SELECT 1 FROM uex_meta WHERE key = 'prices_synced_at'")).toEqual([]);
+});
+```
+```ts
+// tests/data/uex-client.test.ts — добавление
+it('maps the stock maximum from the week, falling back to all-time', async () => {
+  const rows = [{ id_terminal: 1, id_commodity: 2, scu_buy_max_week: 0, scu_buy_max: 900, scu_sell_max_week: 1088, scu_sell_max: 2000 }];
+  const [p] = await client({ commodities_prices: { status: 'ok', data: rows } }).prices([1]);
+  expect(p.scuBuyMax).toBe(900); expect(p.scuSellMax).toBe(1088);
+});
+```
+```ts
+// tests/ui/terminal-rows.test.ts — добавление
+it('shows the estimated stock with its base when the timer has moved it', () => {
+  // своя покупка 6120, количество 40, двадцать минут назад; максимум UEX 340; refillFullMin 75 → 130
+  const rows = terminalRows(marketWithStock, ref, 1, ctx);
+  expect(rows[0].buy).toMatchObject({ ownScu: 130, ownScuBase: { scu: 40, age: '20 мин' }, ownScuRate: 'default' });
+});
+it('shows no base when the estimate equals what I saw', () => {
+  expect(terminalRows(market, ref, 1, ctx)[0].buy).toMatchObject({ ownScu: 340, ownScuBase: null });
+});
+```
+Тесты `uex-cache` «round-trips every price field» и `suggest` дополняются новыми полями; в `suggest` добавляется случай: два наблюдения количества в дневнике дают в логе `[suggest]` у закупки `"rateSource":"learned"`.
+
+- [ ] **Step 2: Запустить** — `npm test` — Expected: новые и изменённые тесты падают.
+- [ ] **Step 3: Реализовать** в порядке: типы и фабрики → `stock.ts` → миграция 2, клиент, кэш → `diary.stockStats` → `market`, `estimate`, `quantity` → `suggest` → `terminal-rows`. Строка лога `[suggest]` для каждой цены дополняется `stock` (если есть).
+- [ ] **Step 4: Запустить** — `npm test && npm run check` — Expected: PASS, 0 errors.
+- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: stock refill timer"`
