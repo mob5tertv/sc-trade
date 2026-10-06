@@ -1,5 +1,5 @@
-//! Tray icon with "Показать панель" and "Выход". The strip is click-through, so the tray is the
-//! only clickable way to open the panel with the mouse.
+//! Tray icon with "Показать панель" and "Выход". The strip opens the panel by a click; the tray
+//! is the way to open it when the strip is hidden, and the way to quit.
 
 use tauri::menu::{Menu, MenuEvent, MenuItem};
 use tauri::tray::TrayIconBuilder;

@@ -1,5 +1,7 @@
 mod backup;
 mod focus;
+mod input_hook;
+mod keys;
 mod logging;
 mod tray;
 
@@ -12,12 +14,14 @@ pub fn run() {
         .plugin(logging::plugin())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .manage(focus::ForegroundState::default())
+        .manage(input_hook::HookController::default())
         .setup(|app| {
-            // Without a tray icon the app still works (hotkeys), so a failure is logged, not fatal.
+            logging::announce_portable_log();
+            // Without a tray icon the app still works (the strip opens the panel), so a failure
+            // is logged, not fatal.
             if let Err(err) = tray::setup(app.handle()) {
                 log::error!("[tray] cannot create the tray icon: {err}");
             }
@@ -27,7 +31,8 @@ pub fn run() {
             logging::set_log_level,
             backup::backup_db,
             focus::remember_foreground,
-            focus::restore_foreground
+            focus::restore_foreground,
+            input_hook::set_trigger_keys
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

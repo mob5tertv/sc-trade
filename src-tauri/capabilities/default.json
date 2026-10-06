@@ -16,6 +16,7 @@
     "core:window:allow-hide",
     "core:window:allow-set-ignore-cursor-events",
     "core:window:allow-current-monitor",
+    "core:window:allow-primary-monitor",
     "log:default",
     "os:default",
     "opener:default",
@@ -26,9 +27,6 @@
       "allow": [
         { "url": "https://api.uexcorp.uk/*" }
       ]
-    },
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister",
-    "global-shortcut:allow-is-registered"
+    }
   ]
 }

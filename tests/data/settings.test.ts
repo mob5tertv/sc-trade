@@ -17,6 +17,21 @@ describe('settings repository', () => {
     expect(await loadSettings(await migratedDb(), log)).toEqual(DEFAULT_SETTINGS);
   });
 
+  it('defaults: no key is assigned, the strip is in the top-right corner, the panel side is not a setting', async () => {
+    const settings = await loadSettings(await migratedDb(), log);
+    expect([settings.hotkeyPanel, settings.hotkeyDepart, settings.hotkeyArrive]).toEqual(['', '', '']);
+    expect(settings.stripCorner).toBe('top-right');
+    expect(Object.hasOwn(settings, 'panelSide')).toBe(false);
+  });
+
+  it('skips a panelSide row stored by an older version', async () => {
+    const db = await migratedDb();
+    await db.execute("INSERT INTO setting VALUES ('panelSide', '\"left\"')");
+    const settings = await loadSettings(db, log);
+    expect(settings).toEqual(DEFAULT_SETTINGS);
+    expect(Object.hasOwn(settings, 'panelSide')).toBe(false);
+  });
+
   it('defaults the full-refill time of a stock to 75 minutes and round-trips a changed one', async () => {
     const db = await migratedDb();
     expect((await loadSettings(db, log)).refillFullMin).toBe(75);
