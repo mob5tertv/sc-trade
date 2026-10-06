@@ -38,3 +38,23 @@ export function panelRect(monitor: Size, side: 'left' | 'right', width: number):
   const x = side === 'left' ? 0 : monitor.width - panelWidth;
   return { x, y: 0, width: panelWidth, height: monitor.height };
 }
+
+/**
+ * A logical rect of a monitor as a rect in physical pixels of the whole desktop, given where that
+ * monitor starts (physical) and its scale factor. Use it to place the window on a monitor whose
+ * scale differs from the one the window is on now: logical sizes and positions are converted
+ * with the scale of the monitor the window is on at that moment, physical ones are not.
+ * The edges are rounded, not the sizes, so a rect glued to a monitor edge stays glued.
+ */
+export function toPhysicalRect(rect: Rect, monitorPosition: { x: number; y: number }, scale: number): Rect {
+  const left = Math.round(rect.x * scale);
+  const top = Math.round(rect.y * scale);
+  const right = Math.round((rect.x + rect.width) * scale);
+  const bottom = Math.round((rect.y + rect.height) * scale);
+  return {
+    x: monitorPosition.x + left,
+    y: monitorPosition.y + top,
+    width: right - left,
+    height: bottom - top,
+  };
+}

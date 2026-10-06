@@ -2,11 +2,19 @@ import { invoke } from '@tauri-apps/api/core';
 import {
   currentMonitor,
   getCurrentWindow,
-  LogicalPosition,
-  LogicalSize,
+  PhysicalPosition,
+  PhysicalSize,
   primaryMonitor,
 } from '@tauri-apps/api/window';
-import { panelRect, panelSideFor, stripRect, type Corner, type Rect, type Size } from '../core/layout';
+import {
+  panelRect,
+  panelSideFor,
+  stripRect,
+  toPhysicalRect,
+  type Corner,
+  type Rect,
+  type Size,
+} from '../core/layout';
 import type { Logger } from '../data/logger';
 
 export type WindowMode = 'strip' | 'panel';
@@ -32,7 +40,7 @@ export interface SetModeOptions {
 interface MonitorGeometry {
   /** Monitor size in logical pixels. */
   size: Size;
-  /** Top-left corner of the monitor in logical pixels (not 0,0 on a secondary monitor). */
+  /** Top-left corner of the monitor in physical pixels of the desktop (not 0,0 on a secondary monitor). */
   origin: { x: number; y: number };
   /** Which monitor it is, for the log. */
   source: 'primary' | 'current' | 'screen';
@@ -63,20 +71,27 @@ async function monitorGeometry(log: Logger): Promise<MonitorGeometry> {
     };
   }
   const size = monitor.size.toLogical(monitor.scaleFactor);
-  const position = monitor.position.toLogical(monitor.scaleFactor);
   return {
     size: { width: size.width, height: size.height },
-    origin: { x: position.x, y: position.y },
+    origin: { x: monitor.position.x, y: monitor.position.y },
     source,
     name: monitor.name,
     scaleFactor: monitor.scaleFactor,
   };
 }
 
-async function place(rect: Rect, origin: { x: number; y: number }): Promise<void> {
+/**
+ * Puts the window on `rect` (logical pixels of `monitor`). The rect is converted to physical
+ * pixels with the scale of the TARGET monitor: logical sizes and positions would be converted with
+ * the scale of the monitor the window is on right now, which is wrong when the two differ.
+ * The position goes first: moving to a monitor with another scale makes Windows resize the window,
+ * and the size set afterwards is the one that stays.
+ */
+async function place(rect: Rect, monitor: MonitorGeometry): Promise<void> {
   const win = getCurrentWindow();
-  await win.setSize(new LogicalSize(rect.width, rect.height));
-  await win.setPosition(new LogicalPosition(origin.x + rect.x, origin.y + rect.y));
+  const physical = toPhysicalRect(rect, monitor.origin, monitor.scaleFactor);
+  await win.setPosition(new PhysicalPosition(physical.x, physical.y));
+  await win.setSize(new PhysicalSize(physical.width, physical.height));
 }
 
 function applyOpacity(opacity: number): void {
@@ -123,13 +138,17 @@ export async function setMode(
       await win.setIgnoreCursorEvents(false);
       const side = panelSideFor(layout.stripCorner);
       const rect = panelRect(size, side, layout.panelWidth);
-      await place(rect, origin);
+      await place(rect, monitor);
       await win.show();
       // `skipTaskbar` from the config is applied once, while the window is still hidden.
       await win.setSkipTaskbar(true);
       await win.setFocus();
       // Only what was requested; the real focus changes are logged by `watchFocus`.
       log.info('window', 'panel shown, focus requested', { side, rect, monitor: monitorInfo });
+      // Windows may refuse the focus (e.g. when a key opened the panel while the game had the focus).
+      if (!(await win.isFocused())) {
+        log.warn('window', 'panel did not get the focus', { side, monitor: monitorInfo });
+      }
       return;
     }
 
@@ -139,7 +158,7 @@ export async function setMode(
       const rect = stripRect(size, layout.stripCorner);
       // The strip is a button: it must receive the click.
       await win.setIgnoreCursorEvents(false);
-      await place(rect, origin);
+      await place(rect, monitor);
       await win.show();
       await win.setSkipTaskbar(true);
       log.info('window', 'strip shown, clickable, not focusable', { rect, monitor: monitorInfo });

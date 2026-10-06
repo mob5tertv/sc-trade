@@ -200,8 +200,28 @@ mod sys {
             }
         }
 
-        /// Asks the message loop to end; the thread then removes the hook.
+        /// Whether the thread has ended (normally or not): its hook is gone then.
+        pub fn is_finished(&self) -> bool {
+            self.join.is_finished()
+        }
+
+        /// A handle whose thread cannot be reached by `request_stop` (there is no thread with that
+        /// id), around a thread of the caller's.
+        #[cfg(test)]
+        pub fn unreachable(join: JoinHandle<()>) -> HookThread {
+            HookThread {
+                thread_id: u32::MAX,
+                join,
+            }
+        }
+
+        /// Asks the message loop to end; the thread then removes the hook. A thread that has
+        /// ended already needs nothing, and its id must not be posted to: Windows may have given
+        /// it to some other thread by now.
         pub fn request_stop(&self) -> Result<(), String> {
+            if self.is_finished() {
+                return Ok(());
+            }
             // SAFETY: plain call; the thread has a message queue (see `run`).
             unsafe { PostThreadMessageW(self.thread_id, WM_QUIT, WPARAM(0), LPARAM(0)) }
                 .map_err(|err| format!("cannot stop the hook thread: {err}"))
@@ -298,6 +318,9 @@ mod sys {
         pub fn start() -> Result<HookThread, String> {
             Err("keyboard triggers need Windows".to_string())
         }
+        pub fn is_finished(&self) -> bool {
+            true
+        }
         pub fn request_stop(&self) -> Result<(), String> {
             Ok(())
         }
@@ -392,6 +415,27 @@ fn log_assignment(
     log::info!("[hook] trigger keys assigned: {}", shown.join(", "));
 }
 
+/// Takes the hook thread out of the slot and ends it. The slot is empty afterwards in every case:
+/// a thread left in it (one that died, or that cannot be stopped) would block every later install.
+/// A thread that cannot be stopped and has not ended is not waited for (it might never end); it
+/// stays installed with nothing assigned, so it fires nothing, and a new hook next to it is fine
+/// because the tracker lets a key fire only once.
+fn remove_hook(slot: &mut Option<sys::HookThread>) {
+    let Some(thread) = slot.take() else { return };
+    match thread.request_stop() {
+        Ok(()) => {
+            thread.join();
+            log::info!("[hook] keyboard hook removed");
+        }
+        Err(reason) => {
+            log::error!("[hook] cannot remove the keyboard hook: {reason}");
+            if thread.is_finished() {
+                thread.join();
+            }
+        }
+    }
+}
+
 fn apply(
     app: &AppHandle,
     controller: &HookController,
@@ -406,6 +450,12 @@ fn apply(
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     tracker().assign(combos);
+
+    // A hook thread that ended on its own must not count as an installed hook.
+    if hook.as_ref().is_some_and(sys::HookThread::is_finished) {
+        log::warn!("[hook] the hook thread had ended on its own");
+        remove_hook(&mut hook);
+    }
 
     let wanted = tracker().any_assigned();
     match (wanted, hook.is_some()) {
@@ -423,18 +473,7 @@ fn apply(
                 }
             }
         }
-        (false, true) => {
-            if let Some(thread) = hook.as_ref()
-                && let Err(reason) = thread.request_stop()
-            {
-                log::error!("[hook] cannot remove the keyboard hook: {reason}");
-                return Err(reason);
-            }
-            if let Some(thread) = hook.take() {
-                thread.join();
-                log::info!("[hook] keyboard hook removed");
-            }
-        }
+        (false, true) => remove_hook(&mut hook),
         _ => {}
     }
     Ok(outcome)
@@ -659,6 +698,55 @@ mod tests {
         hook.request_stop()
             .expect("WM_QUIT should reach the hook thread");
         hook.join();
+    }
+
+    #[cfg(windows)]
+    fn wait_until_finished(hook: &sys::HookThread) {
+        let started = std::time::Instant::now();
+        while !hook.is_finished() {
+            assert!(
+                started.elapsed().as_secs() < 5,
+                "the hook thread did not end"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn removing_the_hook_empties_the_slot() {
+        let mut slot = Some(sys::HookThread::start().expect("the hook should install"));
+        remove_hook(&mut slot);
+        assert!(slot.is_none());
+    }
+
+    // The hook thread can end on its own (its message loop failed). The slot must not keep it:
+    // a dead thread left there blocks every later install and every later removal.
+    #[cfg(windows)]
+    #[test]
+    fn a_hook_thread_that_already_ended_is_cleared_from_the_slot() {
+        let hook = sys::HookThread::start().expect("the hook should install");
+        hook.request_stop()
+            .expect("WM_QUIT should reach the hook thread");
+        wait_until_finished(&hook);
+        let mut slot = Some(hook);
+        remove_hook(&mut slot);
+        assert!(slot.is_none());
+    }
+
+    // `request_stop` itself can fail. The slot is cleared anyway, and the thread is not waited
+    // for, because it may never end.
+    #[cfg(windows)]
+    #[test]
+    fn a_hook_thread_that_cannot_be_stopped_is_cleared_from_the_slot_without_waiting() {
+        let (release, parked) = mpsc::channel::<()>();
+        let join = std::thread::spawn(move || {
+            let _ = parked.recv(); // lives until `release` is dropped
+        });
+        let mut slot = Some(sys::HookThread::unreachable(join));
+        remove_hook(&mut slot);
+        assert!(slot.is_none());
+        drop(release);
     }
 
     #[test]
