@@ -1,0 +1,216 @@
+{
+ "status": "ok",
+ "http_code": 200,
+ "data": [
+  {
+   "id": 8,
+   "name": "Aegis Dynamics",
+   "nickname": "Aegis",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376758,
+   "date_modified": 1713913045
+  },
+  {
+   "id": 13,
+   "name": "Anvil Aerospace",
+   "nickname": "Anvil",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376758,
+   "date_modified": 1713970128
+  },
+  {
+   "id": 14,
+   "name": "Aopoa",
+   "nickname": "Aopoa",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376758,
+   "date_modified": 1713916369
+  },
+  {
+   "id": 18,
+   "name": "Argo Astronautics",
+   "nickname": "Argo",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376758,
+   "date_modified": 1713970430
+  },
+  {
+   "id": 58,
+   "name": "Consolidated Outland",
+   "nickname": "C.O.",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376759,
+   "date_modified": 1713970423
+  },
+  {
+   "id": 63,
+   "name": "Crusader Industries",
+   "nickname": "Crusader",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376759,
+   "date_modified": 1713970186
+  },
+  {
+   "id": 75,
+   "name": "Drake Interplanetary",
+   "nickname": "Drake",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376759,
+   "date_modified": 1713969886
+  },
+  {
+   "id": 113,
+   "name": "Gatac Manufacture",
+   "nickname": "Gatac",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376759,
+   "date_modified": 1713970413
+  },
+  {
+   "id": 123,
+   "name": "Greycat Industrial",
+   "nickname": "Greycat",
+   "wiki": "",
+   "industry": "Industrial Tools",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376759,
+   "date_modified": 1713914208
+  },
+  {
+   "id": 162,
+   "name": "Kruger Intergalactic",
+   "nickname": "Kruger",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376760,
+   "date_modified": 1713914542
+  },
+  {
+   "id": 177,
+   "name": "Musashi Industrial and Starflight Concern",
+   "nickname": "MISC",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376760,
+   "date_modified": 1713914699
+  },
+  {
+   "id": 195,
+   "name": "Origin Jumpworks",
+   "nickname": "Origin",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376760,
+   "date_modified": 1713916008
+  },
+  {
+   "id": 217,
+   "name": "Roberts Space Industries",
+   "nickname": "RSI",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376760,
+   "date_modified": 1713915026
+  },
+  {
+   "id": 252,
+   "name": "Tumbril Land Systems",
+   "nickname": "Tumbril",
+   "wiki": "",
+   "industry": "Automotive",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376761,
+   "date_modified": 1713970389
+  },
+  {
+   "id": 278,
+   "name": "Esperia Incorporation",
+   "nickname": "Esperia",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1683127447,
+   "date_modified": 1713917457
+  },
+  {
+   "id": 279,
+   "name": "Banu Souli",
+   "nickname": "Banu",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1683127447,
+   "date_modified": 1713916662
+  },
+  {
+   "id": 280,
+   "name": "Vanduul Clans",
+   "nickname": "Vanduul",
+   "wiki": "",
+   "industry": "Defense",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1683127447,
+   "date_modified": 1713915323
+  },
+  {
+   "id": 281,
+   "name": "Mirai",
+   "nickname": "Mirai",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1682376761,
+   "date_modified": 1713970254
+  },
+  {
+   "id": 318,
+   "name": "Grey&apos;s Market",
+   "nickname": "Grey&apos;s Market",
+   "wiki": "",
+   "industry": "Aerospace",
+   "is_item_manufacturer": 1,
+   "is_vehicle_manufacturer": 1,
+   "date_added": 1760345249,
+   "date_modified": 1760345628
+  }
+ ],
+ "message": ""
+}
