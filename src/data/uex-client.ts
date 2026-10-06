@@ -25,9 +25,10 @@ const MAX_PRICE_TERMINALS = 10;
 
 export interface UexClient {
   starSystems(): Promise<StarSystem[]>;
-  terminals(): Promise<Terminal[]>; // terminals?type=commodity
+  terminals(starSystemId: number): Promise<Terminal[]>; // terminals?type=commodity&id_star_system=<id>
   commodities(): Promise<Commodity[]>;
-  vehicles(): Promise<Vehicle[]>;
+  vehicleManufacturers(): Promise<number[]>; // company ids from companies?is_vehicle_manufacturer=1
+  vehicles(companyId: number): Promise<Vehicle[]>; // vehicles?id_company=<id>
   prices(terminalIds: number[]): Promise<UexPrice[]>; // 1–10 ids, otherwise RangeError
   distancesFrom(terminalId: number): Promise<Array<{ destId: number; gm: number }>>; // commodities_routes
   distance(a: number, b: number): Promise<number | null>; // terminals_distances
@@ -98,6 +99,9 @@ function mapCommodity(r: Row): Commodity | null {
     isAvailableLive: flag(r.is_available_live),
   };
 }
+
+// Only the id of a company is needed: it selects the vehicles to request.
+const mapCompanyId = (r: Row): number | null => toNumberOrNull(r.id);
 
 function mapVehicle(r: Row): Vehicle | null {
   const id = toNumberOrNull(r.id);
@@ -211,9 +215,12 @@ export function createUexClient(fetchJson: FetchJson, log: Logger, clockMs: () =
 
   return {
     starSystems: () => list('star_systems', mapStarSystem),
-    terminals: () => list('terminals?type=commodity', mapTerminal),
+    // Terminals and vehicles are never requested as one unfiltered list: on a throttled network
+    // such a response stalls. Terminals come per star system, vehicles per manufacturer.
+    terminals: (starSystemId) => list(`terminals?type=commodity&id_star_system=${starSystemId}`, mapTerminal),
     commodities: () => list('commodities', mapCommodity),
-    vehicles: () => list('vehicles', mapVehicle),
+    vehicleManufacturers: () => list('companies?is_vehicle_manufacturer=1', mapCompanyId),
+    vehicles: (companyId) => list(`vehicles?id_company=${companyId}`, mapVehicle),
 
     async prices(terminalIds) {
       if (terminalIds.length < 1 || terminalIds.length > MAX_PRICE_TERMINALS) {

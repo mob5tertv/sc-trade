@@ -1,11 +1,12 @@
 import { fetch } from '@tauri-apps/plugin-http';
 import type { FetchJson } from '../data/uex-client';
 
-const TIMEOUT_MS = 30_000;
+// A response that stalls (UEX behind a throttled network) must not hold the sync for long.
+const TIMEOUT_MS = 15_000;
 
 /**
  * Transport for the UEX client: a GET through `tauri-plugin-http` (the request is made by
- * Rust, so CORS does not apply). One 30 s deadline covers the connection and reading the body.
+ * Rust, so CORS does not apply). One 15 s deadline covers the connection and reading the body.
  * A body that is not JSON is returned as a string, so the client can report it as a shape error.
  */
 export const tauriFetchJson: FetchJson = async (url) => {

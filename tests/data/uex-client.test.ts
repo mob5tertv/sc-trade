@@ -11,6 +11,7 @@ const starSystemsFx = fixture('star_systems');
 const terminalsFx = fixture('terminals');
 const commoditiesFx = fixture('commodities');
 const vehiclesFx = fixture('vehicles');
+const companiesFx = fixture('companies');
 const pricesFx = fixture('prices');
 const routesFx = fixture('routes');
 
@@ -42,7 +43,7 @@ describe('uex client: reference data', () => {
 
   it('maps terminals', async () => {
     const c = client({ 'terminals?type=commodity': terminalsFx });
-    const t = (await c.terminals()).find((x) => x.id === 1)!;
+    const t = (await c.terminals(68)).find((x) => x.id === 1)!;
     expect(t).toMatchObject({
       nickname: 'ARC-L1', code: 'ARCL1', starSystemId: 68, starSystemName: 'Stanton',
       hasFreightElevator: true, isAutoLoad: true,
@@ -52,7 +53,13 @@ describe('uex client: reference data', () => {
       planetName: 'ArcCorp', orbitName: 'ArcCorp Lagrange Point 1', spaceStationName: 'ARC-L1 Wide Forest Station',
       moonName: null, outpostName: null, cityName: null, hasLoadingDock: false, isAvailableLive: true,
     });
-    expect(calls.at(-1)).toBe(`${UEX_BASE}/terminals?type=commodity`);
+    // Never the unfiltered list: it is too big for a throttled network. One request per star system.
+    expect(calls.at(-1)).toBe(`${UEX_BASE}/terminals?type=commodity&id_star_system=68`);
+  });
+
+  it('asks for the terminals of the requested star system', async () => {
+    await client({ terminals: { status: 'ok', data: [] } }).terminals(64);
+    expect(calls.at(-1)).toBe('https://api.uexcorp.uk/2.0/terminals?type=commodity&id_star_system=64');
   });
 
   it('maps commodities', async () => {
@@ -65,9 +72,27 @@ describe('uex client: reference data', () => {
   });
 
   it('maps vehicles', async () => {
-    const all = await client({ vehicles: vehiclesFx }).vehicles();
+    const all = await client({ vehicles: vehiclesFx }).vehicles(195);
     expect(all.find((v) => v.id === 13)).toEqual({ id: 13, name: '890 Jump', nameFull: 'Origin 890 Jump', scu: 388 });
-    expect(calls.at(-1)).toBe(`${UEX_BASE}/vehicles`);
+    // Never the unfiltered list: it stalls on a throttled network. One request per manufacturer.
+    expect(calls.at(-1)).toBe('https://api.uexcorp.uk/2.0/vehicles?id_company=195');
+  });
+
+  it('maps vehicle manufacturers to company ids', async () => {
+    const ids = await client({ companies: companiesFx }).vehicleManufacturers();
+    expect(ids).toHaveLength(19);
+    expect(ids).toEqual(expect.arrayContaining([8, 195, 217, 318]));
+    expect(ids.every((id) => Number.isInteger(id))).toBe(true);
+    expect(calls.at(-1)).toBe('https://api.uexcorp.uk/2.0/companies?is_vehicle_manufacturer=1');
+  });
+
+  it('coerces company ids and skips companies without one', async () => {
+    const data = [{ id: '8', name: 'Aegis' }, { id: null }, { name: 'No id' }, 'junk', { id: 195 }];
+    const ids = await client({ companies: { status: 'ok', data } }).vehicleManufacturers();
+    expect(ids).toEqual([8, 195]);
+    expect(sink.lines.map((l) => l.line)).toContain(
+      '[uex] skipped malformed rows {"url":"https://api.uexcorp.uk/2.0/companies?is_vehicle_manufacturer=1","skipped":3}',
+    );
   });
 });
 
@@ -159,7 +184,7 @@ describe('uex client: coercion', () => {
         status: 'ok',
         data: [{ id: 9, has_freight_elevator: '1', has_loading_dock: '0', is_auto_load: true, is_available_live: null, nickname: null }],
       },
-    }).terminals();
+    }).terminals(68);
     expect(t).toMatchObject({
       id: 9, hasFreightElevator: true, hasLoadingDock: false, isAutoLoad: true, isAvailableLive: false,
       nickname: '', starSystemName: null,
@@ -230,7 +255,7 @@ describe('uex client: errors', () => {
     const c = createUexClient(async () => {
       throw new Error('ECONNRESET');
     }, log);
-    const err = await c.vehicles().catch((e: unknown) => e);
+    const err = await c.vehicles(195).catch((e: unknown) => e);
     expect(err).toMatchObject({ kind: 'network' });
     expect((err as UexError).message).toContain('ECONNRESET');
     expect(((err as UexError).cause as Error).message).toBe('ECONNRESET');
@@ -251,7 +276,7 @@ describe('uex client: errors', () => {
     sink.lines.length = 0;
     await createUexClient(async () => {
       throw new Error('ECONNRESET');
-    }, log).vehicles().catch(() => {});
+    }, log).vehicles(195).catch(() => {});
     expect(sink.lines).toHaveLength(1);
     expect(sink.lines[0].level).toBe('warn');
     expect(sink.lines[0].line).toContain('"kind":"network"');
@@ -262,8 +287,8 @@ describe('uex client: errors', () => {
 
 describe('uex client: logging', () => {
   it('logs every request with status, duration and row count', async () => {
-    await client({ vehicles: vehiclesFx }).vehicles();
-    expect(sink.lines.at(-1)!.line).toMatch(/^\[uex\] request \{"url":".*vehicles","status":200,"ms":\d+,"rows":\d+\}$/);
+    await client({ vehicles: vehiclesFx }).vehicles(195);
+    expect(sink.lines.at(-1)!.line).toMatch(/^\[uex\] request \{"url":".*vehicles\?id_company=195","status":200,"ms":\d+,"rows":21\}$/);
     expect(sink.lines).toHaveLength(1);
   });
 
