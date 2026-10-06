@@ -26,7 +26,7 @@ export interface SellAlternative {
 const perHour = (profit: number, sec: number): number | null => (sec > 0 ? (profit * SEC_PER_HOUR) / sec : null);
 
 /** The flight from `fromId` to `toId`: my own median for the pair, else the estimate from the distance, else unknown. */
-function flightSec(ctx: RouteCtx, fromId: number, toId: number): number | null {
+export function flightSec(ctx: RouteCtx, fromId: number, toId: number): number | null {
   const ownSec = ctx.ownMedian.get(pairKey(fromId, toId));
   if (ownSec !== undefined && ownSec > 0) return ownSec;
   const distanceGm = ctx.distances.get(distKey(fromId, toId)) ?? null;

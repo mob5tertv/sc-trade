@@ -1,10 +1,9 @@
 import { estimate } from '../../core/estimate';
 import { formatCompact, formatDuration, formatUec } from '../../core/format';
-import { travelSec } from '../../core/routes';
 import type { RouteCtx } from '../../core/routes';
 import { cargoOf } from '../../core/run';
+import { flightSec } from '../../core/sell';
 import type { Settings } from '../../core/settings';
-import { distKey, pairKey } from '../../core/types';
 import type { CargoLine, Estimate, Market, Reference, RunWithEvents, Terminal } from '../../core/types';
 
 export type StripModel =
@@ -36,15 +35,6 @@ function cargoText(ref: Reference, cargo: CargoLine[]): string {
 function expectText(sell: Estimate): string {
   const [price, low, high] = [sell.price, sell.low, sell.high].map(formatUec);
   return low === price && high === price ? `ждём ${price}` : `ждём ${price} (${low}–${high})`;
-}
-
-/** The flight from `fromId` to `toId`: my own median for the pair, else the estimate from the distance, else unknown. */
-function flightSec(ctx: RouteCtx, fromId: number | null, toId: number): number | null {
-  if (fromId === null) return null;
-  const ownSec = ctx.ownMedian.get(pairKey(fromId, toId));
-  if (ownSec !== undefined && ownSec > 0) return ownSec;
-  const distanceGm = ctx.distances.get(distKey(fromId, toId)) ?? null;
-  return distanceGm === null ? null : travelSec(distanceGm, ctx.settings.quantumSpeedKkms, ctx.settings.overheadMin);
 }
 
 /**
@@ -84,6 +74,6 @@ export function stripModel(active: RunWithEvents | null, m: Market, ref: Referen
     kind: 'run', timer, cargo: cargoLine,
     target: terminalLabel(target),
     expect: firstSell ? expectText(firstSell) : null,
-    rate: rateText(priced, elapsedSec, flightSec(ctx, originId, target.id)),
+    rate: rateText(priced, elapsedSec, originId === null ? null : flightSec(ctx, originId, target.id)),
   };
 }
