@@ -4,10 +4,10 @@ import { MIGRATIONS, migrate } from '../../src/data/migrations';
 import { migratedDb, testDb } from '../helpers/test-db';
 
 describe('migrations', () => {
-  it('creates all tables and reports version 1', async () => {
+  it('creates all tables and reports the latest version', async () => {
     const db = testDb();
     const log = createLogger(memorySink());
-    expect(await migrate(db, log)).toBe(1);
+    expect(await migrate(db, log)).toBe(2);
     const names = (await db.select<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'")).map(
       (r) => r.name,
     );
@@ -27,23 +27,23 @@ describe('migrations', () => {
       expect(names).toContain(t);
   });
 
-  it('stores the schema version in PRAGMA user_version', async () => {
+  it('stores the schema version in PRAGMA user_version (2)', async () => {
     const db = await migratedDb();
-    expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 1 }]);
+    expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 2 }]);
   });
 
   it('is a no-op when run twice', async () => {
     const db = testDb();
     const log = createLogger(memorySink());
     await migrate(db, log);
-    expect(await migrate(db, log)).toBe(1);
+    expect(await migrate(db, log)).toBe(2);
   });
 
   it('can be re-run after a migration was interrupted half-way', async () => {
     // Migrations run without a transaction, so an interrupted run leaves some tables behind.
     const db = testDb();
     for (const sql of MIGRATIONS[0].statements.slice(0, 3)) await db.execute(sql);
-    expect(await migrate(db, createLogger(memorySink()))).toBe(1);
+    expect(await migrate(db, createLogger(memorySink()))).toBe(2);
     const tables = await db.select<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'");
     expect(tables.map((r) => r.name)).toContain('setting');
   });
@@ -66,9 +66,64 @@ describe('migrations', () => {
       ...block('sell'),
       'scu_buy',
       'scu_sell',
+      'scu_buy_max',
+      'scu_sell_max',
       'date_modified',
       'synced_at',
     ]);
+  });
+
+  it('rebuilds the price cache with the stock maximum columns and forces a price re-sync', async () => {
+    const db = testDb();
+    const log = createLogger(memorySink());
+    await migrate(db, log);
+    const cols = (await db.select<{ name: string }>('PRAGMA table_info(uex_price)')).map((c) => c.name);
+    expect(cols).toContain('scu_buy_max');
+    expect(cols).toContain('scu_sell_max');
+    expect(await db.select("SELECT 1 FROM uex_meta WHERE key = 'prices_synced_at'")).toEqual([]);
+  });
+
+  it('defaults the new stock maximum columns to zero', async () => {
+    const db = await migratedDb();
+    const cols = await db.select<{ name: string; notnull: number; dflt_value: string }>('PRAGMA table_info(uex_price)');
+    for (const name of ['scu_buy_max', 'scu_sell_max']) {
+      expect(cols.find((c) => c.name === name)).toMatchObject({ notnull: 1, dflt_value: '0' });
+    }
+  });
+
+  it('upgrades a version 1 database: empty price cache with the new columns, no price sync mark, other data kept', async () => {
+    const db = testDb();
+    for (const sql of MIGRATIONS[0].statements) await db.execute(sql);
+    await db.execute('PRAGMA user_version = 1');
+    const oldCols = (await db.select<{ name: string }>('PRAGMA table_info(uex_price)')).map((c) => c.name);
+    expect(oldCols).not.toContain('scu_buy_max');
+    await db.execute(
+      `INSERT INTO uex_price (${oldCols.join(', ')}) VALUES (${oldCols.map(() => '?').join(', ')})`,
+      oldCols.map(() => 1),
+    );
+    await db.execute("INSERT INTO uex_meta (key, value) VALUES ('prices_synced_at', '123'), ('routes_fetched:1', 'ok')");
+    await db.execute("INSERT INTO observation (ts, terminal_id, commodity_id, side, price, scu) VALUES (1, 1, 10, 'buy', 6000, 0)");
+
+    expect(await migrate(db, createLogger(memorySink()))).toBe(2);
+
+    expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 2 }]);
+    const cols = (await db.select<{ name: string }>('PRAGMA table_info(uex_price)')).map((c) => c.name);
+    expect(cols).toContain('scu_buy_max');
+    expect(cols).toContain('scu_sell_max');
+    expect(await db.select('SELECT * FROM uex_price')).toEqual([]);
+    expect(await db.select("SELECT value FROM uex_meta WHERE key = 'prices_synced_at'")).toEqual([]);
+    expect(await db.select("SELECT value FROM uex_meta WHERE key = 'routes_fetched:1'")).toEqual([{ value: 'ok' }]);
+    expect(await db.select('SELECT scu FROM observation')).toEqual([{ scu: 0 }]);
+  });
+
+  it('can be re-run after migration 2 was interrupted half-way', async () => {
+    const db = testDb();
+    for (const sql of MIGRATIONS[0].statements) await db.execute(sql);
+    await db.execute('PRAGMA user_version = 1');
+    for (const sql of MIGRATIONS[1].statements.slice(0, 2)) await db.execute(sql);      // the table is rebuilt, the mark is still there
+    await db.execute("INSERT INTO uex_meta (key, value) VALUES ('prices_synced_at', '123')");
+    expect(await migrate(db, createLogger(memorySink()))).toBe(2);
+    expect(await db.select("SELECT 1 FROM uex_meta WHERE key = 'prices_synced_at'")).toEqual([]);
   });
 
   it('allows only one active run', async () => {

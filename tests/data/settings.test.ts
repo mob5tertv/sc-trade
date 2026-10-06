@@ -17,6 +17,13 @@ describe('settings repository', () => {
     expect(await loadSettings(await migratedDb(), log)).toEqual(DEFAULT_SETTINGS);
   });
 
+  it('defaults the full-refill time of a stock to 75 minutes and round-trips a changed one', async () => {
+    const db = await migratedDb();
+    expect((await loadSettings(db, log)).refillFullMin).toBe(75);
+    await saveSetting(db, log, 'refillFullMin', 90);
+    expect((await loadSettings(db, log)).refillFullMin).toBe(90);
+  });
+
   it('round-trips number, null, string and boolean', async () => {
     const db = await migratedDb();
     await saveSetting(db, log, 'scuCapacity', 696);

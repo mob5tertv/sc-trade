@@ -44,6 +44,13 @@ describe('buildMarket', () => {
 
   it('builds an empty market from nothing', () => {
     const m = buildMarket([], []);
-    expect([m.uex.size, m.own.size, m.byTerminal.size, m.byCommodity.size]).toEqual([0, 0, 0, 0]);
+    expect([m.uex.size, m.own.size, m.byTerminal.size, m.byCommodity.size, m.stock.size]).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  it('keeps the stock statistics it is given and starts with an empty map without them', () => {
+    const stock = new Map([[obsKey(1, 10, 'buy'), { maxScu: 340, ratePerMin: 10 }]]);
+    expect(buildMarket([], [], stock).stock).toBe(stock);
+    expect(buildMarket([px(1, 10)], []).stock.size).toBe(0);
+    expect(buildMarket([], []).stock).not.toBe(buildMarket([], []).stock);       // no map shared between markets
   });
 });

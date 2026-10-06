@@ -8,13 +8,13 @@ const SEC_PER_HOUR = 3600;
 
 /**
  * How many SCU one trip carries: the smallest of the free cargo space, the stock at the purchase
- * terminal, the demand at the selling terminal and what the budget buys. A zero or missing stock or
- * demand and an unset budget do not limit the amount. Never negative.
+ * terminal, the demand at the selling terminal and what the budget buys. Only a missing (`null`) stock
+ * or demand and an unset budget do not limit the amount: a known zero limits it to nothing. Never negative.
  */
 export function quantity(i: { freeScu: number; stockScu: number | null; demandScu: number | null; budget: number | null; buyPrice: number }): number {
   const limits = [i.freeScu];
-  if (i.stockScu !== null && i.stockScu > 0) limits.push(i.stockScu);
-  if (i.demandScu !== null && i.demandScu > 0) limits.push(i.demandScu);
+  if (i.stockScu !== null) limits.push(i.stockScu);
+  if (i.demandScu !== null) limits.push(i.demandScu);
   if (i.budget !== null && i.buyPrice > 0) limits.push(i.budget / i.buyPrice);
   return Math.max(0, Math.floor(Math.min(...limits)));
 }

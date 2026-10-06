@@ -21,14 +21,31 @@ export interface UexSideStats {
   minMonth: number; maxMonth: number; avgMonth: number;
   min: number; max: number; avg: number;
 }
-export interface UexPrice { terminalId: number; commodityId: number; buy: UexSideStats; sell: UexSideStats; scuBuy: number; scuSell: number; dateModified: number }
+export interface UexPrice {
+  terminalId: number; commodityId: number; buy: UexSideStats; sell: UexSideStats;
+  scuBuy: number; scuSell: number;
+  scuBuyMax: number; scuSellMax: number;   // наибольшее, что видел UEX (за неделю, иначе за всё время); 0 — неизвестно
+  dateModified: number;
+}
+/** В своём наблюдении `scu: 0` — известно, что пусто; `null` — неизвестно (у данных UEX ноль по-прежнему «неизвестно»). */
 export interface Observation { id: number; ts: number; terminalId: number; commodityId: number; side: Side; price: number; scu: number | null }
+
+/** Выучено по своему дневнику для одной пары «терминал, товар, сторона»; `null` — нечего вывести. */
+export interface StockStats { maxScu: number | null; ratePerMin: number | null }
+/** Оценка количества на точке «сейчас»: от базы (своего замера) со скоростью пополнения, не выше максимума. */
+export interface StockEstimate {
+  scu: number;                 // оценка сейчас
+  baseScu: number; baseAgeSec: number;
+  ratePerMin: number; rateSource: 'learned' | 'default' | 'none';
+  maxScu: number | null;
+}
 
 export interface Market {
   uex: Map<string, UexPrice>;          // priceKey
   own: Map<string, Observation>;       // obsKey, только последнее наблюдение
   byTerminal: Map<number, Set<number>>;   // терминал → товары
   byCommodity: Map<number, Set<number>>;  // товар → терминалы
+  stock: Map<string, StockStats>;      // obsKey
 }
 export const priceKey = (terminalId: number, commodityId: number) => `${terminalId}:${commodityId}`;
 export const obsKey = (terminalId: number, commodityId: number, side: Side) => `${terminalId}:${commodityId}:${side}`;
@@ -41,6 +58,7 @@ export interface Estimate {
   ownLast: { price: number; ageSec: number } | null;   // своё холодное, справочно
   uexRange: { low: number; high: number } | null;      // рядом с «остывает»
   scu: number | null;
+  stock: StockEstimate | null;   // не null, когда scu получено из своего наблюдения
 }
 
 export type RunEventType = 'buy' | 'sell' | 'depart' | 'arrive';

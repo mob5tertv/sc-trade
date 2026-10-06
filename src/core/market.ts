@@ -1,5 +1,5 @@
 import { obsKey, priceKey } from './types';
-import type { Market, Observation, UexPrice } from './types';
+import type { Market, Observation, StockStats, UexPrice } from './types';
 
 function isNewer(candidate: Observation, current: Observation): boolean {
   return candidate.ts > current.ts || (candidate.ts === current.ts && candidate.id > current.id);
@@ -8,10 +8,11 @@ function isNewer(candidate: Observation, current: Observation): boolean {
 /**
  * Indexes the cached UEX prices and the own observations for lookups by terminal and commodity.
  * `own` keeps only the newest observation per terminal, commodity and side (the later `ts`,
- * the higher `id` on a tie); `byTerminal` and `byCommodity` cover both sources.
+ * the higher `id` on a tie); `byTerminal` and `byCommodity` cover both sources. `stock` is what the
+ * whole diary says about each stock (see `stockStats`); without it the map is empty.
  */
-export function buildMarket(prices: UexPrice[], latestObs: Observation[]): Market {
-  const market: Market = { uex: new Map(), own: new Map(), byTerminal: new Map(), byCommodity: new Map() };
+export function buildMarket(prices: UexPrice[], latestObs: Observation[], stock: Map<string, StockStats> = new Map()): Market {
+  const market: Market = { uex: new Map(), own: new Map(), byTerminal: new Map(), byCommodity: new Map(), stock };
 
   const index = (terminalId: number, commodityId: number): void => {
     let commodities = market.byTerminal.get(terminalId);
