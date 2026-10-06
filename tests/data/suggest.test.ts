@@ -57,7 +57,16 @@ describe('suggestFrom', () => {
   it('stores what it fetched in the distance cache', async () => {
     await suggestFrom(deps, 1, 696);
     expect(await loadDistances(db)).toEqual(new Map([[distKey(1, 2), 59], [distKey(1, 3), 61]]));
+    // A successful route list is remembered forever as 'ok'; only a failed attempt keeps its time.
+    expect(await getMeta(db, 'routes_fetched:1')).toBe('ok');
+  });
+
+  it('remembers the time of a failed route request and does not repeat it at once', async () => {
+    uex.failRoutes = true;
+    await suggestFrom(deps, 1, 696);
     expect(await getMeta(db, 'routes_fetched:1')).toBe(String(NOW));
+    await suggestFrom(deps, 1, 696);
+    expect(uex.routeCalls).toEqual([1]);
   });
 
   it('asks for the single pair that the route list lacks', async () => {
