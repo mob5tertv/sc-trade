@@ -1,16 +1,17 @@
 import Database from '@tauri-apps/plugin-sql';
 import type { Db } from '../data/db';
-import { createLogger } from '../data/logger';
+import type { Logger } from '../data/logger';
 import { withSlowQueryLog } from '../data/slow-query';
-import { tauriSink } from './tauri-logger';
 
 // tauri-plugin-sql resolves this relative to the app config directory
 // (%APPDATA%\com.sctrade.app on Windows); src-tauri/src/backup.rs copies the same file.
 const DB_URL = 'sqlite:sctrade.db';
 
-/** Opens (creating it if needed) the app database; slow and failing queries are logged. */
-export async function openTauriDb(): Promise<Db> {
-  const log = createLogger(tauriSink());
+/**
+ * Opens (creating it if needed) the app database; slow and failing queries are logged.
+ * `log` is the app's shared logger, so a level change made at runtime applies to the database too.
+ */
+export async function openTauriDb(log: Logger): Promise<Db> {
   log.info('db', 'opening database', { url: DB_URL });
   let raw: Database;
   try {

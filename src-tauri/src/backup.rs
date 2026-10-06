@@ -103,10 +103,11 @@ fn backup_in(config_dir: &Path, stamp: &str, keep: usize) -> Result<Option<Strin
 /// no database yet (first launch). Run it before the webview opens the database.
 #[tauri::command(async)]
 pub fn backup_db(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|err| format!("cannot resolve the app config directory: {err}"))?;
+    let config_dir = app.path().app_config_dir().map_err(|err| {
+        let message = format!("cannot resolve the app config directory: {err}");
+        log::error!("[backup] failed: {message}");
+        message
+    })?;
     match backup_in(&config_dir, &timestamp(), KEEP_BACKUPS) {
         Ok(Some(name)) => {
             log::info!("[backup] created {name}");
