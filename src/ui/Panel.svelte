@@ -3,6 +3,7 @@
   import Header from './Header.svelte';
   import { app, type Tab } from './state.svelte';
   import SettingsTab from './tabs/SettingsTab.svelte';
+  import { createHeldKeyGuard } from './vm/held-keys';
 
   const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
     { id: 'terminal', label: 'Терминал' },
@@ -13,9 +14,45 @@
 
   let header = $state<ReturnType<typeof Header>>();
 
-  // Lets typing start right away when the panel opens: the location search takes the cursor.
+  // The player opens the panel with a click while still holding a key of the game (`F` shows its
+  // cursor), and Windows keeps repeating that key into the panel. A key types only after it was
+  // pressed again inside the window; `Esc` and the other keys pressed fresh work as usual.
+  const heldKeys = createHeldKeyGuard();
+  let heldKeyLogged = false;
+
+  function forgetHeldKeys(): void {
+    heldKeys.reset();
+    heldKeyLogged = false;
+  }
+
+  // Capture phase on the window: it runs before the input, the search list and the Esc handler of the panel.
+  function onKeydownCapture(event: KeyboardEvent): void {
+    if (!heldKeys.shouldSwallow(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!heldKeyLogged) {
+      heldKeyLogged = true;
+      app.log.debug('ui', 'held key ignored');
+    }
+  }
+
+  const onKeyupCapture = (event: KeyboardEvent): void => heldKeys.released(event.code);
+
   onMount(() => {
+    forgetHeldKeys();
+    window.addEventListener('keydown', onKeydownCapture, true);
+    window.addEventListener('keyup', onKeyupCapture, true);
+    // the window got the focus again (the player came back to it): keys held by then are not ours
+    window.addEventListener('focus', forgetHeldKeys);
+
+    // Lets typing start right away when the panel opens: the location search takes the cursor.
     header?.focusSearch();
+
+    return () => {
+      window.removeEventListener('keydown', onKeydownCapture, true);
+      window.removeEventListener('keyup', onKeyupCapture, true);
+      window.removeEventListener('focus', forgetHeldKeys);
+    };
   });
 </script>
 
