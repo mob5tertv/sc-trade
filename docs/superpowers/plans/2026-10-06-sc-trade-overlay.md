@@ -2030,3 +2030,114 @@ it('shows the buyer inventory on the sell side without an estimate', () => {
 - [ ] **Step 3: Реализовать** изменения в `routes.ts`, `estimate.ts`, `sell.ts`, `trade.ts`, `terminal-rows.ts`; поправить все места вызова и помощники тестов.
 - [ ] **Step 4: Запустить** — `npm test && npm run check` — Expected: PASS, 0 errors.
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "fix: the sell-side quantity is the buyer inventory, not demand"`
+
+### Task 23: Количество и цена — независимые замеры
+
+Реализует раздел 14.6 спеки. Сейчас количество берётся из того же наблюдения, что и цена, поэтому правка одной только цены (наблюдение без количества) стирает базу для таймера запаса. Заодно оценка начинает сообщать, известен ли возраст данных UEX.
+
+**Files:**
+- Modify: `src/core/types.ts`, `src/core/market.ts`, `src/core/estimate.ts`, `src/data/repo/diary.ts`, `src/data/suggest.ts`, `src/ui/vm/terminal-rows.ts`, `src/ui/vm/route-rows.ts`
+- Test: правки и добавления в `tests/core/market.test.ts`, `tests/core/estimate.test.ts`, `tests/data/diary.test.ts`, `tests/data/suggest.test.ts`, `tests/ui/terminal-rows.test.ts`, `tests/ui/route-rows.test.ts`, и в помощниках `tests/helpers/*.ts`, где это нужно
+
+**Interfaces:**
+- Consumes: всё из задач 7, 10, 19, 21 и вью-модели.
+- Produces:
+```ts
+// src/core/types.ts — добавления
+export interface QuantityReading { terminalId: number; commodityId: number; side: Side; ts: number; scu: number }
+export interface Market { /* …как было… */ ownScu: Map<string, { ts: number; scu: number }> }   // obsKey → последний свой замер с количеством
+export interface Estimate { /* …как было… */ ageKnown: boolean; scuOrigin: 'own' | 'uex' | null }
+
+// src/core/market.ts
+export function buildMarket(prices: UexPrice[], latestObs: Observation[], stock?: Map<string, StockStats>, quantities?: QuantityReading[]): Market;
+// без quantities карта ownScu строится из latestObs (наблюдения с scu !== null)
+
+// src/data/repo/diary.ts
+export function latestQuantities(db: Db): Promise<QuantityReading[]>;   // по одному на (терминал, товар, сторона): последнее наблюдение с scu IS NOT NULL
+
+// src/ui/vm/terminal-rows.ts
+export function badgeText(e: Estimate): { text: string; kind: Temp | 'uex' };   // второй параметр удалён, используется e.ageKnown
+```
+
+Правила:
+
+- Цена в оценке по-прежнему берётся из последнего своего наблюдения (или UEX). Количество берётся из `Market.ownScu`: если этот замер не холодный (температура считается по ЕГО времени, «сменил сервер» учитывается) — для стороны `buy` запускается таймер запаса от него, для `sell` значение отдаётся как записано; `scuOrigin = 'own'`. Иначе количество UEX (`> 0`), `scuOrigin = 'uex'`; иначе `null`.
+- `stock.baseAgeSec` — возраст замера количества, а не замера цены.
+- `ageKnown = false` только когда источник цены — UEX и у строки `dateModified === 0`; во всех остальных случаях `true`.
+- `badgeText`: для UEX с `ageKnown === false` текст — просто «UEX».
+- Таблица терминала: своё количество показывается, когда `scuOrigin === 'own'`, даже если цена в ячейке взята из UEX (своя цена остыла, а замер количества ещё нет — такого не бывает при равных порогах, но код не должен на это полагаться). Прямого чтения `m.own` для количества больше нет.
+- `route-rows.ts` и всё, что строит плашки для вариантов маршрута, берёт текст из `badgeText(e)` без догадок о возрасте.
+- `loadMarket` передаёт `latestQuantities(db)` в `buildMarket`.
+
+- [ ] **Step 1: Написать падающие тесты**
+
+```ts
+// tests/core/estimate.test.ts — сторона buy, терминал 1, товар 10; now, ctx как в файле
+it('keeps the stock timer running after a price-only observation', () => {
+  const priceOnly = obs({ id: 2, ts: now - 120, terminalId: 1, commodityId: 10, side: 'buy', price: 6120, scu: null });
+  const quantities = [{ terminalId: 1, commodityId: 10, side: 'buy' as const, ts: now - 1200, scu: 40 }];
+  const m = buildMarket([px(1, 10, { buy: week, scuBuy: 300, scuBuyMax: 340 })], [priceOnly], undefined, quantities);
+  const e = estimate(m, 1, 10, 'buy', { ...ctx, refillFullMin: 75 })!;
+  expect(e).toMatchObject({ price: 6120, source: 'own', scu: 130, scuOrigin: 'own' });
+  expect(e.stock).toMatchObject({ baseScu: 40, baseAgeSec: 1200 });
+});
+it('falls back to the UEX quantity when my quantity reading is cold, even with a hot price', () => {
+  const priceOnly = obs({ id: 2, ts: now - 120, terminalId: 1, commodityId: 10, side: 'buy', price: 6120, scu: null });
+  const quantities = [{ terminalId: 1, commodityId: 10, side: 'buy' as const, ts: now - 5 * 3600, scu: 40 }];
+  const m = buildMarket([px(1, 10, { buy: week, scuBuy: 300 })], [priceOnly], undefined, quantities);
+  expect(estimate(m, 1, 10, 'buy', ctx)).toMatchObject({ price: 6120, scu: 300, scuOrigin: 'uex', stock: null });
+});
+it('reports the buyer inventory from the latest quantity reading on the sell side', () => {
+  const priceOnly = obs({ id: 2, ts: now - 60, terminalId: 2, commodityId: 10, side: 'sell', price: 6900, scu: null });
+  const quantities = [{ terminalId: 2, commodityId: 10, side: 'sell' as const, ts: now - 600, scu: 3048 }];
+  expect(estimate(buildMarket([], [priceOnly], undefined, quantities), 2, 10, 'sell', ctx)).toMatchObject({ scu: 3048, scuOrigin: 'own', stock: null });
+});
+it('says whether the age of a UEX price is known', () => {
+  expect(estimate(buildMarket([px(2, 10, { sell: week, dateModified: 0 })], []), 2, 10, 'sell', ctx)).toMatchObject({ source: 'uex', ageKnown: false });
+  expect(estimate(buildMarket([px(2, 10, { sell: week, dateModified: now - 3600 })], []), 2, 10, 'sell', ctx)).toMatchObject({ ageKnown: true });
+  expect(estimate(buildMarket([], [own(10)]), 2, 10, 'sell', ctx)).toMatchObject({ source: 'own', ageKnown: true });
+});
+```
+```ts
+// tests/core/market.test.ts
+it('derives quantity readings from the observations when none are passed', () => {
+  const m = buildMarket([], [obs({ id: 1, ts: 100, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: 300 })]);
+  expect(m.ownScu.get(obsKey(1, 10, 'buy'))).toEqual({ ts: 100, scu: 300 });
+});
+it('keeps an explicit quantity reading that is older than the latest price observation', () => {
+  const m = buildMarket([], [obs({ id: 2, ts: 200, terminalId: 1, commodityId: 10, side: 'buy', price: 6120, scu: null })], undefined,
+    [{ terminalId: 1, commodityId: 10, side: 'buy', ts: 100, scu: 300 }]);
+  expect(m.ownScu.get(obsKey(1, 10, 'buy'))).toEqual({ ts: 100, scu: 300 });
+  expect(m.own.get(obsKey(1, 10, 'buy'))!.price).toBe(6120);
+});
+```
+```ts
+// tests/data/diary.test.ts
+it('returns the latest observation that carries a quantity, per terminal, commodity and side', async () => {
+  await addObservation(db, log, { ts: 100, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: 300 });
+  await addObservation(db, log, { ts: 200, terminalId: 1, commodityId: 10, side: 'buy', price: 6120, scu: null });
+  await addObservation(db, log, { ts: 150, terminalId: 1, commodityId: 10, side: 'sell', price: 5000, scu: null });
+  expect(await latestQuantities(db)).toEqual([{ terminalId: 1, commodityId: 10, side: 'buy', ts: 100, scu: 300 }]);
+});
+it('keeps a recorded zero as a quantity reading', async () => {
+  await addObservation(db, log, { ts: 100, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: 0 });
+  expect(await latestQuantities(db)).toEqual([{ terminalId: 1, commodityId: 10, side: 'buy', ts: 100, scu: 0 }]);
+});
+```
+```ts
+// tests/ui/terminal-rows.test.ts
+it('keeps my stock estimate on screen after I correct only the price', () => {
+  // замер количества 40 двадцать минут назад, затем наблюдение только с ценой две минуты назад; максимум UEX 340, восстановление 75 мин
+  const rows = terminalRows(marketAfterPriceOnlyEdit, ref, 1, ctx);
+  expect(rows[0].buy).toMatchObject({ own: 6120, ownScu: 130, ownScuBase: { scu: 40, age: '20 мин' } });
+});
+it('labels a UEX price of unknown age without an age', () => {
+  expect(badgeText({ ...est, source: 'uex', temp: null, ageKnown: false })).toEqual({ text: 'UEX', kind: 'uex' });
+});
+```
+В `tests/ui/route-rows.test.ts` добавляется случай: вариант маршрута с ценой UEX неизвестного возраста получает плашку «UEX» без возраста. В `tests/data/suggest.test.ts` — случай: после наблюдения только с ценой строка лога `[suggest]` у закупки по-прежнему содержит оценку запаса (`"stock"` с прежней базой).
+
+- [ ] **Step 2: Запустить** — `npm test` — Expected: новые тесты падают; `npm run check` показывает ошибки типов там, где создаются `Estimate` и `Market` или вызывается `badgeText` с двумя аргументами.
+- [ ] **Step 3: Реализовать** в порядке: типы → `market.ts` → `estimate.ts` → `diary.latestQuantities` → `suggest.loadMarket` → `terminal-rows.ts`, `route-rows.ts`; поправить все места, где создаются `Estimate` / `Market` или вызывается `badgeText`.
+- [ ] **Step 4: Запустить** — `npm test && npm run check` — Expected: PASS, 0 errors.
+- [ ] **Step 5: Commit** — `git add -A && git commit -m "fix: quantity readings are independent of price readings; UEX age may be unknown"`
