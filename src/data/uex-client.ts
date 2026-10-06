@@ -1,0 +1,244 @@
+// Client for the public UEX price API. No Tauri imports: the transport is injected
+// (`FetchJson`), so the same code runs in the app and in Node tests.
+
+import type { Commodity, StarSystem, Terminal, UexPrice, UexSideStats, Vehicle } from '../core/types';
+import type { Logger } from './logger';
+
+export type FetchJson = (url: string) => Promise<{ status: number; body: unknown }>;
+
+export type UexErrorKind = 'network' | 'http' | 'status' | 'shape';
+
+export class UexError extends Error {
+  readonly kind: UexErrorKind;
+
+  constructor(kind: UexErrorKind, message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'UexError';
+    this.kind = kind;
+  }
+}
+
+export const UEX_BASE = 'https://api.uexcorp.uk/2.0';
+
+/** UEX allows at most ten terminals per `commodities_prices` request. */
+const MAX_PRICE_TERMINALS = 10;
+
+export interface UexClient {
+  starSystems(): Promise<StarSystem[]>;
+  terminals(): Promise<Terminal[]>; // terminals?type=commodity
+  commodities(): Promise<Commodity[]>;
+  vehicles(): Promise<Vehicle[]>;
+  prices(terminalIds: number[]): Promise<UexPrice[]>; // 1–10 ids, otherwise RangeError
+  distancesFrom(terminalId: number): Promise<Array<{ destId: number; gm: number }>>; // commodities_routes
+  distance(a: number, b: number): Promise<number | null>; // terminals_distances
+}
+
+type Row = Record<string, unknown>;
+
+const isRow = (v: unknown): v is Row => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+// UEX sends some numbers as strings ("59") and uses null for missing values, so every
+// field goes through these coercions and a bad value never throws.
+function toNumberOrNull(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+const num = (v: unknown): number => toNumberOrNull(v) ?? 0;
+const flag = (v: unknown): boolean => v === true || v === 1 || v === '1' || v === 'true';
+const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+const textOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+
+function mapStarSystem(r: Row): StarSystem | null {
+  const id = toNumberOrNull(r.id);
+  if (id === null) return null;
+  return { id, name: text(r.name), code: text(r.code), isAvailableLive: flag(r.is_available_live) };
+}
+
+function mapTerminal(r: Row): Terminal | null {
+  const id = toNumberOrNull(r.id);
+  if (id === null) return null;
+  return {
+    id,
+    starSystemId: num(r.id_star_system),
+    planetId: num(r.id_planet),
+    orbitId: num(r.id_orbit),
+    name: text(r.name),
+    nickname: text(r.nickname),
+    displayname: text(r.displayname),
+    code: text(r.code),
+    starSystemName: textOrNull(r.star_system_name),
+    planetName: textOrNull(r.planet_name),
+    orbitName: textOrNull(r.orbit_name),
+    moonName: textOrNull(r.moon_name),
+    spaceStationName: textOrNull(r.space_station_name),
+    outpostName: textOrNull(r.outpost_name),
+    cityName: textOrNull(r.city_name),
+    hasFreightElevator: flag(r.has_freight_elevator),
+    hasLoadingDock: flag(r.has_loading_dock),
+    isAutoLoad: flag(r.is_auto_load),
+    isAvailableLive: flag(r.is_available_live),
+  };
+}
+
+function mapCommodity(r: Row): Commodity | null {
+  const id = toNumberOrNull(r.id);
+  if (id === null) return null;
+  return {
+    id,
+    name: text(r.name),
+    code: text(r.code),
+    isIllegal: flag(r.is_illegal),
+    isBuyable: flag(r.is_buyable),
+    isSellable: flag(r.is_sellable),
+    isAvailableLive: flag(r.is_available_live),
+  };
+}
+
+function mapVehicle(r: Row): Vehicle | null {
+  const id = toNumberOrNull(r.id);
+  if (id === null) return null;
+  return { id, name: text(r.name), nameFull: text(r.name_full), scu: num(r.scu) };
+}
+
+// `price_buy` is what the player pays the terminal, `price_sell` what the terminal pays the player.
+function mapSide(r: Row, side: 'buy' | 'sell'): UexSideStats {
+  const p = `price_${side}`;
+  return {
+    last: num(r[p]),
+    minWeek: num(r[`${p}_min_week`]),
+    maxWeek: num(r[`${p}_max_week`]),
+    avgWeek: num(r[`${p}_avg_week`]),
+    minMonth: num(r[`${p}_min_month`]),
+    maxMonth: num(r[`${p}_max_month`]),
+    avgMonth: num(r[`${p}_avg_month`]),
+    min: num(r[`${p}_min`]),
+    max: num(r[`${p}_max`]),
+    avg: num(r[`${p}_avg`]),
+  };
+}
+
+function mapPrice(r: Row): UexPrice | null {
+  const terminalId = toNumberOrNull(r.id_terminal);
+  const commodityId = toNumberOrNull(r.id_commodity);
+  if (terminalId === null || commodityId === null) return null;
+  return {
+    terminalId,
+    commodityId,
+    buy: mapSide(r, 'buy'),
+    sell: mapSide(r, 'sell'),
+    scuBuy: num(r.scu_buy),
+    scuSell: num(r.scu_sell),
+    dateModified: num(r.date_modified),
+  };
+}
+
+// A route row carries the distance to its destination; `gm` is null when UEX does not know it.
+function mapRoute(r: Row): { destId: number; gm: number | null } | null {
+  const destId = toNumberOrNull(r.id_terminal_destination);
+  if (destId === null) return null;
+  return { destId, gm: toNumberOrNull(r.distance) };
+}
+
+const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+export function createUexClient(fetchJson: FetchJson, log: Logger, clockMs: () => number = Date.now): UexClient {
+  /**
+   * Runs one request: fetch, check HTTP status and the UEX envelope, then let `extract` pull the
+   * payload out of `data`. Every request ends in exactly one log line: `request` at info level,
+   * or `request failed` at warn level with the error kind.
+   */
+  async function run<T>(
+    path: string,
+    extract: (data: unknown) => { value: T; rows: number; skipped?: number },
+  ): Promise<T> {
+    const url = `${UEX_BASE}/${path}`;
+    const startedAt = clockMs();
+    let status: number | undefined;
+    try {
+      let response: Awaited<ReturnType<FetchJson>>;
+      try {
+        response = await fetchJson(url);
+      } catch (err) {
+        throw new UexError('network', `request failed: ${errorMessage(err)}`, { cause: err });
+      }
+      status = response.status;
+      if (status < 200 || status >= 300) throw new UexError('http', `HTTP ${status}`);
+
+      const body = response.body;
+      if (!isRow(body) || typeof body.status !== 'string') {
+        throw new UexError('shape', 'response is not a UEX envelope');
+      }
+      if (body.status !== 'ok') throw new UexError('status', `UEX status "${body.status}"`);
+
+      let extracted: ReturnType<typeof extract>;
+      try {
+        extracted = extract(body.data);
+      } catch (err) {
+        throw err instanceof UexError ? err : new UexError('shape', `unexpected payload: ${errorMessage(err)}`, { cause: err });
+      }
+      if (extracted.skipped) log.warn('uex', 'skipped malformed rows', { url, skipped: extracted.skipped });
+      log.info('uex', 'request', { url, status, ms: elapsed(startedAt), rows: extracted.rows });
+      return extracted.value;
+    } catch (err) {
+      // Fetch and extraction errors are already wrapped; anything else means the transport returned something unusable.
+      const error = err instanceof UexError ? err : new UexError('shape', errorMessage(err), { cause: err });
+      log.warn('uex', 'request failed', { url, kind: error.kind, status, ms: elapsed(startedAt), message: error.message });
+      throw error;
+    }
+  }
+
+  function elapsed(startedAt: number): number {
+    return Math.max(0, Math.round(clockMs() - startedAt));
+  }
+
+  /** A request whose `data` is an array of rows; rows without a usable id are dropped. */
+  function list<T>(path: string, map: (row: Row) => T | null): Promise<T[]> {
+    return run(path, (data) => {
+      if (!Array.isArray(data)) throw new UexError('shape', 'data is not an array');
+      const value: T[] = [];
+      for (const row of data) {
+        const mapped = isRow(row) ? map(row) : null;
+        if (mapped !== null) value.push(mapped);
+      }
+      return { value, rows: data.length, skipped: data.length - value.length };
+    });
+  }
+
+  return {
+    starSystems: () => list('star_systems', mapStarSystem),
+    terminals: () => list('terminals?type=commodity', mapTerminal),
+    commodities: () => list('commodities', mapCommodity),
+    vehicles: () => list('vehicles', mapVehicle),
+
+    async prices(terminalIds) {
+      if (terminalIds.length < 1 || terminalIds.length > MAX_PRICE_TERMINALS) {
+        throw new RangeError(`prices() takes 1 to ${MAX_PRICE_TERMINALS} terminal ids, got ${terminalIds.length}`);
+      }
+      return list(`commodities_prices?id_terminal=${terminalIds.join(',')}`, mapPrice);
+    },
+
+    async distancesFrom(terminalId) {
+      const routes = await list(`commodities_routes?id_terminal_origin=${terminalId}`, mapRoute);
+      // The same destination appears once per commodity; keep the first known distance.
+      const byDest = new Map<number, number>();
+      for (const { destId, gm } of routes) {
+        if (gm !== null && !byDest.has(destId)) byDest.set(destId, gm);
+      }
+      return [...byDest].map(([destId, gm]) => ({ destId, gm }));
+    },
+
+    distance(a, b) {
+      return run(`terminals_distances?id_terminal_origin=${a}&id_terminal_destination=${b}`, (data) => {
+        // UEX answers `data: false` for a pair it has no distance for.
+        if (data === false || data === null) return { value: null, rows: 0 };
+        if (!isRow(data)) throw new UexError('shape', 'data is not an object');
+        return { value: toNumberOrNull(data.distance), rows: 1 };
+      });
+    },
+  };
+}
