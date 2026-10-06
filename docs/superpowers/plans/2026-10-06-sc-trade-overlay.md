@@ -1827,3 +1827,111 @@ it('shows no base when the estimate equals what I saw', () => {
 - [ ] **Step 3: Реализовать** в порядке: типы и фабрики → `stock.ts` → миграция 2, клиент, кэш → `diary.stockStats` → `market`, `estimate`, `quantity` → `suggest` → `terminal-rows`. Строка лога `[suggest]` для каждой цены дополняется `stock` (если есть).
 - [ ] **Step 4: Запустить** — `npm test && npm run check` — Expected: PASS, 0 errors.
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: stock refill timer"`
+
+### Task 20: Управление мышью вместо хоткеев
+
+Реализует раздел 14.4 спеки поверх готовой задачи 2. Черновой образец низкоуровневого перехвата есть в ветке `spike/input-probe` (файл `src-tauri/src/probe.rs`) — оттуда берётся только знание, как ставить перехват и поток с циклом сообщений; сам диагностический код в основную ветку не переносится.
+
+**Files:**
+- Create: `src-tauri/src/keys.rs`, `src-tauri/src/input_hook.rs`, `src/platform/triggers.ts`
+- Delete: `src/platform/hotkeys.ts`
+- Modify: `src-tauri/src/lib.rs`, `src-tauri/src/logging.rs`, `src-tauri/Cargo.toml` (убрать `tauri-plugin-global-shortcut`), `src-tauri/capabilities/default.json`, `package.json` (убрать `@tauri-apps/plugin-global-shortcut`), `src/platform/window.ts`, `src/core/layout.ts`, `src/core/settings.ts`, `src/ui/App.svelte`
+- Test: `tests/core/layout.test.ts`, Rust-тесты в `keys.rs` и `input_hook.rs`
+
+**Interfaces:**
+- Consumes: `Logger`, `setMode`, `watchFocus`, команды `remember_foreground` / `restore_foreground` (задача 2).
+- Produces:
+```ts
+// src/core/layout.ts
+export const STRIP_SIZE: Size = { width: 260, height: 36 };          // было 520×32
+export function panelSideFor(corner: Corner): 'left' | 'right';      // левые углы → 'left', правые → 'right'
+
+// src/core/settings.ts — изменения
+// hotkeyPanel, hotkeyDepart, hotkeyArrive: по умолчанию '' (не назначено)
+// stripCorner: по умолчанию 'top-right'
+// поле panelSide удаляется: сторона панели следует из угла плашки
+
+// src/platform/window.ts
+export interface WindowLayout { panelWidth: number; stripCorner: Corner; showStrip: boolean; opacity: number }
+// setMode('strip'): окно кликабельно, фокус не берёт; setMode('panel'): сторона = panelSideFor(stripCorner)
+// геометрия считается от ОСНОВНОГО монитора (primaryMonitor, при null — currentMonitor)
+
+// src/platform/triggers.ts
+export type TriggerName = 'panel' | 'depart' | 'arrive';
+export function bindTriggers(keys: Record<TriggerName, string>, handlers: Record<TriggerName, () => void>, log: Logger): Promise<Record<TriggerName, string | null>>;
+// '' — клавиша не назначена, результат null; строка в результате — текст ошибки разбора
+```
+```rust
+// src-tauri/src/keys.rs
+pub struct KeyCombo { pub vk: u32, pub ctrl: bool, pub alt: bool, pub shift: bool }
+pub fn parse_key(text: &str) -> Result<KeyCombo, String>;   // "F8", "ScrollLock", "Pause", "Insert", "Ctrl+Alt+T", "Shift+F9"
+
+// src-tauri/src/input_hook.rs
+// команда: set_trigger_keys(panel: String, depart: String, arrive: String) -> Result<Vec<Option<String>>, String>
+//   пустая строка — не назначено; для каждой из трёх — None или текст ошибки разбора
+// событие: "input://trigger" с полезной нагрузкой { "name": "panel" | "depart" | "arrive" }
+pub fn matches(combo: &KeyCombo, vk: u32, ctrl: bool, alt: bool, shift: bool) -> bool;
+```
+
+Правила:
+
+- Перехват ставится, только если назначена хотя бы одна клавиша, и снимается, когда не осталась ни одна. Он живёт в своём потоке с циклом сообщений.
+- Процедура перехвата сравнивает нажатие только с назначенными сочетаниями. Для любой другой клавиши она ничего не читает, не сохраняет и не пишет в лог. Она всегда возвращает `CallNextHookEx` и никогда не «съедает» нажатие. Срабатывает только на нажатие, автоповтор игнорируется.
+- Модификаторы должны совпадать точно: `F8` не срабатывает при зажатом `Ctrl`.
+- Допустимые клавиши: `F1`–`F24`, `ScrollLock`, `Pause`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, буквы и цифры (только с `Ctrl` и/или `Alt`). Одна буква или цифра без модификатора — ошибка «нужен Ctrl или Alt».
+- Плашка — кнопка: клик открывает панель. В режиме плашки окно некликабельным не делается (`setIgnoreCursorEvents(false)`), `setFocusable(false)` остаётся.
+- Панель сворачивается, когда окно теряет фокус в режиме панели (причина в логе — `focus lost`), и в этом случае `restore_foreground` не вызывается. По `Esc` и по крестику — сворачивается и `restore_foreground` вызывается.
+- Если рядом с exe лежит файл `portable.flag`, добавляется вторая цель лога — файл `sc-trade.log` в папке exe.
+- В лог пишется: какие клавиши назначены (или что ни одна), установка и снятие перехвата, каждое срабатывание (имя триггера, не клавиша), монитор, на который поставлено окно.
+
+- [ ] **Step 1: Написать падающие тесты**
+
+```ts
+// tests/core/layout.test.ts — изменения
+it('strip is a small corner badge', () => {
+  expect(stripRect(m, 'top-right')).toEqual({ x: 1644, y: 16, width: 260, height: 36 });      // 1920 − 260 − 16
+  expect(stripRect(m, 'top-left')).toEqual({ x: 16, y: 16, width: 260, height: 36 });
+  expect(stripRect(m, 'bottom-right')).toEqual({ x: 1644, y: 1028, width: 260, height: 36 }); // 1080 − 36 − 16
+});
+it('the panel opens on the side of the strip', () => {
+  expect(panelSideFor('top-left')).toBe('left'); expect(panelSideFor('bottom-left')).toBe('left');
+  expect(panelSideFor('top-right')).toBe('right'); expect(panelSideFor('bottom-right')).toBe('right');
+});
+```
+```rust
+// src-tauri/src/keys.rs
+#[test] fn parses_function_and_named_keys() {
+    assert_eq!(parse_key("F8").unwrap(), KeyCombo { vk: 0x77, ctrl: false, alt: false, shift: false });
+    assert_eq!(parse_key("ScrollLock").unwrap().vk, 0x91);
+    assert_eq!(parse_key("Pause").unwrap().vk, 0x13);
+}
+#[test] fn parses_modifiers_in_any_order_and_case() {
+    let k = parse_key("alt+CTRL+t").unwrap();
+    assert_eq!((k.vk, k.ctrl, k.alt, k.shift), (0x54, true, true, false));
+    assert!(parse_key("Shift+F9").unwrap().shift);
+}
+#[test] fn rejects_bare_letters_unknown_keys_and_garbage() {
+    assert!(parse_key("T").is_err()); assert!(parse_key("5").is_err());
+    assert!(parse_key("Ctrl+").is_err()); assert!(parse_key("Banana").is_err()); assert!(parse_key("Ctrl+Alt").is_err());
+}
+// src-tauri/src/input_hook.rs
+#[test] fn matches_only_the_exact_combination() {
+    let f8 = parse_key("F8").unwrap();
+    assert!(matches(&f8, 0x77, false, false, false));
+    assert!(!matches(&f8, 0x77, true, false, false));   // лишний модификатор
+    assert!(!matches(&f8, 0x78, false, false, false));  // другая клавиша
+    let cat = parse_key("Ctrl+Alt+T").unwrap();
+    assert!(matches(&cat, 0x54, true, true, false)); assert!(!matches(&cat, 0x54, true, false, false));
+}
+```
+
+- [ ] **Step 2: Запустить** — `npm test -- layout` и `cargo test --manifest-path src-tauri/Cargo.toml` — Expected: FAIL.
+- [ ] **Step 3: Реализовать `layout.ts`, `keys.rs`, `input_hook.rs`; подключить команду и событие в `lib.rs`; убрать плагин глобальных хоткеев из `Cargo.toml`, `package.json`, `lib.rs` и `capabilities`; добавить цель лога для `portable.flag`.**
+- [ ] **Step 4: Реализовать `triggers.ts`, изменить `window.ts` и `settings.ts`, удалить `hotkeys.ts`.** `bindTriggers` вызывает `set_trigger_keys` и слушает `input://trigger`.
+- [ ] **Step 5: Переделать `App.svelte`:** плашка — кнопка с текстом «SC Trade» (клик открывает панель); в панели — заглушка с полем ввода и крестиком; панель сворачивается при потере фокуса; клавиши берутся из `DEFAULT_SETTINGS` (все пустые), для ручной проверки можно временно задать `F8`.
+- [ ] **Step 6: Запустить** — `npm test`, `npm run check`, `cargo test`, `cargo clippy` — Expected: PASS, 0 errors.
+- [ ] **Step 7: Собрать и проверить без игры**
+
+Run: `npm run tauri build -- --debug --no-bundle`. Положить рядом с exe пустой `portable.flag`, запустить, по файлу `sc-trade.log` рядом с exe убедиться: окно поставлено на основной монитор, плашка кликабельна и не берёт фокус, клавиши не назначены и перехват не установлен. Завершить процесс. Ввод с клавиатуры и мыши не автоматизировать.
+
+- [ ] **Step 8: Commit** — `git add -A && git commit -m "feat: mouse-first overlay — clickable strip, optional low-level key triggers"`
