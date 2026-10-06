@@ -10,7 +10,7 @@ import { createLogger, type Logger } from '../data/logger';
 import { getActiveRun } from '../data/repo/runs';
 import { saveSetting } from '../data/repo/settings';
 import { getMeta, loadDistances, loadReference } from '../data/repo/uex-cache';
-import { loadMarket } from '../data/suggest';
+import { loadMarket, type SuggestDeps } from '../data/suggest';
 import { syncPrices, syncReference, type SyncDeps } from '../data/sync';
 import type { UexClient } from '../data/uex-client';
 import { applyLogLevel } from '../platform/tauri-logger';
@@ -19,16 +19,22 @@ import { setMode, watchFocus, type SetModeOptions, type WindowLayout, type Windo
 import { createRequestQueue } from './vm/request-queue';
 import { validateSetting } from './vm/settings-validation';
 import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, syncPlan } from './vm/sync-plan';
+import { triggerErrorText } from './vm/trigger-error';
 import { uexErrorText } from './vm/uex-error';
 
 // The one application state. Everything the screens show lives here, and every action of the player
 // goes through a method of `app`, which logs it under `ui`. Later tasks add their fields and methods
 // to this class (recording prices, suggestions, trades, history) and reuse the pieces below:
-//  - `deps` is the single place of the dependencies (database, logger, UEX client, clock);
-//  - `uexCall` is the single queue of everything that can touch UEX: the syncs, and every suggestion
-//    call that may fetch distances. Requests to UEX are strictly sequential project-wide, so none of
-//    them may be started outside of it;
-//  - `reloadMarket()` refreshes the market after anything wrote prices.
+//  - the dependencies (database, logger, UEX client, clock) live in one place, `#data` + `#log`; the
+//    data services take them through `#syncDeps()` (a private view of that place), `suggestDeps()`, and
+//    the trade deps a later task adds next to it. The raw UEX client is never handed out;
+//  - `withUex(job)` is THE entry point for everything that can touch UEX: the syncs, and every suggestion
+//    call that may fetch distances (`suggestFrom`, `suggestTo`, `ensureDistances`). Requests to UEX are
+//    strictly sequential project-wide, so none of them may run outside of it. A job must never call
+//    `withUex` itself, nor a method that does (`syncReferenceNow`, `syncPricesNow`, `refreshReference`):
+//    the inner call would wait for the queue slot the outer job holds, and the queue would deadlock;
+//  - `reloadMarket()` refreshes the market after anything wrote prices;
+//  - UEX health is tracked per sync (`referenceOk`, `pricesOk`); `uexOk` is both together.
 
 export type Tab = 'terminal' | 'run' | 'routes' | 'settings';
 export type Phase = 'booting' | 'ready' | 'failed';
@@ -55,8 +61,10 @@ class AppState {
   /** The active run; nothing writes runs yet, the strip and the run tab read it. */
   activeRun = $state.raw<RunWithEvents | null>(null);
   pricesSyncedAt = $state<number | null>(null);
-  /** False after any failed UEX sync; true again after the next successful one. */
-  uexOk = $state(true);
+  /** The last reference sync worked (true until one fails; true again after the next good one). */
+  referenceOk = $state(true);
+  /** The last price sync worked completely (a sync with unfetched terminals counts as failed). */
+  pricesOk = $state(true);
   /** Unix seconds, updated once a second. */
   now = $state(nowSec());
 
@@ -74,10 +82,11 @@ class AppState {
   /** The reference is being downloaded by the button. */
   referenceBusy = $state(false);
 
-  /** The queue of everything that can touch UEX. */
-  readonly uexCall = createRequestQueue();
-
   // ---- internals --------------------------------------------------------------------------------
+  /** The queue of everything that can touch UEX; reached only through `withUex`. */
+  readonly #uexQueue = createRequestQueue();
+  /** Binding the trigger keys is one job at a time: two overlapping changes must not leave two listeners. */
+  readonly #triggerQueue = createRequestQueue();
   #log: Logger = createLogger({ write() {} });
   #data: DataDeps | null = null;
   /** The mode being switched to; it leads `mode` while a switch is in progress. */
@@ -108,10 +117,36 @@ class AppState {
     this.#data = data;
   }
 
-  /** Database, UEX client, logger and clock, in the shape the data services take. */
-  get deps(): SyncDeps {
+  /** Both syncs worked (or have not failed yet). The header says "UEX недоступен" when this is false. */
+  get uexOk(): boolean {
+    return this.referenceOk && this.pricesOk;
+  }
+
+  /** Database, UEX client, logger and clock, in the shape the data services take. Private on purpose. */
+  #syncDeps(): SyncDeps {
     if (this.#data === null) throw new Error('the database is not open yet');
     return { ...this.#data, log: this.#log };
+  }
+
+  /**
+   * The one entry point for anything that may touch UEX: runs `job` after every job queued before it.
+   * A job must not call `withUex` or the sync methods itself (see the header of this file).
+   */
+  withUex<T>(job: () => Promise<T>): Promise<T> {
+    return this.#uexQueue(job);
+  }
+
+  /**
+   * What `suggestFrom` / `suggestTo` need: the data services' dependencies plus the reference and the
+   * settings as they are now. Run the call itself inside `withUex`: it may fetch distances.
+   */
+  suggestDeps(): SuggestDeps {
+    return {
+      ...this.#syncDeps(),
+      reference: this.reference,
+      settings: this.settings,
+      ownMedian: new Map(), // filled by the statistics task
+    };
   }
 
   /** Applies the loaded settings; the viewed terminal starts at the current location. */
@@ -144,14 +179,14 @@ class AppState {
 
   /** Reference, market, distances and the active run, from the database. Throws when the database does. */
   async loadFromDb(): Promise<void> {
-    const { db } = this.deps;
+    const { db } = this.#syncDeps();
     this.reference = await loadReference(db);
     await this.#loadMarketData();
     this.activeRun = await getActiveRun(db);
   }
 
   async #loadMarketData(): Promise<void> {
-    const { db } = this.deps;
+    const { db } = this.#syncDeps();
     this.market = await loadMarket(db);
     this.distances = await loadDistances(db);
     this.pricesSyncedAt = metaSeconds(await getMeta(db, META_PRICES_SYNCED_AT));
@@ -171,23 +206,30 @@ class AppState {
 
   /**
    * Downloads the reference and loads it. Never throws: `null` when it worked, otherwise the Russian
-   * sentence to show. A failure marks UEX unreachable.
+   * sentence to show. A failed download marks the reference sync as failed (`referenceOk`); the prices
+   * keep their own health.
    */
   async syncReferenceNow(): Promise<string | null> {
     try {
-      await this.uexCall(() => syncReference(this.deps));
-      this.reference = await loadReference(this.deps.db);
+      await this.withUex(() => syncReference(this.#syncDeps()));
     } catch (err) {
-      this.uexOk = false;
+      this.referenceOk = false;
       this.#log.warn('ui', 'reference sync failed', { err });
       return uexErrorText(err);
     }
-    this.uexOk = true;
+    this.referenceOk = true;
+    try {
+      this.reference = await loadReference(this.#syncDeps().db);
+    } catch (err) {
+      // the download worked; it is the local database that failed
+      this.#log.error('ui', 'cannot load the reference after the sync', { err });
+      return 'Не удалось прочитать справочник из локальной базы. Подробности в логе.';
+    }
     await this.reloadMarket();
     return null;
   }
 
-  /** Downloads the prices and reloads the market. Never throws; a failure marks UEX unreachable. */
+  /** Downloads the prices and reloads the market. Never throws; a failure marks the price sync as failed (`pricesOk`). */
   async syncPricesNow(): Promise<void> {
     if (this.#pricesInFlight) {
       this.#log.debug('ui', 'price sync already running, skipped');
@@ -195,10 +237,10 @@ class AppState {
     }
     this.#pricesInFlight = true;
     try {
-      const { failed } = await this.uexCall(() => syncPrices(this.deps));
-      this.uexOk = failed === 0;
+      const { failed } = await this.withUex(() => syncPrices(this.#syncDeps()));
+      this.pricesOk = failed === 0;
     } catch (err) {
-      this.uexOk = false;
+      this.pricesOk = false;
       this.#log.warn('ui', 'price sync failed', { err });
     } finally {
       this.#pricesInFlight = false;
@@ -216,7 +258,7 @@ class AppState {
     this.#backgroundStarted = true;
     setInterval(() => void this.syncPricesNow(), PRICE_SYNC_INTERVAL_MS);
 
-    const { db, now } = this.deps;
+    const { db, now } = this.#syncDeps();
     let plan = { reference: false, prices: false };
     try {
       plan = syncPlan(
@@ -322,18 +364,35 @@ class AppState {
 
   // ---- triggers ---------------------------------------------------------------------------------
 
-  /** Binds the optional trigger keys from the settings; the outcome per key lands in `triggerErrors`. */
-  async applyTriggers(): Promise<void> {
-    const s = this.settings;
-    this.triggerErrors = await bindTriggers(
-      { panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive },
-      {
-        panel: () => void this.toggleMode(),
-        depart: () => this.#log.info('ui', 'depart trigger, not wired yet'),
-        arrive: () => this.#log.info('ui', 'arrive trigger, not wired yet'),
-      },
-      this.#log,
-    );
+  /**
+   * Binds the optional trigger keys from the settings; what is wrong with each key lands in
+   * `triggerErrors` as text that is fit for the screen (the raw text of a failure stays in the log).
+   * One binding at a time, each with the settings as they are when its turn comes.
+   */
+  applyTriggers(): Promise<void> {
+    return this.#triggerQueue(async () => {
+      const s = this.settings;
+      const outcome = await bindTriggers(
+        { panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive },
+        {
+          panel: () => void this.toggleMode(),
+          depart: () => this.#log.info('ui', 'depart trigger, not wired yet'),
+          arrive: () => this.#log.info('ui', 'arrive trigger, not wired yet'),
+        },
+        this.#log,
+      );
+      const shown: Record<TriggerName, string | null> = {
+        panel: triggerErrorText(outcome.panel),
+        depart: triggerErrorText(outcome.depart),
+        arrive: triggerErrorText(outcome.arrive),
+      };
+      for (const name of Object.keys(outcome) as TriggerName[]) {
+        if (outcome[name] !== shown[name]) {
+          this.#log.warn('ui', 'trigger error not shown as it is', { trigger: name, raw: outcome[name], shown: shown[name] });
+        }
+      }
+      this.triggerErrors = shown;
+    });
   }
 
   // ---- actions of the player ----------------------------------------------------------------------
@@ -358,7 +417,7 @@ class AppState {
 
   /** "Сменил сервер": own prices older than now are cold from this moment on. */
   async serverChanged(): Promise<void> {
-    const ts = this.deps.now();
+    const ts = this.#syncDeps().now();
     this.#log.info('ui', 'server changed', { ts });
     if ((await this.updateSetting('serverChangedAt', ts)) === null) {
       this.notify('Отмечено: сервер сменился, свои цены до этого момента считаются холодными.', 'info');
@@ -380,7 +439,7 @@ class AppState {
 
     this.#log.info('ui', 'change setting', { key, from: this.settings[key], to: value });
     try {
-      await saveSetting(this.deps.db, this.#log, key, value);
+      await saveSetting(this.#syncDeps().db, this.#log, key, value);
     } catch (err) {
       this.#log.error('ui', 'cannot save the setting', { key, err });
       const text = 'Не удалось сохранить настройку. Подробности в логе.';

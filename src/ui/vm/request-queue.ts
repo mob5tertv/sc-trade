@@ -2,7 +2,7 @@
  * A queue that runs jobs one after another, in the order they were added, whether the previous job
  * succeeded or failed. Every caller gets the result (or the error) of its own job.
  *
- * Every request to UEX in the application goes through one such queue (see `app.uexCall`):
+ * Every request to UEX in the application goes through one such queue (see `app.withUex`):
  * the network is throttled, so requests are strictly sequential project-wide.
  */
 export interface RequestQueue {
