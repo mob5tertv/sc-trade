@@ -1,0 +1,130 @@
+/*
+ * The look of the overlay: dark, slightly translucent, dense, readable at a glance.
+ * Every colour, gap and type size comes from the custom properties below (UI contract).
+ * `--overlay-opacity` is set on the document root by the window layer (platform/window.ts) from the
+ * user's setting, so `--sc-bg` always carries it.
+ */
+:root {
+  color-scheme: dark;
+
+  --sc-bg: rgb(16 18 24 / var(--overlay-opacity, 0.92));
+  --sc-surface: rgb(255 255 255 / 0.07);
+  --sc-surface-2: rgb(255 255 255 / 0.14);
+  --sc-border: rgb(255 255 255 / 0.16);
+  --sc-text: #e8ebf2;
+  --sc-muted: #98a1b3;
+  --sc-accent: #5aa9ff;
+  --sc-good: #4cd38a;
+  --sc-bad: #ff6b6b;
+  --sc-warn: #ffb454;
+
+  /* temperature of a price: hot, warm, cooling, cold (the cold colour is also the UEX badge) */
+  --sc-hot: #ff6b4a;
+  --sc-warm: #ffa94d;
+  --sc-cooling: #6ec1ff;
+  --sc-cold: #8b95a8;
+
+  --sc-radius: 6px;
+  --sc-gap: 8px;
+  --sc-font: 13px;
+  --sc-font-sm: 11.5px;
+  --sc-mono: ui-monospace, 'Cascadia Mono', 'Consolas', 'Liberation Mono', monospace;
+  --sc-font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  /* the window is transparent: only the strip and the panel paint a background */
+  background: transparent;
+  color: var(--sc-text);
+  font: var(--sc-font) / 1.35 var(--sc-font-family);
+}
+
+#app {
+  height: 100%;
+}
+
+:focus-visible {
+  outline: 2px solid var(--sc-accent);
+  outline-offset: 1px;
+}
+
+/* a thin scrollbar that does not eat the width of the panel */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sc-border) transparent;
+}
+
+/* Controls of the application shell (header, tabs, settings). */
+.sc-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--sc-border);
+  border-radius: var(--sc-radius);
+  background: var(--sc-surface);
+  color: var(--sc-text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sc-btn:hover:not(:disabled) {
+  background: var(--sc-surface-2);
+}
+
+.sc-btn:disabled {
+  color: var(--sc-muted);
+  cursor: default;
+}
+
+.sc-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.sc-btn--icon {
+  width: 28px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.sc-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--sc-border);
+  border-radius: var(--sc-radius);
+  background: var(--sc-surface);
+  color: var(--sc-text);
+  font: inherit;
+}
+
+.sc-input::placeholder {
+  color: var(--sc-muted);
+}
+
+.sc-input[aria-invalid='true'] {
+  border-color: var(--sc-bad);
+}
+
+/* the drop-down list of a select is drawn by the system: keep it readable on the dark theme */
+.sc-input option {
+  background: #1b1e27;
+  color: var(--sc-text);
+}
+
+.sc-num {
+  font-family: var(--sc-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
