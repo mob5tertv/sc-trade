@@ -17,4 +17,4 @@ const log = createLogger(tauriSink());
 installCrashHandlers(log);
 log.info('app', 'start', { version: await appVersion() });
 
-mount(App, { target: document.getElementById('app')! });
+mount(App, { target: document.getElementById('app')!, props: { log } });

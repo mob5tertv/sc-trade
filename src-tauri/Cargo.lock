@@ -85,6 +85,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-os",
  "tauri-plugin-sql",
+ "windows",
 ]
 
 [[package]]

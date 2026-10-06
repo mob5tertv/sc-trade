@@ -4,7 +4,8 @@ use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
 const LOG_FILE_NAME: &str = "sctrade";
 const MAX_FILE_SIZE: u128 = 5_000_000;
-const KEEP_FILES: usize = 5;
+// `KeepSome(n)` keeps `n` archives next to the active file, so 4 gives five log files in total.
+const KEEP_FILES: usize = 4;
 
 /// Log plugin shared by Rust and the webview: one file in the app log directory
 /// (`%LOCALAPPDATA%\com.sctrade.app\logs\sctrade.log`) plus stdout.

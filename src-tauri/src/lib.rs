@@ -1,5 +1,7 @@
 mod backup;
+mod focus;
 mod logging;
+mod tray;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -13,9 +15,19 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
+        .manage(focus::ForegroundState::default())
+        .setup(|app| {
+            // Without a tray icon the app still works (hotkeys), so a failure is logged, not fatal.
+            if let Err(err) = tray::setup(app.handle()) {
+                log::error!("[tray] cannot create the tray icon: {err}");
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             logging::set_log_level,
-            backup::backup_db
+            backup::backup_db,
+            focus::remember_foreground,
+            focus::restore_foreground
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");
