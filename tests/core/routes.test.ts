@@ -3,25 +3,29 @@ import { quantity, routesFrom, routesTo, travelSec } from '../../src/core/routes
 import { buildMarket } from '../../src/core/market';
 import { distKey, pairKey } from '../../src/core/types';
 import { obs } from '../helpers/factories';
-import { ctx, GOLD, market, NOW, withBuy, withSell } from '../helpers/route-fixtures';
+import { ctx, GOLD, market, NOW, withBuy, withOwnSellScu, withSell, withUexSellScu } from '../helpers/route-fixtures';
 
 // Terminals: A=1 (system 68, planet 10), B=2 (68, 20), C=3 (68, 20), D=4 (99, 30), A2=5 (68, 10). Commodity Gold=10.
 // A: own hot BUY 6120, stock 340. B: UEX SELL 6900 (6400–7100). C: own warm SELL 6840.
+// The quantity on a SELL side is the buyer's inventory (spec 14.5): it never limits a trip.
 // D: UEX SELL 9000. Distances: A–B 59, A–C 61.
 describe('quantity', () => {
+  it('quantity is the smallest of free space, stock at the origin and budget', () => {
+    expect(quantity({ freeScu: 696, stockScu: 340, budget: null, buyPrice: 6120 })).toBe(340);
+    expect(quantity({ freeScu: 696, stockScu: null, budget: 1_000_000, buyPrice: 6120 })).toBe(163);
+    expect(quantity({ freeScu: 696, stockScu: 0, budget: null, buyPrice: 6120 })).toBe(0);
+  });
+
   it.each([
-    [{ freeScu: 696, stockScu: 340, demandScu: null, budget: null, buyPrice: 6120 }, 340],
-    [{ freeScu: 696, stockScu: null, demandScu: 200, budget: null, buyPrice: 6120 }, 200],
-    [{ freeScu: 696, stockScu: null, demandScu: null, budget: 1_000_000, buyPrice: 6120 }, 163],
-    [{ freeScu: 696, stockScu: null, demandScu: null, budget: null, buyPrice: 6120 }, 696],
-    [{ freeScu: -5, stockScu: 340, demandScu: null, budget: null, buyPrice: 6120 }, 0],
+    [{ freeScu: 696, stockScu: null, budget: null, buyPrice: 6120 }, 696],
+    [{ freeScu: -5, stockScu: 340, budget: null, buyPrice: 6120 }, 0],
     // a budget that cannot afford a single unit leaves nothing to buy
-    [{ freeScu: 696, stockScu: null, demandScu: null, budget: 6000, buyPrice: 6120 }, 0],
+    [{ freeScu: 696, stockScu: null, budget: 6000, buyPrice: 6120 }, 0],
   ])('quantity', (i, q) => expect(quantity(i)).toBe(q));
 
-  it('quantity: a known zero limits, only null is unknown', () => {
-    expect(quantity({ freeScu: 696, stockScu: 0, demandScu: null, budget: null, buyPrice: 6120 })).toBe(0);
-    expect(quantity({ freeScu: 696, stockScu: null, demandScu: 0, budget: null, buyPrice: 6120 })).toBe(0);
+  it('quantity: a known zero stock limits, only null is unknown', () => {
+    expect(quantity({ freeScu: 696, stockScu: 0, budget: null, buyPrice: 6120 })).toBe(0);
+    expect(quantity({ freeScu: 696, stockScu: null, budget: null, buyPrice: 6120 })).toBe(696);
   });
 });
 
@@ -111,6 +115,28 @@ describe('routesFrom edge cases', () => {
     expect(r.trace.kept).toBe(0);
   });
 
+  it('an empty buyer is the best case, not a blocker', () => {
+    // buyer C (3): my own sell observation 6840 with the quantity 0 ("out of stock")
+    const r = routesFrom(withOwnSellScu(market, 3, 10, 0), [1], 1, ctx);
+    expect(r.options.find(o => o.destId === 3)).toMatchObject({ qty: 340, profit: 244800 });
+    expect(r.trace.dropped.zeroQty).toBe(0);
+  });
+
+  it('the buyer inventory reported by UEX does not limit the load', () => {
+    expect(routesFrom(withUexSellScu(market, 2, 10, 4), [1], 1, ctx).options.find(o => o.destId === 2)!.qty).toBe(340);
+  });
+
+  it('a large recorded buyer inventory does not limit the load either, and stays on the option as information', () => {
+    const o = routesFrom(withOwnSellScu(market, 3, 10, 5), [1], 1, ctx).options.find(x => x.destId === 3)!;
+    expect(o).toMatchObject({ qty: 340, profit: 244800, sell: { scu: 5 } });
+  });
+
+  it('counts a budget that buys nothing as zero quantity', () => {
+    const r = routesFrom(market, [1], 1, { ...ctx, settings: { ...ctx.settings, budget: 6000 } });
+    expect(r.options).toEqual([]);
+    expect(r.trace.dropped.zeroQty).toBe(2);
+  });
+
   it('counts kept routes before the topN cut', () => {
     const r = routesFrom(market, [1], 1, { ...ctx, settings: { ...ctx.settings, topN: 1 } });
     expect(r.options).toHaveLength(1);
@@ -159,6 +185,13 @@ describe('routesTo', () => {
     const gold = routesTo(m2, 2, c, GOLD);
     expect(gold.options.map(o => o.commodityId)).toEqual([GOLD]);
     expect(gold.options[0]).toMatchObject({ originId: 1, destId: 2, profit: 265200 });
+  });
+
+  it('does not drop an empty buyer when the list is built for the buyer itself', () => {
+    const r = routesTo(withOwnSellScu(market, 3, 10, 0), 3, ctx);
+    expect(r.options).toHaveLength(1);
+    expect(r.options[0]).toMatchObject({ originId: 1, destId: 3, qty: 340, profit: 244800, sell: { scu: 0 } });
+    expect(r.trace.dropped.zeroQty).toBe(0);
   });
 
   it('counts the destination terminal as unknown when it left the reference', () => {

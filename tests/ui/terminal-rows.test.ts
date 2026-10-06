@@ -3,6 +3,7 @@ import { badgeText, terminalRows } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
 import { obs, px, ref } from '../helpers/factories';
+import { withOwnSellScu } from '../helpers/route-fixtures';
 import { NOW, ctx, est, market, marketWithStock, withOwnBuy, withUexRange } from '../helpers/terminal-fixtures';
 
 describe('terminalRows', () => {
@@ -41,6 +42,25 @@ describe('terminalRows', () => {
     const empty = (ageMin: number) => terminalRows(withOwnBuy(marketWithStock, 1, 10, 6120, NOW - ageMin * 60, 0), ref, 1, ctx)[0].buy;
     expect(empty(0)).toMatchObject({ own: 6120, ownScu: 0, ownScuBase: null, hintScu: null });
     expect(empty(10)).toMatchObject({ ownScu: 45, ownScuBase: { scu: 0, age: '10 мин' } });      // 340 / 75 × 10
+  });
+
+  it('shows the buyer inventory on the sell side without an estimate', () => {
+    const rows = terminalRows(withOwnSellScu(market, 1, 10, 3048), ref, 1, ctx);
+    expect(rows.find(r => r.commodityId === 10)!.sell).toMatchObject({ ownScu: 3048, ownScuBase: null, ownScuRate: null });
+  });
+
+  it('shows an empty buyer as 0 and never moves the recorded inventory with the refill timer', () => {
+    const sellOf = (scu: number | null) => terminalRows(
+      buildMarket(
+        [px(1, 10, { sell: { avgWeek: 6500 }, scuSell: 90, scuSellMax: 4000, dateModified: NOW - 7200 })],
+        [obs({ ts: NOW - 20 * 60, terminalId: 1, commodityId: 10, side: 'sell', price: 6600, scu })],
+      ), ref, 1, ctx,
+    )[0].sell;
+    // twenty minutes old, a maximum of 4000 known: the buy side would have moved it, the sell side keeps what was recorded
+    expect(sellOf(0)).toMatchObject({ own: 6600, ownScu: 0, ownScuBase: null, ownScuRate: null, hintScu: null });
+    expect(sellOf(100)).toMatchObject({ own: 6600, ownScu: 100, ownScuBase: null, ownScuRate: null, hintScu: null });
+    // no quantity recorded: the UEX one stays a grey hint, never my own
+    expect(sellOf(null)).toMatchObject({ own: 6600, ownScu: null, ownScuBase: null, ownScuRate: null, hintScu: 90 });
   });
 
   it('demotes a cold own value to a hint', () => {

@@ -1,5 +1,5 @@
 import { estimate } from './estimate';
-import { quantity, travelSec } from './routes';
+import { travelSec } from './routes';
 import type { RouteCtx } from './routes';
 import { distKey, pairKey } from './types';
 import type { CargoLine, Estimate, Market } from './types';
@@ -8,12 +8,14 @@ const SEC_PER_HOUR = 3600;
 const MAX_ALTERNATIVES = 3;
 
 export interface SellHere {
+  /** The whole cargo line: what a terminal reports holding already never limits a sale. */
   qty: number; profit: number; roi: number;
   /** Profit over the time already spent; `null` when no time has passed. */
   uecPerHour: number | null;
 }
 
 export interface SellAlternative {
+  /** `sell.scu` is what the buyer already holds (information only); `qty` is the whole cargo line. */
   destId: number; sell: Estimate; qty: number; expectedProfit: number;
   /** The flight from here; `null` when neither my own median nor the distance is known. */
   extraSec: number | null;
@@ -43,22 +45,22 @@ function byExpectedRate(a: SellAlternative, b: SellAlternative): number {
 
 /**
  * One commodity in the hold, the player standing at `hereId` where the real price is `actualPrice`
- * and `elapsedSec` have gone since the run began. `here` is selling now (at most `hereDemand` SCU when
- * that is known). `alternatives` are up to three other terminals that buy the commodity, best expected
- * UEC per hour of the whole run first and those without a flight time last. The system filter and
- * terminals missing from the reference work as in `routesFrom`; an alternative may lose money, because
- * so may selling here.
+ * and `elapsedSec` have gone since the run began. `here` is selling the whole cargo now. `alternatives`
+ * are up to three other terminals that buy the commodity, best expected UEC per hour of the whole run
+ * first and those without a flight time last, each for the whole cargo too: the quantity shown at a
+ * terminal is what it already holds, not what it would buy (spec 14.5), so it limits no sale. The system
+ * filter and terminals missing from the reference work as in `routesFrom`; an alternative may lose money,
+ * because so may selling here.
  */
 export function sellOrContinue(
-  m: Market, line: CargoLine, hereId: number, actualPrice: number, hereDemand: number | null, elapsedSec: number, ctx: RouteCtx,
+  m: Market, line: CargoLine, hereId: number, actualPrice: number, elapsedSec: number, ctx: RouteCtx,
 ): { here: SellHere; alternatives: SellAlternative[] } {
   const elapsed = Math.max(0, elapsedSec);
   const margin = actualPrice - line.avgBuyPrice;
 
-  const hereQty = quantity({ freeScu: line.scu, stockScu: null, demandScu: hereDemand, budget: null, buyPrice: line.avgBuyPrice });
-  const hereProfit = hereQty * margin;
+  const hereProfit = line.scu * margin;
   const here: SellHere = {
-    qty: hereQty, profit: hereProfit,
+    qty: line.scu, profit: hereProfit,
     roi: line.avgBuyPrice > 0 ? margin / line.avgBuyPrice : 0,
     uecPerHour: perHour(hereProfit, elapsed),
   };
@@ -74,8 +76,7 @@ export function sellOrContinue(
     const sell = estimate(m, destId, line.commodityId, 'sell', ctx);
     if (!sell) continue;
 
-    const qty = quantity({ freeScu: line.scu, stockScu: null, demandScu: sell.scu, budget: null, buyPrice: line.avgBuyPrice });
-    if (qty === 0) continue;
+    const qty = line.scu;
     const extraSec = flightSec(ctx, hereId, destId);
     const totalSec = extraSec === null ? null : elapsed + extraSec;
     const expectedProfit = qty * (sell.price - line.avgBuyPrice);

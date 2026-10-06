@@ -41,11 +41,11 @@ export function withUexSell(m: Market, terminalId: number, commodityId: number, 
 
 export const market: Market = withUexSell(buildMarket([], []), 2, GOLD, 6900, 6400, 7100);
 
-/** Copy of the market with my own SELL observation made at `ts`. */
-export function withOwnSell(m: Market, terminalId: number, commodityId: number, price: number, ts: number): Market {
+/** Copy of the market with my own SELL observation made at `ts`; `scu` is the buyer's inventory recorded with it (0 is "out of stock"). */
+export function withOwnSell(m: Market, terminalId: number, commodityId: number, price: number, ts: number, scu: number | null = null): Market {
   return buildMarket(
     [...m.uex.values()],
-    [...m.own.values(), obs({ id: m.own.size + 1, ts, terminalId, commodityId, side: 'sell', price, scu: null })],
+    [...m.own.values(), obs({ id: m.own.size + 1, ts, terminalId, commodityId, side: 'sell', price, scu })],
   );
 }
 

@@ -97,9 +97,11 @@ async function rank(
 const round = (value: number, digits: number): number => Number(value.toFixed(digits));
 
 function describeOption(d: SuggestDeps, o: RouteOption) {
-  // `stock` is the refill-timer estimate of my own quantity; a price without one (UEX) has no such key.
+  // `scu` is the quantity shown with the price: the stock at the seller on the buy side, what the buyer already holds
+  // on the sell side (information only, it limits no trip). `stock` is the refill-timer estimate of my own stock at
+  // a seller; a price without one (UEX, or any sell side) has no such key.
   const price = (e: Estimate) => ({
-    price: e.price, source: e.source, temp: e.temp, ageSec: e.ageSec,
+    price: e.price, source: e.source, temp: e.temp, ageSec: e.ageSec, scu: e.scu,
     ...(e.stock === null ? {} : { stock: { ...e.stock, ratePerMin: round(e.stock.ratePerMin, 2) } }),
   });
   return {

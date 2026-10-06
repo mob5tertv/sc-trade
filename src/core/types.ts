@@ -57,8 +57,8 @@ export interface Estimate {
   source: 'own' | 'uex'; temp: Temp | null; ageSec: number;
   ownLast: { price: number; ageSec: number } | null;   // своё холодное, справочно
   uexRange: { low: number; high: number } | null;      // рядом с «остывает»
-  scu: number | null;
-  stock: StockEstimate | null;   // не null, когда scu получено из своего наблюдения
+  scu: number | null;            // на закупке — остаток у продавца; на продаже — склад покупателя (справка, ничего не ограничивает)
+  stock: StockEstimate | null;   // только на закупке и только когда scu получено из своего наблюдения; на продаже всегда null
 }
 
 export type RunEventType = 'buy' | 'sell' | 'depart' | 'arrive';

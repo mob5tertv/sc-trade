@@ -35,6 +35,13 @@ describe('stripModel', () => {
     expect(stripModel(active, market, ref, { ...s, targetTerminalId: null }, ctx)).toMatchObject({ target: null, expect: null, rate: null });
     expect(stripModel(active, market, ref, { ...s, targetTerminalId: 777 }, ctx)).toMatchObject({ target: null, expect: null, rate: null });
   });
+  it('does not let the inventory recorded at the target change the expectation or the rate', () => {
+    // 96 SCU Gold; the target's own price 6840 with "0 SCU, out of stock" is the best buyer, not a reason to sell less
+    const [empty, stocked, unknown] = [0, 5000, null].map(scu => stripModel(active, withOwnSell(market, 2, 10, 6840, NOW - 60, scu), ref, toTarget2, ctx));
+    expect(empty).toMatchObject({ expect: `ждём 6${NBSP}840`, rate: '≈ 245k/ч' });      // 96×720 = 69 120 per max(872, 1015) s
+    expect(stocked).toEqual(empty);
+    expect(unknown).toEqual(empty);
+  });
   it('lists mixed cargo', () => {
     expect(stripModel(mixedRun, market, ref, s, ctx)).toMatchObject({ cargo: 'GOLD 96 SCU, TITA 40 SCU' });
   });

@@ -30,9 +30,9 @@ const positive = (n: number | null | undefined): number | null => (n !== null &&
 const ageOf = (ts: number, now: number): number => Math.max(0, now - ts);
 
 /**
- * How much is there now, counted from my own reading `own` that saw `baseScu`. The largest stock is the
- * bigger of what my diary has seen and what UEX has seen (a zero means unknown); the rate is the one
- * learned from my diary.
+ * How much stock a seller (BUY side) has now, counted from my own reading `own` that saw `baseScu`. The
+ * largest stock is the bigger of what my diary has seen and what UEX has seen (a zero means unknown); the
+ * rate is the one learned from my diary.
  */
 function stockNow(m: Market, own: Observation, baseScu: number, uexMax: number, ctx: EstimateCtx): StockEstimate {
   const stats = m.stock.get(obsKey(own.terminalId, own.commodityId, own.side));
@@ -49,15 +49,20 @@ function stockNow(m: Market, own: Observation, baseScu: number, uexMax: number, 
  * The own latest observation wins unless it is cold; then UEX statistics take over and the own
  * price is kept for reference. A cold own price with no usable UEX row is still returned
  * (`source: 'own'`, `temp: 'cold'`). The quantity follows the same rule: own if not cold, else UEX.
- * My own quantity is a reading of the past, so it is brought up to date with the refill timer
- * (`stock`); a zero there is a known empty stock, only `null` is unknown. A UEX quantity has no timer.
+ * What the quantity means depends on the side (spec 14.5):
+ *  - BUY: the stock at the seller, which can be bought. My own reading is a reading of the past, so it is
+ *    brought up to date with the refill timer (`stock`); a zero there is a known empty stock, only `null`
+ *    is unknown.
+ *  - SELL: what the buyer already holds of the commodity (zero: out of stock, the best buyer). It is shown
+ *    as recorded, a zero included, with no timer (`stock` is `null`), and it limits nothing.
+ * A UEX quantity has no timer and a zero there means "unknown", on both sides.
  */
 export function estimate(m: Market, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): Estimate | null {
   const own = m.own.get(obsKey(terminalId, commodityId, side));
   const row = m.uex.get(priceKey(terminalId, commodityId));
   const range = row ? priceRange(row[side]) : null;
   const uexScu = row ? positive(side === 'buy' ? row.scuBuy : row.scuSell) : null;
-  const uexMax = row ? (side === 'buy' ? row.scuBuyMax : row.scuSellMax) : 0;
+  const uexMax = row && side === 'buy' ? row.scuBuyMax : 0;
 
   const fromUex = (ownLast: Estimate['ownLast']): Estimate | null => (row && range
     ? { ...range, source: 'uex', temp: null, ageSec: ageOf(row.dateModified, ctx.now), ownLast, uexRange: null, scu: uexScu, stock: null }
@@ -68,13 +73,14 @@ export function estimate(m: Market, terminalId: number, commodityId: number, sid
   const temp = temperature(own.ts, ctx.now, ctx.thresholds, ctx.serverChangedAt);
   const ownAge = ageOf(own.ts, ctx.now);
   if (temp !== 'cold') {
-    const stock = own.scu === null ? null : stockNow(m, own, own.scu, uexMax, ctx);
+    const stock = side === 'buy' && own.scu !== null ? stockNow(m, own, own.scu, uexMax, ctx) : null;
+    const ownScu = side === 'buy' ? stock?.scu : own.scu;      // without a reading of my own the UEX quantity stands in
     return {
       price: own.price, low: own.price, high: own.price,
       source: 'own', temp, ageSec: ownAge,
       ownLast: null,
       uexRange: temp === 'cooling' && range ? { low: range.low, high: range.high } : null,
-      scu: stock === null ? uexScu : stock.scu,
+      scu: ownScu ?? uexScu,
       stock,
     };
   }

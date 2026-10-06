@@ -1,6 +1,6 @@
 import { buildMarket } from '../../src/core/market';
 import type { RouteCtx } from '../../src/core/routes';
-import { distKey, priceKey } from '../../src/core/types';
+import { distKey } from '../../src/core/types';
 import type { CargoLine, Market, UexSideStats } from '../../src/core/types';
 import { obs, px } from './factories';
 import { ctx as routeCtx, GOLD, NOW, withSell } from './route-fixtures';
@@ -39,12 +39,4 @@ export const sellCtx: RouteCtx = { ...routeCtx, distances: new Map<string, numbe
  */
 export function withManySellers(m: Market): Market {
   return withSell(withSell(withSell(m, 1, 7200), 5, 7100), 6, 7000);
-}
-
-/** Copy of the market where `terminalId` can take only `scu` more of Gold (the UEX SELL-side quantity). */
-export function withDemand(m: Market, terminalId: number, scu: number, commodityId = GOLD): Market {
-  const key = priceKey(terminalId, commodityId);
-  const prices = new Map(m.uex);
-  prices.set(key, { ...(m.uex.get(key) ?? px(terminalId, commodityId, { dateModified: NOW - 3600 })), scuSell: scu });
-  return buildMarket([...prices.values()], [...m.own.values()]);
 }

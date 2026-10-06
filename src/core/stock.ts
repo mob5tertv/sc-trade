@@ -2,8 +2,9 @@ import type { StockEstimate } from './types';
 
 // The stock refill timer (spec 14.3): the quantity at a terminal changes with time, so the app
 // estimates "how much is there now" from the last own reading, the rate the stock refills at
-// and the largest quantity it can hold. The same model serves the stock at a purchase
-// terminal and the demand at a selling one. Pure: the clock is a parameter.
+// and the largest quantity it can hold. It serves only the stock at a purchase terminal: the
+// quantity on the sell side is what the buyer already holds (spec 14.5), shown as recorded,
+// with no timer. Pure: the clock is a parameter.
 
 /** Two readings closer than this say nothing about the rate: the game refills in steps of about a minute. */
 export const MIN_LEARN_GAP_SEC = 120;

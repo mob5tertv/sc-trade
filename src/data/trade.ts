@@ -40,7 +40,7 @@ export class TradeError extends Error {
 
 export interface TradeDeps { db: Db; log: Logger; now: () => number; settings: Settings }
 
-/** `knownScu` is the stock (when buying) or the demand (when selling) the player saw at the terminal before the trade. */
+/** `knownScu` is the quantity the player saw at the terminal before the trade: the stock to buy from (when buying) or what the buyer already holds (when selling). */
 export interface TradeInput { terminalId: number; commodityId: number; scu: number; price: number; knownScu?: number | null }
 
 const noActiveRun = (): TradeError => new TradeError('no_active_run', 'Нет активного рейса');
@@ -75,16 +75,21 @@ async function reload(db: Db, runId: number): Promise<RunWithEvents> {
 /** SCU in the hold, all commodities together. */
 const holdScu = (events: RunEvent[]): number => cargoOf(events).reduce((sum, line) => sum + line.scu, 0);
 
-/** What the diary stores as the quantity: what is left at the terminal after the trade, `null` when the quantity before it was not seen. */
-function leftAfter(t: TradeInput): number | null {
+/**
+ * What the diary stores as the quantity once the trade is done, `null` when the quantity before it was not seen
+ * (spec 14.5). After a purchase it is the stock left at the seller: what was known less what was bought, never
+ * below zero. After a sale it is what the buyer now holds: what was known plus what was sold, since the buyer
+ * took the cargo into its inventory.
+ */
+function scuAfter(side: 'buy' | 'sell', t: TradeInput): number | null {
   const known = t.knownScu;
   if (known === undefined || known === null || !Number.isFinite(known)) return null;
-  return Math.max(0, known - t.scu);
+  return side === 'buy' ? Math.max(0, known - t.scu) : known + t.scu;
 }
 
 /** The price the player saw is a diary observation on the side of the trade: buying reads the BUY price, selling the SELL price. */
 async function writeObservation(d: TradeDeps, side: 'buy' | 'sell', t: TradeInput, ts: number): Promise<void> {
-  await addObservation(d.db, d.log, { ts, terminalId: t.terminalId, commodityId: t.commodityId, side, price: t.price, scu: leftAfter(t) });
+  await addObservation(d.db, d.log, { ts, terminalId: t.terminalId, commodityId: t.commodityId, side, price: t.price, scu: scuAfter(side, t) });
 }
 
 /** Writes a buy or sell event and logs it; returns the event with its new id. */

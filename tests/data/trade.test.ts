@@ -118,7 +118,7 @@ describe('recordBuy', () => {
 });
 
 describe('recordSell', () => {
-  it('writes the demand left at the terminal for every sale, and nothing when the demand is unknown', async () => {
+  it('writes no quantity for a sale when the buyer inventory was not seen, and still the stock left at the purchase', async () => {
     await recordBuy(deps, { ...buyIn(300), knownScu: 340 });
     await recordSell(deps, sellIn(100, 6900));
     const o = await latestObservations(db);
@@ -126,12 +126,21 @@ describe('recordSell', () => {
     expect(o.find(x => x.side === 'sell')).toMatchObject({ terminalId: 2, price: 6900, scu: null });
   });
 
-  it('writes the known demand less the amount sold, never below zero', async () => {
+  it('a sale records the buyer inventory after the sale', async () => {
     await recordBuy(deps, buyIn(300));
     await recordSell(deps, { ...sellIn(100, 6900), knownScu: 250 });
-    expect((await latestObservations(db)).find(x => x.side === 'sell')).toMatchObject({ terminalId: 2, price: 6900, scu: 150 });
+    expect((await latestObservations(db)).find(o => o.side === 'sell')).toMatchObject({ scu: 350 });
+  });
+
+  it('adds what was sold to the inventory seen, whatever it was, an empty buyer included', async () => {
+    await recordBuy(deps, buyIn(300));
+    await recordSell(deps, { ...sellIn(100, 6900), knownScu: 250 });
+    expect((await latestObservations(db)).find(x => x.side === 'sell')).toMatchObject({ terminalId: 2, price: 6900, scu: 350 });
     await recordSell(deps, { ...sellIn(100, 6950), knownScu: 60 });
-    expect((await latestObservations(db)).find(x => x.side === 'sell')).toMatchObject({ price: 6950, scu: 0 });
+    expect((await latestObservations(db)).find(x => x.side === 'sell')).toMatchObject({ price: 6950, scu: 160 });
+    await recordBuy(deps, buyIn(50));
+    await recordSell(deps, { ...sellIn(50, 7000), knownScu: 0 });          // "0 SCU, out of stock": the best buyer
+    expect((await latestObservations(db)).find(x => x.side === 'sell')).toMatchObject({ price: 7000, scu: 50 });
   });
 
   it('finishes the run when the hold is empty', async () => {

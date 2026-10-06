@@ -242,6 +242,20 @@ describe('suggestFrom', () => {
     expect(suggestLines('from').at(-1)!.line).toContain('"zeroQty":2');
   });
 
+  it('keeps a buyer that reports an empty inventory, and logs that inventory with the trip', async () => {
+    // "0 SCU, out of stock" at terminal 3 is the best buyer: the whole load goes there, the zero is only information
+    await addObservation(db, log, { ts: NOW - 60, terminalId: 3, commodityId: GOLD, side: 'sell', price: 6840, scu: 0 });
+    const o = await suggestFrom(deps, 1, 696, GOLD);
+    expect(o.map((x) => [x.destId, x.qty])).toEqual([[2, 340], [3, 340]]);
+    expect(o[1].sell.scu).toBe(0);
+    const line = suggestLines('from').at(-1)!.line;
+    const ctx = JSON.parse(line.slice(line.indexOf('{')));
+    expect(ctx.trace.dropped.zeroQty).toBe(0);
+    expect(ctx.options[1]).toMatchObject({ destId: 3, qty: 340, sell: { price: 6840, source: 'own', scu: 0 } });
+    expect(ctx.options[1].sell).not.toHaveProperty('stock');          // the buyer's inventory has no refill timer
+    expect(ctx.options[0].buy).toMatchObject({ scu: 340, stock: { scu: 340 } });
+  });
+
   it('writes the log line once the distances are known, and nothing at info level', async () => {
     await suggestFrom(deps, 1, 696);
     expect(suggestLines('from')[0].line).toContain('"timeSec":1015');

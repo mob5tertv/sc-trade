@@ -8,13 +8,14 @@ const SEC_PER_HOUR = 3600;
 
 /**
  * How many SCU one trip carries: the smallest of the free cargo space, the stock at the purchase
- * terminal, the demand at the selling terminal and what the budget buys. Only a missing (`null`) stock
- * or demand and an unset budget do not limit the amount: a known zero limits it to nothing. Never negative.
+ * terminal and what the budget buys. Only a missing (`null`) stock and an unset budget do not limit
+ * the amount: a known zero limits it to nothing. The selling terminal never limits it: the quantity
+ * the game shows there is what that terminal already holds, not what it is willing to buy (spec 14.5).
+ * Never negative.
  */
-export function quantity(i: { freeScu: number; stockScu: number | null; demandScu: number | null; budget: number | null; buyPrice: number }): number {
+export function quantity(i: { freeScu: number; stockScu: number | null; budget: number | null; buyPrice: number }): number {
   const limits = [i.freeScu];
   if (i.stockScu !== null) limits.push(i.stockScu);
-  if (i.demandScu !== null) limits.push(i.demandScu);
   if (i.budget !== null && i.buyPrice > 0) limits.push(i.budget / i.buyPrice);
   return Math.max(0, Math.floor(Math.min(...limits)));
 }
@@ -38,7 +39,9 @@ export interface RouteCtx extends EstimateCtx {
 }
 
 export interface RouteOption {
-  commodityId: number; originId: number; destId: number; buy: Estimate; sell: Estimate;
+  commodityId: number; originId: number; destId: number; buy: Estimate;
+  /** `sell.scu` is what the buyer already holds of the commodity: shown as information, it limits nothing. */
+  sell: Estimate;
   qty: number; profit: number; roi: number; worstProfit: number;
   /** Origin to destination; `null` when the distance is unknown. */
   distanceGm: number | null;
@@ -53,6 +56,8 @@ export interface RouteOption {
  * `considered` counts the origin → destination pairs per commodity where both prices are known
  * (the origin is never its own destination). Each one is either dropped, with the reason counted in
  * `dropped`, or kept: `considered = kept + Σ dropped`. `kept` is taken before the `topN` cut.
+ * `zeroQty` is a trip with nothing to carry: no stock at the purchase terminal, no free space or a budget
+ * that buys nothing. An empty selling terminal is not one of them.
  */
 export interface RouteTrace { considered: number; kept: number; dropped: { unknownTerminal: number; systemFilter: number; nonPositiveProfit: number; zeroQty: number } }
 export interface RouteResult { options: RouteOption[]; trace: RouteTrace }
@@ -119,7 +124,7 @@ function evaluate(
   }
   if (sell.price <= buy.price) { trace.dropped.nonPositiveProfit++; return null; }
 
-  const qty = quantity({ freeScu: ctx.freeScu, stockScu: buy.scu, demandScu: sell.scu, budget, buyPrice: buy.price });
+  const qty = quantity({ freeScu: ctx.freeScu, stockScu: buy.scu, budget, buyPrice: buy.price });
   if (qty === 0) { trace.dropped.zeroQty++; return null; }
 
   const margin = sell.price - buy.price;

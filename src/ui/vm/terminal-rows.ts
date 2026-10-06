@@ -2,13 +2,13 @@ import { estimate } from '../../core/estimate';
 import type { EstimateCtx } from '../../core/estimate';
 import { formatAge } from '../../core/format';
 import { priceWarning } from '../../core/input';
-import { priceKey } from '../../core/types';
+import { obsKey, priceKey } from '../../core/types';
 import type { Estimate, Market, Reference, Side, StockEstimate, Temp } from '../../core/types';
 
 export interface Cell {
-  own: number | null; ownScu: number | null;      // my value, shown only while it is not cold; ownScu is only ever MY quantity, estimated for now (0 is a known empty stock)
-  ownScuBase: { scu: number; age: string } | null; // 'was 40 · 20 min': what I saw, when the estimate differs from it
-  ownScuRate: StockEstimate['rateSource'] | null;  // whether the refill rate behind ownScu is learned, the default one or unknown; null without ownScu
+  own: number | null; ownScu: number | null;      // my value, shown only while it is not cold; ownScu is only ever MY quantity (0 is a known zero): buy side, the stock estimated for now; sell side, the buyer's inventory as recorded
+  ownScuBase: { scu: number; age: string } | null; // 'was 40 · 20 min': what I saw, when the estimate differs from it; null on the sell side (no estimate there)
+  ownScuRate: StockEstimate['rateSource'] | null;  // whether the refill rate behind ownScu is learned, the default one or unknown; null without ownScu and on the sell side
   hint: number | null; hintScu: number | null;    // a UEX estimate, or my cold value when UEX has nothing; hintScu is also the UEX quantity next to my price
   badge: { text: string; kind: Temp | 'uex' } | null;
   uexRange: { low: number; high: number } | null; // the UEX range next to my cooling value
@@ -32,14 +32,16 @@ function cell(m: Market, terminalId: number, commodityId: number, side: Side, ct
   if (!e) return null;
   const row = m.uex.get(priceKey(terminalId, commodityId));
   if (e.source === 'own' && e.temp !== 'cold') {
-    // My quantity is known when my observation has one (zero included): then `e.stock` is its estimate for now.
+    // My quantity is known when my observation has one (zero included). On the buy side `e.stock` is its estimate
+    // for now; on the sell side it is the buyer's inventory and stays as recorded, with no estimate (spec 14.5).
     // Without one `e.scu` is the UEX quantity: that goes to the grey hint, never to `ownScu`.
     const stock = e.stock;
+    const ownScu = (side === 'buy' ? stock?.scu : m.own.get(obsKey(terminalId, commodityId, side))?.scu) ?? null;
     return {
-      own: e.price, ownScu: stock?.scu ?? null,
+      own: e.price, ownScu,
       ownScuBase: stock !== null && stock.scu !== stock.baseScu ? { scu: stock.baseScu, age: formatAge(stock.baseAgeSec) } : null,
       ownScuRate: stock?.rateSource ?? null,
-      hint: null, hintScu: stock === null ? e.scu : null,
+      hint: null, hintScu: ownScu === null ? e.scu : null,
       badge: badgeText(e), uexRange: e.uexRange, ownLast: null,
       warn: row ? priceWarning(e.price, row[side].min, row[side].max) : false,
     };
