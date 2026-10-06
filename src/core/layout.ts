@@ -14,7 +14,8 @@ export interface Rect {
 
 export type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 
-export const STRIP_SIZE: Size = { width: 520, height: 32 };
+/** The strip is a small clickable badge: it takes the clicks of its own area, so it must not be big. */
+export const STRIP_SIZE: Size = { width: 260, height: 36 };
 
 const DEFAULT_STRIP_MARGIN = 16;
 
@@ -24,6 +25,11 @@ export function stripRect(monitor: Size, corner: Corner, margin: number = DEFAUL
   const x = corner.endsWith('left') ? margin : monitor.width - width - margin;
   const y = corner.startsWith('top') ? margin : monitor.height - height - margin;
   return { x, y, width, height };
+}
+
+/** The panel opens on the side where the strip stands, so the cursor is over it right away. */
+export function panelSideFor(corner: Corner): 'left' | 'right' {
+  return corner.endsWith('left') ? 'left' : 'right';
 }
 
 /** The panel: full monitor height, glued to one side, never wider than the monitor. */
