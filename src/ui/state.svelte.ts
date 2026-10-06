@@ -44,7 +44,9 @@ export interface Notice { text: string; kind: 'info' | 'error' }
 export interface DataDeps { db: Db; uex: UexClient; now: () => number }
 
 const EMPTY_REFERENCE: Reference = { starSystems: [], terminals: new Map(), commodities: new Map(), vehicles: [] };
-const EMPTY_MARKET: Market = { uex: new Map(), own: new Map(), byTerminal: new Map(), byCommodity: new Map(), stock: new Map() };
+const EMPTY_MARKET: Market = {
+  uex: new Map(), own: new Map(), byTerminal: new Map(), byCommodity: new Map(), stock: new Map(), ownScu: new Map(),
+};
 
 /** Prices are fetched again every hour (spec 6). */
 const PRICE_SYNC_INTERVAL_MS = 60 * 60 * 1000;
