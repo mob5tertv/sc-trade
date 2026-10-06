@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import type { Logger } from '../data/logger';
   import { bindHotkeys, type HotkeyName } from '../platform/hotkeys';
-  import { setMode, type WindowLayout, type WindowMode } from '../platform/window';
+  import { setMode, watchFocus, type WindowLayout, type WindowMode } from '../platform/window';
 
   let { log }: { log: Logger } = $props();
 
@@ -22,6 +22,9 @@
   };
 
   let mode = $state<WindowMode>('strip');
+  // The mode being switched to. It leads `mode` while a switch is in progress, so that the focus
+  // changes caused by the switch are logged with the mode they belong to.
+  let requestedMode: WindowMode = 'strip';
   let input: HTMLInputElement | undefined = $state();
 
   // Mode changes come from hotkeys, the tray and Esc; running them one after another keeps
@@ -32,11 +35,13 @@
     queue = queue.then(async () => {
       const next = pick(mode);
       log.info('app', 'mode change', { from: mode, to: next, reason });
+      requestedMode = next;
       try {
         await setMode(next, LAYOUT, log);
         mode = next;
       } catch {
         // already logged by setMode; keep the previous mode
+        requestedMode = mode;
       }
     });
   }
@@ -56,7 +61,16 @@
 
   onMount(() => {
     let unlisten: (() => void) | undefined;
+    let unwatchFocus: (() => void) | undefined;
     let disposed = false;
+
+    // Subscribed before the first mode change so that its focus changes are logged too.
+    watchFocus(() => requestedMode, log)
+      .then((stop) => {
+        if (disposed) stop();
+        else unwatchFocus = stop;
+      })
+      .catch((err) => log.error('app', 'cannot listen for focus changes', { err }));
 
     changeMode(() => 'strip', 'startup');
 
@@ -83,6 +97,7 @@
     return () => {
       disposed = true;
       unlisten?.();
+      unwatchFocus?.();
     };
   });
 </script>
