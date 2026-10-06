@@ -126,6 +126,12 @@ function mapSide(r: Row, side: 'buy' | 'sell'): UexSideStats {
   };
 }
 
+// The largest stock UEX has seen at a terminal on one side: the week's value, and when the week has
+// none (zero) the all-time one. Zero stays "unknown".
+function mapStockMax(r: Row, side: 'buy' | 'sell'): number {
+  return num(r[`scu_${side}_max_week`]) || num(r[`scu_${side}_max`]);
+}
+
 function mapPrice(r: Row): UexPrice | null {
   const terminalId = toNumberOrNull(r.id_terminal);
   const commodityId = toNumberOrNull(r.id_commodity);
@@ -137,6 +143,8 @@ function mapPrice(r: Row): UexPrice | null {
     sell: mapSide(r, 'sell'),
     scuBuy: num(r.scu_buy),
     scuSell: num(r.scu_sell),
+    scuBuyMax: mapStockMax(r, 'buy'),
+    scuSellMax: mapStockMax(r, 'sell'),
     dateModified: num(r.date_modified),
   };
 }

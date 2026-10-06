@@ -15,11 +15,14 @@ describe('quantity', () => {
     [{ freeScu: 696, stockScu: null, demandScu: null, budget: 1_000_000, buyPrice: 6120 }, 163],
     [{ freeScu: 696, stockScu: null, demandScu: null, budget: null, buyPrice: 6120 }, 696],
     [{ freeScu: -5, stockScu: 340, demandScu: null, budget: null, buyPrice: 6120 }, 0],
-    // zero stock or demand means "unknown", not "none left" (spec 8.2)
-    [{ freeScu: 696, stockScu: 0, demandScu: 0, budget: null, buyPrice: 6120 }, 696],
     // a budget that cannot afford a single unit leaves nothing to buy
     [{ freeScu: 696, stockScu: null, demandScu: null, budget: 6000, buyPrice: 6120 }, 0],
   ])('quantity', (i, q) => expect(quantity(i)).toBe(q));
+
+  it('quantity: a known zero limits, only null is unknown', () => {
+    expect(quantity({ freeScu: 696, stockScu: 0, demandScu: null, budget: null, buyPrice: 6120 })).toBe(0);
+    expect(quantity({ freeScu: 696, stockScu: null, demandScu: 0, budget: null, buyPrice: 6120 })).toBe(0);
+  });
 });
 
 describe('travelSec', () => {

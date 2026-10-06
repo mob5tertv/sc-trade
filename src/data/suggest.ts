@@ -5,7 +5,7 @@ import type { Settings } from '../core/settings';
 import { distKey } from '../core/types';
 import type { Estimate, Market, Reference } from '../core/types';
 import type { Db } from './db';
-import { latestObservations } from './repo/diary';
+import { latestObservations, stockStats } from './repo/diary';
 import { loadDistances, loadUexPrices } from './repo/uex-cache';
 import { ensureDistances, type SyncDeps } from './sync';
 
@@ -22,9 +22,9 @@ export interface SuggestDeps extends SyncDeps {
 /** How many of the best candidates (by ROI) get their missing distances fetched in one suggestion. */
 const MAX_MEASURED_OPTIONS = 20;
 
-/** The cached UEX prices together with the newest diary observation of each kind. */
+/** The cached UEX prices, the newest diary observation of each kind and what the whole diary says about each stock. */
 export async function loadMarket(db: Db): Promise<Market> {
-  return buildMarket(await loadUexPrices(db), await latestObservations(db));
+  return buildMarket(await loadUexPrices(db), await latestObservations(db), await stockStats(db));
 }
 
 function routeCtx(d: SuggestDeps, now: number, freeScu: number, distances: Map<string, number | null>, topN: number): RouteCtx {
@@ -33,6 +33,7 @@ function routeCtx(d: SuggestDeps, now: number, freeScu: number, distances: Map<s
     now,
     thresholds: { hotMin: s.hotMin, warmMin: s.warmMin, coolingMin: s.coolingMin },
     serverChangedAt: s.serverChangedAt,
+    refillFullMin: s.refillFullMin,
     settings: {
       starSystemId: s.starSystemId, budget: s.budget,
       quantumSpeedKkms: s.quantumSpeedKkms, overheadMin: s.overheadMin, overheadEmptyMin: s.overheadEmptyMin,
@@ -96,7 +97,11 @@ async function rank(
 const round = (value: number, digits: number): number => Number(value.toFixed(digits));
 
 function describeOption(d: SuggestDeps, o: RouteOption) {
-  const price = (e: Estimate) => ({ price: e.price, source: e.source, temp: e.temp, ageSec: e.ageSec });
+  // `stock` is the refill-timer estimate of my own quantity; a price without one (UEX) has no such key.
+  const price = (e: Estimate) => ({
+    price: e.price, source: e.source, temp: e.temp, ageSec: e.ageSec,
+    ...(e.stock === null ? {} : { stock: { ...e.stock, ratePerMin: round(e.stock.ratePerMin, 2) } }),
+  });
   return {
     commodity: d.reference.commodities.get(o.commodityId)?.code ?? null,
     commodityId: o.commodityId, originId: o.originId, destId: o.destId,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { estimate } from '../../src/core/estimate';
 import { buildMarket } from '../../src/core/market';
+import { obsKey } from '../../src/core/types';
 import { obs, px } from '../helpers/factories';
 
 // terminal 2, commodity 10, side sell
@@ -13,7 +14,10 @@ const own = (ageMin: number, scu: number | null = 200) => obs({ ts: now - ageMin
 describe('estimate', () => {
   it('uses a hot own price as is', () => {
     expect(estimate(buildMarket([px(2, 10, { sell: week, scuSell: 500 })], [own(10)]), 2, 10, 'sell', ctx))
-      .toEqual({ price: 6840, low: 6840, high: 6840, source: 'own', temp: 'hot', ageSec: 600, ownLast: null, uexRange: null, scu: 200 });
+      .toEqual({
+        price: 6840, low: 6840, high: 6840, source: 'own', temp: 'hot', ageSec: 600, ownLast: null, uexRange: null, scu: 200,
+        stock: { scu: 200, baseScu: 200, baseAgeSec: 600, ratePerMin: 0, rateSource: 'none', maxScu: null },
+      });
   });
 
   it('attaches the UEX range while cooling', () => {
@@ -88,7 +92,8 @@ describe('estimate', () => {
     const m = (scu: number | null, scuSell: number) => buildMarket([px(2, 10, { sell: week, scuSell })], [own(10, scu)]);
     expect(estimate(m(null, 500), 2, 10, 'sell', ctx)!.scu).toBe(500);
     expect(estimate(m(null, 0), 2, 10, 'sell', ctx)!.scu).toBeNull();
-    expect(estimate(m(0, 500), 2, 10, 'sell', ctx)!.scu).toBe(500);
+    // my own zero is a known empty stock now: the estimate starts from 0, not from the UEX quantity
+    expect(estimate(m(0, 500), 2, 10, 'sell', ctx)).toMatchObject({ scu: 0, stock: { baseScu: 0, scu: 0 } });
   });
 
   it('ignores the quantity of a cold own observation', () => {
@@ -99,5 +104,63 @@ describe('estimate', () => {
   it('reads buy stats and stock for the buy side', () => {
     expect(estimate(buildMarket([px(2, 10, { buy: { avgWeek: 6000, minWeek: 5900, maxWeek: 6200 }, scuBuy: 340 })], []), 2, 10, 'buy', ctx))
       .toMatchObject({ price: 6000, low: 5900, high: 6200, scu: 340 });
+  });
+
+  it('has no stock estimate for a UEX price', () => {
+    expect(estimate(buildMarket([px(2, 10, { sell: week, scuSell: 500 })], []), 2, 10, 'sell', ctx))
+      .toMatchObject({ source: 'uex', scu: 500, stock: null });
+  });
+});
+
+describe('estimate: stock refill timer', () => {
+  it('extrapolates my own quantity with the refill timer', () => {
+    const m = buildMarket([px(2, 10, { sell: week, scuSell: 500, scuSellMax: 800 })], [own(20, 100)]);
+    const e = estimate(m, 2, 10, 'sell', { ...ctx, refillFullMin: 80 })!;      // 800 / 80 = 10 per minute, 20 minutes have passed
+    expect(e.scu).toBe(300);
+    expect(e.stock).toEqual({ scu: 300, baseScu: 100, baseAgeSec: 1200, ratePerMin: 10, rateSource: 'default', maxScu: 800 });
+  });
+
+  it('prefers the rate and the maximum learned from my own diary', () => {
+    const stock = new Map([[obsKey(2, 10, 'sell'), { maxScu: 1000, ratePerMin: 5 }]]);
+    const e = estimate(buildMarket([px(2, 10, { sell: week, scuSellMax: 800 })], [own(20, 100)], stock), 2, 10, 'sell', ctx)!;
+    expect(e.stock).toMatchObject({ scu: 200, ratePerMin: 5, rateSource: 'learned', maxScu: 1000 });
+  });
+
+  it('treats my own zero as known empty and a missing quantity as unknown', () => {
+    const m = (scu: number | null) => buildMarket([px(2, 10, { sell: week, scuSell: 500 })], [own(10, scu)]);
+    expect(estimate(m(0), 2, 10, 'sell', ctx)!.stock).toMatchObject({ baseScu: 0 });       // a zero used to fall through to UEX
+    expect(estimate(m(null), 2, 10, 'sell', ctx)).toMatchObject({ scu: 500, stock: null });
+  });
+
+  it('does not extrapolate a cold quantity', () => {
+    expect(estimate(buildMarket([px(2, 10, { sell: week, scuSell: 500 })], [own(300, 100)]), 2, 10, 'sell', ctx))
+      .toMatchObject({ scu: 500, stock: null });
+  });
+
+  it('takes the larger of my own maximum and the UEX one, ignoring zeros', () => {
+    const maxOf = (mine: number, uex: number) => estimate(
+      buildMarket(
+        [px(2, 10, { sell: week, scuSellMax: uex })], [own(20, 100)],
+        new Map([[obsKey(2, 10, 'sell'), { maxScu: mine, ratePerMin: null }]]),
+      ),
+      2, 10, 'sell', ctx,
+    )!.stock!.maxScu;
+    expect(maxOf(0, 800)).toBe(800);
+    expect(maxOf(1000, 800)).toBe(1000);
+    expect(maxOf(600, 800)).toBe(800);
+    expect(maxOf(0, 0)).toBeNull();
+  });
+
+  it('falls back to the default full-refill time when the context has none', () => {
+    const m = buildMarket([px(2, 10, { sell: week, scuSellMax: 750 })], [own(20, 100)]);      // 750 / 75 = 10 per minute
+    expect(estimate(m, 2, 10, 'sell', ctx)!.stock).toMatchObject({ scu: 300, ratePerMin: 10, rateSource: 'default' });
+  });
+
+  it('reads the maximum and the diary stats of the side that is asked for', () => {
+    const buy = { avgWeek: 6000, minWeek: 5900, maxWeek: 6200 };
+    const mine = obs({ ts: now - 20 * 60, terminalId: 2, commodityId: 10, side: 'buy', price: 6100, scu: 40 });
+    const stock = new Map([[obsKey(2, 10, 'sell'), { maxScu: 5000, ratePerMin: 50 }]]);       // the other side: must not leak in
+    const m = buildMarket([px(2, 10, { buy, scuBuyMax: 340, scuSellMax: 9999 })], [mine], stock);
+    expect(estimate(m, 2, 10, 'buy', ctx)!.stock).toMatchObject({ scu: 130, maxScu: 340, rateSource: 'default' });
   });
 });
