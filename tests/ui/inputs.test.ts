@@ -26,44 +26,67 @@ describe('baseTexts', () => {
   });
 });
 
+// `null` in an edit is a field the player did not touch in this edit; a text, even an empty one, was typed.
 describe('resolveCellEdit', () => {
   const base = { price: 6120, scu: 340 };
+  const none = { price: null, scu: null };
 
-  it('is unchanged when the texts parse to the same numbers, however they are written', () => {
-    expect(resolveCellEdit('6120', '340', base)).toEqual({ kind: 'unchanged' });
-    expect(resolveCellEdit(' 6 120 ', '340', base)).toEqual({ kind: 'unchanged' });
-    expect(resolveCellEdit('', '', { price: null, scu: null })).toEqual({ kind: 'unchanged' });
+  it('has nothing to save when nothing was typed', () => {
+    expect(resolveCellEdit({ price: null, scu: null }, base)).toEqual({ kind: 'unchanged' });
+    expect(resolveCellEdit({ price: null, scu: null }, none)).toEqual({ kind: 'unchanged' });
   });
-
-  it('saves a new price with the quantity as it stands', () => {
-    expect(resolveCellEdit('6200', '340', base)).toEqual({ kind: 'save', price: 6200, scu: 340 });
-  });
-  it('saves a new quantity with the price as it stands', () => {
-    expect(resolveCellEdit('6120', '300', base)).toEqual({ kind: 'save', price: 6120, scu: 300 });
-    expect(resolveCellEdit('6120', '0', base)).toEqual({ kind: 'save', price: 6120, scu: 0 });
-  });
-  it('saves a price typed over a hint with no quantity', () => {
-    expect(resolveCellEdit('6200', '', { price: null, scu: null })).toEqual({ kind: 'save', price: 6200, scu: null });
-  });
-  it('leaves the quantity unknown when it is emptied', () => {
-    expect(resolveCellEdit('6120', '', base)).toEqual({ kind: 'save', price: 6120, scu: null });
+  it('has nothing to save when what was typed equals what is there, however it is written', () => {
+    expect(resolveCellEdit({ price: '6120', scu: '340' }, base)).toEqual({ kind: 'unchanged' });
+    expect(resolveCellEdit({ price: ' 6 120 ', scu: null }, base)).toEqual({ kind: 'unchanged' });
+    expect(resolveCellEdit({ price: null, scu: '340' }, base)).toEqual({ kind: 'unchanged' });
   });
 
+  it('saves a price typed alone with no quantity: the quantity that is shown was not typed now', () => {
+    expect(resolveCellEdit({ price: '6200', scu: null }, base)).toEqual({ kind: 'save', price: 6200, scu: null });
+  });
+  it('saves both when both were typed', () => {
+    expect(resolveCellEdit({ price: '6200', scu: '300' }, base)).toEqual({ kind: 'save', price: 6200, scu: 300 });
+  });
+  it('saves a quantity typed alone together with my own price', () => {
+    expect(resolveCellEdit({ price: null, scu: '300' }, base)).toEqual({ kind: 'save', price: 6120, scu: 300 });
+    expect(resolveCellEdit({ price: null, scu: '0' }, base)).toEqual({ kind: 'save', price: 6120, scu: 0 });
+  });
+  it('sends a quantity that was typed even when the price changed and the quantity is the one shown', () => {
+    expect(resolveCellEdit({ price: '6200', scu: '340' }, base)).toEqual({ kind: 'save', price: 6200, scu: 340 });
+    expect(resolveCellEdit({ price: '6120', scu: '300' }, base)).toEqual({ kind: 'save', price: 6120, scu: 300 });
+  });
+  it('reads the current values it is given, not the ones from when the typing began', () => {
+    // the same typed quantity pairs with whichever own price the cell has now
+    expect(resolveCellEdit({ price: null, scu: '300' }, { price: 6120, scu: 340 })).toMatchObject({ price: 6120 });
+    expect(resolveCellEdit({ price: null, scu: '300' }, { price: 6400, scu: 340 })).toMatchObject({ price: 6400 });
+  });
+  it('saves a price typed over a hint, with no quantity', () => {
+    expect(resolveCellEdit({ price: '6200', scu: null }, none)).toEqual({ kind: 'save', price: 6200, scu: null });
+  });
+  it('has nothing to delete when an emptied price had nothing behind it', () => {
+    expect(resolveCellEdit({ price: '', scu: null }, none)).toEqual({ kind: 'unchanged' });
+  });
+  it('treats an emptied quantity as no reading, not as a change', () => {
+    expect(resolveCellEdit({ price: null, scu: '' }, base)).toEqual({ kind: 'unchanged' });
+    expect(resolveCellEdit({ price: '6200', scu: '' }, base)).toEqual({ kind: 'save', price: 6200, scu: null });
+  });
+
+  it('does not save a quantity typed alone when there is no own price, and asks for the price', () => {
+    expect(resolveCellEdit({ price: null, scu: '50' }, none)).toEqual({ kind: 'invalid', price: true, scu: false });
+  });
   it('marks an unparsable price and saves nothing', () => {
-    expect(resolveCellEdit('abc', '340', base)).toEqual({ kind: 'invalid', price: true, scu: false });
-    expect(resolveCellEdit('0', '340', base)).toEqual({ kind: 'invalid', price: true, scu: false });
+    expect(resolveCellEdit({ price: 'abc', scu: null }, base)).toEqual({ kind: 'invalid', price: true, scu: false });
+    expect(resolveCellEdit({ price: '0', scu: null }, base)).toEqual({ kind: 'invalid', price: true, scu: false });
   });
   it('marks an emptied price: a price cannot be deleted from here', () => {
-    expect(resolveCellEdit('', '340', base)).toEqual({ kind: 'invalid', price: true, scu: false });
-  });
-  it('asks for a price when only a quantity is typed over a hint', () => {
-    expect(resolveCellEdit('', '50', { price: null, scu: null })).toEqual({ kind: 'invalid', price: true, scu: false });
+    expect(resolveCellEdit({ price: '', scu: null }, base)).toEqual({ kind: 'invalid', price: true, scu: false });
+    expect(resolveCellEdit({ price: '', scu: '300' }, base)).toEqual({ kind: 'invalid', price: true, scu: false });
   });
   it('marks an unparsable quantity', () => {
-    expect(resolveCellEdit('6120', '3x0', base)).toEqual({ kind: 'invalid', price: false, scu: true });
+    expect(resolveCellEdit({ price: null, scu: '3x0' }, base)).toEqual({ kind: 'invalid', price: false, scu: true });
   });
   it('marks both when both are wrong', () => {
-    expect(resolveCellEdit('-', 'q', base)).toEqual({ kind: 'invalid', price: true, scu: true });
+    expect(resolveCellEdit({ price: '-', scu: 'q' }, base)).toEqual({ kind: 'invalid', price: true, scu: true });
   });
 });
 

@@ -10,49 +10,78 @@
   interface Props {
     rows: TerminalRow[];
     selectedCommodityId: number | null;
+    /**
+     * What these rows belong to, say the id of the viewed terminal. A draft is kept per scope: when the scope
+     * changes, every unsaved or invalid draft is dropped, so none can show up on another terminal's row.
+     */
+    scope?: string | number;
     onSelect: (commodityId: number) => void;
-    /** `scu` is what the quantity input holds when the price is saved; `null` while it is empty (unknown). */
+    /**
+     * `scu` is the quantity the player typed in this very edit. `null` means "no quantity reading in this
+     * observation": a price typed alone, or an emptied quantity. It does not mean the quantity became unknown.
+     */
     onSavePrice: (e: { commodityId: number; side: Side; price: number; scu: number | null }) => void;
     onLookup: (e: { commodityId: number; side: Side }) => void;
     onTrade: (e: { commodityId: number; side: Side }) => void;
   }
-  let { rows, selectedCommodityId, onSelect, onSavePrice, onLookup, onTrade }: Props = $props();
+  let { rows, selectedCommodityId, scope = '', onSelect, onSavePrice, onLookup, onTrade }: Props = $props();
 
   /**
    * What is being typed into one cell (one commodity, one side). A cell with no draft shows its values from
-   * `rows`. `sent` is set once the draft was handed to `onSavePrice`: the typed text then stays on screen
-   * until `rows` is refreshed, so the number does not jump back to the old one in between.
+   * `rows`. `shown` holds the texts of the inputs that were typed into (`null`: show the value of `rows`) and
+   * `typed` says which inputs were typed into in this edit: only those are ever saved, a value that merely
+   * stands in an input is never sent. `sent` is set once the edit was handed to `onSavePrice`: the typed text
+   * then stays on screen until `rows` is refreshed, so the number does not jump back to the old one in between.
    */
-  interface Draft { price: string; scu: string; bad: { price: boolean; scu: boolean }; sent: EditBase | null }
+  interface Draft {
+    shown: { price: string | null; scu: string | null };
+    typed: { price: boolean; scu: boolean };
+    bad: { price: boolean; scu: boolean };
+    sent: EditBase | null;
+  }
   let drafts = $state<Record<string, Draft>>({});
 
-  const keyOf = (commodityId: number, side: Side): string => `${commodityId}:${side}`;
+  const keyOf = (commodityId: number, side: Side): string => `${scope}:${commodityId}:${side}`;
 
-  // A refresh of the rows carries what was sent. A draft that was edited again since stays and is compared with the new values.
+  // Another scope is another set of rows: nothing typed for the old one may stay.
+  $effect(() => {
+    void scope;
+    untrack(() => {
+      for (const key of Object.keys(drafts)) delete drafts[key];
+    });
+  });
+
+  // A refresh of the rows carries what was sent. A draft that was typed into again since stays and is compared with the new values.
   $effect(() => {
     void rows;
     untrack(() => {
       for (const [key, draft] of Object.entries(drafts)) {
         if (draft.sent === null) continue;
-        const sent = baseTexts(draft.sent);
-        if (draft.price === sent.price && draft.scu === sent.scu) delete drafts[key];
+        if (!draft.typed.price && !draft.typed.scu) delete drafts[key];
         else draft.sent = null;
       }
     });
   });
 
-  function type(key: string, cell: Cell, field: 'price' | 'scu', text: string): void {
-    const draft = drafts[key] ?? { ...baseTexts(cellEditBase(cell)), bad: { price: false, scu: false }, sent: null };
-    draft[field] = text;
+  function type(key: string, field: 'price' | 'scu', text: string): void {
+    const draft: Draft = drafts[key] ?? {
+      shown: { price: null, scu: null }, typed: { price: false, scu: false }, bad: { price: false, scu: false }, sent: null,
+    };
+    draft.shown[field] = text;
+    draft.typed[field] = true;
     draft.bad[field] = false;
     drafts[key] = draft;
   }
 
+  // What the cell holds is read now, when the cell is left, not when the typing began.
   function commit(commodityId: number, side: Side, cell: Cell): void {
     const key = keyOf(commodityId, side);
     const draft = drafts[key];
     if (!draft) return;
-    const edit = resolveCellEdit(draft.price, draft.scu, draft.sent ?? cellEditBase(cell));
+    const edit = resolveCellEdit(
+      { price: draft.typed.price ? draft.shown.price : null, scu: draft.typed.scu ? draft.shown.scu : null },
+      draft.sent ?? cellEditBase(cell),
+    );
     if (edit.kind === 'unchanged') {
       if (draft.sent === null) delete drafts[key];
       return;
@@ -61,8 +90,15 @@
       draft.bad = { price: edit.price, scu: edit.scu };
       return;
     }
-    const sent = { price: edit.price, scu: edit.scu };
-    drafts[key] = { ...baseTexts(sent), bad: { price: false, scu: false }, sent };
+    drafts[key] = {
+      shown: {
+        price: draft.typed.price ? String(edit.price) : draft.shown.price,
+        scu: draft.typed.scu ? (edit.scu === null ? '' : String(edit.scu)) : draft.shown.scu,
+      },
+      typed: { price: false, scu: false },
+      bad: { price: false, scu: false },
+      sent: { price: edit.price, scu: edit.scu },
+    };
     onSavePrice({ commodityId, side, price: edit.price, scu: edit.scu });
   }
 
@@ -109,8 +145,8 @@
       aria-label="{row.code}: цена {side === 'buy' ? 'покупки' : 'продажи'}, UEC за SCU"
       aria-invalid={draft?.bad.price ? 'true' : undefined}
       placeholder={placeholder(cell.hint)}
-      value={draft?.price ?? texts.price}
-      oninput={e => type(key, cell, 'price', e.currentTarget.value)}
+      value={draft?.shown.price ?? texts.price}
+      oninput={e => type(key, 'price', e.currentTarget.value)}
       onkeydown={e => onKeydown(e, row.commodityId, side, cell)}
       onblur={e => onBlur(e, row.commodityId, side, cell)}
     />
@@ -124,8 +160,8 @@
       aria-label={side === 'buy' ? `${row.code}: количество у продавца, SCU` : `${row.code}: количество у покупателя на складе, SCU`}
       aria-invalid={draft?.bad.scu ? 'true' : undefined}
       placeholder={placeholder(cell.hintScu)}
-      value={draft?.scu ?? texts.scu}
-      oninput={e => type(key, cell, 'scu', e.currentTarget.value)}
+      value={draft?.shown.scu ?? texts.scu}
+      oninput={e => type(key, 'scu', e.currentTarget.value)}
       onkeydown={e => onKeydown(e, row.commodityId, side, cell)}
       onblur={e => onBlur(e, row.commodityId, side, cell)}
     />
@@ -138,11 +174,11 @@
     {/if}
     <span class="actions">
       {#if side === 'buy'}
-        <button type="button" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где продать</button>
-        <button type="button" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Купил</button>
+        <button type="button" aria-label="Где продать {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где продать</button>
+        <button type="button" aria-label="Купил {row.code}" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Купил</button>
       {:else}
-        <button type="button" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где купить</button>
-        <button type="button" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Продал</button>
+        <button type="button" aria-label="Где купить {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где купить</button>
+        <button type="button" aria-label="Продал {row.code}" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Продал</button>
       {/if}
     </span>
   </div>
@@ -151,7 +187,7 @@
       {#if cell.badge}<TempBadge text={cell.badge.text} kind={cell.badge.kind} />{/if}
       {#if cell.warn}<span class="warn">проверь цифру</span>{/if}
       {#if cell.uexRange}
-        <span class="muted" title="Диапазон UEX за неделю">UEX {formatUec(cell.uexRange.low)}–{formatUec(cell.uexRange.high)}</span>
+        <span class="muted" title="Диапазон UEX">UEX {formatUec(cell.uexRange.low)}–{formatUec(cell.uexRange.high)}</span>
       {/if}
       {#if cell.ownLast}
         <span class="muted">моя была {formatUec(cell.ownLast.price)} · {cell.ownLast.age}</span>

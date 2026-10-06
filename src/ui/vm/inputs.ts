@@ -25,6 +25,9 @@ export type CellEdit =
   | { kind: 'invalid'; price: boolean; scu: boolean }                 // which of the inputs to mark
   | { kind: 'save'; price: number; scu: number | null };
 
+/** What was typed into the inputs of a cell during one edit; `null` is a field that was not touched. */
+export interface TypedTexts { price: string | null; scu: string | null }
+
 interface Field { ok: boolean; value: number | null }
 
 /** An empty text is a valid "nothing"; anything else must parse. */
@@ -35,16 +38,27 @@ function field(text: string, parse: (s: string) => number | null): Field {
 }
 
 /**
- * The outcome of leaving a cell: nothing to do when the numbers are those of `base`; the inputs to mark when
- * a text does not parse (or the price is empty: a price cannot be deleted from here, and a quantity typed
- * over a hint needs a price); otherwise the price and quantity to save. An empty quantity is an unknown one.
+ * The outcome of leaving a cell. `base` is what the cell holds now, read when the cell is left, not when the
+ * typing began. Only what was typed counts:
+ *  - the price saved is the typed one, else my own current price; with neither (a quantity typed over a hint
+ *    or a cold price) nothing is saved and the price is marked as required, as is an unparsable or emptied one;
+ *  - the quantity saved is the typed one, or `null` for "no quantity reading in this observation": the
+ *    quantity that merely stands in the input is never sent again, and an emptied one is no reading either;
+ *  - what was typed equals what is there: nothing to save.
  */
-export function resolveCellEdit(priceText: string, scuText: string, base: EditBase): CellEdit {
-  const price = field(priceText, parsePrice);
-  const scu = field(scuText, parseScu);
-  if (price.ok && scu.ok && price.value === base.price && scu.value === base.scu) return { kind: 'unchanged' };
-  if (!price.ok || price.value === null || !scu.ok) return { kind: 'invalid', price: !price.ok || price.value === null, scu: !scu.ok };
-  return { kind: 'save', price: price.value, scu: scu.value };
+export function resolveCellEdit(typed: TypedTexts, base: EditBase): CellEdit {
+  const price = typed.price === null ? null : field(typed.price, parsePrice);
+  const scu = typed.scu === null ? null : field(typed.scu, parseScu);
+  const badPrice = price !== null && !price.ok;
+  const badScu = scu !== null && !scu.ok;
+
+  const priceSame = price === null || price.value === base.price;
+  const scuSame = scu === null || (scu.ok && (scu.value === null || scu.value === base.scu));
+  if (!badPrice && !badScu && priceSame && scuSame) return { kind: 'unchanged' };
+
+  const priceToSave = price === null ? base.price : price.value;
+  if (badPrice || badScu || priceToSave === null) return { kind: 'invalid', price: badPrice || priceToSave === null, scu: badScu };
+  return { kind: 'save', price: priceToSave, scu: scu?.value ?? null };
 }
 
 export type TradeInput = { ok: true; scu: number; price: number } | { ok: false; scu: boolean; price: boolean };

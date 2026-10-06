@@ -8,7 +8,11 @@
     side: Side;
     defaultScu: number;
     defaultPrice: number;
-    /** Why the trade could not be written, shown under the inputs. */
+    /**
+     * Why the trade could not be written, shown under the inputs. The dialog confirms once and then waits: it
+     * takes a new confirmation after `error` changes (the owner sets it back to `null` when it starts a write)
+     * or after an input is edited. On success the owner closes the dialog.
+     */
     error: string | null;
     onConfirm: (trade: { scu: number; price: number }) => void;
     onCancel: () => void;
@@ -22,6 +26,13 @@
   let badPrice = $state(false);
   let scuInput: HTMLInputElement | undefined = $state();
 
+  // A double click on the button or a held Enter must not write the trade twice while the owner is still writing it.
+  let confirmed = false;
+  $effect(() => {
+    void error;
+    confirmed = false;
+  });
+
   onMount(() => {
     scuInput?.focus();
     scuInput?.select();
@@ -29,12 +40,14 @@
 
   function submit(e: Event): void {
     e.preventDefault();
+    if (confirmed) return;
     const trade = resolveTrade(scuText, priceText);
     if (!trade.ok) {
       badScu = trade.scu;
       badPrice = trade.price;
       return;
     }
+    confirmed = true;
     onConfirm({ scu: trade.scu, price: trade.price });
   }
 
@@ -48,7 +61,7 @@
 </script>
 
 <div class="overlay">
-  <button type="button" class="backdrop" tabindex="-1" aria-label="Отмена" onclick={onCancel}></button>
+  <button type="button" class="backdrop" tabindex="-1" aria-label="Отмена" onclick={() => onCancel()}></button>
   <div class="dialog" role="dialog" aria-label={title} tabindex="-1" onkeydown={onKeydown}>
     <form onsubmit={submit} novalidate>
       <h3 class="title">{title}</h3>
@@ -63,7 +76,7 @@
           autocomplete="off"
           aria-invalid={badScu ? 'true' : undefined}
           value={scuText}
-          oninput={e => { scuText = e.currentTarget.value; badScu = false; }}
+          oninput={e => { scuText = e.currentTarget.value; badScu = false; confirmed = false; }}
         />
       </label>
 
@@ -76,7 +89,7 @@
           autocomplete="off"
           aria-invalid={badPrice ? 'true' : undefined}
           value={priceText}
-          oninput={e => { priceText = e.currentTarget.value; badPrice = false; }}
+          oninput={e => { priceText = e.currentTarget.value; badPrice = false; confirmed = false; }}
         />
       </label>
 
@@ -89,7 +102,7 @@
 
       <div class="buttons">
         <button type="submit" class="primary">{side === 'buy' ? 'Купил' : 'Продал'}</button>
-        <button type="button" onclick={onCancel}>Отмена</button>
+        <button type="button" onclick={() => onCancel()}>Отмена</button>
         <span class="hint keys">Enter — записать, Esc — отмена</span>
       </div>
     </form>

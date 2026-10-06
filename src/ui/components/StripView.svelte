@@ -23,10 +23,10 @@
   const full = $derived(flash ?? (model.kind === 'idle' ? model.location : `${model.timer} ${model.cargo}\n${secondLine}`));
 </script>
 
-<div class="strip" class:marks={showMarks} aria-live="polite">
-  <button type="button" class="open" title={full} onclick={onOpen}>
+<div class="strip" class:marks={showMarks}>
+  <button type="button" class="open" title={full} onclick={() => onOpen()}>
     {#if flash !== null}
-      <span class="line flash">{flash}</span>
+      <span class="line flash" aria-live="polite">{flash}</span>
     {:else if model.kind === 'idle'}
       <span class="line location">{model.location}</span>
     {:else}
@@ -36,8 +36,8 @@
   </button>
   {#if showMarks}
     <div class="marks-box">
-      {#if onDepart}<button type="button" onclick={onDepart}>Взлетел</button>{/if}
-      {#if onArrive}<button type="button" onclick={onArrive}>Прилетел</button>{/if}
+      {#if onDepart}<button type="button" onclick={() => onDepart?.()}>Взлетел</button>{/if}
+      {#if onArrive}<button type="button" onclick={() => onArrive?.()}>Прилетел</button>{/if}
     </div>
   {/if}
 </div>

@@ -81,8 +81,8 @@
     </div>
   {:else}
     <div class="buttons">
-      <button type="button" onclick={onDepart}>Взлетел</button>
-      <button type="button" onclick={onArrive}>Прилетел</button>
+      <button type="button" onclick={() => onDepart()}>Взлетел</button>
+      <button type="button" onclick={() => onArrive()}>Прилетел</button>
       <button type="button" class="danger lost" onclick={() => (confirming = true)}>Груз потерян</button>
     </div>
   {/if}
