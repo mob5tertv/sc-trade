@@ -162,6 +162,56 @@ describe('syncReference', () => {
     expect(await getMeta(db, 'reference_synced_at')).toBeNull();
   });
 
+  it.each([
+    ['an empty star system list', () => { uex.starSystemList = []; }],
+    ['a star system list without a live system', () => { uex.starSystemList = uex.starSystemList.map((s) => ({ ...s, isAvailableLive: false })); }],
+    ['no terminals in any live star system', () => { uex.terminalsBySystem = new Map(); }],
+    ['an empty commodity list', () => { uex.commodityList = []; }],
+  ])('refuses %s: throws a shape UexError, writes nothing, deletes nothing', async (_name, emptyIt) => {
+    await saveReference(db, {
+      starSystems: [{ id: 1, name: 'Old', code: '', isAvailableLive: true }],
+      terminals: [term(1)],
+      commodities: [{ id: 5, name: 'Old', code: 'OLD', isIllegal: false, isBuyable: true, isSellable: true, isAvailableLive: true }],
+      vehicles: [veh(9)],
+    });
+    emptyIt();
+
+    const failure = await syncReference(deps).then(() => null, (err: unknown) => err);
+
+    expect(failure).toBeInstanceOf(UexError);
+    expect((failure as UexError).kind).toBe('shape');
+    const ref = await loadReference(db);
+    expect(ref.starSystems.map((s) => s.id)).toEqual([1]);
+    expect([...ref.terminals.keys()]).toEqual([1]);
+    expect([...ref.commodities.keys()]).toEqual([5]);
+    expect(ref.vehicles.map((v) => v.id)).toEqual([9]);
+    expect(await getMeta(db, 'reference_synced_at')).toBeNull();
+  });
+
+  it('accepts a live star system without terminals as long as the others have some', async () => {
+    uex.terminalsBySystem.set(64, []);
+    await syncReference(deps);
+    expect((await loadReference(db)).terminals.size).toBe(4);
+    expect(await getMeta(db, 'reference_synced_at')).toBe(String(NOW));
+  });
+
+  it.each([
+    ['an empty manufacturer list', () => { uex.manufacturerIds = []; }],
+    ['manufacturers that have no vehicle at all', () => { uex.vehiclesByCompany = new Map(); }],
+  ])('treats %s as an incomplete vehicle list: reference saved, stored vehicles kept, warning', async (_name, emptyIt) => {
+    await saveReference(db, { vehicles: [veh(9)] });
+    emptyIt();
+
+    await syncReference(deps);
+
+    const ref = await loadReference(db);
+    expect(ref.commodities.size).toBe(2);
+    expect(ref.terminals.size).toBe(6);
+    expect(ref.vehicles.map((v) => v.id)).toEqual([9]);
+    expect(await getMeta(db, 'reference_synced_at')).toBe(String(NOW));
+    expect(warnings().length).toBeGreaterThan(0);
+  });
+
   it('saves the reference and keeps the old vehicles when the manufacturer list fails', async () => {
     await saveReference(db, { vehicles: [veh(9)] });
     uex.failManufacturers = true;
@@ -233,12 +283,35 @@ describe('ensureDistances', () => {
     expect(second.size).toBe(25);
   });
 
-  it('asks the routes of an origin again after a day', async () => {
+  it('asks the routes of an origin whose request failed again after a day, not before', async () => {
+    uex.failRoutes = true;
     await ensureDistances(deps, 85, []);
     clock = NOW + 86400;
     await ensureDistances(deps, 85, []);
     expect(uex.routeCalls).toEqual([85]);
     clock = NOW + 86401;
+    await ensureDistances(deps, 85, []);
+    expect(uex.routeCalls).toEqual([85, 85]);
+  });
+
+  it('never asks the routes of an origin again once they were fetched', async () => {
+    uex.routes = [{ destId: 12, gm: 59 }];
+    await ensureDistances(deps, 85, []);
+    clock = NOW + 25 * 3600;
+    const d = await ensureDistances(deps, 85, [[85, 12]]);
+    clock = NOW + 400 * 86400;
+    await ensureDistances(deps, 85, []);
+    expect(uex.routeCalls).toEqual([85]);
+    expect(d.get(distKey(85, 12))).toBe(59);
+  });
+
+  it('retries a failed origin after a day and then keeps it for good once that succeeds', async () => {
+    uex.failRoutes = true;
+    await ensureDistances(deps, 85, []);
+    uex.failRoutes = false;
+    clock = NOW + 86401;
+    await ensureDistances(deps, 85, []);
+    clock = NOW + 3 * 86400;
     await ensureDistances(deps, 85, []);
     expect(uex.routeCalls).toEqual([85, 85]);
   });

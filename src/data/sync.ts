@@ -4,7 +4,7 @@ import type { Logger } from './logger';
 import {
   getMeta, loadDistances, putDistances, saveReference, setMeta, upsertPrices, upsertVehicles,
 } from './repo/uex-cache';
-import type { UexClient } from './uex-client';
+import { UexError, type UexClient } from './uex-client';
 
 // Fills the local UEX cache. The network is throttled (see the amendment "UEX over a throttled
 // network"): a response of more than ~24 KB stalls, so lists are requested in small pieces and
@@ -15,8 +15,10 @@ export interface SyncDeps { db: Db; uex: UexClient; log: Logger; now: () => numb
 
 const REFERENCE_MAX_AGE_SEC = 24 * 3600;
 const PRICES_MAX_AGE_SEC = 60 * 60;
-/** An origin whose routes were requested is not asked again for this long, even when the request failed. */
-const ROUTES_MAX_AGE_SEC = 24 * 3600;
+/** An origin whose routes request FAILED is not asked again for this long; a fetched origin is never asked again. */
+const ROUTES_RETRY_AFTER_SEC = 24 * 3600;
+/** The `routes_fetched:<id>` value of an origin whose routes were stored; after a failure it holds the attempt time. */
+const ROUTES_FETCHED = 'ok';
 /** Terminals per price request: the largest batch that reliably fits into one response. */
 const PRICE_BATCH_SIZE = 2;
 /** Pair requests per `ensureDistances` call, so a screen of routes never waits for a long series of requests. */
@@ -68,17 +70,31 @@ async function fetchVehicles(d: SyncDeps): Promise<{ list: Vehicle[]; complete: 
     if (vehicles.ok) list.push(...vehicles.value);
     else complete = false;
   }
+  // An answer without a single vehicle is not trusted: it would wipe the stored vehicles.
+  if (list.length === 0) {
+    d.log.warn('sync', 'no vehicles received, keeping the stored ones', { manufacturers: manufacturers.value.length });
+    return { list, complete: false };
+  }
   return { list, complete };
 }
 
-/** Star systems, the terminals of every live star system and commodities; any failure throws. */
+/**
+ * Star systems, the terminals of every live star system and commodities; any failure throws. An empty
+ * answer where data must exist (no star system, no live one, no terminal at all, no commodity) is
+ * a failure too: written as it is, it would wipe the stored reference.
+ */
 async function fetchCoreLists(d: SyncDeps): Promise<{ starSystems: StarSystem[]; terminals: Terminal[]; commodities: Commodity[] }> {
   const starSystems = await d.uex.starSystems();
+  if (starSystems.length === 0) throw new UexError('shape', 'UEX returned no star systems');
+  const liveSystems = starSystems.filter((s) => s.isAvailableLive);
+  if (liveSystems.length === 0) throw new UexError('shape', 'UEX returned no live star system');
+
   const terminals: Terminal[] = [];
-  for (const system of starSystems) {
-    if (system.isAvailableLive) terminals.push(...(await d.uex.terminals(system.id)));
-  }
+  for (const system of liveSystems) terminals.push(...(await d.uex.terminals(system.id)));
+  if (terminals.length === 0) throw new UexError('shape', 'UEX returned no terminals for the live star systems');
+
   const commodities = await d.uex.commodities();
+  if (commodities.length === 0) throw new UexError('shape', 'UEX returned no commodities');
   return { starSystems, terminals, commodities };
 }
 
@@ -189,7 +205,7 @@ export async function syncPrices(d: SyncDeps): Promise<{ batches: number; failed
 
 /**
  * Makes the distance cache as complete as it can cheaply be for `pairs`: one `distancesFrom(originId)` request
- * (not repeated for a day, whether it succeeded or not: hub terminals may stall), then at most twenty
+ * (never repeated once it succeeded, not repeated for a day after a failure: hub terminals may stall), then at most twenty
  * single-pair requests for the pairs that are still unknown. Never throws because of UEX; returns the cache.
  */
 export async function ensureDistances(
@@ -201,14 +217,15 @@ export async function ensureDistances(
   const now = d.now();
 
   const routesKey = metaRoutesFetched(originId);
-  if (isStale(parseSeconds(await getMeta(db, routesKey)), now, ROUTES_MAX_AGE_SEC)) {
+  const attempted = await getMeta(db, routesKey);
+  if (attempted !== ROUTES_FETCHED && isStale(parseSeconds(attempted), now, ROUTES_RETRY_AFTER_SEC)) {
     const routes = await attempt(d, 'routes request', { originId }, () => uex.distancesFrom(originId));
     if (routes.ok) {
       await putDistances(db, routes.value.map(({ destId, gm }) => ({ a: originId, b: destId, gm })));
       log.info('sync', 'routes stored', { originId, destinations: routes.value.length });
     }
-    // Remembered also after a failure, so a stalling hub is not asked again at every call.
-    await setMeta(db, routesKey, String(now));
+    // A failure is remembered too, so a stalling hub is not asked again at every call.
+    await setMeta(db, routesKey, routes.ok ? ROUTES_FETCHED : String(now));
   }
 
   const distances = await loadDistances(db);
