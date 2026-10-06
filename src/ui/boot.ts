@@ -91,8 +91,9 @@ async function prepare(log: Logger): Promise<void> {
 
   app.attach({ db, uex: createUexClient(tauriFetchJson, log), now: nowSec });
   app.setSettings(settings);
-  app.ensureShown();
+  // The start line comes first: the window logs its own lines as soon as it is shown.
   await logStart(log, schema);
+  app.ensureShown();
   await app.applyTriggers();
   prepared = true;
 }
