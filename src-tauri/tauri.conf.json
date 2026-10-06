@@ -12,10 +12,18 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "SC Trade",
-        "width": 800,
-        "height": 600,
-        "resizable": true,
+        "width": 520,
+        "height": 32,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false,
+        "visible": false,
+        "focus": false,
         "fullscreen": false
       }
     ],
