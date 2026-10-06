@@ -1,0 +1,16 @@
+{
+ "status": "ok",
+ "http_code": 200,
+ "data": {
+  "orbit_name_origin": "MicroTech",
+  "terminal_name_origin": "Shubin Mining Facility SMCa-8",
+  "terminal_nickname_origin": "Shubin SMCa-8",
+  "terminal_code_origin": "SMCA8",
+  "orbit_name_destination": "ArcCorp",
+  "terminal_name_destination": "TDD - Trade and Development Division - Area 18",
+  "terminal_nickname_destination": "TDD Area 18",
+  "terminal_code_destination": "TDA18",
+  "distance": "59"
+ },
+ "message": ""
+}
