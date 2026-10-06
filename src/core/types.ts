@@ -30,6 +30,12 @@ export interface UexPrice {
 /** В своём наблюдении `scu: 0` — известно, что пусто; `null` — неизвестно (у данных UEX ноль по-прежнему «неизвестно»). */
 export interface Observation { id: number; ts: number; terminalId: number; commodityId: number; side: Side; price: number; scu: number | null }
 
+/**
+ * Замер количества: последнее своё наблюдение по этой паре и стороне, в котором количество указано (ноль — известный ноль).
+ * Наблюдение без количества — это замер одной только цены, он количество не отменяет (спека 14.6).
+ */
+export interface QuantityReading { terminalId: number; commodityId: number; side: Side; ts: number; scu: number }
+
 /** Выучено по своему дневнику для одной пары «терминал, товар, сторона»; `null` — нечего вывести. */
 export interface StockStats { maxScu: number | null; ratePerMin: number | null }
 /** Оценка количества на точке «сейчас»: от базы (своего замера) со скоростью пополнения, не выше максимума. */
@@ -43,6 +49,7 @@ export interface StockEstimate {
 export interface Market {
   uex: Map<string, UexPrice>;          // priceKey
   own: Map<string, Observation>;       // obsKey, только последнее наблюдение
+  ownScu: Map<string, { ts: number; scu: number }>;   // obsKey → последний свой замер с количеством; своё время, не время наблюдения цены
   byTerminal: Map<number, Set<number>>;   // терминал → товары
   byCommodity: Map<number, Set<number>>;  // товар → терминалы
   stock: Map<string, StockStats>;      // obsKey
@@ -55,10 +62,12 @@ export const pairKey = (originId: number, destId: number) => `${originId}>${dest
 export interface Estimate {
   price: number; low: number; high: number;
   source: 'own' | 'uex'; temp: Temp | null; ageSec: number;
+  ageKnown: boolean;             // false только для цены UEX у строки без даты изменения: возраст тогда не показывается
   ownLast: { price: number; ageSec: number } | null;   // своё холодное, справочно
   uexRange: { low: number; high: number } | null;      // рядом с «остывает»
   scu: number | null;            // на закупке — остаток у продавца; на продаже — склад покупателя (справка, ничего не ограничивает)
-  stock: StockEstimate | null;   // только на закупке и только когда scu получено из своего наблюдения; на продаже всегда null
+  scuOrigin: 'own' | 'uex' | null;   // откуда scu: свой не холодный замер количества (не обязательно того же наблюдения, что цена), UEX, или нигде
+  stock: StockEstimate | null;   // только на закупке и только когда scuOrigin === 'own'; на продаже всегда null
 }
 
 export type RunEventType = 'buy' | 'sell' | 'depart' | 'arrive';

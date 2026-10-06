@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { estimate } from '../../src/core/estimate';
 import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
+import type { Market } from '../../src/core/types';
 import { obs, px } from '../helpers/factories';
 
 // terminal 2, commodity 10, side sell
@@ -17,16 +18,16 @@ describe('estimate', () => {
   it('uses a hot own price as is', () => {
     expect(estimate(buildMarket([px(2, 10, { sell: week, scuSell: 500 })], [own(10)]), 2, 10, 'sell', ctx))
       .toEqual({
-        price: 6840, low: 6840, high: 6840, source: 'own', temp: 'hot', ageSec: 600, ownLast: null, uexRange: null, scu: 200,
-        stock: null,
+        price: 6840, low: 6840, high: 6840, source: 'own', temp: 'hot', ageSec: 600, ageKnown: true, ownLast: null, uexRange: null, scu: 200,
+        scuOrigin: 'own', stock: null,
       });
   });
 
   it('keeps the timer estimate on a hot own buy price', () => {
     expect(estimate(buildMarket([px(2, 10, { buy: buyWeek })], [ownBuy(10)]), 2, 10, 'buy', ctx))
       .toEqual({
-        price: 6100, low: 6100, high: 6100, source: 'own', temp: 'hot', ageSec: 600, ownLast: null, uexRange: null, scu: 200,
-        stock: { scu: 200, baseScu: 200, baseAgeSec: 600, ratePerMin: 0, rateSource: 'none', maxScu: null },
+        price: 6100, low: 6100, high: 6100, source: 'own', temp: 'hot', ageSec: 600, ageKnown: true, ownLast: null, uexRange: null, scu: 200,
+        scuOrigin: 'own', stock: { scu: 200, baseScu: 200, baseAgeSec: 600, ratePerMin: 0, rateSource: 'none', maxScu: null },
       });
   });
 
@@ -195,5 +196,99 @@ describe('estimate: stock refill timer', () => {
     const stock = new Map([[obsKey(2, 10, 'sell'), { maxScu: 1000, ratePerMin: 5 }]]);
     const m = buildMarket([px(2, 10, { sell: week, scuSell: 500, scuSellMax: 800 })], [own(20, 100)], stock);
     expect(estimate(m, 2, 10, 'sell', ctx)).toMatchObject({ scu: 100, stock: null });
+  });
+});
+
+// The quantity and the price are separate readings (spec 14.6): an observation with only a price says nothing
+// about the quantity. Terminal 1, commodity 10.
+describe('estimate: quantity readings independent of price readings', () => {
+  const priceOnly = (side: 'buy' | 'sell', ageSec: number, price = 6120) => obs({ id: 2, ts: now - ageSec, terminalId: 1, commodityId: 10, side, price, scu: null });
+  const reading = (side: 'buy' | 'sell', ageSec: number, scu: number) => ({ terminalId: 1, commodityId: 10, side, ts: now - ageSec, scu });
+
+  it('keeps the stock timer running after a price-only observation', () => {
+    const quantities = [{ terminalId: 1, commodityId: 10, side: 'buy' as const, ts: now - 1200, scu: 40 }];
+    const m = buildMarket([px(1, 10, { buy: week, scuBuy: 300, scuBuyMax: 340 })], [priceOnly('buy', 120)], undefined, quantities);
+    const e = estimate(m, 1, 10, 'buy', { ...ctx, refillFullMin: 75 })!;
+    expect(e).toMatchObject({ price: 6120, source: 'own', scu: 130, scuOrigin: 'own' });
+    expect(e.stock).toMatchObject({ baseScu: 40, baseAgeSec: 1200 });
+  });
+
+  it('falls back to the UEX quantity when my quantity reading is cold, even with a hot price', () => {
+    const quantities = [reading('buy', 5 * 3600, 40)];
+    const m = buildMarket([px(1, 10, { buy: week, scuBuy: 300 })], [priceOnly('buy', 120)], undefined, quantities);
+    expect(estimate(m, 1, 10, 'buy', ctx)).toMatchObject({ price: 6120, scu: 300, scuOrigin: 'uex', stock: null });
+  });
+
+  it('reports the buyer inventory from the latest quantity reading on the sell side', () => {
+    const m = buildMarket([], [priceOnly('sell', 60, 6900)], undefined, [reading('sell', 600, 3048)]);
+    expect(estimate(m, 1, 10, 'sell', ctx)).toMatchObject({ scu: 3048, scuOrigin: 'own', stock: null });
+  });
+
+  it('counts the temperature of the quantity from its own time: a hot quantity outlives a cold price', () => {
+    // the price is five hours old, the quantity twenty minutes: the price comes from UEX, the quantity is still mine
+    const m = buildMarket([px(1, 10, { buy: week, scuBuy: 300, scuBuyMax: 340 })], [priceOnly('buy', 5 * 3600)], undefined, [reading('buy', 1200, 40)]);
+    const e = estimate(m, 1, 10, 'buy', ctx)!;
+    expect(e).toMatchObject({ source: 'uex', price: 6900, scu: 130, scuOrigin: 'own', ownLast: { price: 6120, ageSec: 5 * 3600 } });
+    expect(e.stock).toMatchObject({ baseScu: 40, baseAgeSec: 1200 });
+  });
+
+  it('counts the temperature of the quantity from its own time: a hot price outlives a cold quantity', () => {
+    const m = buildMarket([px(1, 10, { sell: week, scuSell: 500 })], [priceOnly('sell', 60, 6900)], undefined, [reading('sell', 5 * 3600, 3048)]);
+    expect(estimate(m, 1, 10, 'sell', ctx)).toMatchObject({ source: 'own', price: 6900, scu: 500, scuOrigin: 'uex' });
+  });
+
+  it('applies the server change to the quantity reading by its own time', () => {
+    const changed = { ...ctx, serverChangedAt: now - 600 };
+    const m = (readingAgeSec: number) => buildMarket(
+      [px(1, 10, { buy: week, scuBuy: 300, scuBuyMax: 340 })], [priceOnly('buy', 60)], undefined, [reading('buy', readingAgeSec, 40)],
+    );
+    expect(estimate(m(1200), 1, 10, 'buy', changed)).toMatchObject({ scu: 300, scuOrigin: 'uex', stock: null });       // before the change
+    expect(estimate(m(300), 1, 10, 'buy', changed)).toMatchObject({ scu: 62, scuOrigin: 'own' });                       // after it: 40 + 340 / 75 × 5, rounded down
+  });
+
+  it('keeps a recorded zero as my quantity, also when a price-only observation came after it', () => {
+    const m = buildMarket([px(1, 10, { buy: week, scuBuy: 300 })], [priceOnly('buy', 60)], undefined, [reading('buy', 60, 0)]);
+    expect(estimate(m, 1, 10, 'buy', ctx)).toMatchObject({ scu: 0, scuOrigin: 'own', stock: { baseScu: 0 } });
+  });
+
+  it('keeps the readings of the two sides apart', () => {
+    const m = buildMarket([px(1, 10, { buy: week, scuBuy: 300 })], [priceOnly('buy', 60)], undefined, [reading('sell', 60, 3048)]);
+    expect(estimate(m, 1, 10, 'buy', ctx)).toMatchObject({ scu: 300, scuOrigin: 'uex' });
+  });
+
+  it('takes my quantity next to a UEX price when there is no observation of mine for the side', () => {
+    const m = buildMarket([px(1, 10, { buy: week, scuBuy: 300, scuBuyMax: 340 })], [], undefined, [reading('buy', 1200, 40)]);
+    expect(estimate(m, 1, 10, 'buy', ctx)).toMatchObject({ source: 'uex', scu: 130, scuOrigin: 'own' });
+  });
+
+  it('returns nothing for a quantity reading alone: a price is what an estimate is about', () => {
+    expect(estimate(buildMarket([], [], undefined, [reading('buy', 60, 40)]), 1, 10, 'buy', ctx)).toBeNull();
+  });
+
+  it('says where the quantity comes from', () => {
+    const origin = (m: Market) => estimate(m, 2, 10, 'sell', ctx)!.scuOrigin;
+    expect(origin(buildMarket([px(2, 10, { sell: week })], [own(10, 40)]))).toBe('own');
+    expect(origin(buildMarket([px(2, 10, { sell: week, scuSell: 500 })], [own(10, null)]))).toBe('uex');
+    expect(origin(buildMarket([px(2, 10, { sell: week, scuSell: 0 })], [own(10, null)]))).toBeNull();
+    expect(origin(buildMarket([px(2, 10, { sell: week })], []))).toBeNull();
+  });
+});
+
+describe('estimate: whether the age of the data is known', () => {
+  it('says whether the age of a UEX price is known', () => {
+    expect(estimate(buildMarket([px(2, 10, { sell: week, dateModified: 0 })], []), 2, 10, 'sell', ctx)).toMatchObject({ source: 'uex', ageKnown: false });
+    expect(estimate(buildMarket([px(2, 10, { sell: week, dateModified: now - 3600 })], []), 2, 10, 'sell', ctx)).toMatchObject({ ageKnown: true });
+    expect(estimate(buildMarket([], [own(10)]), 2, 10, 'sell', ctx)).toMatchObject({ source: 'own', ageKnown: true });
+  });
+
+  it('knows the age of my own price whatever the UEX row says', () => {
+    expect(estimate(buildMarket([px(2, 10, { sell: week, dateModified: 0 })], [own(10)]), 2, 10, 'sell', ctx)).toMatchObject({ source: 'own', ageKnown: true });
+    // a cold own price of mine with no usable UEX row is still my price, and its age is known
+    expect(estimate(buildMarket([], [own(300)]), 2, 10, 'sell', ctx)).toMatchObject({ source: 'own', temp: 'cold', ageKnown: true });
+  });
+
+  it('does not know the age of a UEX price that replaced my cold one', () => {
+    expect(estimate(buildMarket([px(2, 10, { sell: week, dateModified: 0 })], [own(300)]), 2, 10, 'sell', ctx))
+      .toMatchObject({ source: 'uex', ageKnown: false, ownLast: { price: 6840 } });
   });
 });

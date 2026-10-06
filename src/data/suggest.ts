@@ -5,7 +5,7 @@ import type { Settings } from '../core/settings';
 import { distKey } from '../core/types';
 import type { Estimate, Market, Reference } from '../core/types';
 import type { Db } from './db';
-import { latestObservations, stockStats } from './repo/diary';
+import { latestObservations, latestQuantities, stockStats } from './repo/diary';
 import { loadDistances, loadUexPrices } from './repo/uex-cache';
 import { ensureDistances, type SyncDeps } from './sync';
 
@@ -22,9 +22,12 @@ export interface SuggestDeps extends SyncDeps {
 /** How many of the best candidates (by ROI) get their missing distances fetched in one suggestion. */
 const MAX_MEASURED_OPTIONS = 20;
 
-/** The cached UEX prices, the newest diary observation of each kind and what the whole diary says about each stock. */
+/**
+ * The cached UEX prices, the newest diary observation of each kind, what the whole diary says about each stock
+ * and the latest reading of each quantity (which may be older than the latest observation: spec 14.6).
+ */
 export async function loadMarket(db: Db): Promise<Market> {
-  return buildMarket(await loadUexPrices(db), await latestObservations(db), await stockStats(db));
+  return buildMarket(await loadUexPrices(db), await latestObservations(db), await stockStats(db), await latestQuantities(db));
 }
 
 function routeCtx(d: SuggestDeps, now: number, freeScu: number, distances: Map<string, number | null>, topN: number): RouteCtx {
@@ -98,10 +101,12 @@ const round = (value: number, digits: number): number => Number(value.toFixed(di
 
 function describeOption(d: SuggestDeps, o: RouteOption) {
   // `scu` is the quantity shown with the price: the stock at the seller on the buy side, what the buyer already holds
-  // on the sell side (information only, it limits no trip). `stock` is the refill-timer estimate of my own stock at
-  // a seller; a price without one (UEX, or any sell side) has no such key.
+  // on the sell side (information only, it limits no trip); `scuOrigin` says whose reading it is, which need not be
+  // the observation the price comes from. `ageKnown` is false for a UEX price whose row has no modification date
+  // (`ageSec` means nothing then). `stock` is the refill-timer estimate of my own stock at a seller; a price
+  // without one (no reading of mine, or any sell side) has no such key.
   const price = (e: Estimate) => ({
-    price: e.price, source: e.source, temp: e.temp, ageSec: e.ageSec, scu: e.scu,
+    price: e.price, source: e.source, temp: e.temp, ageSec: e.ageSec, ageKnown: e.ageKnown, scu: e.scu, scuOrigin: e.scuOrigin,
     ...(e.stock === null ? {} : { stock: { ...e.stock, ratePerMin: round(e.stock.ratePerMin, 2) } }),
   });
   return {

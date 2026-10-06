@@ -2,11 +2,11 @@ import { estimate } from '../../core/estimate';
 import type { EstimateCtx } from '../../core/estimate';
 import { formatAge } from '../../core/format';
 import { priceWarning } from '../../core/input';
-import { obsKey, priceKey } from '../../core/types';
+import { priceKey } from '../../core/types';
 import type { Estimate, Market, Reference, Side, StockEstimate, Temp } from '../../core/types';
 
 export interface Cell {
-  own: number | null; ownScu: number | null;      // my value, shown only while it is not cold; ownScu is only ever MY quantity (0 is a known zero): buy side, the stock estimated for now; sell side, the buyer's inventory as recorded
+  own: number | null; ownScu: number | null;      // my price, shown only while it is not cold; ownScu is only ever MY quantity (0 is a known zero) and has its own clock (spec 14.6), so it may stand next to a UEX price: buy side, the stock estimated for now; sell side, the buyer's inventory as recorded
   ownScuBase: { scu: number; age: string } | null; // 'was 40 · 20 min': what I saw, when the estimate differs from it; null on the sell side (no estimate there)
   ownScuRate: StockEstimate['rateSource'] | null;  // whether the refill rate behind ownScu is learned, the default one or unknown; null without ownScu and on the sell side
   hint: number | null; hintScu: number | null;    // a UEX estimate, or my cold value when UEX has nothing; hintScu is also the UEX quantity next to my price
@@ -20,35 +20,38 @@ export interface TerminalRow { commodityId: number; code: string; name: string; 
 
 /**
  * 'моя · 40 мин' for my own price (the kind is its temperature), 'UEX · 2 ч' for a UEX estimate.
- * Pass `uexAgeKnown = false` when UEX has no modification date for the row: the age is then left out ('UEX').
+ * UEX may have no modification date for the row (`e.ageKnown` is false): there is no age to show, just 'UEX'.
  */
-export function badgeText(e: Estimate, uexAgeKnown = true): { text: string; kind: Temp | 'uex' } {
+export function badgeText(e: Estimate): { text: string; kind: Temp | 'uex' } {
   if (e.source === 'own' && e.temp !== null) return { text: `моя · ${formatAge(e.ageSec)}`, kind: e.temp };
-  return { text: uexAgeKnown ? `UEX · ${formatAge(e.ageSec)}` : 'UEX', kind: 'uex' };
+  return { text: e.ageKnown ? `UEX · ${formatAge(e.ageSec)}` : 'UEX', kind: 'uex' };
 }
 
 function cell(m: Market, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): Cell | null {
   const e = estimate(m, terminalId, commodityId, side, ctx);
   if (!e) return null;
-  const row = m.uex.get(priceKey(terminalId, commodityId));
+  // The quantity is a reading of its own, apart from the price (spec 14.6): mine whenever `scuOrigin` says so (zero
+  // included), even next to a UEX price. On the buy side `e.stock` is its estimate for now; on the sell side it is
+  // the buyer's inventory and stays as recorded, with no estimate (spec 14.5). A UEX quantity goes to the grey
+  // hint, never to `ownScu`.
+  const stock = e.stock;
+  const quantity = {
+    ownScu: e.scuOrigin === 'own' ? e.scu : null,
+    ownScuBase: stock !== null && stock.scu !== stock.baseScu ? { scu: stock.baseScu, age: formatAge(stock.baseAgeSec) } : null,
+    ownScuRate: stock?.rateSource ?? null,
+    hintScu: e.scuOrigin === 'uex' ? e.scu : null,
+  };
   if (e.source === 'own' && e.temp !== 'cold') {
-    // My quantity is known when my observation has one (zero included). On the buy side `e.stock` is its estimate
-    // for now; on the sell side it is the buyer's inventory and stays as recorded, with no estimate (spec 14.5).
-    // Without one `e.scu` is the UEX quantity: that goes to the grey hint, never to `ownScu`.
-    const stock = e.stock;
-    const ownScu = (side === 'buy' ? stock?.scu : m.own.get(obsKey(terminalId, commodityId, side))?.scu) ?? null;
+    const row = m.uex.get(priceKey(terminalId, commodityId));
     return {
-      own: e.price, ownScu,
-      ownScuBase: stock !== null && stock.scu !== stock.baseScu ? { scu: stock.baseScu, age: formatAge(stock.baseAgeSec) } : null,
-      ownScuRate: stock?.rateSource ?? null,
-      hint: null, hintScu: ownScu === null ? e.scu : null,
+      own: e.price, ...quantity, hint: null,
       badge: badgeText(e), uexRange: e.uexRange, ownLast: null,
       warn: row ? priceWarning(e.price, row[side].min, row[side].max) : false,
     };
   }
   return {
-    own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: e.price, hintScu: e.scu,
-    badge: badgeText(e, row !== undefined && row.dateModified > 0), uexRange: null,
+    own: null, ...quantity, hint: e.price,
+    badge: badgeText(e), uexRange: null,
     ownLast: e.ownLast && { price: e.ownLast.price, age: formatAge(e.ownLast.ageSec) },
     warn: false,
   };
