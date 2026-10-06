@@ -49,6 +49,16 @@ function applyOpacity(opacity: number): void {
 }
 
 /**
+ * Logs every real focus change of the window (what Windows did, not what the app asked for).
+ * Returns the function that stops listening.
+ */
+export function watchFocus(getMode: () => WindowMode, log: Logger): Promise<() => void> {
+  return getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+    log.info('window', 'focus changed', { focused, mode: getMode() });
+  });
+}
+
+/**
  * Switches the single overlay window between its two states.
  * - `panel`: remembers the game window, takes clicks, fills one side of the monitor, takes the focus.
  * - `strip`: click-through strip in a corner (or hidden when `showStrip` is off), focus goes back to the game.
@@ -63,21 +73,28 @@ export async function setMode(mode: WindowMode, layout: WindowLayout, log: Logge
 
     if (mode === 'panel') {
       await invoke('remember_foreground');
+      await win.setFocusable(true);
       await win.setIgnoreCursorEvents(false);
       const rect = panelRect(size, layout.panelSide, layout.panelWidth);
       await place(rect, origin);
       await win.show();
+      // `skipTaskbar` from the config is applied once, while the window is still hidden.
+      await win.setSkipTaskbar(true);
       await win.setFocus();
-      log.info('window', 'panel shown and focused', { rect, monitor: size });
+      // Only what was requested; the real focus changes are logged by `watchFocus`.
+      log.info('window', 'panel shown, focus requested', { rect, monitor: size });
       return;
     }
 
+    // The strip must never take the keyboard focus from the game, not even on its first show.
+    await win.setFocusable(false);
     if (layout.showStrip) {
       const rect = stripRect(size, layout.stripCorner);
       await win.setIgnoreCursorEvents(true);
       await place(rect, origin);
       await win.show();
-      log.info('window', 'strip shown, click-through', { rect, monitor: size });
+      await win.setSkipTaskbar(true);
+      log.info('window', 'strip shown, click-through, not focusable', { rect, monitor: size });
     } else {
       await win.hide();
       log.info('window', 'strip disabled, window hidden');
