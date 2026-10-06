@@ -1935,3 +1935,98 @@ it('the panel opens on the side of the strip', () => {
 Run: `npm run tauri build -- --debug --no-bundle`. Положить рядом с exe пустой `portable.flag`, запустить, по файлу `sc-trade.log` рядом с exe убедиться: окно поставлено на основной монитор, плашка кликабельна и не берёт фокус, клавиши не назначены и перехват не установлен. Завершить процесс. Ввод с клавиатуры и мыши не автоматизировать.
 
 - [ ] **Step 8: Commit** — `git add -A && git commit -m "feat: mouse-first overlay — clickable strip, optional low-level key triggers"`
+
+### Task 21: Сторона продажи — это склад покупателя
+
+Реализует раздел 14.5 спеки. Исправляет ошибку модели: количество на стороне продажи считалось спросом и ограничивало объём рейса; на деле это запас товара у покупателя, и ноль там — лучший случай, а не запрет.
+
+**Files:**
+- Modify: `src/core/routes.ts`, `src/core/estimate.ts`, `src/core/sell.ts`, `src/data/trade.ts`, `src/ui/vm/terminal-rows.ts`
+- Test: правки в `tests/core/routes.test.ts`, `tests/core/estimate.test.ts`, `tests/core/sell.test.ts`, `tests/data/trade.test.ts`, `tests/data/suggest.test.ts`, `tests/ui/terminal-rows.test.ts`, `tests/ui/strip.test.ts` и в помощниках `tests/helpers/*.ts`, где это нужно
+
+**Interfaces:**
+- Consumes: всё из задач 7, 8, 13, 14, 19.
+- Produces (изменения существующих сигнатур):
+```ts
+// src/core/routes.ts
+export function quantity(i: { freeScu: number; stockScu: number | null; budget: number | null; buyPrice: number }): number;   // поле demandScu удалено
+
+// src/core/sell.ts
+export function sellOrContinue(m: Market, line: CargoLine, hereId: number, actualPrice: number, elapsedSec: number, ctx: RouteCtx): { here: SellHere; alternatives: SellAlternative[] };   // параметр hereDemand удалён
+// SellHere.qty и SellAlternative.qty всегда равны line.scu
+
+// src/core/estimate.ts — для side === 'sell':
+//   scu   = количество из своего не холодного наблюдения как записано (ноль допустим), иначе scuSell из UEX (> 0), иначе null
+//   stock = null всегда (таймер количества только для 'buy')
+
+// src/data/trade.ts
+// recordSell с knownScu: наблюдение получает scu = knownScu + проданное; без knownScu — null
+```
+
+Правила:
+
+- `RouteTrace.dropped.zeroQty` теперь возможен только из-за нулевого остатка на закупке, нулевого свободного места или бюджета.
+- `RouteOption.sell.scu` остаётся в данных как справка о складе покупателя и ни на что не влияет.
+- В таблице терминала на стороне продажи `ownScu` — записанное значение, `ownScuBase` и `ownScuRate` — `null`.
+- Строка лога `[suggest]` по-прежнему содержит количество на стороне продажи.
+
+- [ ] **Step 1: Написать падающие тесты**
+
+```ts
+// tests/core/routes.test.ts
+it('quantity is the smallest of free space, stock at the origin and budget', () => {
+  expect(quantity({ freeScu: 696, stockScu: 340, budget: null, buyPrice: 6120 })).toBe(340);
+  expect(quantity({ freeScu: 696, stockScu: null, budget: 1_000_000, buyPrice: 6120 })).toBe(163);
+  expect(quantity({ freeScu: 696, stockScu: 0, budget: null, buyPrice: 6120 })).toBe(0);
+});
+it('an empty buyer is the best case, not a blocker', () => {
+  // покупатель C (3): своё наблюдение продажи 6840 с количеством 0 («нет в наличии»)
+  const r = routesFrom(withOwnSellScu(market, 3, 10, 0), [1], 1, ctx);
+  expect(r.options.find(o => o.destId === 3)).toMatchObject({ qty: 340, profit: 244800 });
+  expect(r.trace.dropped.zeroQty).toBe(0);
+});
+it('the buyer inventory reported by UEX does not limit the load', () => {
+  expect(routesFrom(withUexSellScu(market, 2, 10, 4), [1], 1, ctx).options.find(o => o.destId === 2)!.qty).toBe(340);
+});
+```
+```ts
+// tests/core/estimate.test.ts — сторона sell
+it('reports the buyer inventory as recorded, without the refill timer', () => {
+  const m = buildMarket([px(2, 10, { sell: week, scuSell: 500, scuSellMax: 800 })], [own(20, 100)]);
+  expect(estimate(m, 2, 10, 'sell', ctx)).toMatchObject({ scu: 100, stock: null });
+});
+it('keeps a recorded zero on the sell side', () => {
+  expect(estimate(buildMarket([px(2, 10, { sell: week, scuSell: 500 })], [own(10, 0)]), 2, 10, 'sell', ctx)).toMatchObject({ scu: 0, stock: null });
+});
+```
+Существующие тесты таймера количества на стороне `sell` переносятся на сторону `buy` (с `scuBuy` / `scuBuyMax`), их числа не меняются.
+```ts
+// tests/core/sell.test.ts
+it('compares the whole cargo regardless of the inventory shown at either terminal', () => {
+  const r = sellOrContinue(withOwnSellScu(market, 2, 10, 0), line, 3, 6500, 1200, ctx);
+  expect(r.here.qty).toBe(340);
+  expect(r.alternatives[0]).toMatchObject({ destId: 2, qty: 340, expectedProfit: 265_200 });
+});
+```
+Тесты, которые ограничивали объём спросом («limits the sale here by demand», ограничение альтернативы спросом), удаляются.
+```ts
+// tests/data/trade.test.ts
+it('a sale records the buyer inventory after the sale', async () => {
+  await recordBuy(deps, buyIn(300));
+  await recordSell(deps, { ...sellIn(100, 6900), knownScu: 250 });
+  expect((await latestObservations(db)).find(o => o.side === 'sell')).toMatchObject({ scu: 350 });
+});
+```
+Прежние ожидания `150` и `0` для продажи с `knownScu` заменяются на сумму.
+```ts
+// tests/ui/terminal-rows.test.ts
+it('shows the buyer inventory on the sell side without an estimate', () => {
+  const rows = terminalRows(withOwnSellScu(market, 1, 10, 3048), ref, 1, ctx);
+  expect(rows.find(r => r.commodityId === 10)!.sell).toMatchObject({ ownScu: 3048, ownScuBase: null, ownScuRate: null });
+});
+```
+
+- [ ] **Step 2: Запустить** — `npm test` — Expected: новые и изменённые тесты падают, `npm run check` показывает ошибки типов в местах вызова `quantity` и `sellOrContinue`.
+- [ ] **Step 3: Реализовать** изменения в `routes.ts`, `estimate.ts`, `sell.ts`, `trade.ts`, `terminal-rows.ts`; поправить все места вызова и помощники тестов.
+- [ ] **Step 4: Запустить** — `npm test && npm run check` — Expected: PASS, 0 errors.
+- [ ] **Step 5: Commit** — `git add -A && git commit -m "fix: the sell-side quantity is the buyer inventory, not demand"`
