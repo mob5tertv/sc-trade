@@ -10,8 +10,8 @@ import { ref, term } from '../helpers/factories';
 const nb = (s: string) => s.replace(/ /g, String.fromCharCode(0xa0));
 
 const estimate = (partial: Partial<Estimate> = {}): Estimate => ({
-  price: 6900, low: 6400, high: 7100, source: 'uex', temp: null, ageSec: 2 * 86_400,
-  ownLast: null, uexRange: null, scu: null, stock: null, ...partial,
+  price: 6900, low: 6400, high: 7100, source: 'uex', temp: null, ageSec: 2 * 86_400, ageKnown: true,
+  ownLast: null, uexRange: null, scu: null, scuOrigin: null, stock: null, ...partial,
 });
 
 // Gold from ARC-L1 (1), bought at my own hot 6120, sold at TDD Area 18 (2) for the UEX 6900 (6400–7100)
@@ -52,6 +52,12 @@ describe('routeOptionRow', () => {
     expect(row.terminal).toBe('ARC-L1');
     // my own price has no range, and its badge carries the temperature
     expect(row.price).toEqual({ price: nb('6 120'), range: null, badge: { text: 'моя · 40 мин', kind: 'hot' } });
+  });
+
+  it('labels a UEX price of unknown age with a plain UEX badge, without an age', () => {
+    const unknownAge = estimate({ ageKnown: false, ageSec: 1_760_000_000 });
+    expect(routeOptionRow(option({ sell: unknownAge }), ref, 'from', new Map()).price.badge).toEqual({ text: 'UEX', kind: 'uex' });
+    expect(routeOptionRow(option({ buy: unknownAge }), ref, 'to', new Map()).price.badge).toEqual({ text: 'UEX', kind: 'uex' });
   });
 
   it('counts my own runs of exactly this pair, in this direction', () => {
@@ -107,6 +113,10 @@ describe('sellAlternativeRow', () => {
       price: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
       profit: nb('69 120'), loss: false, expectedRate: '264k/ч', worstRate: '120k/ч', extra: '17:35',
     });
+  });
+  it('labels an alternative priced by UEX at an unknown age with a plain UEX badge', () => {
+    const row = sellAlternativeRow(alternative({ sell: estimate({ ageKnown: false, ageSec: 1_760_000_000 }) }), ref);
+    expect(row.price.badge).toEqual({ text: 'UEX', kind: 'uex' });
   });
   it('shows dashes when no flight time is known, and marks a loss', () => {
     const row = sellAlternativeRow(alternative({ extraSec: null, expectedUecPerHour: null, worstUecPerHour: null, expectedProfit: -300 }), ref);

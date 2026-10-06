@@ -1,6 +1,6 @@
 import { learnRatePerMin, maxSeenScu } from '../../core/stock';
 import { obsKey } from '../../core/types';
-import type { Observation, Side, StockStats } from '../../core/types';
+import type { Observation, QuantityReading, Side, StockStats } from '../../core/types';
 import type { Db } from '../db';
 import type { Logger } from '../logger';
 
@@ -44,6 +44,31 @@ export async function latestObservations(db: Db): Promise<Observation[]> {
     side: r.side,
     price: Number(r.price),
     scu: r.scu === null ? null : Number(r.scu),
+  }));
+}
+
+/**
+ * The latest reading of the quantity per terminal, commodity and side: the observation with the greatest `ts`
+ * (the greatest `id` on a tie) among those that carry a quantity (`scu IS NOT NULL`, a known zero included),
+ * however many price-only observations came after it (spec 14.6). A stock whose observations all lack a quantity
+ * has no reading. The correlated subquery is answered by the `observation_lookup` index.
+ */
+export async function latestQuantities(db: Db): Promise<QuantityReading[]> {
+  const rows = await db.select<{ terminal_id: number; commodity_id: number; side: Side; ts: number; scu: number }>(
+    `SELECT o.terminal_id, o.commodity_id, o.side, o.ts, o.scu
+     FROM observation o
+     WHERE o.id = (
+       SELECT i.id FROM observation i
+       WHERE i.terminal_id = o.terminal_id AND i.commodity_id = o.commodity_id AND i.side = o.side AND i.scu IS NOT NULL
+       ORDER BY i.ts DESC, i.id DESC LIMIT 1)
+     ORDER BY o.terminal_id, o.commodity_id, o.side`,
+  );
+  return rows.map((r): QuantityReading => ({
+    terminalId: Number(r.terminal_id),
+    commodityId: Number(r.commodity_id),
+    side: r.side,
+    ts: Number(r.ts),
+    scu: Number(r.scu),
   }));
 }
 

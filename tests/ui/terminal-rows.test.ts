@@ -4,7 +4,7 @@ import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
 import { obs, px, ref } from '../helpers/factories';
 import { withOwnSellScu } from '../helpers/route-fixtures';
-import { NOW, ctx, est, market, marketWithStock, withOwnBuy, withUexRange } from '../helpers/terminal-fixtures';
+import { NOW, ctx, est, market, marketAfterPriceOnlyEdit, marketWithStock, withOwnBuy, withUexRange } from '../helpers/terminal-fixtures';
 
 describe('terminalRows', () => {
   it('shows own values with a temperature badge and UEX values as hints', () => {
@@ -25,6 +25,43 @@ describe('terminalRows', () => {
     // my buy 6120, quantity 40, twenty minutes ago; the UEX maximum is 340; refillFullMin 75 → 130
     const rows = terminalRows(marketWithStock, ref, 1, ctx);
     expect(rows[0].buy).toMatchObject({ ownScu: 130, ownScuBase: { scu: 40, age: '20 мин' }, ownScuRate: 'default' });
+  });
+
+  it('keeps my stock estimate on screen after I correct only the price', () => {
+    // quantity 40 twenty minutes ago, then an observation with only a price two minutes ago; UEX maximum 340, refill 75 min
+    const rows = terminalRows(marketAfterPriceOnlyEdit, ref, 1, ctx);
+    expect(rows[0].buy).toMatchObject({ own: 6120, ownScu: 130, ownScuBase: { scu: 40, age: '20 мин' } });
+  });
+
+  it('warns about a typo in a price-only correction without losing the stock estimate', () => {
+    // a UEX history of 1000-2000 makes 6120 a typo; the quantity reading of twenty minutes ago is still there
+    const typo = withUexRange(marketAfterPriceOnlyEdit, 1, 10, 1000, 2000);
+    expect(terminalRows(typo, ref, 1, ctx)[0].buy).toMatchObject({ own: 6120, warn: true, ownScu: 130, ownScuBase: { scu: 40, age: '20 мин' } });
+  });
+
+  it('keeps the quantity of an earlier reading on the sell side after a price-only correction', () => {
+    const m = buildMarket(
+      [px(1, 10, { sell: { avgWeek: 6500 }, scuSell: 90, dateModified: NOW - 7200 })],
+      [obs({ id: 2, ts: NOW - 60, terminalId: 1, commodityId: 10, side: 'sell', price: 6600, scu: null })],
+      undefined,
+      [{ terminalId: 1, commodityId: 10, side: 'sell', ts: NOW - 1200, scu: 3048 }],
+    );
+    expect(terminalRows(m, ref, 1, ctx)[0].sell).toMatchObject({ own: 6600, ownScu: 3048, ownScuBase: null, ownScuRate: null, hintScu: null });
+  });
+
+  it('shows my quantity next to a UEX price when my own price has gone cold but the quantity reading has not', () => {
+    // the price was seen five hours ago, the quantity twenty minutes ago (the thresholds make that impossible in
+    // practice, but the table must not rely on it): the price is the UEX hint, the quantity is still mine
+    const m = buildMarket(
+      [px(1, 10, { buy: { avgWeek: 6000, minWeek: 5900, maxWeek: 6200 }, scuBuy: 410, scuBuyMax: 340, dateModified: NOW - 3600 })],
+      [obs({ id: 2, ts: NOW - 5 * 3600, terminalId: 1, commodityId: 10, side: 'buy', price: 6120, scu: null })],
+      undefined,
+      [{ terminalId: 1, commodityId: 10, side: 'buy', ts: NOW - 20 * 60, scu: 40 }],
+    );
+    expect(terminalRows(m, ref, 1, ctx)[0].buy).toEqual({
+      own: null, ownScu: 130, ownScuBase: { scu: 40, age: '20 мин' }, ownScuRate: 'default', hint: 6000, hintScu: null,
+      badge: { text: 'UEX · 1 ч', kind: 'uex' }, uexRange: null, ownLast: { price: 6120, age: '5 ч' }, warn: false,
+    });
   });
 
   it('shows no base when the estimate equals what I saw', () => {
@@ -104,7 +141,11 @@ describe('terminalRows', () => {
 
   it('badgeText for a UEX estimate carries its age, unless the age is unknown', () => {
     expect(badgeText({ ...est, source: 'uex', temp: null, ageSec: 7200 })).toEqual({ text: 'UEX · 2 ч', kind: 'uex' });
-    expect(badgeText({ ...est, source: 'uex', temp: null, ageSec: 7200 }, false)).toEqual({ text: 'UEX', kind: 'uex' });
+    expect(badgeText({ ...est, source: 'uex', temp: null, ageSec: 7200, ageKnown: false })).toEqual({ text: 'UEX', kind: 'uex' });
+  });
+
+  it('labels a UEX price of unknown age without an age', () => {
+    expect(badgeText({ ...est, source: 'uex', temp: null, ageKnown: false })).toEqual({ text: 'UEX', kind: 'uex' });
   });
 
   it('labels a UEX row of unknown age (dateModified 0) with a plain UEX badge', () => {

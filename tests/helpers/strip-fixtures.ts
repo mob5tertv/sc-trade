@@ -5,6 +5,7 @@ import type { Settings } from '../../src/core/settings';
 import { distKey } from '../../src/core/types';
 import type { Market, RunWithEvents } from '../../src/core/types';
 import { ev, obs, px, ref, run } from './factories';
+import { quantitiesOf, readingsOf } from './quantity-fixtures';
 
 // ---------------------------------------------------------------------------
 // The live-strip scenario of task 15. Terminals come from the shared reference: 1=ARC-L1, 2=TDD Area 18.
@@ -36,17 +37,18 @@ export const ctx: RouteCtx = {
 /** The UEX SELL side with the weekly range around `price`. */
 export function withUexSell(m: Market, terminalId: number, commodityId: number, price: number, low = price, high = price): Market {
   const row = px(terminalId, commodityId, { sell: { last: price, avgWeek: price, minWeek: low, maxWeek: high }, dateModified: NOW - 3600 });
-  return buildMarket([...m.uex.values(), row], [...m.own.values()]);
+  return buildMarket([...m.uex.values(), row], [...m.own.values()], undefined, quantitiesOf(m));
 }
 
 export const market: Market = withUexSell(buildMarket([], []), 2, GOLD, 6900, 6400, 7100);
 
-/** Copy of the market with my own SELL observation made at `ts`; `scu` is the buyer's inventory recorded with it (0 is "out of stock"). */
+/**
+ * Copy of the market with my own SELL observation made at `ts`; `scu` is the buyer's inventory recorded with it (0 is
+ * "out of stock"). An observation without a quantity leaves the reading of the stock as it was.
+ */
 export function withOwnSell(m: Market, terminalId: number, commodityId: number, price: number, ts: number, scu: number | null = null): Market {
-  return buildMarket(
-    [...m.uex.values()],
-    [...m.own.values(), obs({ id: m.own.size + 1, ts, terminalId, commodityId, side: 'sell', price, scu })],
-  );
+  const next = obs({ id: m.own.size + 1, ts, terminalId, commodityId, side: 'sell', price, scu });
+  return buildMarket([...m.uex.values()], [...m.own.values(), next], undefined, [...quantitiesOf(m), ...readingsOf(next)]);
 }
 
 const buy = (id: number, commodityId: number, scu: number, price: number) => (

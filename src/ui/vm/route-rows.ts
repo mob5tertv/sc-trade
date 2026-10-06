@@ -31,7 +31,10 @@ export function formatDistance(gm: number | null): string {
   return `${String(rounded).replace('.', ',')} Гм`;
 }
 
-/** A price with the range it was estimated in (only when there is one) and the badge of its source and age. */
+/**
+ * A price with the range it was estimated in (only when there is one) and the badge of its source and age.
+ * The badge text is `badgeText(e)` as it is, so a UEX price of unknown age is just 'UEX'.
+ */
 export interface PriceView { price: string; range: string | null; badge: { text: string; kind: Temp | 'uex' } }
 
 function priceView(e: Estimate): PriceView {

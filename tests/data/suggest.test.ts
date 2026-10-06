@@ -51,6 +51,14 @@ describe('loadMarket', () => {
     expect(m.stock.get(obsKey(1, GOLD, 'buy'))).toEqual({ maxScu: 340, ratePerMin: 6 });     // 100 → 160 in ten minutes; the seeded 340 is the maximum
     expect(m.stock.has(obsKey(3, GOLD, 'sell'))).toBe(false);                                 // seeded without a quantity
   });
+
+  it('carries the latest quantity reading of each stock, also when a later observation has only a price', async () => {
+    await addObservation(db, log, { ts: NOW - 5, terminalId: 1, commodityId: GOLD, side: 'buy', price: 6200, scu: null });
+    const m = await loadMarket(db);
+    expect(m.own.get(obsKey(1, GOLD, 'buy'))).toMatchObject({ price: 6200, scu: null });
+    expect(m.ownScu.get(obsKey(1, GOLD, 'buy'))).toEqual({ ts: NOW - 600, scu: 340 });        // the seeded reading
+    expect(m.ownScu.has(obsKey(3, GOLD, 'sell'))).toBe(false);                                // seeded without a quantity
+  });
 });
 
 describe('suggestFrom', () => {
@@ -226,6 +234,28 @@ describe('suggestFrom', () => {
     const ctx = JSON.parse(line.slice(line.indexOf('{')));
     expect(ctx.options[0].buy.stock).toEqual({ scu: 340, baseScu: 340, baseAgeSec: 600, ratePerMin: 6, rateSource: 'learned', maxScu: 340 });
     expect(ctx.options[0].sell).not.toHaveProperty('stock');        // a UEX price has no timer
+  });
+
+  it('keeps the stock estimate in the log after an observation with only a price', async () => {
+    // I corrected only the price a minute ago: the quantity of ten minutes ago (340) is still the base of the timer
+    await addObservation(db, log, { ts: NOW - 60, terminalId: 1, commodityId: GOLD, side: 'buy', price: 6200, scu: null });
+    const o = await suggestFrom(deps, 1, 696, GOLD);
+    expect(o[0].buy).toMatchObject({ price: 6200, source: 'own', scu: 340, scuOrigin: 'own' });
+    const line = suggestLines('from').at(-1)!.line;
+    expect(line).toContain('"stock":');
+    const ctx = JSON.parse(line.slice(line.indexOf('{')));
+    expect(ctx.options[0].buy).toMatchObject({
+      price: 6200, source: 'own', scu: 340, scuOrigin: 'own', ageKnown: true,
+      stock: { scu: 340, baseScu: 340, baseAgeSec: 600, ratePerMin: 4.53, rateSource: 'default', maxScu: 340 },
+    });
+  });
+
+  it('logs where the quantity comes from and whether the age of the price is known', async () => {
+    await suggestFrom(deps, 1, 696, GOLD);
+    const line = suggestLines('from').at(-1)!.line;
+    const ctx = JSON.parse(line.slice(line.indexOf('{')));
+    expect(ctx.options[0].buy).toMatchObject({ source: 'own', scuOrigin: 'own', ageKnown: true });
+    expect(ctx.options[0].sell).toMatchObject({ source: 'uex', scu: null, scuOrigin: null, ageKnown: true });
   });
 
   it('feeds the refill timer into the quantity, with the full-refill time from the settings', async () => {

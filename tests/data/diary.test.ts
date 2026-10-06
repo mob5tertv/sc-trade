@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/data/db';
 import { createLogger, memorySink } from '../../src/data/logger';
 import { obsKey } from '../../src/core/types';
-import { addObservation, latestObservations, stockStats } from '../../src/data/repo/diary';
+import { addObservation, latestObservations, latestQuantities, stockStats } from '../../src/data/repo/diary';
 import { migratedDb } from '../helpers/test-db';
 
 let db: Db;
@@ -78,6 +78,59 @@ describe('latestObservations', () => {
   it('returns whole observations with numeric fields', async () => {
     const id = await addObservation(db, log, { ts: 100, terminalId: 3, commodityId: 20, side: 'sell', price: 6840.5, scu: 340 });
     expect(await latestObservations(db)).toEqual([{ id, ts: 100, terminalId: 3, commodityId: 20, side: 'sell', price: 6840.5, scu: 340 }]);
+  });
+});
+
+describe('latestQuantities', () => {
+  it('is empty for an empty diary', async () => {
+    expect(await latestQuantities(db)).toEqual([]);
+  });
+
+  it('returns the latest observation that carries a quantity, per terminal, commodity and side', async () => {
+    await addObservation(db, log, { ts: 100, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: 300 });
+    await addObservation(db, log, { ts: 200, terminalId: 1, commodityId: 10, side: 'buy', price: 6120, scu: null });
+    await addObservation(db, log, { ts: 150, terminalId: 1, commodityId: 10, side: 'sell', price: 5000, scu: null });
+    expect(await latestQuantities(db)).toEqual([{ terminalId: 1, commodityId: 10, side: 'buy', ts: 100, scu: 300 }]);
+  });
+
+  it('keeps a recorded zero as a quantity reading', async () => {
+    await addObservation(db, log, { ts: 100, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: 0 });
+    expect(await latestQuantities(db)).toEqual([{ terminalId: 1, commodityId: 10, side: 'buy', ts: 100, scu: 0 }]);
+  });
+
+  it('prefers a newer reading to an older one, and a zero that is the newest to a larger quantity before it', async () => {
+    await addObservation(db, log, { ts: 100, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: 300 });
+    await addObservation(db, log, { ts: 300, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: 0 });
+    await addObservation(db, log, { ts: 200, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: 150 });
+    expect(await latestQuantities(db)).toEqual([{ terminalId: 1, commodityId: 10, side: 'buy', ts: 300, scu: 0 }]);
+  });
+
+  it('takes the later timestamp even when it was written earlier', async () => {
+    await addObservation(db, log, { ts: 200, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: 40 });
+    await addObservation(db, log, { ts: 100, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: 300 });
+    expect((await latestQuantities(db)).map((q) => q.scu)).toEqual([40]);
+  });
+
+  it('breaks a timestamp tie by insertion order', async () => {
+    await addObservation(db, log, { ts: 100, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: 300 });
+    await addObservation(db, log, { ts: 100, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: 40 });
+    expect((await latestQuantities(db)).map((q) => q.scu)).toEqual([40]);
+  });
+
+  it('keeps terminals, commodities and sides apart, ordered by terminal, commodity and side', async () => {
+    await addObservation(db, log, { ts: 1, terminalId: 2, commodityId: 10, side: 'buy', price: 1, scu: 3 });
+    await addObservation(db, log, { ts: 1, terminalId: 1, commodityId: 20, side: 'buy', price: 1, scu: 4 });
+    await addObservation(db, log, { ts: 1, terminalId: 1, commodityId: 10, side: 'sell', price: 1, scu: 2 });
+    await addObservation(db, log, { ts: 1, terminalId: 1, commodityId: 10, side: 'buy', price: 1, scu: 1 });
+    expect((await latestQuantities(db)).map((q) => [q.terminalId, q.commodityId, q.side, q.scu])).toEqual([
+      [1, 10, 'buy', 1], [1, 10, 'sell', 2], [1, 20, 'buy', 4], [2, 10, 'buy', 3],
+    ]);
+  });
+
+  it('leaves out a stock whose observations all lack a quantity', async () => {
+    await addObservation(db, log, { ts: 100, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: null });
+    await addObservation(db, log, { ts: 200, terminalId: 1, commodityId: 10, side: 'buy', price: 6100, scu: null });
+    expect(await latestQuantities(db)).toEqual([]);
   });
 });
 
