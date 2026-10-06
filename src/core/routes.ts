@@ -182,12 +182,13 @@ export function routesFrom(m: Market, originIds: number[], currentTerminalId: nu
 
 /**
  * Ranked trips that end at `destId`: every commodity the terminal buys, from every terminal that
- * sells it. Where the player stands is not known here, so there is no empty flight.
+ * sells it. `commodityId` narrows the search to one commodity before the `topN` cut.
+ * Where the player stands is not known here, so there is no empty flight.
  */
-export function routesTo(m: Market, destId: number, ctx: RouteCtx): RouteResult {
+export function routesTo(m: Market, destId: number, ctx: RouteCtx, commodityId?: number): RouteResult {
   const trace = newTrace();
   const found: RouteOption[] = [];
-  for (const c of m.byTerminal.get(destId) ?? []) {
+  for (const c of commodityId === undefined ? m.byTerminal.get(destId) ?? [] : [commodityId]) {
     const sell = estimate(m, destId, c, 'sell', ctx);
     if (!sell) continue;
     for (const originId of m.byCommodity.get(c) ?? []) {

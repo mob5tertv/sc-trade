@@ -140,6 +140,24 @@ describe('routesTo', () => {
     expect(o).toMatchObject({ originId: 1, destId: 2, profit: 265200, timeSec: 1015 });
   });
 
+  it('narrows to one commodity: the same result for a terminal that buys only that commodity', () => {
+    expect(routesTo(market, 2, ctx, GOLD)).toEqual(routesTo(market, 2, ctx));
+  });
+
+  it('finds nothing for a commodity the destination does not buy', () => {
+    expect(routesTo(market, 2, ctx, 999).options).toEqual([]);
+  });
+
+  it('applies the commodity filter before the topN cut', () => {
+    // terminal 2 also buys Titanium (20), cheap at terminal 1: that route outranks Gold
+    const m2 = withBuy(withSell(market, 2, 5000, 20), 1, { avgWeek: 100, minWeek: 100, maxWeek: 100 }, 20);
+    const c = { ...ctx, settings: { ...ctx.settings, topN: 1 } };
+    expect(routesTo(m2, 2, c).options.map(o => o.commodityId)).toEqual([20]);
+    const gold = routesTo(m2, 2, c, GOLD);
+    expect(gold.options.map(o => o.commodityId)).toEqual([GOLD]);
+    expect(gold.options[0]).toMatchObject({ originId: 1, destId: 2, profit: 265200 });
+  });
+
   it('counts the destination terminal as unknown when it left the reference', () => {
     const r = routesTo(withSell(market, 777, 9999), 777, ctx);
     expect(r.options).toEqual([]);
