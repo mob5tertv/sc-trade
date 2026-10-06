@@ -44,7 +44,7 @@ describe('uex cache: prices', () => {
     const p = px(1, 10, {
       sell: { last: 7000, minWeek: 6400, maxWeek: 7100, avgWeek: 6900, minMonth: 6000, maxMonth: 7200, avgMonth: 6800, min: 5000, max: 8000, avg: 6500 },
       buy: { last: 1, minWeek: 2, maxWeek: 3, avgWeek: 4, minMonth: 5, maxMonth: 6, avgMonth: 7, min: 8, max: 9, avg: 10 },
-      scuBuy: 11, scuSell: 500, dateModified: 1_700_000_000,
+      scuBuy: 11, scuSell: 500, scuBuyMax: 340, scuSellMax: 1088, dateModified: 1_700_000_000,
     });
     await upsertPrices(db, [1], [p], 100);
     expect((await loadUexPrices(db))[0]).toEqual(p);
@@ -71,7 +71,7 @@ describe('uex cache: prices', () => {
     expect(inserts).toHaveLength(3);
     for (const s of inserts) {
       expect(s.sql).toContain('ON CONFLICT');
-      expect(s.params.length).toBeLessThanOrEqual(100 * 26);
+      expect(s.params.length).toBeLessThanOrEqual(100 * 28);
     }
   });
 

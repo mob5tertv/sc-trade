@@ -9,7 +9,7 @@ export interface Migration {
 // Migrations run without a transaction (tauri-plugin-sql uses a connection pool), so a run
 // interrupted half-way leaves some objects behind while `user_version` is still old. Every
 // statement of a migration must therefore be safe to run again: the version 1 statements
-// use IF NOT EXISTS for that reason.
+// use IF NOT EXISTS for that reason, version 2 rebuilds a cache table with DROP / CREATE IF [NOT] EXISTS.
 export const MIGRATIONS: Migration[] = [
   {
     version: 1,
@@ -74,6 +74,30 @@ export const MIGRATIONS: Migration[] = [
       `CREATE INDEX IF NOT EXISTS run_event_run ON run_event (run_id, ts)`,
 
       `CREATE TABLE IF NOT EXISTS setting (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+    ],
+  },
+  {
+    // The stock refill timer needs the largest stock UEX has seen. `uex_price` is only a cache of the
+    // UEX answer, so instead of altering it the table is rebuilt with the two new columns and the
+    // price sync mark is dropped: the prices are downloaded again on the next start.
+    version: 2,
+    statements: [
+      `DROP TABLE IF EXISTS uex_price`,
+
+      `CREATE TABLE IF NOT EXISTS uex_price (
+        terminal_id INTEGER NOT NULL, commodity_id INTEGER NOT NULL,
+        buy_last REAL NOT NULL, buy_min_week REAL NOT NULL, buy_max_week REAL NOT NULL, buy_avg_week REAL NOT NULL,
+        buy_min_month REAL NOT NULL, buy_max_month REAL NOT NULL, buy_avg_month REAL NOT NULL,
+        buy_min REAL NOT NULL, buy_max REAL NOT NULL, buy_avg REAL NOT NULL,
+        sell_last REAL NOT NULL, sell_min_week REAL NOT NULL, sell_max_week REAL NOT NULL, sell_avg_week REAL NOT NULL,
+        sell_min_month REAL NOT NULL, sell_max_month REAL NOT NULL, sell_avg_month REAL NOT NULL,
+        sell_min REAL NOT NULL, sell_max REAL NOT NULL, sell_avg REAL NOT NULL,
+        scu_buy REAL NOT NULL, scu_sell REAL NOT NULL,
+        scu_buy_max REAL NOT NULL DEFAULT 0, scu_sell_max REAL NOT NULL DEFAULT 0,
+        date_modified INTEGER NOT NULL, synced_at INTEGER NOT NULL,
+        PRIMARY KEY (terminal_id, commodity_id))`,
+
+      `DELETE FROM uex_meta WHERE key = 'prices_synced_at'`,
     ],
   },
 ];

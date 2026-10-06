@@ -20,8 +20,9 @@ describe('sellOrContinue', () => {
     expect(sellOrContinue(market, line, 3, 6500, 100, 1200, ctx).here).toMatchObject({ qty: 100, profit: 38_000 });
   });
 
-  it('treats a zero demand here as unknown', () => {
-    expect(sellOrContinue(market, line, 3, 6500, 0, 1200, ctx).here.qty).toBe(340);
+  it('treats a zero demand here as known: nothing sells, only null is unknown', () => {
+    expect(sellOrContinue(market, line, 3, 6500, 0, 1200, ctx).here).toMatchObject({ qty: 0, profit: 0 });
+    expect(sellOrContinue(market, line, 3, 6500, null, 1200, ctx).here.qty).toBe(340);
   });
 
   it('excludes the current terminal, caps at three, and puts untimed options last', () => {

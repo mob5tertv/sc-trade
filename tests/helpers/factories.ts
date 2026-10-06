@@ -16,6 +16,8 @@ export interface PxPartial {
   sell?: Partial<UexSideStats>;
   scuBuy?: number;
   scuSell?: number;
+  scuBuyMax?: number;
+  scuSellMax?: number;
   dateModified?: number;
 }
 
@@ -28,6 +30,8 @@ export function px(terminalId: number, commodityId: number, partial: PxPartial =
     sell: { ...zeroStats(), ...partial.sell },
     scuBuy: partial.scuBuy ?? 0,
     scuSell: partial.scuSell ?? 0,
+    scuBuyMax: partial.scuBuyMax ?? 0,
+    scuSellMax: partial.scuSellMax ?? 0,
     dateModified: partial.dateModified ?? 0,
   };
 }

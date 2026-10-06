@@ -110,6 +110,7 @@ describe('uex client: prices', () => {
   it('maps every stat column of a side to its own field', async () => {
     const row = {
       id_terminal: 7, id_commodity: 9, date_modified: 1700000000, scu_buy: 11, scu_sell: 22,
+      scu_buy_max_week: 33, scu_buy_max: 330, scu_sell_max_week: 44, scu_sell_max: 440,
       price_buy: 1, price_buy_min_week: 2, price_buy_max_week: 3, price_buy_avg_week: 4,
       price_buy_min_month: 5, price_buy_max_month: 6, price_buy_avg_month: 7,
       price_buy_min: 8, price_buy_max: 9, price_buy_avg: 10,
@@ -119,10 +120,26 @@ describe('uex client: prices', () => {
     };
     const [p] = await client({ commodities_prices: { status: 'ok', data: [row] } }).prices([7]);
     expect(p).toEqual({
-      terminalId: 7, commodityId: 9, scuBuy: 11, scuSell: 22, dateModified: 1700000000,
+      terminalId: 7, commodityId: 9, scuBuy: 11, scuSell: 22, scuBuyMax: 33, scuSellMax: 44, dateModified: 1700000000,
       buy: { last: 1, minWeek: 2, maxWeek: 3, avgWeek: 4, minMonth: 5, maxMonth: 6, avgMonth: 7, min: 8, max: 9, avg: 10 },
       sell: { last: 101, minWeek: 102, maxWeek: 103, avgWeek: 104, minMonth: 105, maxMonth: 106, avgMonth: 107, min: 108, max: 109, avg: 110 },
     });
+  });
+
+  it('maps the stock maximum from the week, falling back to all-time', async () => {
+    const rows = [{ id_terminal: 1, id_commodity: 2, scu_buy_max_week: 0, scu_buy_max: 900, scu_sell_max_week: 1088, scu_sell_max: 2000 }];
+    const [p] = await client({ commodities_prices: { status: 'ok', data: rows } }).prices([1]);
+    expect(p.scuBuyMax).toBe(900); expect(p.scuSellMax).toBe(1088);
+  });
+
+  it('leaves the stock maximum at zero when UEX sends none, and reads numeric strings', async () => {
+    const rows = [
+      { id_terminal: 1, id_commodity: 2 },
+      { id_terminal: 1, id_commodity: 3, scu_buy_max_week: null, scu_buy_max: null, scu_sell_max_week: '640', scu_sell_max: 'abc' },
+    ];
+    const [none, text] = await client({ commodities_prices: { status: 'ok', data: rows } }).prices([1]);
+    expect(none).toMatchObject({ scuBuyMax: 0, scuSellMax: 0 });
+    expect(text).toMatchObject({ scuBuyMax: 0, scuSellMax: 640 });
   });
 
   it('rejects an empty list and more than ten terminals', async () => {

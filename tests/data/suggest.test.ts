@@ -43,6 +43,14 @@ describe('loadMarket', () => {
     expect(m.own.get(obsKey(3, GOLD, 'sell'))).toMatchObject({ price: 6840 });
     expect([...m.byCommodity.get(GOLD)!].sort()).toEqual([1, 2, 3, 4]);
   });
+
+  it('carries the stock statistics of the whole diary, not only of its latest rows', async () => {
+    await addObservation(db, log, { ts: NOW - 7200, terminalId: 1, commodityId: GOLD, side: 'buy', price: 6000, scu: 100 });
+    await addObservation(db, log, { ts: NOW - 6600, terminalId: 1, commodityId: GOLD, side: 'buy', price: 6000, scu: 160 });
+    const m = await loadMarket(db);
+    expect(m.stock.get(obsKey(1, GOLD, 'buy'))).toEqual({ maxScu: 340, ratePerMin: 6 });     // 100 → 160 in ten minutes; the seeded 340 is the maximum
+    expect(m.stock.has(obsKey(3, GOLD, 'sell'))).toBe(false);                                 // seeded without a quantity
+  });
 });
 
 describe('suggestFrom', () => {
@@ -206,6 +214,32 @@ describe('suggestFrom', () => {
       sell: { price: 6900, source: 'uex', temp: null },
     });
     expect(ctx.options[1]).toMatchObject({ destId: 3, sell: { price: 6840, source: 'own', temp: 'warm' } });
+  });
+
+  it('logs the stock estimate of the purchase and the rate it came from', async () => {
+    // two readings of the quantity in the diary teach a rate: 100 → 160 in ten minutes is 6 per minute
+    await addObservation(db, log, { ts: NOW - 7200, terminalId: 1, commodityId: GOLD, side: 'buy', price: 6000, scu: 100 });
+    await addObservation(db, log, { ts: NOW - 6600, terminalId: 1, commodityId: GOLD, side: 'buy', price: 6000, scu: 160 });
+    await suggestFrom(deps, 1, 696, GOLD);
+    const line = suggestLines('from').at(-1)!.line;
+    expect(line).toContain('"rateSource":"learned"');
+    const ctx = JSON.parse(line.slice(line.indexOf('{')));
+    expect(ctx.options[0].buy.stock).toEqual({ scu: 340, baseScu: 340, baseAgeSec: 600, ratePerMin: 6, rateSource: 'learned', maxScu: 340 });
+    expect(ctx.options[0].sell).not.toHaveProperty('stock');        // a UEX price has no timer
+  });
+
+  it('feeds the refill timer into the quantity, with the full-refill time from the settings', async () => {
+    // the diary once showed 1000 SCU, then 340 (after buying): 340 + 10 minutes of refilling
+    await addObservation(db, log, { ts: NOW - 7200, terminalId: 1, commodityId: GOLD, side: 'buy', price: 6000, scu: 1000 });
+    const withMinutes = (refillFullMin: number): SuggestDeps => ({ ...deps, settings: { ...deps.settings, refillFullMin } });
+    expect((await suggestFrom(withMinutes(100), 1, 696, GOLD))[0].qty).toBe(440);      // 1000 / 100 = 10 per minute
+    expect((await suggestFrom(withMinutes(200), 1, 696, GOLD))[0].qty).toBe(390);      // 1000 / 200 = 5 per minute
+  });
+
+  it('drops a trip whose purchase terminal is known to be empty', async () => {
+    await addObservation(db, log, { ts: NOW, terminalId: 1, commodityId: GOLD, side: 'buy', price: 6120, scu: 0 });
+    expect(await suggestFrom(deps, 1, 696, GOLD)).toEqual([]);
+    expect(suggestLines('from').at(-1)!.line).toContain('"zeroQty":2');
   });
 
   it('writes the log line once the distances are known, and nothing at info level', async () => {

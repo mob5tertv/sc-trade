@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/data/db';
 import { createLogger, memorySink } from '../../src/data/logger';
-import { addObservation, latestObservations } from '../../src/data/repo/diary';
+import { obsKey } from '../../src/core/types';
+import { addObservation, latestObservations, stockStats } from '../../src/data/repo/diary';
 import { migratedDb } from '../helpers/test-db';
 
 let db: Db;
@@ -77,5 +78,60 @@ describe('latestObservations', () => {
   it('returns whole observations with numeric fields', async () => {
     const id = await addObservation(db, log, { ts: 100, terminalId: 3, commodityId: 20, side: 'sell', price: 6840.5, scu: 340 });
     expect(await latestObservations(db)).toEqual([{ id, ts: 100, terminalId: 3, commodityId: 20, side: 'sell', price: 6840.5, scu: 340 }]);
+  });
+});
+
+describe('stockStats', () => {
+  const write = (ts: number, scu: number | null, o: { terminalId?: number; commodityId?: number; side?: 'buy' | 'sell' } = {}) => addObservation(
+    db, log, { ts, terminalId: o.terminalId ?? 1, commodityId: o.commodityId ?? 10, side: o.side ?? 'buy', price: 6000, scu },
+  );
+
+  it('derives the largest quantity and the fastest refill per terminal, commodity and side', async () => {
+    for (const [ts, scu] of [[0, 40], [600, 140], [1200, 150]] as const)
+      await addObservation(db, log, { ts, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu });
+    await addObservation(db, log, { ts: 0, terminalId: 1, commodityId: 10, side: 'sell', price: 5000, scu: null });
+    const s = await stockStats(db);
+    expect(s.get(obsKey(1, 10, 'buy'))).toEqual({ maxScu: 150, ratePerMin: 10 });
+    expect(s.has(obsKey(1, 10, 'sell'))).toBe(false);
+  });
+
+  it('is empty for an empty diary', async () => {
+    expect((await stockStats(db)).size).toBe(0);
+  });
+
+  it('orders the readings by time, not by the order they were written in', async () => {
+    await write(1200, 150);
+    await write(0, 40);
+    await write(600, 140);
+    expect((await stockStats(db)).get(obsKey(1, 10, 'buy'))).toEqual({ maxScu: 150, ratePerMin: 10 });
+  });
+
+  it('keeps terminals, commodities and sides apart', async () => {
+    await write(0, 0);
+    await write(600, 60);                                                   // 6 per minute at 1/10/buy
+    await write(0, 100, { terminalId: 2 });
+    await write(600, 400, { terminalId: 2 });                               // 30 per minute at 2/10/buy
+    await write(0, 5, { commodityId: 20 });
+    await write(0, 7, { side: 'sell' });
+    const s = await stockStats(db);
+    expect(s.get(obsKey(1, 10, 'buy'))).toEqual({ maxScu: 60, ratePerMin: 6 });
+    expect(s.get(obsKey(2, 10, 'buy'))).toEqual({ maxScu: 400, ratePerMin: 30 });
+    expect(s.get(obsKey(1, 20, 'buy'))).toEqual({ maxScu: 5, ratePerMin: null });
+    expect(s.get(obsKey(1, 10, 'sell'))).toEqual({ maxScu: 7, ratePerMin: null });
+    expect(s.size).toBe(4);
+  });
+
+  it('skips readings without a quantity and keeps a known zero', async () => {
+    await write(0, null);
+    await write(300, 0);
+    await write(600, null);
+    await write(900, 30);
+    expect((await stockStats(db)).get(obsKey(1, 10, 'buy'))).toEqual({ maxScu: 30, ratePerMin: 3 });   // +30 in 10 min, from 300 s to 900 s
+  });
+
+  it('leaves out a key whose readings all lack a quantity', async () => {
+    await write(0, null);
+    await write(600, null);
+    expect((await stockStats(db)).size).toBe(0);
   });
 });

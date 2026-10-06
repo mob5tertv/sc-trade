@@ -167,7 +167,7 @@ const SIDES = ['buy', 'sell'] as const;
 const PRICE_COLUMNS = [
   'terminal_id', 'commodity_id',
   ...SIDES.flatMap((side) => STATS.map(([, suffix]) => `${side}_${suffix}`)),
-  'scu_buy', 'scu_sell', 'date_modified', 'synced_at',
+  'scu_buy', 'scu_sell', 'scu_buy_max', 'scu_sell_max', 'date_modified', 'synced_at',
 ];
 
 /**
@@ -179,7 +179,7 @@ export async function upsertPrices(db: Db, terminalIds: number[], rows: UexPrice
   await upsertRows(db, 'uex_price', PRICE_COLUMNS, ['terminal_id', 'commodity_id'], rows.map((p) => [
     p.terminalId, p.commodityId,
     ...SIDES.flatMap((side) => STATS.map(([field]) => p[side][field])),
-    p.scuBuy, p.scuSell, p.dateModified, syncedAt,
+    p.scuBuy, p.scuSell, p.scuBuyMax, p.scuSellMax, p.dateModified, syncedAt,
   ]));
   for (const part of chunks(terminalIds)) {
     await db.execute(
@@ -202,6 +202,8 @@ function toPrice(r: Row): UexPrice {
     sell: side('sell'),
     scuBuy: Number(r.scu_buy),
     scuSell: Number(r.scu_sell),
+    scuBuyMax: Number(r.scu_buy_max),
+    scuSellMax: Number(r.scu_sell_max),
     dateModified: Number(r.date_modified),
   };
 }

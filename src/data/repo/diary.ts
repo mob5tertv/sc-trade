@@ -1,4 +1,6 @@
-import type { Observation, Side } from '../../core/types';
+import { learnRatePerMin, maxSeenScu } from '../../core/stock';
+import { obsKey } from '../../core/types';
+import type { Observation, Side, StockStats } from '../../core/types';
 import type { Db } from '../db';
 import type { Logger } from '../logger';
 
@@ -43,4 +45,31 @@ export async function latestObservations(db: Db): Promise<Observation[]> {
     price: Number(r.price),
     scu: r.scu === null ? null : Number(r.scu),
   }));
+}
+
+/**
+ * What the whole diary says about each stock: the largest quantity ever seen and the fastest refill between
+ * two readings, per terminal, commodity and side (`obsKey`). Only readings with a quantity take part, so a
+ * key whose readings all lack one is left out. Reads the whole history, oldest reading first.
+ */
+export async function stockStats(db: Db): Promise<Map<string, StockStats>> {
+  const rows = await db.select<{ terminal_id: number; commodity_id: number; side: Side; ts: number; scu: number }>(
+    `SELECT terminal_id, commodity_id, side, ts, scu FROM observation
+     WHERE scu IS NOT NULL
+     ORDER BY terminal_id, commodity_id, side, ts, id`,
+  );
+  const histories = new Map<string, Array<{ ts: number; scu: number }>>();
+  for (const r of rows) {
+    const key = obsKey(Number(r.terminal_id), Number(r.commodity_id), r.side);
+    const history = histories.get(key);
+    const reading = { ts: Number(r.ts), scu: Number(r.scu) };
+    if (history) history.push(reading);
+    else histories.set(key, [reading]);
+  }
+
+  const stats = new Map<string, StockStats>();
+  for (const [key, history] of histories) {
+    stats.set(key, { maxScu: maxSeenScu(history), ratePerMin: learnRatePerMin(history) });
+  }
+  return stats;
 }

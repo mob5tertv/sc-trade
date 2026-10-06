@@ -1,22 +1,46 @@
 import { describe, expect, it } from 'vitest';
 import { badgeText, terminalRows } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
+import { obsKey } from '../../src/core/types';
 import { obs, px, ref } from '../helpers/factories';
-import { NOW, ctx, est, market, withOwnBuy, withUexRange } from '../helpers/terminal-fixtures';
+import { NOW, ctx, est, market, marketWithStock, withOwnBuy, withUexRange } from '../helpers/terminal-fixtures';
 
 describe('terminalRows', () => {
   it('shows own values with a temperature badge and UEX values as hints', () => {
     const rows = terminalRows(market, ref, 1, ctx);       // terminal 1: Gold — own buy 6120/340 two minutes ago; Tungsten — UEX only 3980/410, an hour old
     expect(rows.map(r => r.code)).toEqual(['GOLD', 'TUNG']);
     expect(rows[0].buy).toEqual({
-      own: 6120, ownScu: 340, hint: null, hintScu: null, badge: { text: 'моя · 2 мин', kind: 'hot' },
+      own: 6120, ownScu: 340, ownScuBase: null, ownScuRate: 'none', hint: null, hintScu: null, badge: { text: 'моя · 2 мин', kind: 'hot' },
       uexRange: null, ownLast: null, warn: false,
     });
     expect(rows[0].sell).toBeNull();
     expect(rows[1].buy).toEqual({
-      own: null, ownScu: null, hint: 3980, hintScu: 410, badge: { text: 'UEX · 1 ч', kind: 'uex' },
+      own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 3980, hintScu: 410, badge: { text: 'UEX · 1 ч', kind: 'uex' },
       uexRange: null, ownLast: null, warn: false,
     });
+  });
+
+  it('shows the estimated stock with its base when the timer has moved it', () => {
+    // my buy 6120, quantity 40, twenty minutes ago; the UEX maximum is 340; refillFullMin 75 → 130
+    const rows = terminalRows(marketWithStock, ref, 1, ctx);
+    expect(rows[0].buy).toMatchObject({ ownScu: 130, ownScuBase: { scu: 40, age: '20 мин' }, ownScuRate: 'default' });
+  });
+
+  it('shows no base when the estimate equals what I saw', () => {
+    expect(terminalRows(market, ref, 1, ctx)[0].buy).toMatchObject({ ownScu: 340, ownScuBase: null });
+  });
+
+  it('follows the full-refill time of the context and a rate learned from my diary', () => {
+    expect(terminalRows(marketWithStock, ref, 1, { ...ctx, refillFullMin: 170 })[0].buy)         // 340 / 170 = 2 per minute
+      .toMatchObject({ ownScu: 80, ownScuBase: { scu: 40, age: '20 мин' }, ownScuRate: 'default' });
+    const learned = buildMarket([...marketWithStock.uex.values()], [...marketWithStock.own.values()], new Map([[obsKey(1, 10, 'buy'), { maxScu: 340, ratePerMin: 5 }]]));
+    expect(terminalRows(learned, ref, 1, ctx)[0].buy).toMatchObject({ ownScu: 140, ownScuBase: { scu: 40, age: '20 мин' }, ownScuRate: 'learned' });
+  });
+
+  it('shows a known empty stock as zero, with a base once it has refilled', () => {
+    const empty = (ageMin: number) => terminalRows(withOwnBuy(marketWithStock, 1, 10, 6120, NOW - ageMin * 60, 0), ref, 1, ctx)[0].buy;
+    expect(empty(0)).toMatchObject({ own: 6120, ownScu: 0, ownScuBase: null, hintScu: null });
+    expect(empty(10)).toMatchObject({ ownScu: 45, ownScuBase: { scu: 0, age: '10 мин' } });      // 340 / 75 × 10
   });
 
   it('demotes a cold own value to a hint', () => {
@@ -88,7 +112,7 @@ describe('terminalRows', () => {
     const [row] = terminalRows(m, ref, 1, ctx);
     expect(row.buy).toMatchObject({ own: 6100, ownScu: 200 });
     expect(row.sell).toEqual({
-      own: null, ownScu: null, hint: 6500, hintScu: 90, badge: { text: 'UEX · 2 ч', kind: 'uex' },
+      own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 6500, hintScu: 90, badge: { text: 'UEX · 2 ч', kind: 'uex' },
       uexRange: null, ownLast: null, warn: false,
     });
   });
@@ -96,7 +120,7 @@ describe('terminalRows', () => {
   it('keeps a cold own value as a grey hint when UEX has nothing for it', () => {
     const m = buildMarket([], [obs({ ts: NOW - 5 * 3600, terminalId: 1, commodityId: 10, side: 'buy', price: 6120, scu: 340 })]);
     expect(terminalRows(m, ref, 1, ctx)[0].buy).toEqual({
-      own: null, ownScu: null, hint: 6120, hintScu: null, badge: { text: 'моя · 5 ч', kind: 'cold' },
+      own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 6120, hintScu: null, badge: { text: 'моя · 5 ч', kind: 'cold' },
       uexRange: null, ownLast: null, warn: false,
     });
   });
@@ -107,7 +131,8 @@ describe('terminalRows', () => {
       buildMarket(uex, [obs({ ts: NOW - 60, terminalId: 1, commodityId: 10, side: 'buy', price: 6100, scu })]), ref, 1, ctx,
     )[0].buy;
     expect(ownScuOf(null)).toMatchObject({ own: 6100, ownScu: null, hint: null, hintScu: 410 });
-    expect(ownScuOf(0)).toMatchObject({ own: 6100, ownScu: null, hint: null, hintScu: 410 });
+    // my own zero is a known empty stock now, shown as 0 (it used to fall through to the UEX quantity)
+    expect(ownScuOf(0)).toMatchObject({ own: 6100, ownScu: 0, hint: null, hintScu: null });
     expect(ownScuOf(340)).toMatchObject({ own: 6100, ownScu: 340, hint: null, hintScu: null });
   });
 
