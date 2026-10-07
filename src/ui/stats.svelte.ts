@@ -4,7 +4,9 @@ import { app } from './state.svelte';
 import { loadHistorySafely } from './stats-history';
 import { createLatestRequest } from './vm/latest-request';
 import { historyRows, liveRows, routeRows, sessionRows, type HistoryRow, type RouteRow, type SessionRow } from './vm/stats-rows';
-import { EMPTY_FIGURES, EMPTY_HISTORY, figuresOf, routesSummary, type History, type StatsFigures, type StatsView } from './vm/stats-view';
+import {
+  currentSession, EMPTY_FIGURES, EMPTY_HISTORY, figuresOf, routesSummary, sessionFigure, type History, type StatsFigures, type StatsView,
+} from './vm/stats-view';
 
 // The statistics of the player's own runs: the history of runs and the numbers made of it (routes, sessions, the
 // times of the pairs he has flown). It is the state of the "Мои маршруты" section, and the source of two things the
@@ -15,6 +17,8 @@ import { EMPTY_FIGURES, EMPTY_HISTORY, figuresOf, routesSummary, type History, t
 //  - It follows `app.activeRun` by itself: when a run appears, changes (a trade, a mark) or is closed (finished, lost),
 //    the history is read again. Whoever writes the runs does not have to tell it. It is also read again when the player
 //    opens the section or switches to the sessions (`opened`, `setView`): prices written since move the latest session.
+//  - `sessionNow` is what the play session that is going has earned (the mini line without a run and the summary of the
+//    section say it). It is made of the sessions of the last load and the one-second clock, so it never reads the database.
 //  - Loading never throws (`reload` is one `try` from its first line to its last) and never blocks the window: a failure is logged (`ui`) and what was there stays; before the
 //    first successful load everything is empty, and the section says so in one muted line. No error text reaches the screen.
 
@@ -53,8 +57,22 @@ class StatsState {
     }
   });
 
-  /** The line of the section header: the best route, or that there is none yet. */
-  summary = $derived(routesSummary(this.routes));
+  /**
+   * The latest session while it is going on. Whether it still is depends on the clock, and that is one comparison with
+   * `app.now` (no database read): the same object comes back until the pause is over, so nothing downstream moves each second.
+   * The session is as of the last load (a run that changed, the section that was opened): the prices written since do not
+   * extend it here.
+   */
+  readonly #currentSession = $derived.by(() => currentSession(this.#figures.sessions, app.now));
+
+  /**
+   * What the session that is going has earned, for the mini line and the summary of the section; `null` when there is no
+   * such session or no run has ended in it.
+   */
+  sessionNow = $derived(sessionFigure(this.#currentSession));
+
+  /** The line of the section header: the session that is going, then the best route (or that there is none yet). */
+  summary = $derived(routesSummary(this.routes, this.sessionNow));
 
   /** The rows of every run, made once per load (and per change of the reference): the clock is not read here. */
   readonly #historyBase = $derived.by((): HistoryRow[] => {

@@ -23,7 +23,7 @@
   const full = $derived(
     flash ??
       (model.kind === 'idle'
-        ? model.target === null ? model.location : `${model.location} → ${model.target}`
+        ? [model.target === null ? model.location : `${model.location} → ${model.target}`, model.session?.line].filter(Boolean).join(' · ')
         : [
           `${model.phaseLabel} ${model.phaseTimer}`, `всего ${model.timer}`, model.cargo,
           model.target === null ? 'цель не выбрана' : `→ ${model.target}`, model.expect, model.rate,
@@ -38,6 +38,9 @@
     {:else if model.kind === 'idle'}
       <span class="part mark">SC</span>
       <span class="part location">{model.location}{#if model.target !== null}<span class="to">→</span><span class="goal">{model.target}</span>{/if}</span>
+      {#if model.session !== null}
+        <span class="part session {model.session.tone}"><span class="caption">сессия</span>{model.session.short}</span>
+      {/if}
     {:else}
       <span class="part timer" title="Всего: {model.timer}"><span class="phase">{model.phaseLabel}</span>{model.phaseTimer}</span>
       <span class="part cargo">{model.cargo}</span>
@@ -144,6 +147,31 @@
 
   .rate {
     color: var(--sc-good);
+  }
+
+  /* what the session that is going has earned: the colour of a profit, of a loss, or none for an even one */
+  .session {
+    gap: 6px;
+    font-weight: 600;
+  }
+
+  .session.gain {
+    color: var(--sc-good);
+  }
+
+  .session.loss {
+    color: var(--sc-bad);
+  }
+
+  .session.even {
+    color: var(--sc-muted);
+  }
+
+  /* the word is a small caption, the number after it is the figure */
+  .session .caption {
+    color: var(--sc-label);
+    font-size: var(--sc-font-sm);
+    font-weight: 400;
   }
 
   .muted {

@@ -6,7 +6,7 @@
   import { windowHeader } from './vm/window-header';
   import WindowGrip from './WindowGrip.svelte';
 
-  const header = $derived(windowHeader(app.reference, app.settings, app.viewTerminalId, app.pricesSyncedAt, app.uexOk, app.now));
+  const header = $derived(windowHeader(app.reference, app.settings, app.viewTerminalId, app.pricesSyncedAt, app.uexOk, app.now, app.priceSync));
   const items = $derived(terminalSearchItems(app.reference, app.settings.starSystemId));
   const locked = $derived(app.windowLocked);
   const lockTitle = $derived(locked ? 'Открепить окно' : 'Закрепить окно');
@@ -36,9 +36,18 @@
       Я здесь
     </button>
   {/if}
-  <span class="uex" class:stale={header.uex.stale} title={header.uex.title}>
+  <!-- how fresh the prices of UEX are; a click refreshes them now, and while that goes the text is its progress -->
+  <button
+    class="uex"
+    class:stale={header.uex.stale}
+    class:busy={header.uex.busy}
+    type="button"
+    aria-busy={header.uex.busy}
+    title={header.uex.title}
+    onclick={() => void app.refreshPrices()}
+  >
     <span class="mark" aria-hidden="true"></span>{header.uex.text}
-  </span>
+  </button>
   <button class="sc-btn sc-btn--primary route" type="button" title="Лучшие варианты из текущей локации" onclick={() => app.newRoute()}>
     Маршрут
   </button>
@@ -87,14 +96,32 @@
     flex: none;
   }
 
+  /* a button that reads as a quiet label: the colour changes only when the state does or the pointer is over it */
   .uex {
     display: flex;
     flex: none;
     align-items: center;
+    align-self: stretch;
     gap: 5px;
+    padding: 0 4px;
+    border: 0;
+    background: transparent;
     color: var(--sc-muted);
+    font: inherit;
     font-size: var(--sc-font-sm);
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .uex:hover {
+    background: var(--sc-surface-2);
+    color: var(--sc-text);
+  }
+
+  .uex:focus-visible {
+    outline: 1px solid var(--sc-accent);
+    outline-offset: -1px;
   }
 
   /* data of UEX is nobody's reading of mine: an empty square, as in the tables */
@@ -112,6 +139,17 @@
   .uex.stale .mark {
     border-color: var(--sc-warn);
     background: var(--sc-warn);
+  }
+
+  /* a refresh is going: its progress in the colour of the accent, the mark filled; a second click does nothing */
+  .uex.busy {
+    color: var(--sc-accent);
+    cursor: progress;
+  }
+
+  .uex.busy .mark {
+    border-color: var(--sc-accent);
+    background: var(--sc-accent);
   }
 
   .icons {
