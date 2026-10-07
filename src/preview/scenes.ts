@@ -4,6 +4,7 @@ import { ANCHOR_SCENES } from './scenes-anchor';
 import { INCOME_SCENES } from './scenes-income';
 import { INDICATOR_SCENES } from './scenes-indicators';
 import { ROI_SCENES } from './scenes-roi';
+import { REPAIR_SCENES } from './scenes-repairs';
 import { RUN_SCENES } from './scenes-run';
 import { STATS_SCENES } from './scenes-stats';
 
@@ -265,6 +266,7 @@ export const SCENES: readonly Scene[] = [
   ...INCOME_SCENES,
   ...STATS_SCENES,
   ...INDICATOR_SCENES,
+  ...REPAIR_SCENES,
 ];
 
 export const DEFAULT_SCENE = 'mini';

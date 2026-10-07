@@ -430,6 +430,19 @@ class AppState {
     this.pricesSyncedAt = metaSeconds(await getMeta(db, META_PRICES_SYNCED_AT));
   }
 
+  /**
+   * Reads the distances from the database again: the fetching step of a lookup stores the ones UEX answered, and the rate of the
+   * run and the alternatives of "sell here or fly on" count with `distances`. A read of the database, not a request to UEX, so
+   * it needs no place in the UEX queue (and is called after the job of the queue, not inside it). Never throws.
+   */
+  async #reloadDistances(): Promise<void> {
+    try {
+      this.distances = await loadDistances(this.#syncDeps().db);
+    } catch (err) {
+      this.#log.error('ui', 'cannot reload the distances', { err });
+    }
+  }
+
   /** Reloads prices, own observations, distances and the age of the prices; call it after anything wrote them. */
   async reloadMarket(): Promise<void> {
     try {
@@ -1045,6 +1058,7 @@ class AppState {
       withUex: (job) => this.withUex(job),
       isNewest,
       canRun: () => this.settings.scuCapacity > 0,
+      distancesChanged: () => this.#reloadDistances(),
       show: {
         answer: (options, preliminary) => {
           this.lookup = { request, title, options, ...quiet, preliminary, progress: preliminary ? this.lookup.progress : null };
@@ -1156,9 +1170,19 @@ class AppState {
   }
 
   /**
+   * A trade that was written says where the ship stands: the terminal of the trade becomes the current location, the way
+   * "Я здесь" makes it (spec 14.2: the location is changed by the button and by a trade), with the same line in the log.
+   * Nothing is written or logged when the ship is there already.
+   */
+  async #locateAt(terminalId: number): Promise<void> {
+    if (this.settings.currentTerminalId === terminalId) return;
+    await this.setCurrentTerminal(terminalId);
+  }
+
+  /**
    * The player bought. `input.knownScu` is the quantity he saw at the terminal: the diary then keeps "was minus bought".
-   * The first purchase starts the run (and opens its section). Returns the sentence to show at the form when it was not
-   * written, `null` when it was.
+   * The first purchase starts the run (and opens its section). A purchase that was written sets the current location.
+   * Returns the sentence to show at the form when it was not written, `null` when it was.
    */
   buy(input: TradeInput): Promise<string | null> {
     return this.#tradeQueue(async () => {
@@ -1173,14 +1197,19 @@ class AppState {
         mayHaveWritten = !(err instanceof TradeError);
       }
       await this.#reloadRun(mayHaveWritten);
-      if (failure === null && startsRun) void this.openSection(RUN_SECTION);
+      if (failure === null) {
+        await this.#locateAt(input.terminalId);
+        if (startsRun) void this.openSection(RUN_SECTION);
+      }
       return failure;
     });
   }
 
   /**
    * The player sold. `input.knownScu` is what the buyer held before: the diary then keeps "was plus sold". The sale that
-   * empties the hold ends the run, and the target goes with it. Returns the sentence for the form, `null` when it was written.
+   * empties the hold ends the run, and the target goes with it, BEFORE the market is read again: between the end of the run and
+   * the end of the target the window would show a plan with a target of a run that is over. A sale that was written (an income
+   * too) sets the current location. Returns the sentence for the form, `null` when it was written.
    *
    * With `income` the goods were never bought through the application (spec 14.10): the sale is written as a finished run of
    * its own and the run that is going is not touched, so `activeRun` stays the very same object and nothing re-reads the
@@ -1201,9 +1230,10 @@ class AppState {
         failure = this.#tradeFailure(what, err, { ...input });
         mayHaveWritten = !(err instanceof TradeError);
       }
+      if (failure === null && finished) await this.#runEnded('done');
       await this.#reloadRun(mayHaveWritten);
       if (income && mayHaveWritten) void stats.reload('income sale');
-      if (failure === null && finished) await this.#runEnded('done');
+      if (failure === null) await this.#locateAt(input.terminalId);
       return failure;
     });
   }
@@ -1248,13 +1278,13 @@ class AppState {
         mayHaveWritten = !(err instanceof TradeError);
         this.#say(failure, 'error');
       }
+      if (failure === null) await this.#runEnded('lost'); // before the run is read again, as after the last sale
       await this.#reloadRun(mayHaveWritten);
-      if (failure === null) await this.#runEnded('lost');
       return failure;
     });
   }
 
-  /** A run is over (the hold was sold or lost): the target of that run goes. */
+  /** A run is over (the hold was sold or lost): the target of that run goes. Called before the state reads the run that is over. */
   async #runEnded(how: 'done' | 'lost'): Promise<void> {
     this.#log.info('ui', 'run ended, the target is cleared', { how });
     await this.updateSetting('targetTerminalId', null);
