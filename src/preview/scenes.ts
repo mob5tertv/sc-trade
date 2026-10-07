@@ -1,5 +1,6 @@
 import type { app } from '../ui/state.svelte';
 import type { DatasetName } from './datasets';
+import { RUN_SCENES } from './scenes-run';
 
 /** The one state of the application; scenes drive it only through its public methods. */
 export type SceneApp = typeof app;
@@ -33,6 +34,7 @@ const openRow = (code: string): Promise<void> => click('.table button.line', cod
 
 // To add a scene: one more entry below. To add a dataset: `datasets.ts` and `seed.ts`.
 export const SCENES: readonly Scene[] = [
+  ...RUN_SCENES,
   { name: 'mini', title: 'Мини-строка, без рейса', dataset: 'default' },
   { name: 'mini-run', title: 'Мини-строка в рейсе', dataset: 'run' },
   {

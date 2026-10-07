@@ -16,9 +16,11 @@
   let { cargo, phases, totals, onDepart, onArrive, onLost }: Props = $props();
 
   const NONE = '—';
+  const MIN_RATE_SEC = 60;
 
   const roi = $derived(totals.roi === null ? NONE : formatPct(totals.roi));
-  const rate = $derived(totals.uecPerHour === null ? NONE : `${formatCompact(totals.uecPerHour)}/ч`);
+  // the first minute of a run gives a rate of millions an hour that means nothing: it is shown from the first minute on
+  const rate = $derived(totals.uecPerHour === null || totals.durationSec < MIN_RATE_SEC ? NONE : `${formatCompact(totals.uecPerHour)}/ч`);
 </script>
 
 <section class="card" aria-label="Текущий рейс">

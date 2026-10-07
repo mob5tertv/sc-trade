@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { formatUec } from '../../core/format';
   import type { Side } from '../../core/types';
   import { resolveTrade } from '../vm/inputs';
@@ -21,9 +22,10 @@
   }
   let { title, side, defaultScu, defaultPrice, error, onConfirm, onCancel }: Props = $props();
 
-  // Seeded from the defaults; they are plain numbers in the fields, easy to overtype.
-  let scuText = $derived(defaultScu === null ? '' : String(defaultScu));
-  let priceText = $derived(defaultPrice === null ? '' : String(defaultPrice));
+  // Seeded from the defaults once, when the form opens: they are plain numbers in the fields, easy to overtype. What the
+  // player typed stays when the owner hands in a new `error` (a derived text would start again from the defaults).
+  let scuText = $state(untrack(() => (defaultScu === null ? '' : String(defaultScu))));
+  let priceText = $state(untrack(() => (defaultPrice === null ? '' : String(defaultPrice))));
   let badScu = $state(false);
   let badPrice = $state(false);
 
