@@ -108,7 +108,8 @@ export function ownRunCounts(runs: RunWithEvents[]): Map<string, number> {
 
 export interface Session { startTs: number; endTs: number; runIds: number[]; profit: number; uecPerHour: number | null }
 
-const DEFAULT_SESSION_GAP_SEC = 7200;
+/** The pause between two records that starts a new play session (2 h); the interface asks it too, for "is this session still going". */
+export const DEFAULT_SESSION_GAP_SEC = 7200;
 
 /**
  * Play sessions: the record timestamps cut into stretches wherever two neighbours are more than

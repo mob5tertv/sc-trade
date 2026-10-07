@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { pairKey } from '../../src/core/types';
 import { routeRows } from '../../src/ui/vm/stats-rows';
-import { routesSummary, STATS_VIEWS, figuresOf, EMPTY_FIGURES, EMPTY_HISTORY } from '../../src/ui/vm/stats-view';
-import { routeStats } from '../../src/core/stats';
+import {
+  currentSession, routesSummary, sessionFigure, STATS_VIEWS, figuresOf, EMPTY_FIGURES, EMPTY_HISTORY,
+} from '../../src/ui/vm/stats-view';
+import { DEFAULT_SESSION_GAP_SEC, routeStats } from '../../src/core/stats';
 import { ref } from '../helpers/factories';
+import {
+  CLOCK, doneRun, goingRun, HOUR, lostRun, MINUTE, sessionEndedAgo, sessionsOf,
+} from '../helpers/indicator-fixtures';
 import { R1, R2, R3, R4, R5, R6 } from '../helpers/stats-fixtures';
 import { stat } from '../helpers/stats-rows-fixtures';
+
+// prices are formatted with a non-breaking space as the thousands separator
+const NBSP = String.fromCharCode(0xa0);
 
 describe('routesSummary', () => {
   it('says there is nothing yet before the first finished run', () => {
@@ -25,6 +33,113 @@ describe('routesSummary', () => {
   it('names only the route when it has no rate', () => {
     const rows = routeRows([{ ...stat, uecPerHour: null }], ref);
     expect(routesSummary(rows)).toBe('ARC-L1 → TDD Area 18');
+  });
+
+  describe('with the session that is going', () => {
+    const session = sessionFigure(currentSession(sessionEndedAgo(10 * MINUTE), CLOCK));
+    const rows = routeRows(routeStats([R1, R2, R3]), ref);
+
+    it('says the session first, then the best route', () => {
+      expect(routesSummary(rows, session)).toBe(`сессия +1${NBSP}240${NBSP}000 · 413k/ч · ARC-L1 → TDD Area 18 · 467k/ч`);
+    });
+
+    it('says only the session when there is no route to name (the runs were lost or mixed)', () => {
+      expect(routesSummary([], session)).toBe(`сессия +1${NBSP}240${NBSP}000 · 413k/ч`);
+    });
+
+    it('is what it was without a session', () => {
+      expect(routesSummary(rows, null)).toBe('ARC-L1 → TDD Area 18 · 467k/ч');
+      expect(routesSummary([], null)).toBe('пока нет завершённых рейсов');
+    });
+  });
+});
+
+describe('currentSession', () => {
+  it('is the latest session while its last record is younger than the pause that splits sessions', () => {
+    const list = sessionEndedAgo(10 * MINUTE);
+    expect(currentSession(list, CLOCK)).toBe(list[0]);
+  });
+
+  it('uses the pause of the statistics themselves (two hours), not a number of its own', () => {
+    expect(DEFAULT_SESSION_GAP_SEC).toBe(2 * HOUR);
+    expect(currentSession(sessionEndedAgo(DEFAULT_SESSION_GAP_SEC - 1), CLOCK)).not.toBeNull();
+  });
+
+  it('is nothing when the last record is as old as the pause or older', () => {
+    expect(currentSession(sessionEndedAgo(DEFAULT_SESSION_GAP_SEC), CLOCK)).toBeNull();
+    expect(currentSession(sessionEndedAgo(5 * HOUR), CLOCK)).toBeNull();
+  });
+
+  it('looks at the latest session only: an older one never comes back', () => {
+    const start = CLOCK - 20 * HOUR;
+    const list = sessionsOf([start, start + HOUR, CLOCK - 5 * HOUR], [doneRun(1, start, 100_000), doneRun(2, CLOCK - 5 * HOUR, 50_000)]);
+    expect(list).toHaveLength(2);
+    expect(currentSession(list, CLOCK)).toBeNull();
+  });
+
+  it('follows the clock: the same session is current, then it is not', () => {
+    const list = sessionEndedAgo(0);
+    expect(currentSession(list, CLOCK)).toBe(list[0]);
+    expect(currentSession(list, CLOCK + DEFAULT_SESSION_GAP_SEC - 1)).toBe(list[0]);
+    expect(currentSession(list, CLOCK + DEFAULT_SESSION_GAP_SEC)).toBeNull();
+  });
+
+  it('is nothing without sessions', () => {
+    expect(currentSession([], CLOCK)).toBeNull();
+  });
+});
+
+describe('sessionFigure', () => {
+  const figure = (profit: number, lastAgoSec = 0) => sessionFigure(currentSession(sessionEndedAgo(lastAgoSec, profit), CLOCK));
+
+  it('is the profit in the short form of the mini line and in full with the rate for the tooltip and the summary', () => {
+    expect(figure(1_240_000)).toEqual({ short: '+1,24M', line: `сессия +1${NBSP}240${NBSP}000 · 413k/ч`, tone: 'gain' });
+    expect(figure(312_000)).toMatchObject({ short: '+312k', tone: 'gain' });
+  });
+
+  it('shows a loss with its sign and its tone', () => {
+    expect(figure(-174_000)).toEqual({ short: '-174k', line: `сессия -174${NBSP}000 · -58k/ч`, tone: 'loss' });
+  });
+
+  it('has a tone of its own for a session that came out even', () => {
+    expect(figure(0)).toMatchObject({ short: '0', tone: 'even' });
+  });
+
+  it('has no segment when there is no session', () => {
+    expect(sessionFigure(null)).toBeNull();
+    expect(figure(1_240_000, 3 * HOUR)).toBeNull();
+  });
+
+  it('has none when no run has ended in the session: prices alone are not earnings', () => {
+    const start = CLOCK - HOUR;
+    expect(sessionFigure(currentSession(sessionsOf([start, CLOCK - 5 * MINUTE], []), CLOCK))).toBeNull();
+  });
+
+  it('has none while the only run is still going: a run that is going has not earned anything', () => {
+    const start = CLOCK - HOUR;
+    const list = sessionsOf([start, CLOCK - 5 * MINUTE], [goingRun(1, start)]);
+    expect(currentSession(list, CLOCK)).not.toBeNull();
+    expect(sessionFigure(currentSession(list, CLOCK))).toBeNull();
+  });
+
+  it('counts a run whose cargo was lost: the loss is the session\'s', () => {
+    const start = CLOCK - 2 * HOUR;
+    const list = sessionsOf([start, start + 30 * MINUTE, CLOCK - 5 * MINUTE], [lostRun(1, start)]);
+    expect(sessionFigure(currentSession(list, CLOCK))).toMatchObject({ short: '-500k', tone: 'loss' });
+  });
+
+  it('says no rate when the session has no length yet (a single record)', () => {
+    const list = sessionsOf([CLOCK - 60], [doneRun(1, CLOCK - 60, 90_000)]);
+    expect(sessionFigure(currentSession(list, CLOCK))).toEqual({ short: '+90k', line: `сессия +90${NBSP}000`, tone: 'gain' });
+  });
+
+  it('adds up the finished runs of the session and leaves the one that is going out', () => {
+    const start = CLOCK - 3 * HOUR;
+    const list = sessionsOf(
+      [start, start + HOUR, start + 2 * HOUR, CLOCK - 5 * MINUTE],
+      [doneRun(1, start, 300_000), doneRun(2, start + HOUR, 200_000), goingRun(3, start + 2 * HOUR)],
+    );
+    expect(sessionFigure(currentSession(list, CLOCK))).toMatchObject({ short: '+500k' });
   });
 });
 

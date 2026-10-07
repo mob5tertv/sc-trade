@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../src/core/settings';
-import { windowHeader } from '../../src/ui/vm/window-header';
+import { PRICE_SYNC_IDLE, windowHeader, type PriceSync } from '../../src/ui/vm/window-header';
 import { ref } from '../helpers/factories';
 
 const NOW = 1_790_000_000;
@@ -44,10 +44,11 @@ describe('windowHeader: "Я здесь"', () => {
 });
 
 describe('windowHeader: the freshness of UEX', () => {
-  const uex = (synced: number | null, ok: boolean) => windowHeader(ref, settings(1), 1, synced, ok, NOW).uex;
+  const uex = (synced: number | null, ok: boolean, sync?: PriceSync) => windowHeader(ref, settings(1), 1, synced, ok, NOW, sync).uex;
+  const HINT = 'Нажми, чтобы обновить цены сейчас';
 
   it('is the age alone, quiet', () => {
-    expect(uex(NOW - 12 * 60, true)).toEqual({ text: 'UEX 12 мин', title: 'UEX 12 мин назад', stale: false });
+    expect(uex(NOW - 12 * 60, true)).toEqual({ text: 'UEX 12 мин', title: `UEX 12 мин назад\n${HINT}`, stale: false, busy: false });
     expect(uex(NOW - 5400, true)).toMatchObject({ text: 'UEX 1,5 ч', stale: false });
     expect(uex(NOW - 2 * 86_400, true)).toMatchObject({ text: 'UEX 2 д', stale: false });
   });
@@ -63,7 +64,60 @@ describe('windowHeader: the freshness of UEX', () => {
 
   it('warns when UEX does not answer, and keeps the date of the data it has in the tooltip', () => {
     const when = new Date(2026, 0, 5, 9, 7).getTime() / 1000;
-    expect(uex(when, false)).toEqual({ text: 'UEX недоступен', title: 'UEX недоступен, данные от 05.01 09:07', stale: true });
-    expect(uex(null, false)).toEqual({ text: 'UEX недоступен', title: 'UEX недоступен', stale: true });
+    expect(uex(when, false)).toEqual({ text: 'UEX недоступен', title: `UEX недоступен, данные от 05.01 09:07\n${HINT}`, stale: true, busy: false });
+    expect(uex(null, false)).toEqual({ text: 'UEX недоступен', title: `UEX недоступен\n${HINT}`, stale: true, busy: false });
+  });
+
+  it('offers the refresh in the tooltip of every state that is not a refresh', () => {
+    for (const [synced, ok] of [[NOW - 60, true], [NOW - 30, true], [null, true], [null, false]] as const) {
+      expect(uex(synced, ok).title.endsWith(HINT)).toBe(true);
+    }
+  });
+});
+
+describe('windowHeader: the price sync that is going', () => {
+  const sync = (over: Partial<PriceSync>): PriceSync => ({ ...PRICE_SYNC_IDLE, running: true, ...over });
+  const uex = (s: PriceSync, synced: number | null = NOW - 12 * 60, ok = true) => windowHeader(ref, settings(1), 1, synced, ok, NOW, s).uex;
+
+  it('shows how many batches are done of how many, in place of the age', () => {
+    expect(uex(sync({ done: 23, total: 57 }))).toEqual({ text: 'UEX 23/57', title: 'Цены UEX обновляются: 23 из 57', stale: false, busy: true });
+    expect(uex(sync({ done: 0, total: 57 })).text).toBe('UEX 0/57');
+    expect(uex(sync({ done: 57, total: 57 })).text).toBe('UEX 57/57');
+  });
+
+  it('says the click was heard before the first batch is counted: the sync waits for its turn in the queue', () => {
+    expect(uex(sync({ done: 0, total: 0 }))).toEqual({ text: 'UEX …', title: 'Цены UEX обновляются: ждут своей очереди', stale: false, busy: true });
+  });
+
+  it('shows the progress instead of the warning too: a sync that is going is not "недоступен"', () => {
+    expect(uex(sync({ done: 3, total: 9, unfetched: 2 }), NOW - 12 * 60, false)).toMatchObject({ text: 'UEX 3/9', stale: false, busy: true });
+    expect(uex(sync({ done: 3, total: 9 }), null, true)).toMatchObject({ text: 'UEX 3/9', busy: true });
+  });
+
+  it('does not offer a second refresh while one runs', () => {
+    expect(uex(sync({ done: 3, total: 9 })).title).not.toContain('Нажми');
+  });
+
+  it('forgets the count when it is over: the age is back', () => {
+    const over = { ...PRICE_SYNC_IDLE, done: 57, total: 57 };
+    expect(uex(over, NOW)).toMatchObject({ text: 'UEX сейчас', stale: false, busy: false });
+  });
+});
+
+describe('windowHeader: after a sync that did not fetch everything', () => {
+  const when = new Date(2026, 0, 5, 9, 7).getTime() / 1000;
+  const failed = (unfetched: number): PriceSync => ({ ...PRICE_SYNC_IDLE, unfetched });
+
+  it('stays "недоступен" in the warning colour and says in the tooltip how many terminals were not updated', () => {
+    expect(windowHeader(ref, settings(1), 1, when, false, NOW, failed(3)).uex).toEqual({
+      text: 'UEX недоступен',
+      title: 'UEX недоступен, данные от 05.01 09:07\nНе обновилось терминалов: 3\nНажми, чтобы обновить цены сейчас',
+      stale: true,
+      busy: false,
+    });
+  });
+
+  it('says nothing about terminals when every one was updated', () => {
+    expect(windowHeader(ref, settings(1), 1, NOW, true, NOW, failed(0)).uex.title).not.toContain('терминал');
   });
 });

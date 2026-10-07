@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { stripModel } from '../../src/ui/vm/strip';
+import { currentSession, sessionFigure } from '../../src/ui/vm/stats-view';
 import { pairKey } from '../../src/core/types';
 import type { RunEvent, RunWithEvents } from '../../src/core/types';
 import { ev, ref } from '../helpers/factories';
+import { CLOCK, MINUTE, sessionEndedAgo } from '../helpers/indicator-fixtures';
 import { active, ctx, GOLD, market, mixedRun, NOW, s, TITA, withOwnSell, withUexSell } from '../helpers/strip-fixtures';
 
 // prices are formatted with a non-breaking space as the thousands separator
@@ -15,18 +17,44 @@ const withEvents = (r: RunWithEvents, ...extra: RunEvent[]): RunWithEvents => ({
 
 describe('stripModel', () => {
   it('is idle without a run', () => {
-    expect(stripModel(null, market, ref, { ...s, currentTerminalId: 1 }, ctx)).toEqual({ kind: 'idle', location: 'ARC-L1', target: null });
+    expect(stripModel(null, market, ref, { ...s, currentTerminalId: 1 }, ctx)).toEqual({ kind: 'idle', location: 'ARC-L1', target: null, session: null });
   });
   it('words an unset or unknown location', () => {
-    expect(stripModel(null, market, ref, { ...s, currentTerminalId: null }, ctx)).toEqual({ kind: 'idle', location: 'Локация не выбрана', target: null });
-    expect(stripModel(null, market, ref, { ...s, currentTerminalId: 777 }, ctx)).toEqual({ kind: 'idle', location: 'Локация не выбрана', target: null });
+    expect(stripModel(null, market, ref, { ...s, currentTerminalId: null }, ctx)).toEqual({ kind: 'idle', location: 'Локация не выбрана', target: null, session: null });
+    expect(stripModel(null, market, ref, { ...s, currentTerminalId: 777 }, ctx)).toEqual({ kind: 'idle', location: 'Локация не выбрана', target: null, session: null });
   });
   it('names the target next to the location before anything is bought', () => {
     expect(stripModel(null, market, ref, { ...s, currentTerminalId: 1, targetTerminalId: 2 }, ctx))
-      .toEqual({ kind: 'idle', location: 'ARC-L1', target: 'TDD Area 18' });
+      .toEqual({ kind: 'idle', location: 'ARC-L1', target: 'TDD Area 18', session: null });
   });
   it('leaves out a target that is missing from the reference', () => {
     expect(stripModel(null, market, ref, { ...s, currentTerminalId: 1, targetTerminalId: 777 }, ctx)).toMatchObject({ target: null });
+  });
+
+  describe('the session that is going, without a run', () => {
+    const idleAt1 = { ...s, currentTerminalId: 1 };
+    const gain = sessionFigure(currentSession(sessionEndedAgo(10 * MINUTE, 1_240_000), CLOCK));
+    const loss = sessionFigure(currentSession(sessionEndedAgo(10 * MINUTE, -174_000), CLOCK));
+
+    it('is a segment of the line after the location', () => {
+      expect(stripModel(null, market, ref, idleAt1, ctx, gain)).toEqual({
+        kind: 'idle', location: 'ARC-L1', target: null,
+        session: { short: '+1,24M', line: `сессия +1${NBSP}240${NBSP}000 · 413k/ч`, tone: 'gain' },
+      });
+    });
+    it('comes with the target too, and says a loss as a loss', () => {
+      expect(stripModel(null, market, ref, { ...idleAt1, targetTerminalId: 2 }, ctx, loss)).toMatchObject({
+        location: 'ARC-L1', target: 'TDD Area 18', session: { short: '-174k', tone: 'loss' },
+      });
+    });
+    it('is absent when there is no figure to show (no session, or no run ended in it)', () => {
+      expect(stripModel(null, market, ref, idleAt1, ctx, null)).toMatchObject({ session: null });
+      expect(stripModel(null, market, ref, idleAt1, ctx)).toMatchObject({ session: null });
+    });
+    it('is not in the line of a run: that line is full already', () => {
+      expect(stripModel(active, market, ref, toTarget2, ctx, gain)).not.toHaveProperty('session');
+      expect(stripModel(active, market, ref, toTarget2, ctx, gain)).toEqual(stripModel(active, market, ref, toTarget2, ctx));
+    });
   });
 
   it('shows timer, cargo, target, expectation and rate', () => {

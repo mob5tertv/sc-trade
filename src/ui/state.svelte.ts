@@ -52,6 +52,7 @@ import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from 
 import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
 import { uexErrorText } from './vm/uex-error';
+import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 
 // The one application state. Everything the screens show lives here, and every action of the player
 // goes through a method of `app`, which logs it under `ui`. Later tasks add their fields and methods
@@ -62,13 +63,15 @@ import { uexErrorText } from './vm/uex-error';
 //  - `withUex(job)` is THE entry point for everything that can touch UEX: the syncs, and every suggestion
 //    call that may fetch distances (`suggestFromDetailed`/`suggestToDetailed` in the 'fetch' mode, `ensureDistances`).
 //    Requests to UEX are strictly sequential project-wide, so none of them may run outside of it. A job must
-//    never call `withUex` itself, nor a method that does (`syncReferenceNow`, `syncPricesNow`, `refreshReference`):
+//    never call `withUex` itself, nor a method that does (`syncReferenceNow`, `syncPricesNow`, `refreshPrices`, `refreshReference`):
 //    the inner call would wait for the queue slot the outer job holds, and the queue would deadlock.
 //    The ONE thing that is deliberately outside of it: the first step of a lookup, which answers from the cache
 //    ('cached' mode) and makes no UEX request, so it must not wait behind a running sync. The second step, the one
 //    that fetches the missing distances, goes through `withUex` (see `runLookup`);
 //  - `reloadMarket()` refreshes the market after anything wrote prices;
-//  - UEX health is tracked per sync (`referenceOk`, `pricesOk`); `uexOk` is both together;
+//  - UEX health is tracked per sync (`referenceOk`, `pricesOk`); `uexOk` is both together. A price sync, the background
+//    one and the one the player starts by a click on the indicator of the header (`refreshPrices`), is one thing at a
+//    time and shows how far it is in `priceSync`;
 //  - the Terminal section: `terminalRows` (the table of the viewed terminal, on a 15 s clock), `terminalSide` (the
 //    side of it that is drawn), `recordPrice` (writes what the player saw, and nothing else: it asks no lookup), and
 //    the lookup (`lookup`, `runLookup`, `rerunLookup`, `newRoute`, `closeLookup`): where to buy / where to sell, in
@@ -178,6 +181,8 @@ class AppState {
   referenceOk = $state(true);
   /** The last price sync worked completely (a sync with unfetched terminals counts as failed). */
   pricesOk = $state(true);
+  /** How the price sync stands, for the indicator of the header: going with `done` of `total` batches, or not. */
+  priceSync = $state.raw<PriceSync>(PRICE_SYNC_IDLE);
   /** Unix seconds, updated once a second. */
   now = $state(nowSec());
   /** Unix seconds, updated every 15 seconds: the moment the table of the Terminal section is counted at. */
@@ -207,13 +212,14 @@ class AppState {
   });
 
   /**
-   * What the mini line and the "Рейс" section say: the location (and the target) without a run; the phase, the cargo, the
-   * target, the expectation and the rate during one. Follows the data and the one-second clock; nothing is shown before the start.
+   * What the mini line and the "Рейс" section say: the location (and the target) and what the session that is going has
+   * earned without a run; the phase, the cargo, the target, the expectation and the rate during one. Follows the data and
+   * the one-second clock; nothing is shown before the start.
    */
   strip = $derived.by((): StripModel => (
     this.phase === 'ready'
-      ? stripModel(this.activeRun, this.market, this.reference, this.settings, this.routeCtx())
-      : { kind: 'idle', location: '', target: null }
+      ? stripModel(this.activeRun, this.market, this.reference, this.settings, this.routeCtx(), stats.sessionNow)
+      : { kind: 'idle', location: '', target: null, session: null }
   ));
 
   // ---- window and screen ------------------------------------------------------------------------
@@ -297,7 +303,6 @@ class AppState {
   #openIds = $derived(parseOpenSections(this.settings.openSections));
   #noticeTimer: ReturnType<typeof setTimeout> | undefined;
   #backgroundStarted = false;
-  #pricesInFlight = false;
   /** Lookups overlap when the player asks again; only the newest one may show its answer. */
   readonly #latestLookup = createLatestRequest();
 
@@ -443,23 +448,40 @@ class AppState {
     return null;
   }
 
-  /** Downloads the prices and reloads the market. Never throws; a failure marks the price sync as failed (`pricesOk`). */
+  /**
+   * Downloads the prices and reloads the market. Never throws; a failure marks the price sync as failed (`pricesOk`).
+   * One at a time: a call while a sync is going does nothing. `priceSync` says how far it is, from the moment of the
+   * call (the sync may first wait for its turn in the queue of UEX) until the market is reloaded.
+   */
   async syncPricesNow(): Promise<void> {
-    if (this.#pricesInFlight) {
+    if (this.priceSync.running) {
       this.#log.debug('ui', 'price sync already running, skipped');
       return;
     }
-    this.#pricesInFlight = true;
+    this.priceSync = { ...PRICE_SYNC_IDLE, running: true, unfetched: this.priceSync.unfetched };
+    let unfetched = 0;
     try {
-      const { failed } = await this.withUex(() => syncPrices(this.#syncDeps()));
-      this.pricesOk = failed === 0;
+      const result = await this.withUex(() => syncPrices(this.#syncDeps(), ({ done, total }) => {
+        this.priceSync = { running: true, done, total, unfetched: this.priceSync.unfetched };
+      }));
+      this.pricesOk = result.failed === 0;
+      unfetched = result.unfetched;
     } catch (err) {
       this.pricesOk = false;
       this.#log.warn('ui', 'price sync failed', { err });
-    } finally {
-      this.#pricesInFlight = false;
     }
-    await this.reloadMarket();
+    try {
+      await this.reloadMarket();
+    } finally {
+      this.priceSync = { ...PRICE_SYNC_IDLE, unfetched };
+    }
+  }
+
+  /** The click on the indicator of UEX in the header: refreshes the prices now. A click while a sync is going does nothing. */
+  async refreshPrices(): Promise<void> {
+    const running = this.priceSync.running;
+    this.#log.info('ui', 'refresh prices', { running });
+    if (!running) await this.syncPricesNow();
   }
 
   /**

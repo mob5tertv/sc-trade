@@ -5,7 +5,7 @@ import { createLogger, memorySink } from '../../src/data/logger';
 import { getMeta, loadDistances, loadReference, loadUexPrices, saveReference, upsertPrices } from '../../src/data/repo/uex-cache';
 import {
   countDistanceRequests, ensureDistances, pricesAreStale, referenceIsStale, syncPrices, syncReference,
-  type DistanceProgress, type SyncDeps,
+  type DistanceProgress, type PriceProgress, type SyncDeps,
 } from '../../src/data/sync';
 import { UexError } from '../../src/data/uex-client';
 import { px, seedTerminals, term, veh } from '../helpers/factories';
@@ -46,7 +46,7 @@ describe('staleness', () => {
 describe('syncPrices', () => {
   it('requests prices in batches of two, the last one with the remainder', async () => {
     await seedTerminals(db, 25);
-    expect(await syncPrices(deps)).toEqual({ batches: 13, failed: 0 });
+    expect(await syncPrices(deps)).toEqual({ batches: 13, failed: 0, unfetched: 0 });
     expect(uex.priceCalls.map((ids) => ids.length)).toEqual([...Array(12).fill(2), 1]);
     expect(uex.priceCalls.flat()).toEqual(Array.from({ length: 25 }, (_, i) => i + 1));
     expect(await getMeta(db, 'prices_synced_at')).toBe(String(NOW));
@@ -56,7 +56,7 @@ describe('syncPrices', () => {
   it('asks only for live terminals, one request at a time', async () => {
     await seedTerminals(db, 4);
     await db.execute('UPDATE uex_terminal SET is_available_live = 0 WHERE id = 2');
-    expect(await syncPrices(deps)).toEqual({ batches: 2, failed: 0 });
+    expect(await syncPrices(deps)).toEqual({ batches: 2, failed: 0, unfetched: 0 });
     expect(uex.priceCalls).toEqual([[1, 3], [4]]);
     expect(uex.maxInFlight).toBe(1);
   });
@@ -67,7 +67,7 @@ describe('syncPrices', () => {
     uex.priceRows = (id) => [px(id, 10, { sell: { last: 999 } })];
     uex.failPrices = (ids) => ids.length === 2;
 
-    expect(await syncPrices(deps)).toEqual({ batches: 1, failed: 0 });
+    expect(await syncPrices(deps)).toEqual({ batches: 1, failed: 0, unfetched: 0 });
     expect(uex.priceCalls).toEqual([[1, 2], [1], [2]]);
     expect((await loadUexPrices(db)).map((p) => p.sell.last)).toEqual([999, 999]);
     expect(await getMeta(db, 'prices_synced_at')).toBe(String(NOW));
@@ -80,7 +80,7 @@ describe('syncPrices', () => {
     uex.priceRows = (id) => [px(id, 10, { sell: { last: 999 } })];
     uex.failPrices = (ids) => ids.includes(4);
 
-    expect(await syncPrices(deps)).toEqual({ batches: 2, failed: 1 });
+    expect(await syncPrices(deps)).toEqual({ batches: 2, failed: 1, unfetched: 1 });
     expect(uex.priceCalls).toEqual([[1, 2], [3, 4], [3], [4]]);
 
     const rows = await loadUexPrices(db);
@@ -95,20 +95,20 @@ describe('syncPrices', () => {
   it('counts every batch that has a terminal failing alone', async () => {
     await seedTerminals(db, 6);
     uex.failPrices = (ids) => ids.includes(2) || ids.includes(5);
-    expect(await syncPrices(deps)).toEqual({ batches: 3, failed: 2 });
+    expect(await syncPrices(deps)).toEqual({ batches: 3, failed: 2, unfetched: 2 });
     expect(await priceKeys()).toEqual(['1:10', '3:10', '4:10', '6:10']);
   });
 
   it('does not repeat a failed request for a batch of one terminal', async () => {
     await seedTerminals(db, 1);
     uex.failPrices = () => true;
-    expect(await syncPrices(deps)).toEqual({ batches: 1, failed: 1 });
+    expect(await syncPrices(deps)).toEqual({ batches: 1, failed: 1, unfetched: 1 });
     expect(uex.priceCalls).toEqual([[1]]);
     expect(await getMeta(db, 'prices_synced_at')).toBeNull();
   });
 
   it('does not touch the cache or the freshness mark when there is no terminal to sync', async () => {
-    expect(await syncPrices(deps)).toEqual({ batches: 0, failed: 0 });
+    expect(await syncPrices(deps)).toEqual({ batches: 0, failed: 0, unfetched: 0 });
     expect(uex.priceCalls).toEqual([]);
     expect(await getMeta(db, 'prices_synced_at')).toBeNull();
   });
@@ -120,6 +120,96 @@ describe('syncPrices', () => {
     expect(lines.length).toBeGreaterThanOrEqual(4); // start, two batches, end
     expect(lines[0]).toContain('prices');
     expect(lines.at(-1)).toContain('"batches":2');
+  });
+});
+
+describe('syncPrices progress', () => {
+  /** What the callback saw, with how many requests UEX had received at that moment. */
+  const watch = () => {
+    const seen: Array<PriceProgress & { requests: number }> = [];
+    return { seen, onProgress: (p: PriceProgress) => void seen.push({ ...p, requests: uex.priceCalls.length }) };
+  };
+
+  it('says 0 of N before the first request and N of N after the last, one step per batch', async () => {
+    await seedTerminals(db, 5);
+    const { seen, onProgress } = watch();
+    await syncPrices(deps, onProgress);
+    expect(seen).toEqual([
+      { done: 0, total: 3, requests: 0 },
+      { done: 1, total: 3, requests: 1 },
+      { done: 2, total: 3, requests: 2 },
+      { done: 3, total: 3, requests: 3 },
+    ]);
+  });
+
+  it('counts a batch that failed as done: the retry belongs to the batch, and the last step is still N of N', async () => {
+    await seedTerminals(db, 4);
+    uex.failPrices = () => true;
+    const { seen, onProgress } = watch();
+    await syncPrices(deps, onProgress);
+    expect(seen).toEqual([
+      { done: 0, total: 2, requests: 0 },
+      { done: 1, total: 2, requests: 3 }, // [1, 2], then 1 and 2 alone
+      { done: 2, total: 2, requests: 6 },
+    ]);
+  });
+
+  it('is complete (N of N) also when only some batches failed', async () => {
+    await seedTerminals(db, 6);
+    uex.failPrices = (ids) => ids.includes(3);
+    const { seen, onProgress } = watch();
+    await syncPrices(deps, onProgress);
+    expect(seen.map((p) => p.done)).toEqual([0, 1, 2, 3]);
+    expect(seen.every((p) => p.total === 3)).toBe(true);
+  });
+
+  it('does not stop, and does not lose a price, when the callback throws; every failure is logged', async () => {
+    await seedTerminals(db, 4);
+    const calls: number[] = [];
+    const result = await syncPrices(deps, (p) => { calls.push(p.done); throw new Error('the screen is gone'); });
+    expect(calls).toEqual([0, 1, 2]); // asked again after every throw
+    expect(result).toEqual({ batches: 2, failed: 0, unfetched: 0 });
+    expect(uex.priceCalls).toEqual([[1, 2], [3, 4]]);
+    expect(await priceKeys()).toHaveLength(4);
+    expect(await getMeta(db, 'prices_synced_at')).toBe(String(NOW));
+    expect(warnings().filter((l) => l.line.includes('progress callback failed') && l.line.includes('the screen is gone'))).toHaveLength(3);
+  });
+
+  it('survives a thrown value that is not an Error', async () => {
+    await seedTerminals(db, 2);
+    await expect(syncPrices(deps, () => { throw 'plain text'; })).resolves.toEqual({ batches: 1, failed: 0, unfetched: 0 });
+    expect(await priceKeys()).toHaveLength(2);
+  });
+
+  it('says nothing when there is no terminal to ask', async () => {
+    const { seen, onProgress } = watch();
+    await syncPrices(deps, onProgress);
+    expect(seen).toEqual([]);
+  });
+
+  it('works without a callback, as before', async () => {
+    await seedTerminals(db, 3);
+    await expect(syncPrices(deps)).resolves.toEqual({ batches: 2, failed: 0, unfetched: 0 });
+  });
+});
+
+describe('syncPrices: the terminals that could not be fetched', () => {
+  it('counts terminals, not batches: a batch of two with one bad terminal leaves one', async () => {
+    await seedTerminals(db, 4);
+    uex.failPrices = (ids) => ids.includes(4);
+    expect(await syncPrices(deps)).toEqual({ batches: 2, failed: 1, unfetched: 1 });
+  });
+
+  it('counts both terminals of a batch where both fail even alone', async () => {
+    await seedTerminals(db, 4);
+    uex.failPrices = (ids) => ids.includes(1) || ids.includes(2);
+    expect(await syncPrices(deps)).toEqual({ batches: 2, failed: 1, unfetched: 2 });
+  });
+
+  it('is the sum over the batches', async () => {
+    await seedTerminals(db, 6);
+    uex.failPrices = () => true;
+    expect(await syncPrices(deps)).toEqual({ batches: 3, failed: 3, unfetched: 6 });
   });
 });
 

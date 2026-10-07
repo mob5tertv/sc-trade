@@ -12,11 +12,28 @@ export interface WindowHeader {
   locationTitle: string;
   /** The terminal "Я здесь" would make the current location; `null` when the button is not wanted at all. */
   hereTerminalId: number | null;
-  /** The freshness of the UEX data: the quiet text, the long form for the tooltip, and whether to warn. */
-  uex: { text: string; title: string; stale: boolean };
+  /**
+   * The indicator of UEX, which is also the button that refreshes the prices: the quiet text (the age of the prices, or
+   * how far a refresh that is going is), the tooltip, whether to warn, and whether a refresh is going (`busy`).
+   */
+  uex: { text: string; title: string; stale: boolean; busy: boolean };
 }
 
+/** How the price sync stands: it is going (`running`) with `done` of `total` batches finished, or it is not. */
+export interface PriceSync {
+  running: boolean;
+  /** Batches finished; meaningful only while `running`. */
+  done: number;
+  /** All the batches of the run; 0 while the sync has not started yet (it waits for its turn in the queue of UEX). */
+  total: number;
+  /** Terminals the last finished run could not fetch (0 when it fetched everything). */
+  unfetched: number;
+}
+
+export const PRICE_SYNC_IDLE: PriceSync = { running: false, done: 0, total: 0, unfetched: 0 };
+
 const EMPTY_FIELD_TITLE = 'Выбери локацию: три буквы и Enter';
+const REFRESH_HINT = 'Нажми, чтобы обновить цены сейчас';
 
 /** 'UEX 12 мин': the age alone; the long form with 'назад' or the date of the cached data is the tooltip. */
 function uexShort(pricesSyncedAt: number | null, uexOk: boolean, now: number): string {
@@ -26,27 +43,44 @@ function uexShort(pricesSyncedAt: number | null, uexOk: boolean, now: number): s
   return age < 60 ? 'UEX сейчас' : `UEX ${formatAge(age)}`;
 }
 
+/** The indicator while a refresh is going: 'UEX 23/57', or 'UEX …' until the sync has counted its batches. */
+function uexProgress(sync: PriceSync): WindowHeader['uex'] {
+  const counted = sync.total > 0;
+  return {
+    text: counted ? `UEX ${sync.done}/${sync.total}` : 'UEX …',
+    title: counted ? `Цены UEX обновляются: ${sync.done} из ${sync.total}` : 'Цены UEX обновляются: ждут своей очереди',
+    stale: false,
+    busy: true,
+  };
+}
+
 /**
  * The header of the expanded window: the viewed terminal as the location, the button "Я здесь" when the ship stands
- * elsewhere, and the freshness of UEX. The ship and the system are not here (they are in the settings).
+ * elsewhere, and the indicator of UEX (the age of the prices, or the progress of a refresh). The ship and the system
+ * are not here (they are in the settings).
  */
 export function windowHeader(
   ref: Reference, s: Settings, viewTerminalId: number | null, pricesSyncedAt: number | null, uexOk: boolean, now: number,
+  sync: PriceSync = PRICE_SYNC_IDLE,
 ): WindowHeader {
   const view = locationModel(ref, s, viewTerminalId, pricesSyncedAt, uexOk, now);
   const terminal = viewTerminalId === null ? undefined : ref.terminals.get(viewTerminalId);
   const title = terminal === undefined
     ? EMPTY_FIELD_TITLE
     : view.currentLocation === null ? view.header.location : `${view.header.location}\nСейчас: ${view.currentLocation}`;
+  const unfetched = sync.unfetched > 0 ? [`Не обновилось терминалов: ${sync.unfetched}`] : [];
   return {
     // the nickname is what players know a terminal by; UEX leaves it empty on rare rows
     location: terminal === undefined ? null : terminal.nickname || terminal.displayname || terminal.name,
     locationTitle: title,
     hereTerminalId: view.canSetCurrent ? viewTerminalId : null,
-    uex: {
-      text: uexShort(pricesSyncedAt, uexOk, now),
-      title: headerModel(ref, s, pricesSyncedAt, uexOk, now).uex,
-      stale: !uexOk,
-    },
+    uex: sync.running
+      ? uexProgress(sync)
+      : {
+        text: uexShort(pricesSyncedAt, uexOk, now),
+        title: [headerModel(ref, s, pricesSyncedAt, uexOk, now).uex, ...unfetched, REFRESH_HINT].join('\n'),
+        stale: !uexOk,
+        busy: false,
+      },
   };
 }
