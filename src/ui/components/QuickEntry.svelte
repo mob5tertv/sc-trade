@@ -35,8 +35,14 @@
   let scuText = $state('');
   let badPrice = $state(false);
   let badScu = $state(false);
+  let badCommodity = $state(false);
+  /** The write was refused, or there is nowhere to write to: the button of the line is marked. */
+  let badSave = $state(false);
   let busy = $state(false);
+  // What happened, for the screen reader and for the tooltip of the field that is marked. It takes no room on the screen:
+  // between the entry line and the table nothing appears or disappears, so a saved price shifts nothing.
   let status = $state<{ text: string; kind: 'ok' | 'error' } | null>(null);
+  const problem = $derived(status !== null && status.kind === 'error' ? status.text : null);
 
   let commodityBox = $state<ReturnType<typeof SearchBox>>();
   let priceInput = $state<HTMLInputElement>();
@@ -50,6 +56,8 @@
     commodityId = id;
     pickedSide = null;
     status = null;
+    badCommodity = false;
+    badSave = false;
     priceInput?.focus();
   }
 
@@ -60,13 +68,17 @@
 
   async function save(): Promise<void> {
     if (busy) return;
+    badSave = false;
+    badCommodity = false;
     // Enter on an empty line is not an entry
     if (commodityId === null && priceText.trim() === '' && scuText.trim() === '') return;
     if (terminalId === null) {
-      reject('no-terminal', 'Сначала выбери локацию.');
+      badSave = true;
+      reject('no-terminal', 'Сначала выбери локацию в шапке окна.');
       return;
     }
     if (commodityId === null) {
+      badCommodity = true;
       reject('no-commodity', 'Выбери товар: три буквы кода или названия и Enter.');
       commodityBox?.focus();
       return;
@@ -103,6 +115,7 @@
     if (failure !== null) {
       // what was typed stays, so that it can be saved again
       status = { text: failure, kind: 'error' };
+      badSave = true;
       return;
     }
     status = {
@@ -143,6 +156,8 @@
       placeholder="Товар"
       label="Товар: три буквы кода или названия и Enter"
       value={chosen ? `${chosen.code} ${chosen.name}` : undefined}
+      invalid={badCommodity}
+      title={badCommodity && problem !== null ? problem : undefined}
       onPick={pickCommodity}
     />
     <div class="sc-seg" role="radiogroup" aria-label="Сторона">
@@ -163,7 +178,7 @@
       inputmode="numeric"
       autocomplete="off"
       placeholder="Цена"
-      title="Цена, UEC за SCU"
+      title={badPrice && problem !== null ? problem : 'Цена, UEC за SCU'}
       aria-label="Цена, UEC за SCU"
       aria-invalid={badPrice ? 'true' : undefined}
       oninput={() => (badPrice = false)}
@@ -177,24 +192,28 @@
       inputmode="numeric"
       autocomplete="off"
       placeholder="SCU"
-      title="Количество, SCU (можно не вводить)"
+      title={badScu && problem !== null ? problem : 'Количество, SCU (можно не вводить)'}
       aria-label="Количество, SCU (можно не вводить)"
       aria-invalid={badScu ? 'true' : undefined}
       oninput={() => (badScu = false)}
       onkeydown={(event) => onFieldKeydown(event, scuText, () => { scuText = ''; badScu = false; })}
     />
-    <button class="sc-btn sc-btn--primary" type="submit" disabled={busy}>Записать</button>
+    <button
+      class="sc-btn sc-btn--primary"
+      type="submit"
+      disabled={busy}
+      data-failed={badSave ? '' : undefined}
+      title={badSave && problem !== null ? problem : undefined}
+    >Записать</button>
   </div>
 
-  {#if status !== null}
-    <p class="status" class:error={status.kind === 'error'} role="status" aria-live="polite" title={status.text}>
-      {#if chosen && status.kind === 'error'}<span class="code">{chosen.code}</span>&nbsp;·&nbsp;{/if}{status.text}
-    </p>
-  {/if}
+  <!-- for the screen reader only: the line has no room for a message, a mark and a tooltip say what went wrong -->
+  <p class="sr-only" role="status" aria-live="polite">{status === null ? '' : `${chosen && status.kind === 'error' ? `${chosen.code}: ` : ''}${status.text}`}</p>
 </form>
 
 <style>
   .quick {
+    position: relative;
     padding: 4px var(--sc-pad-x);
     border-bottom: 1px solid var(--sc-border);
   }
@@ -243,22 +262,15 @@
     outline-offset: -1px;
   }
 
-  .status {
-    height: var(--sc-row-h);
-    margin: 0;
+  /* read by the screen reader, takes no place on the screen */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
     overflow: hidden;
-    color: var(--sc-muted);
-    font-size: var(--sc-font-sm);
-    line-height: var(--sc-row-h);
-    text-overflow: ellipsis;
+    clip-path: inset(50%);
     white-space: nowrap;
-  }
-
-  .status.error {
-    color: var(--sc-bad);
-  }
-
-  .code {
-    font-weight: 600;
   }
 </style>

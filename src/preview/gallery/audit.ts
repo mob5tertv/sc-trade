@@ -31,8 +31,8 @@ export function auditGallery(root: ParentNode = document): GalleryAudit {
   const audit: GalleryAudit = { sidewaysScroll: [], widths: {}, clippedNumbers: [], ellipsised: 0, heights: {} };
   for (const figure of root.querySelectorAll<HTMLElement>('[data-state]')) {
     const name = figure.dataset.state ?? '?';
-    const glass = figure.querySelector<HTMLElement>('.sc-frame__glass');
-    const frame = figure.querySelector<HTMLElement>('.sc-frame');
+    const glass = figure.querySelector<HTMLElement>('.sc-frame');
+    const frame = glass;
     if (glass === null || frame === null) continue;
     if (glass.scrollWidth > glass.clientWidth) audit.sidewaysScroll.push(name);
     (audit.widths[String(Math.round(frame.getBoundingClientRect().width))] ??= []).push(name);

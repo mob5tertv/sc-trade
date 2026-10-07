@@ -50,7 +50,8 @@
 </div>
 
 <style>
-  /* one line, as wide as what it says, and never wider than 520 px: a long cargo is cut */
+  /* one line, as wide as what it says, and never wider than 520 px: a long cargo is cut; the glass and the frame
+     belong to the window around it (`.sc-frame`), so that the glass is painted once */
   .strip {
     display: flex;
     align-items: stretch;
@@ -58,7 +59,6 @@
     max-width: 520px;
     height: var(--sc-mini-h);
     overflow: hidden;
-    background: var(--sc-bg);
     color: var(--sc-text);
   }
 

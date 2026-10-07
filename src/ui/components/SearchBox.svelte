@@ -15,9 +15,13 @@
     onPick: (id: number) => void;
     /** Accessible name of the input. */
     label?: string;
+    /** The field is marked as wrong (a red line). */
+    invalid?: boolean;
+    /** The tooltip of the field; the value (the full name of what stands there) when absent. */
+    title?: string;
   }
 
-  let { items, boostIds, placeholder = 'Поиск…', value, onPick, label = placeholder }: Props = $props();
+  let { items, boostIds, placeholder = 'Поиск…', value, onPick, label = placeholder, invalid = false, title }: Props = $props();
 
   const MAX_RESULTS = 8;
   const listId = `search-${Math.random().toString(36).slice(2, 8)}`;
@@ -102,9 +106,10 @@
     aria-controls={listId}
     aria-activedescendant={visible ? `${listId}-${active}` : undefined}
     aria-autocomplete="list"
+    aria-invalid={invalid ? 'true' : undefined}
     autocomplete="off"
     spellcheck="false"
-    title={value}
+    title={title ?? value}
     {placeholder}
     oninput={onInput}
     onkeydown={onKeydown}

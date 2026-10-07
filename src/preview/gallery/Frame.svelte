@@ -30,10 +30,13 @@
 {#if shown}
   <figure class="state" data-state={name}>
     <figcaption class="caption">{caption}</figcaption>
-    <div class="sc-frame" style:width={width === 'content' ? 'max-content' : `${width}px`}>
-      <div class="sc-frame__glass" style:min-height={minHeight === undefined ? undefined : `${minHeight}px`} bind:this={glass}>
-        {@render children()}
-      </div>
+    <div
+      class="sc-frame"
+      style:width={width === 'content' ? 'max-content' : `${width}px`}
+      style:min-height={minHeight === undefined ? undefined : `${minHeight}px`}
+      bind:this={glass}
+    >
+      {@render children()}
     </div>
   </figure>
 {/if}

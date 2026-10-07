@@ -18,12 +18,13 @@
   }
   let { title, summary, open, onToggle, onClose, actions, children, scroll = false }: Props = $props();
 
-  const bodyId = `section-${Math.random().toString(36).slice(2, 8)}`;
+  const uid = $props.id();
+  const bodyId = `${uid}-body`;
 </script>
 
 <section class="section" class:open class:scroll>
   <div class="head">
-    <button type="button" class="toggle" aria-expanded={open} aria-controls={bodyId} title={summary ? `${title}: ${summary}` : title} onclick={() => onToggle()}>
+    <button type="button" class="toggle" aria-expanded={open} aria-controls={open ? bodyId : undefined} title={summary ? `${title}: ${summary}` : title} onclick={() => onToggle()}>
       <svg class="chevron" class:open viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M3 1.5 7 5 3 8.5" /></svg>
       <span class="sc-label title">{title}</span>
       {#if summary}<span class="summary">{summary}</span>{/if}
