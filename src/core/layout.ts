@@ -2,7 +2,13 @@
 // The window is exactly as big as its content and stands at an ANCHOR: a corner of the monitor and two
 // offsets (distances from that corner's two monitor edges). The anchor corner of the window stays fixed
 // while the size changes (mini bar <-> expanded view, sections opening and closing): a window anchored at
-// the bottom right grows up and to the left. There are no empty transparent margins around the interface.
+// the top left grows down and to the right, one anchored at the bottom right grows up and to the left.
+// There are no empty transparent margins around the interface.
+//
+// A window the player has dragged is always anchored by its TOP edge (see `anchorFromRect`), so the mini
+// line stays where the header was and the window unfolds downward. The bottom corners are only a choice in
+// the settings. When the window does not fit from its anchor it is SHIFTED onto the screen (the anchor is
+// not changed, so folding it brings the mini line back to its place); it is never made smaller for that.
 
 export interface Size {
   width: number;
@@ -29,57 +35,55 @@ export const WINDOW_MARGIN = 16;
 
 const DEFAULT_OFFSET: Offset = { dx: WINDOW_MARGIN, dy: WINDOW_MARGIN };
 
-/**
- * The offset the window is really placed with. A value that would push the window off the monitor is
- * not refused, it is cut here: never negative, never more than half of the monitor (the nearest corner
- * of a window on the monitor is never farther than that, so a stored offset beyond it can only be wrong).
- */
-function effectiveOffset(monitor: Size, offset: Offset): Offset {
-  const clamp = (value: number, half: number): number => Math.max(0, Math.min(value, Math.floor(half)));
-  return { dx: clamp(offset.dx, monitor.width / 2), dy: clamp(offset.dy, monitor.height / 2) };
+/** The largest content the window can hold: the monitor minus the margin on both sides, wherever the anchor is. */
+export function maxContentSize(monitor: Size): Size {
+  return {
+    width: Math.max(0, monitor.width - 2 * WINDOW_MARGIN),
+    height: Math.max(0, monitor.height - 2 * WINDOW_MARGIN),
+  };
 }
 
-/** The largest content the window can hold from its anchor: the monitor minus the offsets and the margin on the far side. */
-export function maxContentSize(monitor: Size, offset: Offset = DEFAULT_OFFSET): Size {
-  const { dx, dy } = effectiveOffset(monitor, offset);
-  return {
-    width: Math.max(0, monitor.width - dx - WINDOW_MARGIN),
-    height: Math.max(0, monitor.height - dy - WINDOW_MARGIN),
-  };
+/**
+ * Moves a stretch of one axis (from `start`, `length` long) onto a monitor side of `total` pixels. A stretch that is
+ * already on it stays where it is, even when it is closer to the edge than the margin (an offset of 0 is allowed);
+ * one that sticks out is put `WINDOW_MARGIN` away from the edge it was pushed against.
+ */
+function shiftOnto(start: number, length: number, total: number): number {
+  if (start + length > total) return Math.max(0, total - length - WINDOW_MARGIN);
+  if (start < 0) return WINDOW_MARGIN;
+  return start;
 }
 
 /**
  * A window of the size `size` (cut down to `maxContentSize` when the content is bigger) at the anchor
- * `corner` + `offset`. Everything is relative to the monitor; the whole window is on the monitor.
+ * `corner` + `offset`. Everything is relative to the monitor; the whole window is on the monitor: when it does not
+ * fit from its anchor (an expanded window under a mini line that stands near the bottom edge, a wide one at the right
+ * edge) it is shifted in, the anchor itself stays as it is. A negative offset is taken as 0.
  */
 export function anchoredRect(monitor: Size, corner: Corner, size: Size, offset: Offset = DEFAULT_OFFSET): Rect {
-  const { dx, dy } = effectiveOffset(monitor, offset);
-  const max = maxContentSize(monitor, offset);
+  const dx = Math.max(0, offset.dx);
+  const dy = Math.max(0, offset.dy);
+  const max = maxContentSize(monitor);
   const width = Math.min(size.width, max.width);
   const height = Math.min(size.height, max.height);
   const x = corner.endsWith('left') ? dx : monitor.width - width - dx;
   const y = corner.startsWith('top') ? dy : monitor.height - height - dy;
-  return {
-    x: Math.max(0, Math.min(x, monitor.width - width)),
-    y: Math.max(0, Math.min(y, monitor.height - height)),
-    width,
-    height,
-  };
+  return { x: shiftOnto(x, width, monitor.width), y: shiftOnto(y, height, monitor.height), width, height };
 }
 
 /**
- * The anchor of a window that was put somewhere (after a drag): the corner nearest to the CENTRE of the window
- * (the left and the top win a tie) and the whole-pixel distances of the window from that corner's edges.
+ * The anchor of a window that was put somewhere (after a drag). Always by the TOP edge: the side is the one the CENTRE of
+ * the window is nearer to (the left wins a tie), `dx` is the whole-pixel distance from that side of the monitor to the
+ * window, `dy` the distance from the top of the monitor to the top of the window. So the window unfolds downward from
+ * where its header is, however low it stands.
  */
-export function anchorFromRect(monitor: Size, rect: Rect): { corner: Corner; dx: number; dy: number } {
+export function anchorFromRect(monitor: Size, rect: Rect): { corner: 'top-left' | 'top-right'; dx: number; dy: number } {
   const left = rect.x + rect.width / 2 <= monitor.width / 2;
-  const top = rect.y + rect.height / 2 <= monitor.height / 2;
   const dx = left ? rect.x : monitor.width - rect.x - rect.width;
-  const dy = top ? rect.y : monitor.height - rect.y - rect.height;
   return {
-    corner: `${top ? 'top' : 'bottom'}-${left ? 'left' : 'right'}`,
+    corner: left ? 'top-left' : 'top-right',
     dx: Math.max(0, Math.round(dx)),
-    dy: Math.max(0, Math.round(dy)),
+    dy: Math.max(0, Math.round(rect.y)),
   };
 }
 

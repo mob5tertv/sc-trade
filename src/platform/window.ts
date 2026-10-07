@@ -79,7 +79,7 @@ function applyOpacity(opacity: number): void {
   document.documentElement.style.setProperty('--overlay-opacity', String(opacity));
 }
 
-/** The interface cannot be taller or wider than this: past it the content scrolls instead of the window growing. */
+/** The interface cannot be taller or wider than this (the screen minus the margins): past it the content scrolls instead of the window growing. */
 function applyMaxSize(max: Size): void {
   const style = document.documentElement.style;
   style.setProperty('--sc-max-w', `${max.width}px`);
@@ -147,7 +147,7 @@ export async function showWindow(layout: WindowLayout, log: Logger): Promise<Siz
     await win.setIgnoreCursorEvents(false);
     await win.setSkipTaskbar(true);
     const monitor = await monitorGeometry(log);
-    const max = maxContentSize(monitor.size, layout.offset);
+    const max = maxContentSize(monitor.size);
     applyMaxSize(max);
     placed = null;
     await placeContent(FIRST_CONTENT, layout, monitor, log);
@@ -172,7 +172,7 @@ export async function fitWindow(content: Size, layout: WindowLayout, log: Logger
   try {
     applyOpacity(layout.opacity);
     const monitor = await monitorGeometry(log);
-    applyMaxSize(maxContentSize(monitor.size, layout.offset));
+    applyMaxSize(maxContentSize(monitor.size));
     await placeContent(content, layout, monitor, log);
   } catch (err) {
     log.error('window', 'cannot fit the window', { content, err });
