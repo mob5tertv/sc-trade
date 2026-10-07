@@ -3,12 +3,11 @@
   import RouteList from '../components/RouteList.svelte';
   import Section from '../components/Section.svelte';
   import { app } from '../state.svelte';
+  import { stats } from '../stats.svelte';
   import { lookupEmptyText, lookupTarget } from '../vm/lookup';
   import { optionsSummary } from '../vm/options-summary';
   import { uexRangeOf } from '../vm/terminal-rows';
 
-  // My finished runs per pair: there are none to count until the trade runs exist in the interface.
-  const NO_RUNS = new Map<string, number>();
   const SECTION = 'options';
   // When the window has no height to spare the table above gives up its rows first: the answer the player asked for
   // stays whole as long as it can.
@@ -73,7 +72,7 @@
       <RouteList
         options={lookup.options}
         reference={app.reference}
-        runCounts={NO_RUNS}
+        runCounts={stats.runCounts}
         mode={asked.kind}
         showCommodity={asked.commodityId === null}
         emptyText={lookupEmptyText(asked, app.reference)}

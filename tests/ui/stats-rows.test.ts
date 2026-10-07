@@ -51,6 +51,34 @@ describe('historyRows', () => {
     expect(h[0].title).toBe('GOLD: смешанный рейс');
   });
 
+  it('calls a run that only bought a run without sales, and a run that sold in several places a mixed one', () => {
+    // R4 bought gold and lost it, nothing was sold; R5 bought at one terminal and sold at two
+    expect(historyRows([R4], ref, NOW)[0].title).toBe('GOLD: рейс без продаж');
+    expect(historyRows([R5], ref, NOW)[0].title).toBe('GOLD: смешанный рейс');
+  });
+
+  it('calls an active run that has only bought a run without sales, with every commodity bought', () => {
+    const loading = {
+      run: run({ id: 10, startedAt: 1000, endedAt: null, status: 'active' }),
+      events: [
+        ev({ id: 101, runId: 10, ts: 1000, type: 'buy', terminalId: 1, commodityId: 10, scu: 10, price: 100 }),
+        ev({ id: 102, runId: 10, ts: 1100, type: 'buy', terminalId: 1, commodityId: 20, scu: 10, price: 100 }),
+      ],
+    };
+    expect(historyRows([loading], ref, 2000)[0]).toMatchObject({ title: 'GOLD, TITA: рейс без продаж', status: 'active' });
+  });
+
+  it('does not take a sale without a price or a quantity for a sale', () => {
+    const half = {
+      run: run({ id: 11, startedAt: 1000, endedAt: 2000, status: 'lost' }),
+      events: [
+        ev({ id: 111, runId: 11, ts: 1000, type: 'buy', terminalId: 1, commodityId: 10, scu: 10, price: 100 }),
+        ev({ id: 112, runId: 11, ts: 2000, type: 'sell', terminalId: 2, commodityId: 10, scu: null, price: null }),
+      ],
+    };
+    expect(historyRows([half], ref, NOW)[0].title).toBe('GOLD: рейс без продаж');
+  });
+
   it('carries the run id and keeps the given order', () => {
     expect(historyRows([R5, R4, R1], ref, NOW).map(r => r.runId)).toEqual([5, 4, 1]);
   });

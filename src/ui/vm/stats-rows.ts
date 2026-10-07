@@ -53,21 +53,31 @@ export interface HistoryRow {
   profit: string; roi: string; duration: string; rate: string;
 }
 
-/** The commodities a run trades in, in the order of first use; the same trades `simpleRoute` looks at. */
+/** A buy or a sell that names a commodity, a quantity and a price: the same trades `simpleRoute` looks at. */
+function isTrade(e: RunEvent): boolean {
+  return (e.type === 'buy' || e.type === 'sell') && e.commodityId !== null && e.scu !== null && e.scu > 0 && e.price !== null;
+}
+
+/** The commodities a run trades in, in the order of first use. */
 function tradedCommodityIds(events: RunEvent[]): number[] {
   const ids = new Set<number>();
   for (const e of events) {
-    if ((e.type === 'buy' || e.type === 'sell') && e.commodityId !== null && e.scu !== null && e.scu > 0 && e.price !== null) ids.add(e.commodityId);
+    if (isTrade(e) && e.commodityId !== null) ids.add(e.commodityId);
   }
   return [...ids];
 }
 
-/** 'GOLD: ARC-L1 → TDD Area 18' for a simple run, 'GOLD, TITA: смешанный рейс' otherwise; the dash for a run without trades. */
+/**
+ * 'GOLD: ARC-L1 → TDD Area 18' for a simple run; 'GOLD, TITA: рейс без продаж' for one that only bought (nothing sold
+ * yet, or the cargo was lost), 'GOLD, TITA: смешанный рейс' for one that sold but is not a single route; the dash for
+ * a run without trades.
+ */
 function runTitle(events: RunEvent[], ref: Reference): string {
   const ids = tradedCommodityIds(events);
   if (ids.length === 0) return NONE;
   const route = simpleRoute(events);
-  const where = route === null ? 'смешанный рейс' : routeName(ref, route.originId, route.destId);
+  const sold = events.some(e => e.type === 'sell' && isTrade(e));
+  const where = route !== null ? routeName(ref, route.originId, route.destId) : sold ? 'смешанный рейс' : 'рейс без продаж';
   return `${ids.map(id => commodityName(ref, id)).join(', ')}: ${where}`;
 }
 

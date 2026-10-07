@@ -34,6 +34,7 @@ import {
   type WindowMode,
 } from '../platform/window';
 import { resetHeldKeys } from './keyboard';
+import { stats } from './stats.svelte';
 import { shouldCollapse } from './vm/idle';
 import { createKeyboardHolds, type KeyboardHolds } from './vm/keyboard-holds';
 import { createLatestRequest } from './vm/latest-request';
@@ -311,7 +312,7 @@ class AppState {
       ...this.#syncDeps(),
       reference: this.reference,
       settings: this.settings,
-      ownMedian: new Map(), // filled by the statistics task
+      ownMedian: stats.ownMedian,
     };
   }
 
@@ -337,7 +338,7 @@ class AppState {
       freeScu,
       terminals: this.reference.terminals,
       distances: this.distances,
-      ownMedian: new Map(), // filled by the statistics task
+      ownMedian: stats.ownMedian,
     };
   }
 
@@ -349,6 +350,7 @@ class AppState {
     this.reference = await loadReference(db);
     await this.#loadMarketData();
     this.activeRun = await getActiveRun(db);
+    await stats.reload('data loaded'); // never throws; from here on the statistics follow `activeRun` by themselves
     // the rows of the viewed terminal are known only now: a terminal that has nothing on the "buy" side opens on "sell"
     this.#settleSide();
   }
