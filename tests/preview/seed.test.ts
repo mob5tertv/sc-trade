@@ -9,6 +9,7 @@ import { loadSettings } from '../../src/data/repo/settings';
 import { getMeta, loadDistances, loadReference, loadUexPrices } from '../../src/data/repo/uex-cache';
 import { latestObservations } from '../../src/data/repo/diary';
 import { syncPlan } from '../../src/ui/vm/sync-plan';
+import { priceMoves } from '../helpers/price-trend-fixtures';
 import { testDb } from '../helpers/test-db';
 
 const NOW = 1_800_000_000;
@@ -126,6 +127,26 @@ describe('the default dataset', () => {
     expect(own.some((o) => o.scu !== null && o.scu > 0)).toBe(true);
     expect(own.every((o) => o.ts <= NOW)).toBe(true);
     expect(own.some((o) => o.side === 'buy') && own.some((o) => o.side === 'sell')).toBe(true);
+  });
+
+  describe('own prices seen again after a while (the triangle next to a price)', () => {
+    // each seeded pair: the stock, the price of the earlier reading, the price of the latest one. The sale prices of
+    // Stims are the ones of the trips from HUR-L1, the purchase prices of Diamond and Gold those of the trips to it.
+    const PAIRS = [
+      { terminal: 4, code: 'STIM', side: 'sell', was: 3475, now: 3730 }, // MIC-L1, sold dearer: rose
+      { terminal: 11, code: 'STIM', side: 'sell', was: 3675, now: 3395 }, // Port Tressler, fell
+      { terminal: 6, code: 'STIM', side: 'sell', was: 3365, now: 3365 }, // TDD Lorville, stayed
+      { terminal: 9, code: 'DIAM', side: 'buy', was: 6410, now: 5825 }, // Everus Harbor, bought cheaper: fell
+      { terminal: 1, code: 'GOLD', side: 'buy', was: 5475, now: 5885 }, // ARC-L1, bought dearer: rose
+      { terminal: 11, code: 'GOLD', side: 'buy', was: 5310, now: 5310 }, // Port Tressler, stayed
+    ] as const;
+
+    it.each(PAIRS)('has $code at terminal $terminal ($side): $was, then $now', async (pair) => {
+      const moves = await priceMoves(await dataset('default'));
+      const found = moves.find((m) => m.terminal === pair.terminal && m.code === pair.code && m.side === pair.side);
+      expect(found).toMatchObject({ was: pair.was, now: pair.now });
+      expect(found!.gapSec, 'a correction is not a move').toBeGreaterThanOrEqual(120);
+    });
   });
 
   it('measures every age from the moment the database was made, a few seconds past the minute', async () => {

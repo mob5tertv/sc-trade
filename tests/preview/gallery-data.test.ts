@@ -3,11 +3,16 @@ import { LADDER_ROI, NO_DATA_TERMINAL, VIEWED_TERMINAL, type GalleryData } from 
 import { routeOptionRow } from '../../src/ui/vm/route-rows';
 import { roiTier } from '../../src/ui/vm/roi-tier';
 import { sideCounts } from '../../src/ui/vm/terminal-rows';
-import { galleryData } from '../helpers/gallery-fixtures';
+import { galleryWithDiary, priceMoves } from '../helpers/price-trend-fixtures';
+import type { PriceMove } from '../helpers/price-trend-fixtures';
 
 let data: GalleryData;
+/** The prices of mine that have an earlier reading in the diary the gallery data was read from. */
+let moves: PriceMove[];
 beforeAll(async () => {
-  data = await galleryData();
+  const loaded = await galleryWithDiary();
+  data = loaded.data;
+  moves = await priceMoves(loaded.db);
 });
 
 describe('the gallery table of the viewed terminal', () => {
@@ -46,6 +51,49 @@ describe('the gallery table of the viewed terminal', () => {
     expect(data.rows.some((r) => r.sell?.ownScu !== null && r.sell?.ownScu !== undefined)).toBe(true);
   });
 
+  describe('the triangles of prices of mine that moved', () => {
+    const cellOf = (code: string, side: 'buy' | 'sell') => data.rows.find((r) => r.code === code)?.[side] ?? null;
+
+    it('has a rise and a fall on each side, coloured by what is good for the player there', () => {
+      expect(cellOf('MEDS', 'buy')?.trend).toMatchObject({ dir: 'up', good: false }); // bought dearer
+      expect(cellOf('PFOO', 'buy')?.trend).toMatchObject({ dir: 'down', good: true }); // bought cheaper
+      expect(cellOf('TUNG', 'sell')?.trend).toMatchObject({ dir: 'up', good: true }); // sold dearer
+      expect(cellOf('DIAM', 'sell')?.trend).toMatchObject({ dir: 'down', good: false }); // sold cheaper
+    });
+
+    const moveOf = (code: string, side: 'buy' | 'sell') => moves.find((m) => m.terminal === VIEWED_TERMINAL && m.code === code && m.side === side);
+
+    it('has prices of mine that are the same as in the reading before: the previous reading exists and says the same', () => {
+      for (const [code, side] of [['HYDR', 'buy'], ['LARA', 'sell']] as const) {
+        const cell = cellOf(code, side);
+        expect(cell?.own, `${code} ${side} is mine`).not.toBeNull();
+        expect(moveOf(code, side), `${code} ${side} has an earlier reading`).toMatchObject({ was: cell?.own, now: cell?.own });
+        expect(cell?.trend, `${code} ${side}`).toBeNull();
+      }
+    });
+
+    it('has a price of mine seen only once, so that there is nothing to compare with', () => {
+      expect(cellOf('GOLD', 'buy')?.own).not.toBeNull();
+      expect(moveOf('GOLD', 'buy')).toBeUndefined();
+      expect(cellOf('GOLD', 'buy')?.trend).toBeNull();
+    });
+
+    it('has the longest line of an expanded row: a five-digit price that moved, a stock estimate with its base, a learned rate and a typo', () => {
+      const cell = cellOf('SCRA', 'buy');
+      expect(cell?.own).toBeGreaterThanOrEqual(10_000);
+      expect(cell?.trend).toMatchObject({ dir: 'up', good: false });
+      expect(cell?.warn).toBe(true);
+      expect(cell?.ownScuBase).not.toBeNull(); // 'было 150 · 5 ч'
+      expect(cell?.ownScuRate).toBe('learned');
+      expect(cell?.badge?.kind).toBe('hot');
+    });
+
+    it('has UEX prices and a cold price of mine without a triangle', () => {
+      expect(cellOf('GOLD', 'sell')).toMatchObject({ own: null, trend: null });
+      expect(cellOf('ALUM', 'buy')).toMatchObject({ own: null, trend: null });
+    });
+  });
+
   it('has a table that is empty for a terminal nothing is known about', () => {
     expect(NO_DATA_TERMINAL).not.toBe(VIEWED_TERMINAL);
     expect(data.noRows).toEqual([]);
@@ -70,6 +118,35 @@ describe('the gallery route lists', () => {
     const own = rowsOf(data.routes.to, 'to').filter((r) => r.price.badge.kind !== 'uex');
     expect(own.length).toBeGreaterThan(0);
     expect(own.every((r) => r.price.range !== null)).toBe(true); // UEX knows a range at every place of the dataset
+  });
+
+  /** The trips whose price in the «Цена» column is mine and has an earlier reading that says exactly the same. */
+  const unchanged = (options: GalleryData['routes']['from'], mode: 'from' | 'to') => options.filter((o) => {
+    const [estimate, terminalId, side] = mode === 'from' ? [o.sell, o.destId, 'sell' as const] : [o.buy, o.originId, 'buy' as const];
+    const code = data.reference.commodities.get(o.commodityId)?.code;
+    const move = moves.find((m) => m.terminal === terminalId && m.code === code && m.side === side);
+    return estimate.source === 'own' && move !== undefined && move.was === estimate.price && move.now === estimate.price;
+  });
+
+  it('has trips whose price in the «Цена» column moved, is unchanged, or is UEX: the triangles of both modes', () => {
+    const from = rowsOf(data.routes.from, 'from');
+    // trips from here show the sale price at the far end: a rise is good, a fall is bad
+    expect(from.some((r) => r.trend?.dir === 'up' && r.trend.good)).toBe(true);
+    expect(from.some((r) => r.trend?.dir === 'down' && !r.trend.good)).toBe(true);
+    expect(from.some((r) => r.trend === null && r.price.badge.kind === 'uex')).toBe(true);
+    // trips to here show the purchase price at the far end: a fall is good, a rise is bad
+    const to = rowsOf(data.routes.to, 'to');
+    expect(to.some((r) => r.trend?.dir === 'down' && r.trend.good)).toBe(true);
+    expect(to.some((r) => r.trend?.dir === 'up' && !r.trend.good)).toBe(true);
+    expect(to.some((r) => r.trend === null && r.price.badge.kind === 'uex')).toBe(true);
+  });
+
+  it('has trips whose own price is the same as in the reading before, in both modes: no triangle', () => {
+    for (const [options, mode] of [[data.routes.from, 'from'], [data.routes.to, 'to']] as const) {
+      const same = unchanged(options, mode);
+      expect(same.length, mode).toBeGreaterThan(0);
+      for (const row of rowsOf(same, mode)) expect(row.trend, mode).toBeNull();
+    }
   });
 
   it('has trips from and to the viewed terminal', () => {

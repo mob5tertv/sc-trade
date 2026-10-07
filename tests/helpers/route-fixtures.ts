@@ -3,6 +3,7 @@ import type { RouteCtx } from '../../src/core/routes';
 import { distKey, obsKey, priceKey } from '../../src/core/types';
 import type { Market, UexSideStats } from '../../src/core/types';
 import { obs, px, ref } from './factories';
+import { previousOf } from './previous-price-fixtures';
 import { quantitiesOf, readingsOf } from './quantity-fixtures';
 
 // ---------------------------------------------------------------------------
@@ -85,11 +86,11 @@ export function withOwnSellScu(m: Market, terminalId: number, commodityId: numbe
     ? { ...known, scu }
     : obs({ id: 1000, ts: NOW - 120, terminalId, commodityId, side: 'sell', price: price ?? (uexPrice || SELL_PRICE_WITHOUT_ANY), scu });
   const others = [...m.own].filter(([k]) => k !== key).map(([, o]) => o);
-  return buildMarket([...m.uex.values()], [...others, next], m.stock, [...quantitiesOf(m, key), ...readingsOf(next)]);
+  return buildMarket([...m.uex.values()], [...others, next], m.stock, [...quantitiesOf(m, key), ...readingsOf(next)], previousOf(m));
 }
 
 function rebuild(m: Market, key: string, row: ReturnType<typeof px>): Market {
   const prices = new Map(m.uex);
   prices.set(key, row);
-  return buildMarket([...prices.values()], [...m.own.values()], undefined, quantitiesOf(m));
+  return buildMarket([...prices.values()], [...m.own.values()], undefined, quantitiesOf(m), previousOf(m));
 }

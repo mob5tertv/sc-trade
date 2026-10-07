@@ -5,6 +5,7 @@ import type { Settings } from '../../src/core/settings';
 import { distKey } from '../../src/core/types';
 import type { Market, RunWithEvents } from '../../src/core/types';
 import { ev, obs, px, ref, run } from './factories';
+import { previousOf } from './previous-price-fixtures';
 import { quantitiesOf, readingsOf } from './quantity-fixtures';
 
 // ---------------------------------------------------------------------------
@@ -37,7 +38,7 @@ export const ctx: RouteCtx = {
 /** The UEX SELL side with the weekly range around `price`. */
 export function withUexSell(m: Market, terminalId: number, commodityId: number, price: number, low = price, high = price): Market {
   const row = px(terminalId, commodityId, { sell: { last: price, avgWeek: price, minWeek: low, maxWeek: high }, dateModified: NOW - 3600 });
-  return buildMarket([...m.uex.values(), row], [...m.own.values()], undefined, quantitiesOf(m));
+  return buildMarket([...m.uex.values(), row], [...m.own.values()], undefined, quantitiesOf(m), previousOf(m));
 }
 
 export const market: Market = withUexSell(buildMarket([], []), 2, GOLD, 6900, 6400, 7100);
@@ -48,7 +49,7 @@ export const market: Market = withUexSell(buildMarket([], []), 2, GOLD, 6900, 64
  */
 export function withOwnSell(m: Market, terminalId: number, commodityId: number, price: number, ts: number, scu: number | null = null): Market {
   const next = obs({ id: m.own.size + 1, ts, terminalId, commodityId, side: 'sell', price, scu });
-  return buildMarket([...m.uex.values()], [...m.own.values(), next], undefined, [...quantitiesOf(m), ...readingsOf(next)]);
+  return buildMarket([...m.uex.values()], [...m.own.values(), next], undefined, [...quantitiesOf(m), ...readingsOf(next)], previousOf(m));
 }
 
 const buy = (id: number, commodityId: number, scu: number, price: number) => (
