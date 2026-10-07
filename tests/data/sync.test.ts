@@ -409,6 +409,25 @@ describe('syncPrices when UEX says that the limit of requests is reached (HTTP 4
     expect((await priceKeys()).sort()).toEqual(['1:10', '2:10']);
   });
 
+  it('is the same for the real client: an HTTP 429 answer of the server reaches the sync as the limit', async () => {
+    await seedTerminals(db, 10);
+    const asked: string[] = [];
+    const real = createUexClient(async (url) => {
+      asked.push(url);
+      return asked.length === 1
+        ? { status: 200, body: { status: 'ok', data: [] } }
+        : { status: 429, body: { status: 'requests_limit_reached', data: [] } };
+    }, createLogger(sink));
+
+    expect(await syncPrices({ ...deps, uex: real })).toEqual({ batches: 5, failed: 4, unfetched: 8 });
+
+    expect(asked.map((url) => url.slice(url.indexOf('id_terminal=')))).toEqual(['id_terminal=1,2', 'id_terminal=3,4']);   // not repeated, not split, not continued
+    const lines = sink.lines.map((l) => l.line);
+    expect(lines.some((l) => l.startsWith('[uex] request failed') && l.includes('"status":429'))).toBe(true);
+    expect(lines.filter((l) => l.startsWith('[sync]') && l.includes('prices sync stopped') && l.includes('429') && l.includes('limit'))).toHaveLength(1);
+    expect(await getMeta(db, 'prices_synced_at')).toBeNull();
+  });
+
   it('writes one line that says it was the limit', async () => {
     await seedTerminals(db, 10);
     uex.failPrices = (ids) => ids.includes(3);

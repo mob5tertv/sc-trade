@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/data/db';
-import { addRunEvent, getActiveRun, listRuns, startRun } from '../../src/data/repo/runs';
+import { addRunEvent, emptyActiveRuns, getActiveRun, getRun, listRuns, removeEmptyActiveRun, startRun } from '../../src/data/repo/runs';
 import { loseCargo, recordBuy, recordIncome, recordMark, recordSell, repairRuns } from '../../src/data/trade';
 import type { TradeDeps } from '../../src/data/trade';
 import { incomeIn } from '../helpers/income-fixtures';
@@ -297,6 +297,63 @@ describe('a half-written run in the middle of a session', () => {
     const { deps: s, id } = await closeFailed();
     await recordIncome(s, incomeIn(10, 100));
     expect((await listRuns(db)).map(r => [r.run.id === id, r.run.status])).toEqual([[false, 'done'], [true, 'done']]);
+  });
+});
+
+describe('emptyActiveRuns and removeEmptyActiveRun: the guard of the SQL, not only of the service', () => {
+  const runAt = (status: 'active' | 'done' | 'lost', at: number) => db.execute(
+    'INSERT INTO run (vehicle_id, scu_capacity, started_at, ended_at, status) VALUES (7, 696, ?, ?, ?)', [at, status === 'active' ? null : at + 1, status],
+  ).then(r => r.lastInsertId);
+  const addBuy = (runId: number) => addRunEvent(db, { runId, ts: NOW, type: 'buy', terminalId: 1, commodityId: 10, scu: 10, price: 100 });
+  const addMark = (runId: number) => addRunEvent(db, { runId, ts: NOW, type: 'depart', terminalId: null, commodityId: null, scu: null, price: null });
+  const statusOf = async (id: number) => (await db.select<{ status: string }>('SELECT status FROM run WHERE id = ?', [id]))[0]?.status ?? null;
+
+  it('find an active run without events, and only that', async () => {
+    const empty = await runAt('active', 10);
+    expect(await emptyActiveRuns(db)).toEqual([{ id: empty, startedAt: 10 }]);
+
+    await db.execute("UPDATE run SET status = 'done', ended_at = 11");          // a finished run without events is another thing
+    expect(await emptyActiveRuns(db)).toEqual([]);
+    await db.execute("UPDATE run SET status = 'lost'");
+    expect(await emptyActiveRuns(db)).toEqual([]);
+  });
+
+  it('do not find an active run that has an event, a purchase or a mark alike', async () => {
+    const withBuy = await runAt('active', 10);
+    await addBuy(withBuy);
+    expect(await emptyActiveRuns(db)).toEqual([]);
+
+    await db.execute("UPDATE run SET status = 'done', ended_at = 11");
+    const withMark = await runAt('active', 20);
+    await addMark(withMark);
+    expect(await emptyActiveRuns(db)).toEqual([]);
+  });
+
+  it('removeEmptyActiveRun removes an active run without events', async () => {
+    const empty = await runAt('active', 10);
+    await removeEmptyActiveRun(db, empty);
+    expect(await statusOf(empty)).toBeNull();
+  });
+
+  it('removeEmptyActiveRun leaves an active run that has events, even when it is asked for it by its id', async () => {
+    const withBuy = await runAt('active', 10);
+    await addBuy(withBuy);
+    await removeEmptyActiveRun(db, withBuy);
+    expect(await statusOf(withBuy)).toBe('active');
+    expect((await getRun(db, withBuy))!.events).toHaveLength(1);
+  });
+
+  it('removeEmptyActiveRun leaves a done run and a lost one, with or without events, and only removes the run it is asked for', async () => {
+    const done = await runAt('done', 10);
+    const lost = await runAt('lost', 20);
+    const doneWithEvent = await runAt('done', 30);
+    await addBuy(doneWithEvent);
+    for (const id of [done, lost, doneWithEvent]) await removeEmptyActiveRun(db, id);
+    expect([await statusOf(done), await statusOf(lost), await statusOf(doneWithEvent)]).toEqual(['done', 'lost', 'done']);
+
+    const empty = await runAt('active', 40);
+    await removeEmptyActiveRun(db, 999);                                        // an id that is not there changes nothing
+    expect(await statusOf(empty)).toBe('active');
   });
 });
 
