@@ -79,13 +79,21 @@ export interface RoiCell {
   title: string;
 }
 
+/**
+ * The most percent the narrow column of the table writes whole. A ROI above it is the sign of a price typed with a slip
+ * (the row says so with its `!` too), and a number must never be cut: it reads «999+», the tooltip has the real one.
+ */
+const MAX_SHOWN_PERCENT = 999;
+
 export function roiCell(best: RowRoi, side: Side, ref: Reference, thresholdPct: number): RoiCell {
   const where = `${side === 'sell' ? 'из' : 'в'} ${terminalLabel(ref, best.otherId)}`;
+  const percent = shownPercent(best.roi);
+  const capped = percent !== null && percent > MAX_SHOWN_PERCENT;
   return {
-    text: formatRoi(best.roi),
+    text: capped ? `${MAX_SHOWN_PERCENT}+` : formatRoi(best.roi),
     tier: shownTier(best.roi),
     hot: isHot(best.roi, thresholdPct),
-    title: `${where} · ${formatUec(best.buyPrice)} → ${formatUec(best.sellPrice)}\nНажми, чтобы открыть варианты`,
+    title: `${capped ? `ROI ${formatRoi(best.roi)} · ` : ''}${where} · ${formatUec(best.buyPrice)} → ${formatUec(best.sellPrice)}\nНажми, чтобы открыть варианты`,
   };
 }
 

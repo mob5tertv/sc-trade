@@ -180,6 +180,17 @@ describe('roiCell: how a row says it', () => {
   it('tells that a click opens the options', () => {
     expect(roiCell(best(), 'sell', ref, 50).title).toMatch(/варианты/i);
   });
+
+  it('a ROI of thousands of percent (a typo in a price) is written 999+: a number must fit its narrow column whole', () => {
+    expect(roiCell(best({ roi: 9.99 }), 'sell', ref, 50).text).toBe('999%');
+    expect(roiCell(best({ roi: 9.996 }), 'sell', ref, 50)).toMatchObject({ text: '999+', tier: 'great', hot: true });
+    expect(roiCell(best({ roi: 16990 }), 'sell', ref, 50).text).toBe('999+');
+  });
+
+  it('says the real number of a ROI that is written 999+, in the tooltip', () => {
+    expect(roiCell(best({ roi: 16.99 }), 'sell', ref, 50).title).toContain('ROI 1699%');
+    expect(roiCell(best({ roi: 0.62 }), 'sell', ref, 50).title).not.toContain('ROI ');
+  });
 });
 
 describe('roiCells', () => {

@@ -1,6 +1,6 @@
 <script lang="ts" module>
   // The small line icons of the buttons of the window: one stroke, no fill, the colour of the text around them.
-  export type IconName = 'lock' | 'unlock' | 'gear' | 'minus' | 'back' | 'swap' | 'cross';
+  export type IconName = 'lock' | 'unlock' | 'gear' | 'minus' | 'back' | 'swap' | 'cross' | 'search';
 </script>
 
 <script lang="ts">
@@ -25,6 +25,8 @@
     // two arrows in opposite directions: the server has been changed
     swap: ['M2.5 5.5h10', 'M10 3l2.5 2.5L10 8', 'M13.5 10.5h-10', 'M6 8l-2.5 2.5L6 13'],
     cross: ['M3.5 3.5l9 9M12.5 3.5l-9 9'],
+    // a magnifier: the search over all the commodities of a terminal
+    search: ['M6.8 2.5a4.3 4.3 0 1 0 0 8.6 4.3 4.3 0 0 0 0-8.6z', 'M10 10l4 4'],
   };
 </script>
 
