@@ -82,7 +82,11 @@
 
   // The button of the header: the lookup over ALL the commodities of the viewed terminal, the side of the table says which one
   // (what to bring here / where to take things from here)
-  const searchTitle = $derived(side === 'sell' ? 'Что везти сюда: лучшие варианты по всем товарам этого терминала' : 'Куда отсюда: лучшие варианты по всем товарам, которые покупают здесь');
+  const searchTitle = $derived(
+    side === 'sell'
+      ? 'Что везти сюда: лучшие варианты по всем товарам, которые здесь покупают'
+      : 'Куда отсюда: лучшие варианты по всем товарам, которые можно купить здесь',
+  );
   function searchAll(): void {
     if (viewedId === null) return;
     void app.runLookup({ kind: kindForSide(side), terminalId: viewedId, commodityId: null, price: null });

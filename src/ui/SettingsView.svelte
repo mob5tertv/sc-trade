@@ -158,10 +158,10 @@
   {@render numberField('overheadMin', 'Накладные на рейс, мин')}
   {@render numberField('overheadEmptyMin', 'Накладные на пустой перелёт, мин')}
   {@render numberField('topN', 'Число вариантов')}
+  {@render numberField('refillFullMin', 'Полное пополнение склада, мин')}
   {@render numberField('roiHighlightPct', 'Выделять ROI от, %', {
     title: 'Строка таблицы с таким ROI и выше выделяется цветной полосой. 0 — выделять всё, что в плюсе.',
   })}
-  {@render numberField('refillFullMin', 'Полное пополнение склада, мин')}
 {/snippet}
 
 {#snippet keys()}
