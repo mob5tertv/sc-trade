@@ -3,6 +3,7 @@
   import Header from './Header.svelte';
   import { app, type Tab } from './state.svelte';
   import SettingsTab from './tabs/SettingsTab.svelte';
+  import TerminalTab from './tabs/TerminalTab.svelte';
   import { createHeldKeyGuard } from './vm/held-keys';
 
   const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
@@ -89,7 +90,7 @@
     {#if app.tab === 'settings'}
       <SettingsTab />
     {:else if app.tab === 'terminal'}
-      <p class="placeholder">Содержимое вкладки «Терминал» подключается отдельной задачей.</p>
+      <TerminalTab />
     {:else if app.tab === 'run'}
       <p class="placeholder">Содержимое вкладки «Рейс» подключается отдельной задачей.</p>
     {:else}
