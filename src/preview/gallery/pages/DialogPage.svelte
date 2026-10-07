@@ -1,5 +1,6 @@
 <script lang="ts">
   import TradeDialog from '../../../ui/components/TradeDialog.svelte';
+  import { INCOME_NOTE } from '../../../ui/vm/trade-form';
   import { find, typeInto } from '../acts';
   import { useGallery } from '../context';
   import Frame from '../Frame.svelte';
@@ -20,6 +21,9 @@
 </Frame>
 <Frame name="sell" caption="«Продал»">
   <TradeDialog title="Продал Stims" side="sell" defaultScu={80} defaultPrice={3320} error={null} onConfirm={confirm} onCancel={() => {}} />
+</Frame>
+<Frame name="income" caption="«Продал» goods that are not in the hold: no quantity, one muted line says it is an income">
+  <TradeDialog title="Продал Gold" side="sell" defaultScu={null} defaultPrice={6742} note={INCOME_NOTE} error={null} onConfirm={confirm} onCancel={() => {}} />
 </Frame>
 <Frame name="empty" caption="nothing can be offered: the quantity is empty">
   <TradeDialog title="Купил Gold" side="buy" defaultScu={null} defaultPrice={6120} error={null} onConfirm={confirm} onCancel={() => {}} />

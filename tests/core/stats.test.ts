@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ownMedianIndex, ownRunCounts, routeStats, sessions } from '../../src/core/stats';
 import { pairKey } from '../../src/core/types';
 import type { RunWithEvents } from '../../src/core/types';
+import { incomeRun } from '../helpers/income-fixtures';
 import { R1, R2, R3, R4, R5, R6, withMarks } from '../helpers/stats-fixtures';
 
 describe('routeStats', () => {
@@ -83,4 +84,45 @@ describe('sessions', () => {
   });
 
   it('handles no data', () => expect(sessions([], [])).toEqual([]));
+});
+
+describe('a sale without a purchase (income, task 32)', () => {
+  const income = incomeRun(7, 2000, 120, 3700);                   // 444 000 at second 2000, inside the span of R1
+
+  it('is not a route: the rating, the medians and the counts of the pairs do not see it', () => {
+    const others = [R1, R2, R3, R4, R5, R6];
+    const all = [...others, income];
+    expect(routeStats(all)).toEqual(routeStats(others));
+    expect(ownMedianIndex(all)).toEqual(ownMedianIndex(others));
+    expect(ownRunCounts(all)).toEqual(ownRunCounts(others));
+    expect(routeStats([income])).toEqual([]);
+    expect(ownMedianIndex([income]).size).toBe(0);
+    expect(ownRunCounts([income]).size).toBe(0);
+  });
+
+  it('is in the profit of its session, and no number of the session is NaN', () => {
+    const s = sessions([1000, 2000, 3400], [R1, income]);
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ runIds: [1, 7], profit: 345_000 + 444_000 });
+    expect(s[0].uecPerHour).toBeCloseTo((789_000 * 3600) / 2400, 6);
+    const alone = sessions([2000], [income]);
+    expect(alone[0]).toMatchObject({ runIds: [7], profit: 444_000, uecPerHour: null });       // one moment: no span to divide by
+  });
+
+  it('is not a run of its session: runCount counts the runs, runIds and the profit keep every finished run', () => {
+    const s = sessions([1000, 2000, 3400], [R1, income]);
+    expect(s[0]).toMatchObject({ runIds: [1, 7], runCount: 1, profit: 789_000 });
+    expect(sessions([2000], [income])[0]).toMatchObject({ runIds: [7], runCount: 0, profit: 444_000 });   // a session of incomes only: no run, but a profit
+  });
+
+  it('counts the done and the lost runs and no income, wherever the incomes stand among them', () => {
+    const later = incomeRun(8, 12_200, 10, 100);                   // after the lost R4 (12000-12500)
+    const s = sessions([1000, 2000, 3400, 10000, 11800, 12000, 12200, 12500], [R1, R2, R4, later, income]);
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ runIds: [1, 7, 2, 4, 8], runCount: 3, profit: 345_000 + 444_000 + 200_000 - 100_000 + 1000 });
+  });
+
+  it('has a run count of zero for a session without runs', () => {
+    expect(sessions([30_000], [])[0]).toMatchObject({ runIds: [], runCount: 0, profit: 0 });
+  });
 });

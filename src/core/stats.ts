@@ -1,4 +1,4 @@
-import { phases, runTotals, simpleRoute } from './run';
+import { isIncomeRun, phases, runTotals, simpleRoute } from './run';
 import type { Phases } from './run';
 import { pairKey } from './types';
 import type { RunWithEvents } from './types';
@@ -106,7 +106,14 @@ export function ownRunCounts(runs: RunWithEvents[]): Map<string, number> {
   return counts;
 }
 
-export interface Session { startTs: number; endTs: number; runIds: number[]; profit: number; uecPerHour: number | null }
+export interface Session {
+  startTs: number; endTs: number;
+  /** Every finished run that starts inside the session, the sales of goods that were never bought included (their profit is in `profit`). */
+  runIds: number[];
+  /** How many of those are runs (flights): `runIds` without the sales of goods that were never bought (`isIncomeRun`). */
+  runCount: number;
+  profit: number; uecPerHour: number | null;
+}
 
 /** The pause between two records that starts a new play session (2 h); the interface asks it too, for "is this session still going". */
 export const DEFAULT_SESSION_GAP_SEC = 7200;
@@ -123,7 +130,7 @@ export function sessions(recordTs: number[], runs: RunWithEvents[], gapSec = DEF
   for (const ts of [...recordTs].sort((a, b) => a - b)) {
     const last = out[out.length - 1];
     if (last && ts - last.endTs <= gapSec) last.endTs = ts;
-    else out.push({ startTs: ts, endTs: ts, runIds: [], profit: 0, uecPerHour: null });
+    else out.push({ startTs: ts, endTs: ts, runIds: [], runCount: 0, profit: 0, uecPerHour: null });
   }
 
   const finished = runs
@@ -133,6 +140,7 @@ export function sessions(recordTs: number[], runs: RunWithEvents[], gapSec = DEF
     const session = out.find(s => s.startTs <= run.startedAt && run.startedAt <= s.endTs);
     if (!session) continue;
     session.runIds.push(run.id);
+    if (!isIncomeRun(events)) session.runCount += 1;
     session.profit += runTotals(run, events, run.startedAt).profit;
   }
 

@@ -13,7 +13,9 @@
   import { defaultSide } from '../vm/quick-entry';
   import { sideCounts, type TerminalRow } from '../vm/terminal-rows';
   import { selectedCommodity, type RowPick } from '../vm/terminal-side';
-  import { knownScuOf, tradeDefaults, tradeRefusal, type TradeDefaults } from '../vm/trade-form';
+  import {
+    goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, tradeDefaults, tradeMode, type TradeDefaults, type TradeMode,
+  } from '../vm/trade-form';
 
   const SECTION = 'terminal';
   const ENTRY = 'entry';
@@ -78,9 +80,10 @@
   /**
    * The form belongs to the terminal, the side and the commodity it was opened under; `error` is what the write said. `id`
    * is the number of this very opening: the answer of a write that was started from it may only touch it, not a form that
-   * was opened after the player went to another row (or the same row again).
+   * was opened after the player went to another row (or the same row again). `mode` is what the form promises the player
+   * when it opens, and what it writes: a sale of goods that are not in the hold is an `income`.
    */
-  interface TradeFormState { id: number; terminalId: number; side: Side; commodityId: number; defaults: TradeDefaults; error: string | null }
+  interface TradeFormState { id: number; terminalId: number; side: Side; mode: TradeMode; commodityId: number; defaults: TradeDefaults; error: string | null }
   let tradeState = $state.raw<TradeFormState | null>(null);
   let tradeFormCount = 0;
   const tradeFor = $derived(tradeState === null ? null : tradeState.commodityId);
@@ -109,24 +112,20 @@
     return () => app.releaseBusy('trade');
   });
 
-  // "Купил" / "Продал" of the open row. A sale of what is not on board is refused here, in a sentence, instead of opening a form that cannot be written.
+  // "Купил" / "Продал" of the open row. "Продал" for goods that are not in the hold opens the form of an income (spec 14.10):
+  // the quantity is empty (the player types it), the form says in one line that it is written without a purchase.
   function openTrade(e: { commodityId: number; side: Side }): void {
     if (viewedId === null) return;
-    const refusal = tradeRefusal(e.side, app.activeRun, e.commodityId);
-    if (refusal !== null) {
-      app.log.info('ui', 'trade not offered', { terminalId: viewedId, ...e, refusal });
-      app.notify(refusal, 'info');
-      return;
-    }
     if (tradeState !== null && tradeState.commodityId === e.commodityId && tradeState.side === e.side) return;
     const cell = rows.find((r) => r.commodityId === e.commodityId)?.[e.side];
     if (!cell) return;
+    const mode = tradeMode(e.side, app.activeRun, e.commodityId);
     const defaults = tradeDefaults({
       side: e.side, commodityId: e.commodityId, cell,
       cargo: cargoOf(app.activeRun?.events ?? []), capacity: app.settings.scuCapacity, budget: app.settings.budget,
     });
-    app.log.info('ui', 'trade form', { terminalId: viewedId, ...e, ...defaults });
-    tradeState = { id: ++tradeFormCount, terminalId: viewedId, side: e.side, commodityId: e.commodityId, defaults, error: null };
+    app.log.info('ui', 'trade form', { terminalId: viewedId, ...e, mode, ...defaults });
+    tradeState = { id: ++tradeFormCount, terminalId: viewedId, side: e.side, mode, commodityId: e.commodityId, defaults, error: null };
   }
 
   // The error of the form is cleared when the write starts, so that the same refusal twice in a row is a change for the form.
@@ -138,10 +137,15 @@
     tradeState = { ...form, error: null };
     const cell = app.terminalRows.find((r) => r.commodityId === form.commodityId)?.[form.side] ?? null;
     const input = { terminalId: form.terminalId, commodityId: form.commodityId, ...trade, knownScu: knownScuOf(cell) };
-    const failure = await (form.side === 'buy' ? app.buy(input) : app.sell(input));
+    const failure = await (form.side === 'buy' ? app.buy(input) : app.sell(input, form.mode === 'income'));
     // the answer belongs to the form the write was started from: the player may have gone to another row meanwhile
     if (failure === null) closeTrade('written', form.id);
-    else if (tradeState !== null && tradeState.id === form.id) tradeState = { ...tradeState, error: failure };
+    else if (goodsCameAboard(form.mode, app.activeRun, form.commodityId)) {
+      // an income form whose goods were bought meanwhile: its line "нет в трюме" would contradict the refusal, so it goes
+      // and the notice line says what to do (the next "Продал" opens the ordinary sale)
+      closeTrade('the goods are in the hold now', form.id);
+      app.notify(GOODS_ABOARD_NOTICE, 'info');
+    } else if (tradeState !== null && tradeState.id === form.id) tradeState = { ...tradeState, error: failure };
   }
 </script>
 
@@ -180,6 +184,7 @@
       side={tradeState.side}
       defaultScu={tradeState.defaults.scu}
       defaultPrice={tradeState.defaults.price}
+      note={tradeState.mode === 'income' ? INCOME_NOTE : null}
       error={tradeState.error}
       onConfirm={(trade) => void confirmTrade(trade)}
       onCancel={() => closeTrade('cancelled')}
