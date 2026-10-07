@@ -3,6 +3,9 @@ import type { RouteOption } from '../../core/routes';
 import type { SellAlternative, SellHere } from '../../core/sell';
 import { pairKey } from '../../core/types';
 import type { Estimate, Reference, Temp } from '../../core/types';
+import { lookupTarget } from './lookup';
+import { roiTier } from './roi-tier';
+import type { RoiTier } from './roi-tier';
 import { badgeText } from './terminal-rows';
 
 // Display rows of the route suggestions and of the "sell here or fly on" block. Every number is already formatted.
@@ -49,6 +52,17 @@ export interface RouteOptionRow {
   key: string;
   /** The other end of the trip, by `mode`. */
   terminal: string;
+  /** Both ends in trip order, whatever the mode: where it is bought and where it is sold. */
+  origin: string; dest: string;
+  /**
+   * The row has to name both ends: the player's own end of the trip (the purchase terminal for trips from here, the
+   * sale terminal for trips to here) is not the viewed terminal, say a trip that starts at another terminal of the planet.
+   */
+  bothEnds: boolean;
+  /** The other end is the current target, the terminal the "Цель" button of this row would set. */
+  isTarget: boolean;
+  /** How good the trip is by its ROI: the colour of the bar at the edge of the row and of the ROI number. */
+  tier: RoiTier;
   commodity: string;
   distance: string;
   /** The time of the whole trip; the dash when it is unknown. */
@@ -63,7 +77,13 @@ export interface RouteOptionRow {
   /** The profit at the unfavourable end of both price ranges, and whether it is a loss. */
   worst: string; worstLoss: boolean;
   qty: string;
+  /** For the expanded row: the money put in, the profit expected, and the prices at both ends. */
+  invested: string; profit: string; profitLoss: boolean;
+  buy: PriceView; sell: PriceView;
 }
+
+/** What the rows are compared with: the viewed terminal, and the current target of the trip. */
+export interface RouteMarks { anchorTerminalId?: number | null; targetTerminalId?: number | null }
 
 /** 'по твоим рейсам', 'оценка по расстоянию · пустой перелёт 4:10'; `null` without a time. */
 function timeTitle(o: RouteOption): string | null {
@@ -72,12 +92,21 @@ function timeTitle(o: RouteOption): string | null {
   return o.emptyLegSec > 0 ? `${source} · пустой перелёт ${formatDuration(o.emptyLegSec)}` : source;
 }
 
-/** `runCounts` is keyed with `pairKey(originId, destId)`. */
-export function routeOptionRow(o: RouteOption, ref: Reference, mode: RouteMode, runCounts: Map<string, number>): RouteOptionRow {
+/** `runCounts` is keyed with `pairKey(originId, destId)`; `marks` tells which terminal is viewed and which is the target. */
+export function routeOptionRow(
+  o: RouteOption, ref: Reference, mode: RouteMode, runCounts: Map<string, number>, marks: RouteMarks = {},
+): RouteOptionRow {
   const from = mode === 'from';
+  const { anchorTerminalId = null, targetTerminalId = null } = marks;
+  const ownEndId = from ? o.originId : o.destId;
   return {
     key: `${pairKey(o.originId, o.destId)}:${o.commodityId}`,
     terminal: terminalLabel(ref, from ? o.destId : o.originId),
+    origin: terminalLabel(ref, o.originId),
+    dest: terminalLabel(ref, o.destId),
+    bothEnds: anchorTerminalId !== null && ownEndId !== anchorTerminalId,
+    isTarget: targetTerminalId !== null && lookupTarget(o, mode) === targetTerminalId,
+    tier: roiTier(o.roi),
     commodity: commodityLabel(ref, o.commodityId),
     distance: formatDistance(o.distanceGm),
     time: o.timeSec === null ? NONE : formatDuration(o.timeSec),
@@ -87,6 +116,8 @@ export function routeOptionRow(o: RouteOption, ref: Reference, mode: RouteMode, 
     roi: formatPct(o.roi), rate: perHour(o.uecPerHour),
     worst: formatUec(o.worstProfit), worstLoss: o.worstProfit < 0,
     qty: `${o.qty} SCU`,
+    invested: formatUec(o.qty * o.buy.price), profit: formatUec(o.profit), profitLoss: o.profit < 0,
+    buy: priceView(o.buy), sell: priceView(o.sell),
   };
 }
 

@@ -1,6 +1,6 @@
 import { estimate } from '../../core/estimate';
 import type { EstimateCtx } from '../../core/estimate';
-import { formatAge } from '../../core/format';
+import { formatAge, formatUec } from '../../core/format';
 import { priceWarning } from '../../core/input';
 import { priceKey } from '../../core/types';
 import type { Estimate, Market, Reference, Side, StockEstimate, Temp } from '../../core/types';
@@ -12,6 +12,7 @@ export interface Cell {
   hint: number | null; hintScu: number | null;    // a UEX estimate, or my cold value when UEX has nothing; hintScu is also the UEX quantity next to my price
   badge: { text: string; kind: Temp | 'uex' } | null;
   uexRange: { low: number; high: number } | null; // the UEX range next to my cooling value
+  range: { low: number; high: number } | null;    // the range UEX knows for this side (week, else month, else all time), next to my own price or to a UEX one; null when it is flat or unknown
   ownLast: { price: number; age: string } | null; // my cold value kept for reference when the cell fell back to UEX
   warn: boolean;                                  // my value looks like a typo against the UEX history
 }
@@ -27,9 +28,46 @@ export function badgeText(e: Estimate): { text: string; kind: Temp | 'uex' } {
   return { text: e.ageKnown ? `UEX · ${formatAge(e.ageSec)}` : 'UEX', kind: 'uex' };
 }
 
+/** The quantity column of one table row: the number, whose it is, whether it is a calculation, and what it means. */
+export interface CellScu { text: string; own: boolean; estimated: boolean; title: string }
+
+/**
+ * The quantity a table row shows for the side it is drawn on: the stock at the seller on the buy side, what the buyer
+ * already holds on the sell side. My own quantity wins over the UEX one; `estimated` means the refill timer moved it
+ * (the expanded row tells from what). `null` when the cell has no quantity.
+ */
+export function cellScu(cell: Cell | null, side: Side): CellScu | null {
+  if (cell === null) return null;
+  const value = cell.ownScu ?? cell.hintScu;
+  if (value === null) return null;
+  const own = cell.ownScu !== null;
+  const estimated = own && cell.ownScuBase !== null;
+  const where = side === 'buy' ? 'Остаток у продавца' : 'Склад у покупателя';
+  return {
+    text: formatUec(value), own, estimated,
+    title: estimated ? 'Оценка по таймеру пополнения: сколько там сейчас' : `${where} по ${own ? 'твоему замеру' : 'данным UEX'}, SCU`,
+  };
+}
+
+/** How many rows have each side: what can be bought here (the terminal sells it) and what can be sold here (it buys it). */
+export function sideCounts(rows: Array<Pick<TerminalRow, 'buy' | 'sell'>>): { buy: number; sell: number } {
+  return { buy: rows.filter(row => row.buy !== null).length, sell: rows.filter(row => row.sell !== null).length };
+}
+
+/**
+ * The range UEX knows for one side. A price of my own has none in its estimate, so the same estimate is taken once
+ * more with my diary left out; it picks the period (week, month, all time) exactly as the price does. A flat price or
+ * one without bounds is no range.
+ */
+function uexRange(m: Market, e: Estimate, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): Cell['range'] {
+  const uex = e.source === 'uex' ? e : estimate({ ...m, own: new Map() }, terminalId, commodityId, side, ctx);
+  return uex !== null && uex.source === 'uex' && uex.low > 0 && uex.high > uex.low ? { low: uex.low, high: uex.high } : null;
+}
+
 function cell(m: Market, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): Cell | null {
   const e = estimate(m, terminalId, commodityId, side, ctx);
   if (!e) return null;
+  const range = uexRange(m, e, terminalId, commodityId, side, ctx);
   // The quantity is a reading of its own, apart from the price (spec 14.6): mine whenever `scuOrigin` says so (zero
   // included), even next to a UEX price. On the buy side `e.stock` is its estimate for now; on the sell side it is
   // the buyer's inventory and stays as recorded, with no estimate (spec 14.5). A UEX quantity goes to the grey
@@ -45,13 +83,13 @@ function cell(m: Market, terminalId: number, commodityId: number, side: Side, ct
     const row = m.uex.get(priceKey(terminalId, commodityId));
     return {
       own: e.price, ...quantity, hint: null,
-      badge: badgeText(e), uexRange: e.uexRange, ownLast: null,
+      badge: badgeText(e), uexRange: e.uexRange, range, ownLast: null,
       warn: row ? priceWarning(e.price, row[side].min, row[side].max) : false,
     };
   }
   return {
     own: null, ...quantity, hint: e.price,
-    badge: badgeText(e), uexRange: null,
+    badge: badgeText(e), uexRange: null, range,
     ownLast: e.ownLast && { price: e.ownLast.price, age: formatAge(e.ownLast.ageSec) },
     warn: false,
   };

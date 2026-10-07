@@ -44,6 +44,10 @@ describe('routeOptionRow', () => {
       runs: 0,
       price: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
       roi: '12,8%', rate: '256k/ч', worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
+      origin: 'ARC-L1', dest: 'TDD Area 18', bothEnds: false, isTarget: false, tier: 'ok',
+      invested: nb('587 520'), profit: nb('74 880'), profitLoss: false,
+      buy: { price: nb('6 120'), range: null, badge: { text: 'моя · 40 мин', kind: 'hot' } },
+      sell: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
     });
   });
 
@@ -87,6 +91,52 @@ describe('routeOptionRow', () => {
     expect(routeOptionRow(option({ destId: 3 }), named, 'from', new Map()).terminal).toBe('Long name');
     expect(routeOptionRow(option({ destId: 777 }), ref, 'from', new Map()).terminal).toBe('#777');
     expect(routeOptionRow(option({ commodityId: 999 }), ref, 'from', new Map()).commodity).toBe('#999');
+  });
+});
+
+describe('routeOptionRow: both ends and the target', () => {
+  it('names both ends of the trip in trip order, whatever the mode', () => {
+    for (const mode of ['from', 'to'] as const) {
+      expect(routeOptionRow(option(), ref, mode, new Map())).toMatchObject({ origin: 'ARC-L1', dest: 'TDD Area 18' });
+    }
+  });
+
+  it('asks for both ends when the purchase terminal is not the viewed one (trips from here)', () => {
+    const row = (anchorTerminalId: number | null | undefined) => routeOptionRow(option(), ref, 'from', new Map(), { anchorTerminalId }).bothEnds;
+    expect(row(1)).toBe(false); // bought right here
+    expect(row(5)).toBe(true); // "и рядом": bought at another terminal of the planet
+    expect(row(null)).toBe(false); // nothing to compare with
+    expect(row(undefined)).toBe(false);
+  });
+
+  it('asks for both ends when the sale terminal is not the viewed one (trips to here)', () => {
+    const row = (anchorTerminalId: number | null) => routeOptionRow(option(), ref, 'to', new Map(), { anchorTerminalId }).bothEnds;
+    expect(row(2)).toBe(false); // sold right here
+    expect(row(9)).toBe(true);
+    expect(row(null)).toBe(false);
+  });
+
+  it('marks the option whose other end is the target the "Цель" button would set', () => {
+    const target = (mode: 'from' | 'to', targetTerminalId: number | null | undefined) =>
+      routeOptionRow(option(), ref, mode, new Map(), { targetTerminalId }).isTarget;
+    expect(target('from', 2)).toBe(true); // the destination is the target of a trip from here
+    expect(target('from', 1)).toBe(false); // the origin is not
+    expect(target('to', 1)).toBe(true); // the origin is the target of a trip to here
+    expect(target('to', 2)).toBe(false);
+    expect(target('from', null)).toBe(false);
+    expect(target('from', undefined)).toBe(false);
+  });
+
+  it('puts the row into the ROI tier of its option', () => {
+    const tier = (roi: number) => routeOptionRow(option({ roi }), ref, 'from', new Map()).tier;
+    expect([0.6, 0.2, 0.1, 0.01, -0.02].map(tier)).toEqual(['great', 'good', 'ok', 'poor', 'loss']);
+  });
+
+  it('adds up the money of the whole trip for the expanded row', () => {
+    const row = routeOptionRow(option({ qty: 10, profit: -300 }), ref, 'from', new Map());
+    expect(row).toMatchObject({ invested: nb('61 200'), profit: nb('-300'), profitLoss: true });
+    expect(row.buy.badge).toEqual({ text: 'моя · 40 мин', kind: 'hot' });
+    expect(row.sell.price).toBe(nb('6 900'));
   });
 });
 
