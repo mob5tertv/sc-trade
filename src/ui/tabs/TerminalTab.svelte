@@ -105,12 +105,9 @@
 <section class="tab">
   <QuickEntry
     terminalId={viewedId}
-    terminalName={viewedName}
-    {terminalItems}
     {commodityItems}
     {boostIds}
     {sideFor}
-    onPickTerminal={(id) => app.setViewTerminal(id)}
     onSave={(entry) => app.recordPrice(entry)}
     onReject={(e) => app.log.info('ui', 'quick entry rejected', { terminalId: viewedId, ...e })}
     onFailure={(err, entry) => app.log.error('ui', 'quick entry save failed', { ...entry, err })}
@@ -165,6 +162,8 @@
           mode={lookup.request.kind}
           showCommodity={lookup.request.commodityId === null}
           emptyText={lookupEmptyText(lookup.request, app.reference)}
+          anchorTerminalId={viewedId}
+          targetTerminalId={app.settings.targetTerminalId}
           onTarget={(option) => void app.setTarget(lookupTarget(option, kind))}
         />
       {/if}
@@ -174,15 +173,19 @@
   {#if viewedId === null}
     <p class="empty">Выбери локацию в поиске, чтобы увидеть её цены.</p>
   {:else}
-    <TerminalTable
-      {rows}
-      {selectedCommodityId}
-      scope={viewedId}
-      onSelect={select}
-      onSavePrice={(edit) => void savePrice(edit)}
-      onLookup={lookupRow}
-      onTrade={trade}
-    />
+    <!-- until the section header holds the switch of the two sides, both tables are drawn one under the other -->
+    {#each ['buy', 'sell'] as const as side (side)}
+      <TerminalTable
+        {rows}
+        {side}
+        {selectedCommodityId}
+        scope={viewedId}
+        onSelect={(id) => (id === null ? (selection = null) : select(id))}
+        onSavePrice={(edit) => void savePrice(edit)}
+        onLookup={lookupRow}
+        onTrade={trade}
+      />
+    {/each}
   {/if}
 </section>
 

@@ -3,6 +3,8 @@
 //
 //   npm run preview:shot -- --scene panel [--monitor 1920x1080@1] [--view window|desktop] [--scale 2] [--out path.png]
 //                           [--do "click:.strip;wait:300"] [--state] [--timeout 30]
+//   npm run preview:shot -- --gallery terminal-table[/buy-expanded] [--bg light] [--opacity 0.6] [--scale 2]
+//                           the component gallery (src/preview/gallery/) instead of a scene of the application
 //
 // It starts its own Vite dev server on a free port and its own browser on a throw-away profile, and stops both.
 // `--do` runs steps in the application before the picture (see steps.mjs); `--state` prints the mocked state of
@@ -17,6 +19,8 @@ import { charKey, parseSteps, pressKey } from './steps.mjs';
 
 const HELP = `usage: npm run preview:shot -- --scene <name> [options]
   --scene <name>        scene of src/preview/scenes.ts (strip, strip-run, panel, settings, boot-failed, ...)
+  --gallery <page[/state]>  the component gallery instead of a scene (pages: src/preview/gallery/registry.ts);
+                        with --bg dark|light (what is under the glass) and --opacity 0.3..1 (the glass)
   --monitor <WxH@s>     monitor in physical pixels and scale, default 1920x1080@1
   --view window|desktop only the overlay window (8 px around it, the game under it), or the whole field; default window
   --scale <n>           pixel density of the picture, default 1
@@ -35,6 +39,9 @@ class ShotError extends Error {
   }
 }
 
+/** `gallery`, `bg` and `opacity` for the address: the desktop page hands every parameter on to the page inside it. */
+const galleryParams = /** @type {Record<string, string>} */ ({});
+
 const MARGIN = 8;
 const SETTLE_MS = 2000;
 /** The page of the desktop and the application inside it, as the browser's script sees them. */
@@ -47,12 +54,27 @@ function readOptions() {
     options: {
       scene: { type: 'string' }, monitor: { type: 'string' }, view: { type: 'string' }, scale: { type: 'string' },
       out: { type: 'string' }, do: { type: 'string' }, state: { type: 'boolean' }, timeout: { type: 'string' },
+      gallery: { type: 'string' }, bg: { type: 'string' }, opacity: { type: 'string' },
       help: { type: 'boolean' },
     },
   });
   if (values.help) {
     console.log(HELP);
     process.exit(0);
+  }
+  if (values.gallery) {
+    if (values.scene) throw new ShotError('--scene and --gallery are two different pages: give one of them', 1);
+    if (values.bg !== undefined && values.bg !== 'dark' && values.bg !== 'light') throw new ShotError(`--bg must be dark or light, not "${values.bg}"`, 1);
+    if (values.opacity !== undefined && !(Number(values.opacity) >= 0.3 && Number(values.opacity) <= 1)) {
+      throw new ShotError(`--opacity must be between 0.3 and 1, not "${values.opacity}"`, 1);
+    }
+    galleryParams.gallery = values.gallery;
+    if (values.bg) galleryParams.bg = values.bg;
+    if (values.opacity) galleryParams.opacity = values.opacity;
+    // the name of the page stands in for the scene: the default file name and the desktop page's selector read it
+    values.scene = `gallery-${values.gallery.replace(/[^\w-]+/g, '_')}${values.bg === 'light' ? '-light' : ''}${values.opacity ? `-o${values.opacity}` : ''}`;
+  } else if (values.bg !== undefined || values.opacity !== undefined) {
+    throw new ShotError('--bg and --opacity are for --gallery pages only', 1);
   }
   if (!values.scene) throw new ShotError(`--scene is required\n${HELP}`, 1);
   const view = values.view ?? 'window';
@@ -287,7 +309,7 @@ async function main() {
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: options.scale, mobile: false });
 
-    const address = `${url}/preview.html?${new URLSearchParams({ scene: options.scene, monitor: options.monitor, zoom: '1' })}`;
+    const address = `${url}/preview.html?${new URLSearchParams({ scene: options.scene, monitor: options.monitor, zoom: '1', ...galleryParams })}`;
     await cdp.send('Page.navigate', { url: address });
 
     const sceneError = await waitReady(cdp, options.timeout, diagnostics);

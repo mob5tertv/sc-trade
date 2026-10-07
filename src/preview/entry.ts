@@ -1,6 +1,7 @@
 import { emit } from '@tauri-apps/api/event';
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks';
 import { tick } from 'svelte';
+import { GALLERY_SCENE } from './gallery/scene';
 import { createIpcHandler, type PreviewLogLevel, type SqlOp } from './ipc';
 import { formatMonitor, parseMonitor } from './monitor';
 import { MESSAGE_SOURCE, type PreviewGlobal, type PreviewMessage, type PreviewState } from './protocol';
@@ -96,7 +97,9 @@ async function waitForQuiet(): Promise<void> {
 }
 
 async function run(): Promise<void> {
-  const scene = findScene(preview.scene);
+  // `gallery=<page>[/<state>]`: the component gallery stands in for the application (see src/preview/gallery/)
+  const galleryName = params.get('gallery');
+  const scene = galleryName === null ? findScene(preview.scene) : GALLERY_SCENE;
   if (scene === undefined) {
     throw new Error(`unknown scene "${preview.scene}"; known scenes: ${SCENES.map((s) => s.name).join(', ')}`);
   }
@@ -140,6 +143,15 @@ async function run(): Promise<void> {
     { shouldMockEvents: true },
   );
   write('info', `[preview] scene ${scene.name}, dataset ${scene.dataset}, monitor ${formatMonitor(monitor)}`);
+
+  if (galleryName !== null) {
+    const { mountGallery } = await import('./gallery/mount');
+    await mountGallery({ name: galleryName, bg: params.get('bg'), opacity: params.get('opacity'), win, scale: monitor.scale });
+    await waitForQuiet();
+    await document.fonts.ready;
+    await frames();
+    return;
+  }
 
   // The real application: main.ts mounts it on import, and `boot()` runs from its root component.
   await import('../main');

@@ -2,7 +2,16 @@
   import type { Temp } from '../../core/types';
 
   type Kind = Temp | 'uex';
-  let { text, kind }: { text: string; kind: Kind } = $props();
+  interface Props {
+    text: string;
+    kind: Kind;
+    /**
+     * A square mark of 6 px in the colour of the freshness (data from UEX: an empty frame) with the whole text in its
+     * `title`. It stands next to a number in a row; the full plaque is for the expanded row.
+     */
+    compact?: boolean;
+  }
+  let { text, kind, compact = false }: Props = $props();
 
   // The colour is not the only carrier of the meaning: the text says whose price it is and how old.
   const TITLES: Record<Kind, string> = {
@@ -14,13 +23,31 @@
   };
 </script>
 
-<span class="badge {kind}" title={TITLES[kind]}>{text}</span>
+{#if compact}
+  <span class="mark {kind}" role="img" aria-label={text} title={text}></span>
+{:else}
+  <span class="badge {kind}" title={TITLES[kind]}>{text}</span>
+{/if}
 
 <style>
+  .mark {
+    display: inline-block;
+    flex: none;
+    width: 6px;
+    height: 6px;
+    background: var(--badge);
+    vertical-align: middle;
+  }
+
+  /* UEX data is nobody's reading of mine: an empty square */
+  .mark.uex {
+    border: 1px solid var(--badge);
+    background: transparent;
+  }
+
   .badge {
     display: inline-block;
     max-width: 100%;
-    box-sizing: border-box;
     padding: 0 6px;
     border: 1px solid color-mix(in srgb, var(--badge) 55%, transparent);
     border-radius: var(--sc-radius);

@@ -4,18 +4,22 @@
   import type { Side } from '../../core/types';
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
   import type { EditBase } from '../vm/inputs';
+  import { cellScu } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
   import TempBadge from './TempBadge.svelte';
 
   interface Props {
     rows: TerminalRow[];
+    /** Which side of the terminal is drawn: `buy` what the player can buy here, `sell` what he can sell here. Rows without that side are left out. */
+    side: Side;
     selectedCommodityId: number | null;
     /**
      * What these rows belong to, say the id of the viewed terminal. A draft is kept per scope: when the scope
      * changes, every unsaved or invalid draft is dropped, so none can show up on another terminal's row.
      */
     scope?: string | number;
-    onSelect: (commodityId: number) => void;
+    /** A click on a row: its commodity, or `null` when the selected row was clicked again. */
+    onSelect: (commodityId: number | null) => void;
     /**
      * `scu` is the quantity the player typed in this very edit. `null` means "no quantity reading in this
      * observation": a price typed alone, or an emptied quantity. It does not mean the quantity became unknown.
@@ -24,7 +28,7 @@
     onLookup: (e: { commodityId: number; side: Side }) => void;
     onTrade: (e: { commodityId: number; side: Side }) => void;
   }
-  let { rows, selectedCommodityId, scope = '', onSelect, onSavePrice, onLookup, onTrade }: Props = $props();
+  let { rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onLookup, onTrade }: Props = $props();
 
   /**
    * What is being typed into one cell (one commodity, one side). A cell with no draft shows its values from
@@ -121,129 +125,146 @@
     commit(commodityId, side, cell);
   }
 
-  const select = (commodityId: number): void => {
-    if (commodityId !== selectedCommodityId) onSelect(commodityId);
-  };
+  // One row is expanded at a time; the click on it again takes it back.
+  const toggle = (commodityId: number): void => onSelect(commodityId === selectedCommodityId ? null : commodityId);
 
   const placeholder = (n: number | null): string => (n === null ? '—' : formatUec(n));
+
+  const shown = $derived(rows.filter(row => row[side] !== null));
+  const empty = $derived(rows.length === 0 ? 'Нет цен' : side === 'buy' ? 'Здесь ничего не продают' : 'Здесь ничего не покупают');
+  const range = (cell: Cell): string | null => (cell.range === null ? null : `${formatUec(cell.range.low)}–${formatUec(cell.range.high)}`);
 </script>
 
-{#snippet sideLine(row: TerminalRow, cell: Cell, side: Side)}
+{#snippet expanded(row: TerminalRow, cell: Cell)}
   {@const key = keyOf(row.commodityId, side)}
   {@const draft = drafts[key]}
   {@const texts = baseTexts(cellEditBase(cell))}
   {@const estimated = cell.ownScu !== null && cell.ownScuBase !== null}
-  <div class="side">
-    <span class="label">{side === 'buy' ? 'Купить' : 'Продать'}</span>
-    <input
-      class="num price"
-      class:invalid={draft?.bad.price}
-      type="text"
-      inputmode="numeric"
-      autocomplete="off"
-      data-cell={key}
-      aria-label="{row.code}: цена {side === 'buy' ? 'покупки' : 'продажи'}, UEC за SCU"
-      aria-invalid={draft?.bad.price ? 'true' : undefined}
-      placeholder={placeholder(cell.hint)}
-      value={draft?.shown.price ?? texts.price}
-      oninput={e => type(key, 'price', e.currentTarget.value)}
-      onkeydown={e => onKeydown(e, row.commodityId, side, cell)}
-      onblur={e => onBlur(e, row.commodityId, side, cell)}
-    />
-    <input
-      class="num scu"
-      class:invalid={draft?.bad.scu}
-      type="text"
-      inputmode="numeric"
-      autocomplete="off"
-      data-cell={key}
-      aria-label={side === 'buy' ? `${row.code}: количество у продавца, SCU` : `${row.code}: количество у покупателя на складе, SCU`}
-      aria-invalid={draft?.bad.scu ? 'true' : undefined}
-      placeholder={placeholder(cell.hintScu)}
-      value={draft?.shown.scu ?? texts.scu}
-      oninput={e => type(key, 'scu', e.currentTarget.value)}
-      onkeydown={e => onKeydown(e, row.commodityId, side, cell)}
-      onblur={e => onBlur(e, row.commodityId, side, cell)}
-    />
-    {#if estimated && cell.ownScu !== null}
-      <span class="est" title="Оценка по таймеру пополнения: сколько там сейчас">≈ {formatUec(cell.ownScu)}</span>
-    {:else if side === 'sell'}
-      <span class="unit" title="Столько уже лежит на складе у покупателя, а не сколько он готов купить">у покупателя</span>
-    {:else}
-      <span class="unit">SCU</span>
-    {/if}
-    <span class="actions">
-      {#if side === 'buy'}
-        <button type="button" aria-label="Где продать {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где продать</button>
-        <button type="button" aria-label="Купил {row.code}" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Купил</button>
+  <div class="expand sc-reveal">
+    <div class="edit">
+      <input
+        class="sc-input sc-num in-price"
+        type="text"
+        inputmode="numeric"
+        autocomplete="off"
+        data-cell={key}
+        aria-label="{row.code}: цена {side === 'buy' ? 'покупки' : 'продажи'}, UEC за SCU"
+        aria-invalid={draft?.bad.price ? 'true' : undefined}
+        placeholder={placeholder(cell.hint)}
+        value={draft?.shown.price ?? texts.price}
+        oninput={e => type(key, 'price', e.currentTarget.value)}
+        onkeydown={e => onKeydown(e, row.commodityId, side, cell)}
+        onblur={e => onBlur(e, row.commodityId, side, cell)}
+      />
+      <input
+        class="sc-input sc-num in-scu"
+        type="text"
+        inputmode="numeric"
+        autocomplete="off"
+        data-cell={key}
+        aria-label={side === 'buy' ? `${row.code}: количество у продавца, SCU` : `${row.code}: количество у покупателя на складе, SCU`}
+        aria-invalid={draft?.bad.scu ? 'true' : undefined}
+        placeholder={placeholder(cell.hintScu)}
+        value={draft?.shown.scu ?? texts.scu}
+        oninput={e => type(key, 'scu', e.currentTarget.value)}
+        onkeydown={e => onKeydown(e, row.commodityId, side, cell)}
+        onblur={e => onBlur(e, row.commodityId, side, cell)}
+      />
+      {#if estimated && cell.ownScu !== null}
+        <span class="est" title="Оценка по таймеру пополнения: сколько там сейчас">≈ {formatUec(cell.ownScu)}</span>
       {:else}
-        <button type="button" aria-label="Где купить {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где купить</button>
-        <button type="button" aria-label="Продал {row.code}" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Продал</button>
+        <span class="unit" title={side === 'sell' ? 'Столько уже лежит на складе у покупателя, а не сколько он готов купить' : undefined}>SCU</span>
       {/if}
-    </span>
-  </div>
-  {#if cell.badge || cell.warn || cell.uexRange || cell.ownLast || (estimated && cell.ownScuBase)}
-    <div class="meta">
-      {#if cell.badge}<TempBadge text={cell.badge.text} kind={cell.badge.kind} />{/if}
-      {#if cell.warn}<span class="warn">проверь цифру</span>{/if}
-      {#if cell.uexRange}
-        <span class="muted" title="Диапазон UEX">UEX {formatUec(cell.uexRange.low)}–{formatUec(cell.uexRange.high)}</span>
-      {/if}
-      {#if cell.ownLast}
-        <span class="muted">моя была {formatUec(cell.ownLast.price)} · {cell.ownLast.age}</span>
-      {/if}
-      {#if estimated && cell.ownScuBase}
-        <span class="muted">было {formatUec(cell.ownScuBase.scu)} · {cell.ownScuBase.age}</span>
-        {#if cell.ownScuRate === 'learned'}
-          <span class="rate learned" title="Скорость пополнения выучена по твоим замерам">скорость выучена</span>
-        {:else if cell.ownScuRate === 'default'}
-          <span class="rate" title="По твоим замерам скорость пополнения ещё не выучена, взята запасная">скорость запасная</span>
-        {/if}
+      <span class="spacer"></span>
+      {#if side === 'buy'}
+        <button type="button" class="sc-btn sc-btn--act" aria-label="Где продать {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где продать</button>
+        <button type="button" class="sc-btn sc-btn--act" aria-label="Купил {row.code}" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Купил</button>
+      {:else}
+        <button type="button" class="sc-btn sc-btn--act" aria-label="Где купить {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где купить</button>
+        <button type="button" class="sc-btn sc-btn--act" aria-label="Продал {row.code}" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Продал</button>
       {/if}
     </div>
-  {/if}
+    {#if cell.badge || cell.warn || cell.ownLast || (estimated && cell.ownScuBase)}
+      <div class="meta">
+        {#if cell.badge}<TempBadge text={cell.badge.text} kind={cell.badge.kind} />{/if}
+        {#if estimated && cell.ownScuBase}
+          <span class="muted">было {formatUec(cell.ownScuBase.scu)} · {cell.ownScuBase.age}</span>
+          {#if cell.ownScuRate === 'learned'}
+            <span class="rate learned" title="Скорость пополнения выучена по твоим замерам">скорость выучена</span>
+          {:else if cell.ownScuRate === 'default'}
+            <span class="rate" title="По твоим замерам скорость пополнения ещё не выучена, взята запасная">скорость запасная</span>
+          {/if}
+        {/if}
+        {#if cell.ownLast}
+          <span class="muted">моя была {formatUec(cell.ownLast.price)} · {cell.ownLast.age}</span>
+        {/if}
+        {#if cell.warn}<span class="warn">проверь цифру</span>{/if}
+      </div>
+    {/if}
+  </div>
 {/snippet}
 
-{#if rows.length === 0}
-  <p class="empty">Для этой точки пока нет цен.</p>
+{#if shown.length === 0}
+  <p class="empty">{empty}</p>
 {:else}
-  <ul class="rows">
-    {#each rows as row (row.commodityId)}
-      <li class="row" class:selected={row.commodityId === selectedCommodityId} onfocusin={() => select(row.commodityId)}>
-        <button type="button" class="head" tabindex="-1" title={row.name} onclick={() => select(row.commodityId)}>
-          <span class="code">{row.code}</span>
-          <span class="name">{row.name}</span>
-        </button>
-        {#if row.buy}{@render sideLine(row, row.buy, 'buy')}{/if}
-        {#if row.sell}{@render sideLine(row, row.sell, 'sell')}{/if}
-      </li>
+  <div class="table" role="table" aria-label={side === 'buy' ? 'Что можно купить' : 'Что можно продать'}>
+    <div class="grid head sc-label" role="row">
+      <span role="columnheader">Товар</span>
+      <span role="columnheader" class="r">Цена</span>
+      <span role="columnheader" class="r">Мин–макс</span>
+      <span role="columnheader" class="r">SCU</span>
+    </div>
+    {#each shown as row (row.commodityId)}
+      {@const cell = row[side]}
+      {#if cell}
+        {@const selected = row.commodityId === selectedCommodityId}
+        {@const scu = cellScu(cell, side)}
+        {@const span = range(cell)}
+        <div class="row" class:selected role="row">
+          <button type="button" class="grid line" aria-expanded={selected} onclick={() => toggle(row.commodityId)}>
+            <span class="name" title={row.name}><span class="code">{row.code}</span><span class="full">{row.name}</span></span>
+            <span class="price sc-num" class:hint={cell.own === null}>
+              {#if cell.warn}<span class="bang" title="Цена далеко от истории UEX: проверь цифру">!</span>{/if}
+              <span class="digits">{cell.own === null && cell.hint === null ? '—' : formatUec(cell.own ?? cell.hint ?? 0)}</span>
+              {#if cell.badge}<TempBadge compact text={cell.badge.text} kind={cell.badge.kind} />{:else}<span class="nomark"></span>{/if}
+            </span>
+            <span class="range sc-num" title={span === null ? undefined : 'Диапазон цен по данным UEX'}>{span ?? '—'}</span>
+            <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu?.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
+          </button>
+          {#if selected}{@render expanded(row, cell)}{/if}
+        </div>
+      {/if}
     {/each}
-  </ul>
+  </div>
 {/if}
 
 <style>
-  .rows {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .row {
-    padding: 2px 6px 4px;
-    border-bottom: 1px solid var(--sc-border);
-  }
-
-  .row.selected {
-    background: var(--sc-surface-2);
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 62px 80px 52px;
+    column-gap: var(--sc-gap);
+    align-items: center;
+    padding: 0 var(--sc-pad-x);
   }
 
   .head {
-    display: flex;
-    align-items: baseline;
-    gap: var(--sc-gap);
+    height: 18px;
+    border-bottom: 1px solid var(--sc-border);
+    color: var(--sc-muted);
+    white-space: nowrap;
+  }
+
+  .r {
+    text-align: right;
+  }
+
+  .row {
+    border-bottom: 1px solid var(--sc-surface-2);
+  }
+
+  .line {
     width: 100%;
-    min-height: 24px;
-    padding: 0;
+    height: calc(var(--sc-row-h) - 1px);
     border: 0;
     background: transparent;
     color: var(--sc-text);
@@ -252,73 +273,105 @@
     cursor: pointer;
   }
 
-  .code {
-    flex: none;
-    font-family: var(--sc-mono);
-    font-weight: 600;
+  .line:hover,
+  .row.selected .line {
+    background: var(--sc-surface-2);
   }
 
   .name {
-    flex: 1;
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .code {
+    flex: none;
+    font-weight: 600;
+  }
+
+  .full {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--sc-muted);
+    text-overflow: ellipsis;
+  }
+
+  .price {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .price.hint,
+  .hint {
+    color: var(--sc-muted);
+  }
+
+  .digits {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .side {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 2px 6px;
-    min-height: 28px;
+  .nomark {
+    flex: none;
+    width: 6px;
   }
 
-  .label {
-    flex: none;
-    width: 52px;
+  .bang {
+    color: var(--sc-warn);
+    font-weight: 600;
+  }
+
+  .range {
+    overflow: hidden;
     color: var(--sc-muted);
     font-size: var(--sc-font-sm);
-  }
-
-  input {
-    box-sizing: border-box;
-    height: 26px;
-    padding: 0 6px;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    background: var(--sc-surface);
-    color: var(--sc-text);
-    font: inherit;
-    font-family: var(--sc-mono);
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-  }
-
-  input::placeholder {
-    color: var(--sc-muted);
-  }
-
-  input:focus-visible,
-  button:focus-visible {
-    outline: 2px solid var(--sc-accent);
-    outline-offset: 1px;
-  }
-
-  input.invalid {
-    border-color: var(--sc-bad);
-  }
-
-  .price {
-    width: 76px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .scu {
-    width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* the row that was clicked opens one line under it: the fields of that side and what can be done with them */
+  .expand {
+    padding: 4px var(--sc-pad-x);
+    background: var(--sc-surface);
+  }
+
+  .edit {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: var(--sc-ctl-h);
+  }
+
+  .in-price {
+    flex: none;
+    width: 66px;
+  }
+
+  .in-scu {
+    flex: none;
+    width: 48px;
+  }
+
+  .spacer {
+    flex: 1;
   }
 
   .unit,
   .est {
+    flex: none;
     font-size: var(--sc-font-sm);
     white-space: nowrap;
   }
@@ -327,42 +380,16 @@
     color: var(--sc-muted);
   }
 
-  .est {
-    font-family: var(--sc-mono);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .actions {
-    display: flex;
-    gap: 4px;
-    margin-left: auto;
-  }
-
-  .actions button {
-    height: 26px;
-    padding: 0 8px;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    background: transparent;
-    color: var(--sc-text);
-    font: inherit;
-    font-size: var(--sc-font-sm);
-    white-space: nowrap;
-    cursor: pointer;
-  }
-
-  .actions button:hover {
-    background: var(--sc-surface-2);
-  }
-
   .meta {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 2px 8px;
-    min-height: 18px;
-    padding-left: 58px;
+    gap: 8px;
+    min-width: 0;
+    height: 20px;
+    padding-top: 4px;
+    overflow: hidden;
     font-size: var(--sc-font-sm);
+    white-space: nowrap;
   }
 
   .warn {
@@ -376,9 +403,7 @@
   .rate {
     padding: 0 4px;
     border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
     color: var(--sc-muted);
-    font-size: var(--sc-font-sm);
     line-height: 14px;
   }
 
@@ -389,7 +414,9 @@
 
   .empty {
     margin: 0;
-    padding: var(--sc-gap);
+    padding: 0 var(--sc-pad-x);
+    height: var(--sc-row-h);
     color: var(--sc-muted);
+    line-height: var(--sc-row-h);
   }
 </style>

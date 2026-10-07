@@ -6,22 +6,30 @@
     /** Ids that come first among equally good matches (what the current terminal trades, say). */
     boostIds?: Set<number>;
     placeholder?: string;
+    /**
+     * The text that stands in the field until the player edits it (the name of the viewed location, say). A click
+     * selects all of it, typing replaces it, and when the field is left it comes back.
+     */
+    value?: string;
     /** Called with the id of the chosen item; the box is emptied afterwards. */
     onPick: (id: number) => void;
     /** Accessible name of the input. */
     label?: string;
   }
 
-  let { items, boostIds, placeholder = 'Поиск…', onPick, label = placeholder }: Props = $props();
+  let { items, boostIds, placeholder = 'Поиск…', value, onPick, label = placeholder }: Props = $props();
 
   const MAX_RESULTS = 8;
   const listId = `search-${Math.random().toString(36).slice(2, 8)}`;
 
   let query = $state('');
+  /** The player has typed into the field: it shows his text, not `value`. */
+  let editing = $state(false);
   let open = $state(false);
   let active = $state(0);
   let input: HTMLInputElement | undefined = $state();
 
+  const shown = $derived(editing || value === undefined ? query : value);
   const results = $derived(search(items, query, boostIds, MAX_RESULTS));
   const visible = $derived(open && results.length > 0);
 
@@ -32,6 +40,7 @@
 
   function reset(): void {
     query = '';
+    editing = false;
     open = false;
     active = 0;
   }
@@ -41,7 +50,9 @@
     onPick(id);
   }
 
-  function onInput(): void {
+  function onInput(event: Event & { currentTarget: HTMLInputElement }): void {
+    query = event.currentTarget.value;
+    editing = true;
     open = true;
     active = 0;
   }
@@ -58,20 +69,32 @@
       if (chosen === undefined) return;
       event.preventDefault();
       pick(chosen.id);
-    } else if (event.key === 'Escape' && (open || query !== '')) {
+    } else if (event.key === 'Escape' && (open || query !== '' || editing)) {
       // The first Esc closes the list; the panel collapses only on the next one.
       event.preventDefault();
       event.stopPropagation();
       reset();
     }
   }
+
+  // A field that shows a value is picked up whole: the next key replaces it.
+  const selectValue = (field: HTMLInputElement): void => {
+    if (!editing && value !== undefined) field.select();
+  };
+
+  function onBlur(): void {
+    open = false;
+    // what was typed and not picked is not kept when the field has a value to go back to
+    if (value !== undefined) reset();
+  }
 </script>
 
 <div class="box">
   <input
     bind:this={input}
-    bind:value={query}
+    value={shown}
     class="sc-input"
+    class:has-value={!editing && value !== undefined}
     type="text"
     role="combobox"
     aria-label={label}
@@ -81,11 +104,16 @@
     aria-autocomplete="list"
     autocomplete="off"
     spellcheck="false"
+    title={value}
     {placeholder}
     oninput={onInput}
     onkeydown={onKeydown}
-    onfocus={() => (open = query !== '')}
-    onblur={() => (open = false)}
+    onfocus={(event) => {
+      open = query !== '';
+      selectValue(event.currentTarget);
+    }}
+    onclick={(event) => selectValue(event.currentTarget)}
+    onblur={onBlur}
   />
   {#if visible}
     <ul id={listId} class="list" role="listbox">
@@ -116,20 +144,23 @@
     min-width: 0;
   }
 
+  /* the name of the place is text to read, not a hint: it keeps its own colour and gets the field's width */
+  .has-value {
+    text-overflow: ellipsis;
+  }
+
   .list {
     position: absolute;
     z-index: 10;
-    top: calc(100% + 2px);
+    top: calc(100% + 1px);
     left: 0;
     right: 0;
     margin: 0;
-    padding: 2px;
+    padding: 0;
     list-style: none;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    /* the panel background is translucent; the list floats over content and needs to be solid */
-    background: #1b1e27;
-    box-shadow: 0 6px 18px rgb(0 0 0 / 0.5);
+    border: 1px solid var(--sc-frame);
+    /* the window is glass; the list floats over content and needs to be solid */
+    background: var(--sc-bg-solid);
   }
 
   li {
@@ -137,14 +168,19 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--sc-gap);
-    height: 28px;
-    padding: 0 8px;
-    border-radius: 4px;
+    height: var(--sc-row-h);
+    padding: 0 var(--sc-pad-x);
+    border-bottom: 1px solid var(--sc-surface-2);
     cursor: pointer;
+  }
+
+  li:last-child {
+    border-bottom: 0;
   }
 
   li.active {
     background: var(--sc-surface-2);
+    color: var(--sc-accent);
   }
 
   .name {
@@ -157,7 +193,6 @@
   .code {
     flex: none;
     color: var(--sc-muted);
-    font-family: var(--sc-mono);
     font-size: var(--sc-font-sm);
   }
 </style>

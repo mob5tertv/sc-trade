@@ -9,18 +9,13 @@
   type Rejection = 'no-terminal' | 'no-commodity' | 'bad-price' | 'bad-scu';
 
   interface Props {
-    /** The viewed terminal: the price is written for it. */
+    /** The viewed terminal: the price is written for it. The location is picked in the header of the window, not here. */
     terminalId: number | null;
-    /** Its name; the location field shows it as the ghost of a value until another terminal is picked. */
-    terminalName: string | null;
-    terminalItems: Searchable[];
     commodityItems: Searchable[];
     /** What the viewed terminal trades: those commodities come first in the search. */
     boostIds: Set<number>;
     /** The side a commodity starts with at the viewed terminal. */
     sideFor: (commodityId: number) => Side;
-    /** Another terminal was picked: it becomes the viewed one. */
-    onPickTerminal: (terminalId: number) => void;
     /** Writes the price; answers the sentence to show when it was not saved, `null` when it was. */
     onSave: (entry: PriceEntry) => Promise<string | null>;
     /** Enter was pressed with something missing or unreadable (nothing was saved). */
@@ -28,7 +23,7 @@
     /** `onSave` threw instead of answering: the player sees a short sentence, the details belong in the log. */
     onFailure?: (err: unknown, entry: PriceEntry) => void;
   }
-  let { terminalId, terminalName, terminalItems, commodityItems, boostIds, sideFor, onPickTerminal, onSave, onReject, onFailure }: Props = $props();
+  let { terminalId, commodityItems, boostIds, sideFor, onSave, onReject, onFailure }: Props = $props();
 
   const uid = $props.id();
   const groupName = `side-${uid}`;
@@ -43,18 +38,12 @@
   let busy = $state(false);
   let status = $state<{ text: string; kind: 'ok' | 'error' } | null>(null);
 
-  let locationBox = $state<ReturnType<typeof SearchBox>>();
   let commodityBox = $state<ReturnType<typeof SearchBox>>();
   let priceInput = $state<HTMLInputElement>();
   let scuInput = $state<HTMLInputElement>();
 
   const chosen = $derived(commodityId === null ? undefined : commodityItems.find((c) => c.id === commodityId));
   const side = $derived<Side>(pickedSide ?? (commodityId === null ? 'buy' : sideFor(commodityId)));
-
-  function pickTerminal(id: number): void {
-    onPickTerminal(id);
-    commodityBox?.focus();
-  }
 
   // Enter in the commodity field takes the first match, and the player goes on with the price.
   function pickCommodity(id: number): void {
@@ -75,7 +64,6 @@
     if (commodityId === null && priceText.trim() === '' && scuText.trim() === '') return;
     if (terminalId === null) {
       reject('no-terminal', 'Сначала выбери локацию.');
-      locationBox?.focus();
       return;
     }
     if (commodityId === null) {
@@ -147,44 +135,35 @@
     void save();
   }}
 >
-  <SearchBox
-    bind:this={locationBox}
-    items={terminalItems}
-    placeholder={terminalName ?? 'Локация: три буквы и Enter'}
-    label="Локация, для которой записывается цена"
-    onPick={pickTerminal}
-  />
-
   <div class="line">
     <SearchBox
       bind:this={commodityBox}
       items={commodityItems}
       {boostIds}
-      placeholder="Товар: три буквы и Enter"
-      label="Товар"
+      placeholder="Товар"
+      label="Товар: три буквы кода или названия и Enter"
+      value={chosen ? `${chosen.code} ${chosen.name}` : undefined}
       onPick={pickCommodity}
     />
-    <div class="sides" role="radiogroup" aria-label="Сторона">
-      <label class="side" title="Цена, по которой здесь можно купить">
+    <div class="sc-seg" role="radiogroup" aria-label="Сторона">
+      <label class="side" class:is-on={side === 'buy'} title="Цена, по которой здесь можно купить">
         <input type="radio" name={groupName} checked={side === 'buy'} onchange={() => (pickedSide = 'buy')} />
-        <span>Купить</span>
+        <span>Куп.</span>
       </label>
-      <label class="side" title="Цена, по которой здесь можно продать">
+      <label class="side" class:is-on={side === 'sell'} title="Цена, по которой здесь можно продать">
         <input type="radio" name={groupName} checked={side === 'sell'} onchange={() => (pickedSide = 'sell')} />
-        <span>Продать</span>
+        <span>Прод.</span>
       </label>
     </div>
-  </div>
-
-  <div class="line numbers">
     <input
       bind:this={priceInput}
       bind:value={priceText}
-      class="sc-input sc-num"
+      class="sc-input sc-num in-price"
       type="text"
       inputmode="numeric"
       autocomplete="off"
-      placeholder="Цена, UEC за SCU"
+      placeholder="Цена"
+      title="Цена, UEC за SCU"
       aria-label="Цена, UEC за SCU"
       aria-invalid={badPrice ? 'true' : undefined}
       oninput={() => (badPrice = false)}
@@ -193,64 +172,61 @@
     <input
       bind:this={scuInput}
       bind:value={scuText}
-      class="sc-input sc-num"
+      class="sc-input sc-num in-scu"
       type="text"
       inputmode="numeric"
       autocomplete="off"
-      placeholder="SCU, если видно"
+      placeholder="SCU"
+      title="Количество, SCU (можно не вводить)"
       aria-label="Количество, SCU (можно не вводить)"
       aria-invalid={badScu ? 'true' : undefined}
       oninput={() => (badScu = false)}
       onkeydown={(event) => onFieldKeydown(event, scuText, () => { scuText = ''; badScu = false; })}
     />
-    <button class="sc-btn" type="submit" disabled={busy}>Записать</button>
+    <button class="sc-btn sc-btn--primary" type="submit" disabled={busy}>Записать</button>
   </div>
 
-  <p class="status" class:error={status?.kind === 'error'} role="status" aria-live="polite">
-    {#if status !== null}
-      {#if chosen && status.kind === 'error'}<span><span class="code">{chosen.code}</span> ·</span> {/if}{status.text}
-    {:else if chosen}
-      <span class="code">{chosen.code}</span> {chosen.name}
-    {:else}
-      <span class="muted">Товар → цена → SCU → Enter. Любую локацию можно выбрать выше.</span>
-    {/if}
-  </p>
+  {#if status !== null}
+    <p class="status" class:error={status.kind === 'error'} role="status" aria-live="polite" title={status.text}>
+      {#if chosen && status.kind === 'error'}<span class="code">{chosen.code}</span> · {/if}{status.text}
+    </p>
+  {/if}
 </form>
 
 <style>
   .quick {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: var(--sc-gap) calc(var(--sc-gap) * 1.5);
+    padding: 4px var(--sc-pad-x);
     border-bottom: 1px solid var(--sc-border);
   }
 
   .line {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--sc-gap);
-  }
-
-  .line.numbers {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  }
-
-  .sides {
     display: flex;
-    height: 28px;
-    overflow: hidden;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
+    align-items: center;
+    gap: 4px;
+    height: var(--sc-ctl-h);
+  }
+
+  .line > :global(.box) {
+    flex: 1;
+    min-width: 90px;
+  }
+
+  .in-price {
+    flex: none;
+    width: 66px;
+  }
+
+  .in-scu {
+    flex: none;
+    width: 48px;
+  }
+
+  .line > :global(.sc-btn) {
+    flex: none;
   }
 
   .side {
     position: relative;
-    display: flex;
-    align-items: center;
-    padding: 0 10px;
-    color: var(--sc-muted);
-    cursor: pointer;
   }
 
   /* the radio covers its label: the keyboard and the mouse use the same control, which draws no mark of its own */
@@ -262,21 +238,18 @@
     cursor: pointer;
   }
 
-  .side:has(input:checked) {
-    background: var(--sc-surface-2);
-    color: var(--sc-text);
-  }
-
   .side:has(input:focus-visible) {
-    outline: 2px solid var(--sc-accent);
-    outline-offset: -2px;
+    outline: 1px solid var(--sc-accent);
+    outline-offset: -1px;
   }
 
   .status {
-    min-height: 18px;
+    height: var(--sc-row-h);
     margin: 0;
     overflow: hidden;
+    color: var(--sc-muted);
     font-size: var(--sc-font-sm);
+    line-height: var(--sc-row-h);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -286,11 +259,6 @@
   }
 
   .code {
-    font-family: var(--sc-mono);
     font-weight: 600;
-  }
-
-  .muted {
-    color: var(--sc-muted);
   }
 </style>
