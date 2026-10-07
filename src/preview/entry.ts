@@ -195,8 +195,8 @@ async function run(): Promise<void> {
   await waitForQuiet();
   await document.fonts.ready;
   await frames();
-  // A command nobody answers is a hole in the preview, or a call the application must never make (`set_focus`, see
-  // ipc.ts): the scene has failed, whatever the screen looks like.
+  // A command nobody answers is a hole in the preview, or a call the application must never make (the focus command
+  // of Tauri, see ipc.ts): the scene has failed, whatever the screen looks like.
   if (unknown.size > 0) throw new Error(`the scene called Tauri commands that are not mocked: ${[...unknown].join(', ')}`);
 }
 

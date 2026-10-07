@@ -2,7 +2,7 @@ import type { Scene } from './scenes';
 
 // The scene of the keyboard: the player's way to it, through the real listeners of `ui/keyboard.ts` and the strict
 // Windows of the preview (`focus-model.ts`). `preview:sweep` loads it like every scene, so a way to the keyboard that
-// stops working, or that calls a command it must not (Tauri's `set_focus` is not mocked, see `ipc.ts`), fails there.
+// stops working, or that calls a command it must not (the focus command of Tauri is not mocked, see `ipc.ts`), fails there.
 // The list is added to `SCENES` in `scenes.ts`.
 
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

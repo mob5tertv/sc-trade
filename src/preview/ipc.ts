@@ -129,8 +129,9 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
         return null;
       case 'is_visible':
         return win.snapshot().visible;
-      // `set_focus` is NOT here on purpose. Tauri's setFocus presses a key through the input stream when Windows
-      // refuses the foreground, so the application must never call it (it has no permission for it either). A call
+      // The command of Tauri that focuses the window is NOT here on purpose. It presses a key through the input stream
+      // when Windows refuses the foreground, so the application must never call it (it has no permission for it either,
+      // and its name is not written in this folder: tests/release/no-synthetic-input.test.ts looks for it). A call
       // lands in "unmocked command": it fails, and a scene that makes it at its start fails with it (entry.ts).
       case 'set_focusable':
         win.setFocusable(args.value === true);

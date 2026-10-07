@@ -16,8 +16,9 @@ import type { Logger } from '../data/logger';
 // game stays the active window. The keyboard is taken only for the time a text field is edited
 // (`takeKeyboard`) and handed back afterwards (`giveKeyboard`). It is the player's own click that activates the
 // window: while the pointer is over a text field the window is activatable (`armKeyboard` / `disarmKeyboard`).
-// Nothing synthetic is ever sent to the input stream, and Tauri's `setFocus` is never called (it does send a key
-// press when Windows refuses). Every failure is logged and rethrown, so the caller can keep its own state consistent.
+// Nothing synthetic is ever sent to the input stream, and the call of Tauri that focuses a window is never used (it
+// does send a key press when Windows refuses; its name is not even written here: tests/release/no-synthetic-input.test.ts
+// looks for it). Every failure is logged and rethrown, so the caller can keep its own state consistent.
 
 export type WindowMode = 'mini' | 'expanded';
 
