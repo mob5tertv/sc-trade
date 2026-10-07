@@ -45,11 +45,17 @@ export function createFakeHttp(answer: FakeUex): FakeHttp {
   async function send(id: number): Promise<unknown> {
     const request = requests.get(id);
     if (request === undefined) throw new Error(`no such request: ${id}`);
+    if (request.cancelled) throw new Error('Request cancelled');
     const cancelled = new Promise<never>((_, reject) => {
       request.cancel = reject;
     });
-    if (request.cancelled) throw new Error('Request cancelled');
-    const reply = await Promise.race([Promise.resolve(answer(request.url)), cancelled]);
+    let reply: FakeAnswer;
+    try {
+      reply = await Promise.race([Promise.resolve(answer(request.url)), cancelled]);
+    } finally {
+      request.cancel = undefined; // answered or cancelled: nothing is waiting any more
+      requests.delete(id);
+    }
     const bodyId = nextId++;
     bodies.set(bodyId, [[...new TextEncoder().encode(JSON.stringify(reply.body)), MORE], [END]]);
     return { status: reply.status, statusText: '', url: request.url, headers: [['content-type', 'application/json']], rid: bodyId };
