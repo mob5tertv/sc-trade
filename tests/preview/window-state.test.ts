@@ -144,6 +144,28 @@ describe('preview window', () => {
     });
   });
 
+  describe('activated by Windows with no press of the player (the foreground window closed, Alt+Tab passed over it)', () => {
+    it('gives the keyboard to a shown window that can be activated', () => {
+      const { win, focusEvents } = harness();
+      win.setFocusable(false);
+      win.show();
+      win.setFocusable(true); // the pointer rests on a field
+      win.activatedByWindows();
+      expect(win.snapshot().keyboard).toBe('overlay');
+      expect(focusEvents).toEqual([true]);
+    });
+
+    it('never happens to a window that cannot be activated, nor to a hidden one', () => {
+      const { win, focusEvents } = harness();
+      win.activatedByWindows(); // hidden
+      win.setFocusable(false);
+      win.show();
+      win.activatedByWindows();
+      expect(win.snapshot().keyboard).toBe('game');
+      expect(focusEvents).toEqual([]);
+    });
+  });
+
   /** The window as the application keeps it (shown, not activatable), then armed and pressed by the player. */
   function pressedWhileArmed() {
     const h = harness();

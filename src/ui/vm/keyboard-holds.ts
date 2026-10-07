@@ -102,6 +102,20 @@ export interface KeyboardHolds {
    * Outside that time a press makes no request at all. Whether to look is decided when it is called, like `drop`.
    */
   pressOutsideField(): Promise<boolean>;
+  /**
+   * The window says it got the focus (the event of the shell). Usually that is the echo of a press on a field (its
+   * holder is here or on its way), or nothing at all: the web view reports a focus for a click on a window that was
+   * never activated. But Windows also activates an activatable window with NO press of the player on it: the
+   * foreground window closes or is minimised while the pointer rests on a field, Alt+Tab passes over it. Nobody holds
+   * the keyboard then, and no press follows that would notice. So, when the window could have been activated at all
+   * (it is armed, or was until less than `settleMs` ago): wait `settleMs` (a press on a field has become a holder by
+   * then); if still nobody holds the keyboard and no request is on its way, ask Windows, and if the window is the
+   * foreground one, give the keyboard back. Resolves to `true` when it did.
+   *
+   * The event of a window that cannot be activated costs nothing: no wait, no request (a plain click on a button).
+   * While one look is waiting, further events start no second one.
+   */
+  focusGained(): Promise<boolean>;
   /** At least one holder is there. */
   readonly held: boolean;
   readonly state: HoldState;
@@ -115,6 +129,8 @@ export interface KeyboardHoldsOptions {
   settleMs?: number;
   /** The clock in milliseconds; for tests. */
   now?: () => number;
+  /** Resolves after that many milliseconds; for tests. */
+  wait?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -129,6 +145,7 @@ export function createKeyboardHolds(
 ): KeyboardHolds {
   const settleMs = options.settleMs ?? 0;
   const now = options.now ?? Date.now;
+  const wait = options.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const holders = new Set<string>();
   const queue = createRequestQueue();
   /** Requests that are queued or running: the focus is being moved by us right now, whatever blur comes belongs to that. */
@@ -143,6 +160,14 @@ export function createKeyboardHolds(
   let disarming = false;
   /** When the last disarm ended. */
   let disarmedAt = Number.NEGATIVE_INFINITY;
+  /** A look started by `focusGained` is waiting for its settle time. */
+  let looking = false;
+
+  /**
+   * Windows may have activated the window although nobody holds the keyboard: it is activatable now, or a disarm is on
+   * its way, or one ended so lately that a press (or Windows) may have been quicker.
+   */
+  const activatableLately = (): boolean => armed || disarming || now() - disarmedAt < settleMs;
 
   /** A request that may move the focus: while it is queued or running a loss of the focus is its echo (see `drop`). */
   const request = <T>(job: () => Promise<T>): Promise<T> => {
@@ -185,6 +210,20 @@ export function createKeyboardHolds(
       disarming = false;
       disarmedAt = now();
     }
+  };
+
+  /**
+   * A job of the queue. Nobody holds the keyboard; when Windows says the window is the foreground one all the same,
+   * it was activated without being asked for: the keyboard goes back to the game. Resolves to whether it did.
+   */
+  const handBackIfStray = async (): Promise<boolean> => {
+    // a field was pressed before this turn came: the window is active because the keyboard is wanted
+    if (holders.size > 0) return false;
+    if (!(await effects.isForeground())) return false;
+    armed = false;
+    await run(() => effects.give(true));
+    await followPointer();
+    return true;
   };
 
   return {
@@ -248,17 +287,21 @@ export function createKeyboardHolds(
     },
 
     pressOutsideField: async () => {
-      if (holders.size > 0) return false;
-      if (!armed && !disarming && now() - disarmedAt >= settleMs) return false;
-      return request(async () => {
-        // a field was pressed before this turn came: the window is active because the keyboard is wanted
-        if (holders.size > 0) return false;
-        if (!(await effects.isForeground())) return false;
-        armed = false;
-        await run(() => effects.give(true));
-        await followPointer();
-        return true;
-      });
+      if (holders.size > 0 || !activatableLately()) return false;
+      return request(handBackIfStray);
+    },
+
+    focusGained: async () => {
+      if (holders.size > 0 || looking || !activatableLately()) return false;
+      looking = true;
+      try {
+        await wait(settleMs);
+      } finally {
+        looking = false;
+      }
+      // a holder: the event was the echo of a press on a field. A request on its way: it is that request that decides.
+      if (holders.size > 0 || pending > 0) return false;
+      return request(handBackIfStray);
     },
 
     get held() {

@@ -930,11 +930,26 @@ class AppState {
     }, FOCUS_SETTLE_MS + 50);
   }
 
+  /**
+   * The window says it got the focus. When that was a press on a field, the field holds the keyboard. When Windows
+   * activated the window by itself (the game was closed or minimised while the pointer rested on a field, Alt+Tab),
+   * nobody does, and no press follows that would notice: the holds look once their settle time is over and hand the
+   * keyboard back (`focusGained` in vm/keyboard-holds.ts). A window that cannot be activated costs no request there.
+   */
+  #onFocusGained(): void {
+    void this.keyboard
+      .focusGained()
+      .then((handedBack) => {
+        if (handedBack) this.#log.info('window', 'the window was activated with nobody holding the keyboard and no press on a field: the keyboard went back to the game');
+      })
+      .catch(() => undefined); // a failure is logged by the window layer
+  }
+
   /** Starts listening for focus changes and for the tray's "Показать панель"; returns what stops it. */
   async watchWindow(): Promise<() => void> {
     const stops: Array<() => void> = [];
     try {
-      stops.push(await watchFocus(() => this.mode, this.#log, () => this.#onFocusLost()));
+      stops.push(await watchFocus(() => this.mode, this.#log, () => this.#onFocusLost(), () => this.#onFocusGained()));
     } catch (err) {
       this.#log.error('app', 'cannot listen for focus changes', { err });
     }

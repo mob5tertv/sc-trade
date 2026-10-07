@@ -85,11 +85,23 @@ function setup(options: Options = {}) {
     },
   };
   const changes: boolean[] = [];
+  /** The waits the holds have asked for and that are still running; `pass()` ends the oldest one (the clock moves with it). */
+  const waits: Array<{ ms: number; pass: () => void }> = [];
   const holds = createKeyboardHolds(effects, (held) => changes.push(held), {
     settleMs: options.settleMs ?? 0,
     now: () => clock.t,
+    wait: (ms) =>
+      new Promise<void>((resolve) => {
+        waits.push({
+          ms,
+          pass: () => {
+            clock.t += ms;
+            resolve();
+          },
+        });
+      }),
   });
-  return { holds, calls, changes, gates, clock, windows };
+  return { holds, calls, changes, gates, clock, windows, waits };
 }
 
 describe('createKeyboardHolds', () => {
@@ -812,5 +824,137 @@ describe('a take that Windows refuses', () => {
     windows.refusals = 1;
     await holds.hold('field');
     expect(await holds.drop()).toBe(false);
+  });
+});
+
+// Windows activates an activatable window with no press of the player on it: the foreground window closes or is
+// minimised while the pointer rests on a field, Alt+Tab passes over it. Nobody holds the keyboard then and no press
+// follows that would notice, so the event of the window itself ("I got the focus") is what starts the look.
+describe('the window says it got the focus', () => {
+  const SETTLE = 500;
+
+  it('armed, and no press on a field follows: after the settle time Windows is asked, and the keyboard is handed back', async () => {
+    const { holds, calls, waits, windows } = setup({ settleMs: SETTLE });
+    await holds.pointerOverField(true);
+    windows.foreground = true; // the game was closed: Windows made the overlay the foreground window
+    const looking = holds.focusGained();
+    await settle();
+    expect(waits.map((w) => w.ms)).toEqual([SETTLE]);
+    expect(calls).toEqual(['arm:start', 'arm:end']); // nothing is asked before the time is over
+    waits[0].pass();
+    expect(await looking).toBe(true);
+    // the pointer still rests on the field, so the window is armed again once the keyboard is back
+    expect(calls.slice(2)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true', 'arm:start', 'arm:end']);
+    expect(holds.state).toBe('armed');
+  });
+
+  it('gives nothing back when Windows says the window is not in front: the web view reports a focus without an activation too', async () => {
+    const { holds, calls, waits } = setup({ settleMs: SETTLE });
+    await holds.pointerOverField(true);
+    const looking = holds.focusGained();
+    await settle();
+    waits[0].pass();
+    expect(await looking).toBe(false);
+    expect(calls.slice(2)).toEqual(['foreground?:false']);
+    expect(holds.state).toBe('armed');
+  });
+
+  it('costs nothing for a window that cannot be activated: no wait, no question (a plain click on a button)', async () => {
+    const { holds, calls, waits, clock } = setup({ settleMs: SETTLE });
+    expect(await holds.focusGained()).toBe(false);
+    await holds.pointerOverField(true);
+    clock.t = 100;
+    await holds.pointerOverField(false);
+    clock.t = 100 + SETTLE; // long enough after the disarm
+    expect(await holds.focusGained()).toBe(false);
+    expect(waits).toEqual([]);
+    expect(calls).toEqual(['arm:start', 'arm:end', 'disarm:start', 'disarm:end']);
+  });
+
+  it('looks when the window was disarmed a moment ago: the disarm may not have reached Windows in time', async () => {
+    const { holds, calls, waits, clock, windows } = setup({ settleMs: SETTLE });
+    await holds.pointerOverField(true);
+    clock.t = 100;
+    await holds.pointerOverField(false);
+    clock.t = 300;
+    windows.foreground = true;
+    const looking = holds.focusGained();
+    await settle();
+    waits[0].pass();
+    expect(await looking).toBe(true);
+    expect(calls.slice(4)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true']);
+    expect(holds.state).toBe('idle');
+  });
+
+  it('is the echo of a press on a field when the holder comes within the settle time: nothing is asked', async () => {
+    const { holds, calls, waits, windows } = setup({ settleMs: SETTLE });
+    await holds.pointerOverField(true);
+    windows.foreground = true; // the press activated the window; its event came before the page heard of the press
+    const looking = holds.focusGained();
+    await holds.hold('field');
+    waits[0].pass();
+    expect(await looking).toBe(false);
+    expect(calls).toEqual(['arm:start', 'arm:end', 'take:start', 'take:end']);
+    expect(holds.held).toBe(true);
+  });
+
+  it('needs no look when somebody holds the keyboard already', async () => {
+    const { holds, waits, windows } = setup({ settleMs: SETTLE });
+    await holds.pointerOverField(true);
+    await holds.hold('field');
+    windows.foreground = true;
+    expect(await holds.focusGained()).toBe(false);
+    expect(waits).toEqual([]);
+  });
+
+  it('asks nothing while a request is still on its way when the time is over: that request decides', async () => {
+    const { holds, calls, waits, gates, windows } = setup({ settleMs: SETTLE, slow: true });
+    const arming = holds.pointerOverField(true);
+    await settle();
+    gates[0].open();
+    await arming;
+    windows.foreground = true;
+    const looking = holds.focusGained();
+    await settle();
+    windows.refusals = 1;
+    const holding = holds.hold('field'); // a slow take
+    await settle();
+    waits[0].pass();
+    expect(await looking).toBe(false);
+    expect(calls.some((c) => c.startsWith('foreground?'))).toBe(false);
+    gates[1].open();
+    await holding;
+  });
+
+  it('a second event while the first is still waiting starts no second look', async () => {
+    const { holds, calls, waits, windows } = setup({ settleMs: SETTLE });
+    await holds.pointerOverField(true);
+    windows.foreground = true;
+    const first = holds.focusGained();
+    const second = holds.focusGained();
+    await settle();
+    expect(waits).toHaveLength(1);
+    expect(await second).toBe(false);
+    waits[0].pass();
+    expect(await first).toBe(true);
+    expect(calls.filter((c) => c.startsWith('foreground?'))).toHaveLength(1);
+    // and once that look is over, the next event is looked at again
+    const third = holds.focusGained();
+    await settle();
+    expect(waits).toHaveLength(2);
+    waits[1].pass();
+    await third;
+  });
+
+  it('with no settle time it looks at once, and only at a window that is armed', async () => {
+    const { holds, calls, waits, windows } = setup(); // settleMs: 0
+    windows.foreground = true;
+    expect(await holds.focusGained()).toBe(false);
+    await holds.pointerOverField(true);
+    const looking = holds.focusGained();
+    await settle();
+    waits[0].pass();
+    expect(await looking).toBe(true);
+    expect(calls.slice(2, 5)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true']);
   });
 });

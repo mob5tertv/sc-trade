@@ -27,9 +27,9 @@ export interface FocusModel {
   /** `restore_foreground`: the keyboard goes back to the remembered game window, if there is one. */
   restore(): { restored: boolean; event: FocusEvent | null };
   /**
-   * The overlay takes the keyboard when it can (focusable and on screen). Windows gives it to a window in two
-   * ways here: showing the window, and a mouse press inside it. A window that cannot take the focus (the strip)
-   * gets it in neither.
+   * The overlay takes the keyboard when it can (focusable and on screen). Windows gives it to a window in three
+   * ways here: showing the window, a mouse press inside it, and by itself, when the foreground window goes away.
+   * A window that cannot take the focus (the strip) gets it in none of them.
    */
   take(onScreen: boolean): FocusEvent | null;
   /**

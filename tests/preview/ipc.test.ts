@@ -477,15 +477,28 @@ describe('the keyboard focus', () => {
     ]);
   });
 
-  it('is reported to the app through the same event Tauri uses', async () => {
+  it('is reported to the app through the same event Tauri uses: the focus gained and the focus lost', async () => {
     const { win } = start();
     const seen: boolean[] = [];
-    const stop = await watchFocus(() => 'expanded', logger(), () => seen.push(false));
+    const stop = await watchFocus(() => 'expanded', logger(), () => seen.push(false), () => seen.push(true));
     await showWindow(layout, logger());
     await pressField(win);
     win.clickGame();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(seen).toEqual([false]);
+    expect(seen).toEqual([true, false]);
+    stop();
+  });
+
+  it('an activation by Windows itself, with no press, is reported as a focus gained', async () => {
+    const { win } = start();
+    const seen: boolean[] = [];
+    const stop = await watchFocus(() => 'expanded', logger(), undefined, () => seen.push(true));
+    await showWindow(layout, logger());
+    await armKeyboard(logger());
+    win.activatedByWindows(); // the game was closed while the pointer rested on a field
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(seen).toEqual([true]);
+    expect(await isWindowFocused(logger())).toBe(true);
     stop();
   });
 

@@ -44,6 +44,11 @@ export interface PreviewGlobal {
   state(): PreviewState;
   /** The player clicks the game. */
   clickGame(): void;
+  /**
+   * Windows activates the overlay with no press of the player on it, as it does when the foreground window is closed
+   * or minimised: only a window that can take the focus gets the keyboard (`--do "eval:window.__preview.windowsActivates()"`).
+   */
+  windowsActivates(): void;
   /** Milliseconds since a command of the application last crossed the mocked boundary; 0 while one is being answered. */
   idleMs(): number;
 }

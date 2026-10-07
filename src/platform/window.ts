@@ -124,13 +124,16 @@ async function placeContent(
 }
 
 /**
- * Logs every real focus change of the window (what Windows did, not what the app asked for).
- * `onLost` is called each time the window loses the focus. Returns the function that stops listening.
+ * Logs every focus change the window reports (what Windows did, not what the app asked for). `onLost` is called each
+ * time the window loses the focus, `onGained` each time it says it got it. A gain is not yet an activation: the web
+ * view reports one for a click on a window that was never activated, so whoever needs to know asks `isWindowFocused`.
+ * Returns the function that stops listening.
  */
-export function watchFocus(getMode: () => WindowMode, log: Logger, onLost?: () => void): Promise<() => void> {
+export function watchFocus(getMode: () => WindowMode, log: Logger, onLost?: () => void, onGained?: () => void): Promise<() => void> {
   return getCurrentWindow().onFocusChanged(({ payload: focused }) => {
     log.info('window', 'focus changed', { focused, mode: getMode() });
-    if (!focused) onLost?.();
+    if (focused) onGained?.();
+    else onLost?.();
   });
 }
 

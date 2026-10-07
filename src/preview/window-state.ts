@@ -50,6 +50,11 @@ export interface PreviewWindow {
   clickGame(): void;
   /** The player presses a mouse button inside the window: a window that can take the focus gets the keyboard. */
   pressInside(): void;
+  /**
+   * Windows activates the window with no press of the player on it (the foreground window was closed or minimised,
+   * Alt+Tab passed over it): a shown window that can take the focus gets the keyboard, any other does not.
+   */
+  activatedByWindows(): void;
 }
 
 /** The window as `tauri.conf.json` creates it: hidden, 240x26, off the taskbar. */
@@ -124,5 +129,6 @@ export function createPreviewWindow(options: PreviewWindowOptions = {}): Preview
     clickGame: () => apply(() => focus.clickGame()),
     // a window that lets the clicks through never gets the press
     pressInside: () => apply(() => focus.take(visible && !ignoreCursorEvents)),
+    activatedByWindows: () => apply(() => focus.take(visible)),
   };
 }

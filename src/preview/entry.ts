@@ -46,6 +46,7 @@ const preview: PreviewGlobal = {
     throw new Error('the preview is not set up yet');
   },
   clickGame: () => {},
+  windowsActivates: () => {},
   idleMs,
 };
 window.__preview = preview;
@@ -127,6 +128,7 @@ async function run(): Promise<void> {
     },
   });
   preview.clickGame = () => win.clickGame();
+  preview.windowsActivates = () => win.activatedByWindows();
   // A press inside the overlay gives it the keyboard when it can take the focus (the strip never does). Windows
   // activates the window BEFORE the page hears of the press, so this is the first listener a press meets: the capture
   // phase of the window, ahead of the listeners the application has on the document.
