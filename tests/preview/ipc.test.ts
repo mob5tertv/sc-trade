@@ -178,6 +178,31 @@ describe('the window', () => {
     }
   });
 
+  it('unfolds a dragged window downward and shifts it onto the screen instead of shrinking it, and folds back to the same place', async () => {
+    const monitor = parseMonitor('2560x1440@1');
+    const { win } = start({ monitor });
+    // what the drag of the log saved: the window of 440x642 was dropped at 101,627, the anchor is its top-left corner
+    const anchor: WindowLayout = { corner: 'top-left', offset: { dx: 101, dy: 627 }, showMini: true, opacity: 0.9 };
+    const mini = { width: 189, height: 28 };
+    const expanded = { width: 440, height: 642 };
+    const at = () => ({ ...win.snapshot().position, ...win.snapshot().size });
+    await showWindow(anchor, logger());
+
+    await fitWindow(mini, anchor, logger());
+    expect(at()).toEqual({ x: 101, y: 627, width: 189, height: 28 }); // the mini line stands where the header was (it was y = 1241)
+    await fitWindow(expanded, anchor, logger());
+    expect(at()).toEqual({ x: 101, y: 627, width: 440, height: 642 }); // unfolded downward from the same top
+
+    // the mini line is dragged near the bottom edge: the expanded window does not fit below it
+    const low: WindowLayout = { ...anchor, offset: { dx: 101, dy: 1400 } };
+    await fitWindow(mini, low, logger());
+    expect(at()).toEqual({ x: 101, y: 1400, width: 189, height: 28 });
+    await fitWindow(expanded, low, logger());
+    expect(at()).toEqual({ x: 101, y: 782, width: 440, height: 642 }); // shifted up whole, 16 px from the bottom, not shrunk
+    await fitWindow(mini, low, logger());
+    expect(at()).toEqual({ x: 101, y: 1400, width: 189, height: 28 }); // folded: the line is back where it was
+  });
+
   it('knows where the window stands, in logical pixels of the monitor', async () => {
     const monitor = parseMonitor('2560x1440@1.5');
     start({ monitor });

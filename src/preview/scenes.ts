@@ -1,5 +1,6 @@
 import type { app } from '../ui/state.svelte';
 import type { DatasetName } from './datasets';
+import { ANCHOR_SCENES } from './scenes-anchor';
 
 /** The one state of the application; scenes drive it only through its public methods. */
 export type SceneApp = typeof app;
@@ -41,6 +42,7 @@ export const SCENES: readonly Scene[] = [
     dataset: 'default',
     act: async (app) => void (await app.setCorner('bottom-left')),
   },
+  ...ANCHOR_SCENES,
   { name: 'expanded', title: 'Развёрнутый вид: терминал, сторона «Купить»', dataset: 'default', act: (app) => app.expand('preview') },
   {
     name: 'expanded-sell',
