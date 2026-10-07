@@ -5,12 +5,15 @@ import type { Settings } from '../../core/settings';
 import type { CargoLine, Estimate, Market, Reference, RunWithEvents, Terminal } from '../../core/types';
 import { nextMarkOf, phaseCaps, runPhases, type RunPhase } from './run-phase';
 import { priceAtTarget, ratePerHour, routeSecOf, wholeRunSec, type PricedLine } from './run-rate';
+import type { SessionFigure } from './stats-view';
 
 export type StripModel =
   | {
     kind: 'idle'; location: string;
     /** The target that is set before anything is bought: the line reads 'HUR-L1 → ARC-L1'. */
     target: string | null;
+    /** What the play session that is going has earned ('+1,24M'); `null` when there is no such session or nothing ended in it. */
+    session: SessionFigure | null;
   }
   | {
     kind: 'run';
@@ -66,13 +69,18 @@ function rateText(priced: PricedLine[], elapsedSec: number, routeSec: number | n
 }
 
 /**
- * What the small strip shows: the current location (and the target, when one is set) without a run; during a run the
- * phase with its own timer, the cargo, the target terminal, what the first commodity is expected to sell for there and
- * the expected UEC per hour. A target that is unset or missing from the reference leaves the last three out.
+ * What the small strip shows: the current location (and the target, when one is set) and what the session that is going
+ * has earned (`session`) without a run; during a run the phase with its own timer, the cargo, the target terminal, what
+ * the first commodity is expected to sell for there and the expected UEC per hour (that line is full: no session in it).
+ * A target that is unset or missing from the reference leaves the last three out.
  */
-export function stripModel(active: RunWithEvents | null, m: Market, ref: Reference, s: Settings, ctx: RouteCtx): StripModel {
+export function stripModel(
+  active: RunWithEvents | null, m: Market, ref: Reference, s: Settings, ctx: RouteCtx, session: SessionFigure | null = null,
+): StripModel {
   const target = s.targetTerminalId === null ? undefined : ref.terminals.get(s.targetTerminalId);
-  if (active === null) return { kind: 'idle', location: locationOf(ref, s.currentTerminalId), target: target ? terminalLabel(target) : null };
+  if (active === null) {
+    return { kind: 'idle', location: locationOf(ref, s.currentTerminalId), target: target ? terminalLabel(target) : null, session };
+  }
 
   const { run, events } = active;
   const elapsedSec = Math.max(0, ctx.now - run.startedAt);

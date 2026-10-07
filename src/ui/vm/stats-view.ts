@@ -1,4 +1,5 @@
-import { ownMedianIndex, ownRunCounts, routeStats, sessions } from '../../core/stats';
+import { formatCompact, formatUec } from '../../core/format';
+import { DEFAULT_SESSION_GAP_SEC, ownMedianIndex, ownRunCounts, routeStats, sessions } from '../../core/stats';
 import type { RouteStat, Session } from '../../core/stats';
 import type { RunWithEvents } from '../../core/types';
 import { NONE } from './stats-rows';
@@ -32,13 +33,55 @@ export const STATS_VIEWS: ReadonlyArray<{ id: StatsView; label: string; title: s
 const NO_FINISHED_RUNS = 'пока нет завершённых рейсов';
 
 /**
- * The summary of the section header: the best route and its rate ('HUR-L1 → ARC-L1 · 310k/ч'), or that there are none.
- * The rows carry the rate without its unit (their column has a caption); the header has none, so the unit is added here.
+ * The latest of `sessions` (the newest first, as the statistics hold them) while it is still going at `now`: its last
+ * record is less than the pause that splits sessions old. After that pause the next record would start a new session,
+ * so this one is over. The same object comes back for as long as it is current: the caller can compare it.
  */
-export function routesSummary(rows: RouteRow[]): string {
+export function currentSession(sessionList: Session[], now: number): Session | null {
+  const latest = sessionList[0];
+  return latest !== undefined && now - latest.endTs < DEFAULT_SESSION_GAP_SEC ? latest : null;
+}
+
+/** What the play session that is going has earned, in the two forms the interface needs. */
+export interface SessionFigure {
+  /** '+1,24M': the profit in the short form of the mini line. */
+  short: string;
+  /** 'сессия +1 240 000 · 413k/ч': the exact profit and the rate; the summary of the section and the tooltip of the mini line. */
+  line: string;
+  /** What colour the profit is: the colour of a profit, of a loss, or neither. */
+  tone: 'gain' | 'loss' | 'even';
+}
+
+/** The sign that a profit shows: a plus for a gain (a loss and zero carry theirs in the formatted number). */
+const signed = (text: string, value: number): string => (Math.round(value) > 0 ? `+${text}` : text);
+
+/**
+ * What `session` earned, or `null` when there is nothing to say: no session, or no run that has ended in it. A run that
+ * is still going has earned nothing yet, and prices alone are not earnings; a zero that is not one is worse than no number.
+ */
+export function sessionFigure(session: Session | null): SessionFigure | null {
+  if (session === null || session.runIds.length === 0) return null;
+  const { profit, uecPerHour } = session;
+  const rate = uecPerHour === null ? '' : ` · ${formatCompact(uecPerHour)}/ч`;
+  const rounded = Math.round(profit);
+  return {
+    short: signed(formatCompact(profit), profit),
+    line: `сессия ${signed(formatUec(profit), profit)}${rate}`,
+    tone: rounded > 0 ? 'gain' : rounded < 0 ? 'loss' : 'even',
+  };
+}
+
+/**
+ * The summary of the section header: the session that is going (when it has earned anything to say) and the best route
+ * with its rate ('сессия +1 240 000 · 413k/ч · HUR-L1 → ARC-L1 · 310k/ч'), or that there are no routes yet. The header
+ * cuts a long summary with an ellipsis, so the session, which comes first, is what stays. The rows carry the rate
+ * without its unit (their column has a caption); the header has none, so the unit is added here.
+ */
+export function routesSummary(rows: RouteRow[], session: SessionFigure | null = null): string {
   const best = rows[0];
-  if (best === undefined) return NO_FINISHED_RUNS;
-  return best.rate === NONE ? best.route : `${best.route} · ${best.rate}/ч`;
+  const route = best === undefined ? null : best.rate === NONE ? best.route : `${best.route} · ${best.rate}/ч`;
+  const parts = [session?.line ?? null, route].filter((part): part is string => part !== null);
+  return parts.length === 0 ? NO_FINISHED_RUNS : parts.join(' · ');
 }
 
 /** Everything the interface takes from the history, counted once per load. */
