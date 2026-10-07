@@ -9,8 +9,8 @@ export interface GalleryAudit {
   widths: Record<string, string[]>;
   /** A cell with a number whose text does not fit it (a number must never be cut). */
   clippedNumbers: string[];
-  /** Texts that are cut with an ellipsis on purpose (names, titles). */
-  ellipsised: number;
+  /** Texts that are cut with an ellipsis (names, titles), each with the state it stands in: the full text is in their `title`. */
+  ellipsised: string[];
   /** The heights of what the theme gives a height to, each distinct value once. */
   heights: Record<string, number[]>;
 }
@@ -28,22 +28,21 @@ const MEASURED: Record<string, string> = {
 };
 
 export function auditGallery(root: ParentNode = document): GalleryAudit {
-  const audit: GalleryAudit = { sidewaysScroll: [], widths: {}, clippedNumbers: [], ellipsised: 0, heights: {} };
+  const audit: GalleryAudit = { sidewaysScroll: [], widths: {}, clippedNumbers: [], ellipsised: [], heights: {} };
   for (const figure of root.querySelectorAll<HTMLElement>('[data-state]')) {
     const name = figure.dataset.state ?? '?';
-    const glass = figure.querySelector<HTMLElement>('.sc-frame');
-    const frame = glass;
-    if (glass === null || frame === null) continue;
-    if (glass.scrollWidth > glass.clientWidth) audit.sidewaysScroll.push(name);
+    const frame = figure.querySelector<HTMLElement>('.sc-frame');
+    if (frame === null) continue;
+    if (frame.scrollWidth > frame.clientWidth) audit.sidewaysScroll.push(name);
     (audit.widths[String(Math.round(frame.getBoundingClientRect().width))] ??= []).push(name);
 
-    for (const el of glass.querySelectorAll<HTMLElement>('*')) {
+    for (const el of frame.querySelectorAll<HTMLElement>('*')) {
       if (el.scrollWidth <= el.clientWidth + 1 || el.clientWidth === 0) continue;
       if (getComputedStyle(el).overflowX === 'visible') continue;
       const text = (el.textContent ?? '').trim();
       if (text === '' || el.tagName === 'INPUT') continue;
       if (NUMBER.test(text)) audit.clippedNumbers.push(`${name}: "${text}"`);
-      else audit.ellipsised++;
+      else audit.ellipsised.push(`${name}: "${text.slice(0, 48)}"`);
     }
   }
   for (const [label, selector] of Object.entries(MEASURED)) {

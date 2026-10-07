@@ -125,7 +125,7 @@
 <style>
   .grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 54px 74px 40px 54px;
+    grid-template-columns: minmax(0, 1fr) 48px 64px 36px 40px;
     column-gap: 4px;
     align-items: center;
     padding: 0 var(--sc-pad-x);

@@ -13,10 +13,10 @@
 <Frame name="idle" caption="no run: the SC mark and the location" width="content">
   <StripView model={data.strip.idle} flash={null} onOpen={open} />
 </Frame>
-<Frame name="run" caption="a run: timer · cargo · → target · wait for the price · rate, and the mark buttons" width="content">
+<Frame name="run" caption="a run with BOTH mark buttons (more than the owner gives): only here the 520 px limit cuts a two-commodity cargo" width="content">
   <StripView model={data.strip.run} flash={null} onOpen={open} onDepart={open} onArrive={open} />
 </Frame>
-<Frame name="run-arrive" caption="a run, one mark button (the owner gives only the next mark)" width="content">
+<Frame name="run-arrive" caption="a run: timer · cargo · → target · wait for the price · rate, and the one button of the next mark: the cargo is whole" width="content">
   <StripView model={data.strip.run} flash={null} onOpen={open} onArrive={open} />
 </Frame>
 <Frame name="run-bare" caption="a run without mark buttons" width="content">

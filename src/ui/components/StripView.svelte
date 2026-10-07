@@ -14,8 +14,8 @@
 
   const showMarks = $derived(flash === null && model.kind === 'run' && (onDepart !== undefined || onArrive !== undefined));
 
-  // 'ждём 6 900 (6 400–7 100)': the line shows the number, the tooltip the range as well
-  const expect = $derived(model.kind === 'run' && model.expect !== null ? model.expect.replace(/\s*\(.*\)$/, '') : null);
+  // the line shows 'ждём 6 900', the tooltip the range as well ('ждём 6 900 (6 400–7 100)')
+  const expect = $derived(model.kind === 'run' ? model.expectShort : null);
 
   // Everything the strip knows, for the tooltip: the line cuts a long cargo.
   const full = $derived(
@@ -137,7 +137,8 @@
     flex: none;
     align-items: center;
     gap: 4px;
-    padding: 0 4px;
+    /* the right edge is the cut corner of the window: the last button keeps clear of it */
+    padding: 0 8px 0 4px;
     border-left: 1px solid var(--sc-border);
   }
 </style>
