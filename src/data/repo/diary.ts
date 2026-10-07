@@ -1,6 +1,7 @@
+import { MIN_READING_GAP_SEC } from '../../core/market';
 import { learnRatePerMin, maxSeenScu } from '../../core/stock';
 import { obsKey } from '../../core/types';
-import type { Observation, QuantityReading, Side, StockStats } from '../../core/types';
+import type { Observation, PriceReading, QuantityReading, Side, StockStats } from '../../core/types';
 import type { Db } from '../db';
 import type { Logger } from '../logger';
 
@@ -69,6 +70,37 @@ export async function latestQuantities(db: Db): Promise<QuantityReading[]> {
     side: r.side,
     ts: Number(r.ts),
     scu: Number(r.scu),
+  }));
+}
+
+/**
+ * The previous reading of the price per terminal, commodity and side: the latest observation that is at least
+ * `MIN_READING_GAP_SEC` older than the latest one of the stock. A reading made seconds after another is a
+ * correction of a typo, not a move of the market, so it is never the previous reading of the one it corrects
+ * (and a normal pair followed by a correction is compared as it was before the correction). Whether an
+ * observation carries a quantity does not matter. A stock with a single reading, or with all its readings
+ * within the gap of its latest, has none.
+ *
+ * One statement, answered by the `observation_lookup` index alone: the latest `ts` of every stock comes from
+ * a grouped scan of the index, and the previous reading of each is one more search of it, as in `latestObservations`.
+ */
+export async function previousPrices(db: Db): Promise<PriceReading[]> {
+  const rows = await db.select<{ terminal_id: number; commodity_id: number; side: Side; ts: number; price: number }>(
+    `SELECT p.terminal_id, p.commodity_id, p.side, p.ts, p.price
+     FROM (SELECT terminal_id, commodity_id, side, MAX(ts) AS last_ts FROM observation GROUP BY terminal_id, commodity_id, side) s
+     JOIN observation p ON p.id = (
+       SELECT i.id FROM observation i
+       WHERE i.terminal_id = s.terminal_id AND i.commodity_id = s.commodity_id AND i.side = s.side AND i.ts <= s.last_ts - ?
+       ORDER BY i.ts DESC, i.id DESC LIMIT 1)
+     ORDER BY p.terminal_id, p.commodity_id, p.side`,
+    [MIN_READING_GAP_SEC],
+  );
+  return rows.map((r): PriceReading => ({
+    terminalId: Number(r.terminal_id),
+    commodityId: Number(r.commodity_id),
+    side: r.side,
+    ts: Number(r.ts),
+    price: Number(r.price),
   }));
 }
 

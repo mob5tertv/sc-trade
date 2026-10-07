@@ -4,6 +4,7 @@ import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
 import type { Market } from '../../src/core/types';
 import { obs, px } from '../helpers/factories';
+import { previousReading } from '../helpers/previous-price-fixtures';
 
 // terminal 2, commodity 10, side sell
 const th = { hotMin: 60, warmMin: 180, coolingMin: 240 };
@@ -19,7 +20,7 @@ describe('estimate', () => {
     expect(estimate(buildMarket([px(2, 10, { sell: week, scuSell: 500 })], [own(10)]), 2, 10, 'sell', ctx))
       .toEqual({
         price: 6840, low: 6840, high: 6840, source: 'own', temp: 'hot', ageSec: 600, ageKnown: true, ownLast: null, uexRange: null, scu: 200,
-        scuOrigin: 'own', stock: null,
+        scuOrigin: 'own', stock: null, prev: null,
       });
   });
 
@@ -27,7 +28,7 @@ describe('estimate', () => {
     expect(estimate(buildMarket([px(2, 10, { buy: buyWeek })], [ownBuy(10)]), 2, 10, 'buy', ctx))
       .toEqual({
         price: 6100, low: 6100, high: 6100, source: 'own', temp: 'hot', ageSec: 600, ageKnown: true, ownLast: null, uexRange: null, scu: 200,
-        scuOrigin: 'own', stock: { scu: 200, baseScu: 200, baseAgeSec: 600, ratePerMin: 0, rateSource: 'none', maxScu: null },
+        scuOrigin: 'own', stock: { scu: 200, baseScu: 200, baseAgeSec: 600, ratePerMin: 0, rateSource: 'none', maxScu: null }, prev: null,
       });
   });
 
@@ -290,5 +291,74 @@ describe('estimate: whether the age of the data is known', () => {
   it('does not know the age of a UEX price that replaced my cold one', () => {
     expect(estimate(buildMarket([px(2, 10, { sell: week, dateModified: 0 })], [own(300)]), 2, 10, 'sell', ctx))
       .toMatchObject({ source: 'uex', ageKnown: false, ownLast: { price: 6840 } });
+  });
+});
+
+// The previous own reading of the same stock travels with a price that is mine, so the screen can show whether it
+// went up or down. Terminal 2, commodity 10; my latest SELL price is 6840 (see `own`).
+describe('estimate: the previous own reading', () => {
+  const before = (ageMin: number, price = 6700, side: 'buy' | 'sell' = 'sell') => previousReading({ side, ts: now - ageMin * 60, price });
+  const marketWith = (ownAgeMin: number, previous = [before(130)], uexRows = [px(2, 10, { sell: week })]) => (
+    buildMarket(uexRows, [own(ownAgeMin)], undefined, undefined, previous)
+  );
+
+  it('carries the previous reading with its price and its age as of now', () => {
+    expect(estimate(marketWith(10), 2, 10, 'sell', ctx)).toMatchObject({ source: 'own', temp: 'hot', prev: { price: 6700, ageSec: 130 * 60 } });
+  });
+
+  it('carries it while my price is warm or cooling as well', () => {
+    expect(estimate(marketWith(100, [before(400)]), 2, 10, 'sell', ctx)).toMatchObject({ temp: 'warm', prev: { price: 6700, ageSec: 400 * 60 } });
+    expect(estimate(marketWith(200, [before(500)]), 2, 10, 'sell', ctx)).toMatchObject({ temp: 'cooling', prev: { price: 6700, ageSec: 500 * 60 } });
+  });
+
+  it('carries it with the buy side as well, from the previous reading of that side', () => {
+    const m = buildMarket([], [ownBuy(10)], undefined, undefined, [before(130, 6000, 'buy'), before(140, 1, 'sell')]);
+    expect(estimate(m, 2, 10, 'buy', ctx)).toMatchObject({ source: 'own', price: 6100, prev: { price: 6000, ageSec: 130 * 60 } });
+  });
+
+  it('keeps an equal price as the previous reading', () => {
+    expect(estimate(marketWith(10, [before(130, 6840)]), 2, 10, 'sell', ctx)!.prev).toEqual({ price: 6840, ageSec: 130 * 60 });
+  });
+
+  it('has none without a previous reading', () => {
+    expect(estimate(marketWith(10, []), 2, 10, 'sell', ctx)!.prev).toBeNull();
+  });
+
+  it('does not take the previous reading of another side, terminal or commodity', () => {
+    const others = [before(130, 1, 'buy'), previousReading({ terminalId: 3, ts: now - 7800, price: 2 }), previousReading({ commodityId: 20, ts: now - 7800, price: 3 })];
+    expect(estimate(marketWith(10, others), 2, 10, 'sell', ctx)!.prev).toBeNull();
+  });
+
+  it('has none for a UEX price, whatever the diary says', () => {
+    const m = buildMarket([px(2, 10, { sell: week })], [], undefined, undefined, [before(130)]);
+    expect(estimate(m, 2, 10, 'sell', ctx)).toMatchObject({ source: 'uex', prev: null });
+  });
+
+  it('has none when my price has gone cold and UEX answers instead', () => {
+    expect(estimate(marketWith(300, [before(500)]), 2, 10, 'sell', ctx)).toMatchObject({ source: 'uex', ownLast: { price: 6840 }, prev: null });
+  });
+
+  it('has none for a cold price of mine that stands because UEX knows nothing', () => {
+    expect(estimate(marketWith(300, [before(500)], []), 2, 10, 'sell', ctx)).toMatchObject({ source: 'own', temp: 'cold', prev: null });
+  });
+
+  it('has none when the previous reading is from before the server change', () => {
+    const changed = { ...ctx, serverChangedAt: now - 300 };      // five minutes ago: my price (2 minutes old) is after it, the previous one (10) before it
+    expect(estimate(marketWith(2, [before(10)]), 2, 10, 'sell', changed)).toMatchObject({ source: 'own', temp: 'hot', prev: null });
+  });
+
+  it('keeps the previous reading when it is from after the server change', () => {
+    const changed = { ...ctx, serverChangedAt: now - 900 };
+    expect(estimate(marketWith(2, [before(10)]), 2, 10, 'sell', changed)).toMatchObject({ source: 'own', prev: { price: 6700, ageSec: 600 } });
+  });
+
+  it('counts a previous reading made exactly at the server change as after it', () => {
+    const changed = { ...ctx, serverChangedAt: now - 600 };
+    expect(estimate(marketWith(2, [before(10)]), 2, 10, 'sell', changed)!.prev).toEqual({ price: 6700, ageSec: 600 });
+  });
+
+  it('leaves the rest of the estimate as it was', () => {
+    const without = estimate(marketWith(10, []), 2, 10, 'sell', ctx)!;
+    expect(estimate(marketWith(10), 2, 10, 'sell', ctx)).toEqual({ ...without, prev: { price: 6700, ageSec: 130 * 60 } });
   });
 });

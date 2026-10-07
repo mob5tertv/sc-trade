@@ -62,6 +62,15 @@ describe('loadMarket', () => {
     expect(m.ownScu.get(obsKey(1, GOLD, 'buy'))).toEqual({ ts: NOW - 600, scu: 340 });        // the seeded reading
     expect(m.ownScu.has(obsKey(3, GOLD, 'sell'))).toBe(false);                                // seeded without a quantity
   });
+
+  it('carries the previous own price of each stock, which is not the latest observation', async () => {
+    await addObservation(db, log, { ts: NOW - 7200, terminalId: 1, commodityId: GOLD, side: 'buy', price: 6000, scu: null });
+    await addObservation(db, log, { ts: NOW - 5, terminalId: 1, commodityId: GOLD, side: 'buy', price: 6200, scu: null });
+    const m = await loadMarket(db);
+    expect(m.own.get(obsKey(1, GOLD, 'buy'))).toMatchObject({ price: 6200 });
+    expect(m.ownPrev.get(obsKey(1, GOLD, 'buy'))).toEqual({ ts: NOW - 600, price: 6120 });        // the seeded one, not the older 6000
+    expect(m.ownPrev.has(obsKey(3, GOLD, 'sell'))).toBe(false);                                   // seeded once: nothing to compare with
+  });
 });
 
 describe('suggestFrom', () => {
@@ -237,6 +246,21 @@ describe('suggestFrom', () => {
     const ctx = JSON.parse(line.slice(line.indexOf('{')));
     expect(ctx.options[0].buy.stock).toEqual({ scu: 340, baseScu: 340, baseAgeSec: 600, ratePerMin: 6, rateSource: 'learned', maxScu: 340 });
     expect(ctx.options[0].sell).not.toHaveProperty('stock');        // a UEX price has no timer
+  });
+
+  it('logs the previous own price next to a price that is mine, and nothing where there is none', async () => {
+    await addObservation(db, log, { ts: NOW - 7200, terminalId: 1, commodityId: GOLD, side: 'buy', price: 6000, scu: null });
+    const o = await suggestFrom(deps, 1, 696, GOLD);
+    expect(o[0].buy.prev).toEqual({ price: 6000, ageSec: 7200 });
+    const line = suggestLines('from').at(-1)!.line;
+    const ctx = JSON.parse(line.slice(line.indexOf('{')));
+    expect(ctx.options[0].buy).toMatchObject({
+      price: 6120, source: 'own', temp: 'hot', ageSec: 600, ageKnown: true, scu: 340, scuOrigin: 'own', prev: { price: 6000, ageSec: 7200 },
+    });
+    expect(ctx.options[0].buy.stock).toMatchObject({ scu: 340 });          // nothing else went away
+    expect(ctx.options[0].sell).not.toHaveProperty('prev');               // a UEX price
+    expect(ctx.options[1].sell).toMatchObject({ price: 6840, source: 'own' });
+    expect(ctx.options[1].sell).not.toHaveProperty('prev');               // mine, but read once
   });
 
   it('keeps the stock estimate in the log after an observation with only a price', async () => {

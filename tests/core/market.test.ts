@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildMarket } from '../../src/core/market';
+import { buildMarket, MIN_READING_GAP_SEC } from '../../src/core/market';
+import { MIN_LEARN_GAP_SEC } from '../../src/core/stock';
 import { obsKey, priceKey } from '../../src/core/types';
 import { obs, px } from '../helpers/factories';
+import { previousOf, previousReading } from '../helpers/previous-price-fixtures';
 
 describe('buildMarket', () => {
   it('indexes by terminal and commodity across both sources and keeps the latest observation', () => {
@@ -121,5 +123,63 @@ describe('buildMarket: quantity readings', () => {
   it('starts with an empty map of readings, not shared between markets', () => {
     expect(buildMarket([], []).ownScu.size).toBe(0);
     expect(buildMarket([], []).ownScu).not.toBe(buildMarket([], []).ownScu);
+  });
+});
+
+describe('buildMarket: previous own price readings', () => {
+  const key = obsKey(2, 10, 'sell');
+
+  it('puts the previous readings into ownPrev by terminal, commodity and side', () => {
+    const m = buildMarket([], [], undefined, undefined, [
+      previousReading({ ts: 100, price: 6700 }),
+      previousReading({ side: 'buy', ts: 200, price: 6000 }),
+      previousReading({ terminalId: 3, ts: 300, price: 6500 }),
+      previousReading({ commodityId: 20, ts: 400, price: 900 }),
+    ]);
+    expect(m.ownPrev.get(key)).toEqual({ ts: 100, price: 6700 });
+    expect(m.ownPrev.get(obsKey(2, 10, 'buy'))).toEqual({ ts: 200, price: 6000 });
+    expect(m.ownPrev.get(obsKey(3, 10, 'sell'))).toEqual({ ts: 300, price: 6500 });
+    expect(m.ownPrev.get(obsKey(2, 20, 'sell'))).toEqual({ ts: 400, price: 900 });
+    expect(m.ownPrev.size).toBe(4);
+  });
+
+  it('has no previous readings without them', () => {
+    const latest = [obs({ id: 2, ts: 700, terminalId: 2, commodityId: 10, side: 'sell', price: 6840 })];
+    expect(buildMarket([], latest).ownPrev.size).toBe(0);
+    expect(buildMarket([], latest, undefined, undefined, []).ownPrev.size).toBe(0);
+  });
+
+  it('does not make the previous readings out of the observations it is given', () => {
+    const older = obs({ id: 1, ts: 100, terminalId: 2, commodityId: 10, side: 'sell', price: 6700 });
+    const newer = obs({ id: 2, ts: 700, terminalId: 2, commodityId: 10, side: 'sell', price: 6840 });
+    expect(buildMarket([], [older, newer]).ownPrev.size).toBe(0);
+  });
+
+  it('keeps the newest of several previous readings of one stock, whatever the order', () => {
+    const older = previousReading({ ts: 100, price: 6700 });
+    const newer = previousReading({ ts: 300, price: 6800 });
+    expect(buildMarket([], [], undefined, undefined, [older, newer]).ownPrev.get(key)).toEqual({ ts: 300, price: 6800 });
+    expect(buildMarket([], [], undefined, undefined, [newer, older]).ownPrev.get(key)).toEqual({ ts: 300, price: 6800 });
+  });
+
+  it('indexes nothing by a previous reading alone', () => {
+    const m = buildMarket([], [], undefined, undefined, [previousReading({ ts: 100, price: 6700 })]);
+    expect([m.byTerminal.size, m.byCommodity.size, m.own.size, m.ownScu.size]).toEqual([0, 0, 0, 0]);
+  });
+
+  it('starts with an empty map, not shared between markets', () => {
+    expect(buildMarket([], []).ownPrev).not.toBe(buildMarket([], []).ownPrev);
+  });
+
+  it('hands the previous readings of a market back through the fixture helper', () => {
+    const m = buildMarket([], [], undefined, undefined, [previousReading({ ts: 100, price: 6700 }), previousReading({ side: 'buy', ts: 200, price: 6000 })]);
+    expect(buildMarket([], [], undefined, undefined, previousOf(m)).ownPrev).toEqual(m.ownPrev);
+  });
+});
+
+describe('MIN_READING_GAP_SEC', () => {
+  it('is two minutes, the one gap the quantity readings use as well', () => {
+    expect(MIN_READING_GAP_SEC).toBe(120);
+    expect(MIN_READING_GAP_SEC).toBe(MIN_LEARN_GAP_SEC);
   });
 });

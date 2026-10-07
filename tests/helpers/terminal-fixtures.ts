@@ -12,7 +12,7 @@ export const ctx: EstimateCtx = { now: NOW, thresholds: { hotMin: 60, warmMin: 1
 
 /** A throwaway estimate to spread over in `badgeText` tests. */
 export const est: Estimate = {
-  price: 0, low: 0, high: 0, source: 'own', temp: 'hot', ageSec: 0, ageKnown: true, ownLast: null, uexRange: null, scu: null, scuOrigin: null, stock: null,
+  price: 0, low: 0, high: 0, source: 'own', temp: 'hot', ageSec: 0, ageKnown: true, ownLast: null, uexRange: null, scu: null, scuOrigin: null, stock: null, prev: null,
 };
 
 /**

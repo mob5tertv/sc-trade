@@ -6,7 +6,10 @@ import type { StockEstimate } from './types';
 // quantity on the sell side is what the buyer already holds (spec 14.5), shown as recorded,
 // with no timer. Pure: the clock is a parameter.
 
-/** Two readings closer than this say nothing about the rate: the game refills in steps of about a minute. */
+/**
+ * Two readings closer than this say nothing about the rate: the game refills in steps of about a minute. The same
+ * gap separates a new price reading from a correction of a typo, so `market.ts` exports it as `MIN_READING_GAP_SEC`.
+ */
 export const MIN_LEARN_GAP_SEC = 120;
 
 /** Minutes a stock needs to refill from empty to its maximum until a rate is learned; the setting `refillFullMin` overrides it. */

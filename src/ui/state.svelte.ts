@@ -67,7 +67,7 @@ export interface DataDeps { db: Db; uex: UexClient; now: () => number }
 
 const EMPTY_REFERENCE: Reference = { starSystems: [], terminals: new Map(), commodities: new Map(), vehicles: [] };
 const EMPTY_MARKET: Market = {
-  uex: new Map(), own: new Map(), byTerminal: new Map(), byCommodity: new Map(), stock: new Map(), ownScu: new Map(),
+  uex: new Map(), own: new Map(), byTerminal: new Map(), byCommodity: new Map(), stock: new Map(), ownScu: new Map(), ownPrev: new Map(),
 };
 const IDLE_LOOKUP: LookupState = { request: null, title: '', options: [], loading: false, error: null };
 

@@ -5,7 +5,7 @@ import type { Settings } from '../core/settings';
 import { distKey } from '../core/types';
 import type { Estimate, Market, Reference } from '../core/types';
 import type { Db } from './db';
-import { latestObservations, latestQuantities, stockStats } from './repo/diary';
+import { latestObservations, latestQuantities, previousPrices, stockStats } from './repo/diary';
 import { loadDistances, loadUexPrices } from './repo/uex-cache';
 import { countDistanceRequests, ensureDistances, type SyncDeps } from './sync';
 
@@ -60,11 +60,14 @@ export interface Suggestion {
 const MAX_MEASURED_OPTIONS = 20;
 
 /**
- * The cached UEX prices, the newest diary observation of each kind, what the whole diary says about each stock
- * and the latest reading of each quantity (which may be older than the latest observation: spec 14.6).
+ * The cached UEX prices, the newest diary observation of each kind, what the whole diary says about each stock,
+ * the latest reading of each quantity (which may be older than the latest observation: spec 14.6) and the previous
+ * reading of each price (what the latest one is compared with).
  */
 export async function loadMarket(db: Db): Promise<Market> {
-  return buildMarket(await loadUexPrices(db), await latestObservations(db), await stockStats(db), await latestQuantities(db));
+  return buildMarket(
+    await loadUexPrices(db), await latestObservations(db), await stockStats(db), await latestQuantities(db), await previousPrices(db),
+  );
 }
 
 function routeCtx(d: SuggestDeps, now: number, freeScu: number, distances: Map<string, number | null>, topN: number): RouteCtx {
@@ -213,10 +216,12 @@ function describeOption(d: SuggestDeps, o: RouteOption) {
   // on the sell side (information only, it limits no trip); `scuOrigin` says whose reading it is, which need not be
   // the observation the price comes from. `ageKnown` is false for a UEX price whose row has no modification date
   // (`ageSec` means nothing then). `stock` is the refill-timer estimate of my own stock at a seller; a price
-  // without one (no reading of mine, or any sell side) has no such key.
+  // without one (no reading of mine, or any sell side) has no such key. `prev` is the previous own reading of a
+  // price that is mine (its price and its age); a price without one has no such key either.
   const price = (e: Estimate) => ({
     price: e.price, source: e.source, temp: e.temp, ageSec: e.ageSec, ageKnown: e.ageKnown, scu: e.scu, scuOrigin: e.scuOrigin,
     ...(e.stock === null ? {} : { stock: { ...e.stock, ratePerMin: round(e.stock.ratePerMin, 2) } }),
+    ...(e.prev === null ? {} : { prev: e.prev }),
   });
   return {
     commodity: d.reference.commodities.get(o.commodityId)?.code ?? null,

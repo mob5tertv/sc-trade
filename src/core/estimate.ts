@@ -63,6 +63,11 @@ function stockNow(m: Market, key: string, base: { ts: number; scu: number }, uex
  *  - SELL: what the buyer already holds of the commodity (zero: out of stock, the best buyer). It is shown
  *    as recorded, a zero included, with no timer (`stock` is `null`), and it limits nothing.
  * A UEX quantity has no timer and a zero there means "unknown", on both sides.
+ *
+ * `prev` is the previous own reading of the price from `Market.ownPrev`, for the screen to tell whether my price
+ * went up or down (an equal price is a previous reading too). It is there only while the price is mine and not
+ * cold: a UEX price, and a cold own price (kept only because UEX has nothing), have none. A previous reading from
+ * before the last server change (`serverChangedAt`) is not comparable with one after it, so it is dropped.
  */
 export function estimate(m: Market, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): Estimate | null {
   const key = obsKey(terminalId, commodityId, side);
@@ -81,10 +86,16 @@ export function estimate(m: Market, terminalId: number, commodityId: number, sid
     return { scu: uexScu, scuOrigin: uexScu === null ? null : 'uex', stock: null };
   };
 
+  const previous = (): Estimate['prev'] => {
+    const prev = m.ownPrev.get(key);
+    if (!prev || (ctx.serverChangedAt !== null && prev.ts < ctx.serverChangedAt)) return null;
+    return { price: prev.price, ageSec: ageOf(prev.ts, ctx.now) };
+  };
+
   const fromUex = (ownLast: Estimate['ownLast']): Estimate | null => (row && range
     ? {
       ...range, source: 'uex', temp: null, ageSec: ageOf(row.dateModified, ctx.now), ageKnown: row.dateModified !== 0,
-      ownLast, uexRange: null, ...quantity(),
+      ownLast, uexRange: null, ...quantity(), prev: null,
     }
     : null);
 
@@ -98,12 +109,12 @@ export function estimate(m: Market, terminalId: number, commodityId: number, sid
       source: 'own', temp, ageSec: ownAge, ageKnown: true,
       ownLast: null,
       uexRange: temp === 'cooling' && range ? { low: range.low, high: range.high } : null,
-      ...quantity(),
+      ...quantity(), prev: previous(),
     };
   }
   return fromUex({ price: own.price, ageSec: ownAge }) ?? {
     price: own.price, low: own.price, high: own.price,
     source: 'own', temp: 'cold', ageSec: ownAge, ageKnown: true,
-    ownLast: null, uexRange: null, ...quantity(),
+    ownLast: null, uexRange: null, ...quantity(), prev: null,
   };
 }

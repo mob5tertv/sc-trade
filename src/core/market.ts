@@ -1,5 +1,12 @@
 import { obsKey, priceKey } from './types';
-import type { Market, Observation, QuantityReading, StockStats, UexPrice } from './types';
+import type { Market, Observation, PriceReading, QuantityReading, StockStats, UexPrice } from './types';
+
+/**
+ * The smallest gap between two readings of one stock for the second to count as a new reading and not as a
+ * correction of a typo. It is the gap the quantity readings use to learn a refill rate (one constant, kept in
+ * `stock.ts`); the diary measures the previous price reading with it (`previousPrices`).
+ */
+export { MIN_LEARN_GAP_SEC as MIN_READING_GAP_SEC } from './stock';
 
 function isNewer(candidate: Observation, current: Observation): boolean {
   return candidate.ts > current.ts || (candidate.ts === current.ts && candidate.id > current.id);
@@ -31,11 +38,19 @@ function latestWithQuantity(latestObs: Observation[]): WithQuantity[] {
  * can be newer than the reading (spec 14.6). `quantities` are those readings (see `latestQuantities`; the
  * newest wins when a stock appears more than once). Without `quantities` they are derived from `latestObs`:
  * the newest observation of each stock that has a quantity.
+ *
+ * `ownPrev` holds the previous own reading of the price per terminal, commodity and side, the one the screen
+ * compares the latest price with. It cannot be derived from `latestObs` (that holds only the latest observation
+ * of each stock), so it is exactly `previous` (see `previousPrices`; the newest wins when a stock appears more
+ * than once) and stays empty without it.
  */
 export function buildMarket(
   prices: UexPrice[], latestObs: Observation[], stock: Map<string, StockStats> = new Map(), quantities?: QuantityReading[],
+  previous: PriceReading[] = [],
 ): Market {
-  const market: Market = { uex: new Map(), own: new Map(), ownScu: new Map(), byTerminal: new Map(), byCommodity: new Map(), stock };
+  const market: Market = {
+    uex: new Map(), own: new Map(), ownScu: new Map(), ownPrev: new Map(), byTerminal: new Map(), byCommodity: new Map(), stock,
+  };
 
   const index = (terminalId: number, commodityId: number): void => {
     let commodities = market.byTerminal.get(terminalId);
@@ -61,6 +76,12 @@ export function buildMarket(
     const key = obsKey(terminalId, commodityId, side);
     const current = market.ownScu.get(key);
     if (!current || ts > current.ts) market.ownScu.set(key, { ts, scu });
+  }
+
+  for (const { terminalId, commodityId, side, ts, price } of previous) {
+    const key = obsKey(terminalId, commodityId, side);
+    const current = market.ownPrev.get(key);
+    if (!current || ts > current.ts) market.ownPrev.set(key, { ts, price });
   }
   return market;
 }
