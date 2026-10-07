@@ -156,7 +156,8 @@ describe('the price requests of the scenes', () => {
       fake = installPriceFake({ rows: () => rows, failTerminals: new Set([2]) });
       await expect(client().prices([1, 2])).rejects.toBeInstanceOf(UexError);
       expect(await client().prices([1])).toHaveLength(2);
-      await expect(client().prices([2])).rejects.toMatchObject({ kind: 'network' });
+      // refused by the server, not stalled: the application repeats such a batch terminal by terminal
+      await expect(client().prices([2])).rejects.toMatchObject({ kind: 'http' });
     });
   });
 });

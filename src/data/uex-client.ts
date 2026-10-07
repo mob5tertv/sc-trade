@@ -18,6 +18,13 @@ export class UexError extends Error {
   }
 }
 
+/**
+ * Whether `err` says that UEX could not be reached (the connection failed or the request timed out), as opposed to an
+ * answer that was refused or could not be read. A series of requests that meets this has no use in asking on: the next
+ * request stalls just as long.
+ */
+export const isNetworkFailure = (err: unknown): boolean => err instanceof UexError && err.kind === 'network';
+
 export const UEX_BASE = 'https://api.uexcorp.uk/2.0';
 
 /** UEX allows at most ten terminals per `commodities_prices` request. */
