@@ -91,22 +91,43 @@ fn remember(state: &ForegroundState, candidate: isize, candidate_pid: u32, own_p
     true
 }
 
+/// The level of the line a call of `remember_foreground` writes, or `None` for no line at all.
+/// `stored`: a window was remembered; `changed`: it is not the one remembered before. A window
+/// that is new is always worth a line at info. Otherwise a call made once (the pointer came over a
+/// field, a field was pressed) writes a line below info, and the `quiet` refresh, which runs every
+/// 400 ms while the pointer rests on a field, writes nothing.
+fn remember_level(stored: bool, changed: bool, quiet: bool) -> Option<log::Level> {
+    if stored && changed {
+        Some(log::Level::Info)
+    } else if quiet {
+        None
+    } else {
+        Some(log::Level::Debug)
+    }
+}
+
 /// Remembers the window that currently has the keyboard focus. Call it before the panel may take
 /// the focus: when the pointer comes over a text field (the click that follows activates the panel,
 /// and by then the foreground window is our own, which is never remembered), and again when a
-/// field is pressed.
+/// field is pressed. While the pointer rests on a field it is called again from time to time with
+/// `quiet`, so that the remembered window follows a foreground that changes meanwhile; that call
+/// writes a line only when the window did change.
 #[tauri::command]
-pub fn remember_foreground(state: State<'_, ForegroundState>) {
+pub fn remember_foreground(state: State<'_, ForegroundState>, quiet: Option<bool>) {
     let hwnd = sys::foreground_window();
     let pid = sys::window_process_id(hwnd);
     let before = state.0.load(Ordering::SeqCst);
-    if !remember(&state, hwnd, pid, std::process::id()) {
-        log::debug!("[focus] foreground window {hwnd:#x} not remembered, keeping {before:#x}");
-    } else if hwnd == before {
-        // asked each time the pointer comes over a text field: only a change is worth a line of its own
-        log::debug!("[focus] foreground window {hwnd:#x} is the remembered one already");
+    let stored = remember(&state, hwnd, pid, std::process::id());
+    let changed = stored && hwnd != before;
+    let Some(level) = remember_level(stored, changed, quiet.unwrap_or(false)) else {
+        return;
+    };
+    if changed {
+        log::log!(level, "[focus] remembered foreground window {hwnd:#x}");
+    } else if stored {
+        log::log!(level, "[focus] foreground window {hwnd:#x} is the remembered one already");
     } else {
-        log::info!("[focus] remembered foreground window {hwnd:#x}");
+        log::log!(level, "[focus] foreground window {hwnd:#x} not remembered, keeping {before:#x}");
     }
 }
 
@@ -231,6 +252,26 @@ mod tests {
         let state = ForegroundState::default();
         assert!(!remember(&state, 0, 0, OWN_PID));
         assert_eq!(state.0.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn a_newly_remembered_window_is_a_line_at_info_asked_quietly_or_not() {
+        assert_eq!(remember_level(true, true, false), Some(log::Level::Info));
+        assert_eq!(remember_level(true, true, true), Some(log::Level::Info));
+    }
+
+    #[test]
+    fn asked_once_the_same_window_or_none_is_a_line_at_debug() {
+        // the pointer came over a field, a field was pressed: one line each, below info
+        assert_eq!(remember_level(true, false, false), Some(log::Level::Debug));
+        assert_eq!(remember_level(false, false, false), Some(log::Level::Debug));
+    }
+
+    #[test]
+    fn the_quiet_refresh_writes_nothing_while_nothing_changes() {
+        // it runs every 400 ms while the pointer rests on a field: not a line at any level
+        assert_eq!(remember_level(true, false, true), None);
+        assert_eq!(remember_level(false, false, true), None);
     }
 
     const PANEL: isize = 0x5151;

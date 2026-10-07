@@ -22,12 +22,19 @@ import { createRequestQueue } from './request-queue';
  *   idle  | hold, Windows refuses        | take; then disarm unless the pointer has  | armed or idle
  *         |                              | come over a field (the take made the      |
  *         |                              | window activatable); NO holder            |
- *   idle  | press next to a field        | (only within `settleMs` of a disarm:)     | idle
+ *   idle  | press next to a field, or    | (only within `settleMs` of a disarm; for  | idle
+ *         | the window says it got the   | the focus event after waiting `settleMs`  |
+ *         | focus                        | and with no request on its way:)          |
  *         |                              | isForeground, and if yes give(true)       |
- *   armed | pointer leaves the field     | disarm                                    | idle
+ *   armed | pointer leaves the field,    | disarm                                    | idle
+ *         | the window is folded/hidden  |                                           |
  *   armed | hold, the take says yes      | take                                      | held
  *   armed | hold, Windows refuses        | take; NO holder                           | armed
  *   armed | press next to a field        | isForeground, and if yes give(true), arm  | armed
+ *   armed | the window says it got the   | wait `settleMs`; if still no holder and   | armed
+ *         | focus, and no hold follows   | no request on its way: isForeground, and  |
+ *         |                              | if yes give(true), arm                    |
+ *   armed | refresh (the watchdog)       | remember (quiet)                          | armed
  *   held  | pointer comes or leaves      | none (remembered for the release)         | held
  *   held  | hold by another holder       | none                                      | held
  *   held  | release, holders remain      | none                                      | held
@@ -35,8 +42,9 @@ import { createRequestQueue } from './request-queue';
  *         |                              | still over a field                        |
  *   held  | drop (the player went away)  | give(false)                               | idle
  *
- * Everything else changes nothing (a release of somebody who is not a holder, a drop without holders, a
- * press next to a field while somebody holds the keyboard).
+ * Everything else changes nothing (a release of somebody who is not a holder, a drop without holders, a press next
+ * to a field or a focus event while somebody holds the keyboard, a focus event or a refresh of a window that is idle
+ * and was not armed lately: those cost no request at all).
  *
  * Every request runs strictly after the previous one, so two effects are never in flight together,
  * and each request judges the state when its own turn comes.
@@ -57,13 +65,30 @@ export interface HoldEffects {
    * again and handed back whatever focus it had.
    */
   take(): Promise<boolean>;
-  /** Stop taking the keyboard: the overlay cannot be activated; `restore` hands the focus back to the remembered window. */
-  give(restore: boolean): Promise<void>;
+  /**
+   * Stop taking the keyboard: the overlay cannot be activated; `restore` hands the focus back to the remembered window.
+   * Resolves to whether that window has the focus again (`false` without `restore`, and when the window is gone or
+   * Windows refused).
+   */
+  give(restore: boolean): Promise<boolean>;
+  /**
+   * Remember the window that has the focus once more, quietly: the foreground may have changed while the pointer
+   * rested on a field. It runs every few hundred milliseconds, so it writes no line unless the window changed.
+   */
+  remember(): Promise<void>;
   /** Whether the overlay is the foreground window: Windows' answer, not the focus of the page. */
   isForeground(): Promise<boolean>;
 }
 
 export type HoldState = 'idle' | 'armed' | 'held';
+
+/**
+ * What became of a look for an activation nobody asked for. `none`: there was none (somebody holds the keyboard, or
+ * Windows says the window is not in front). `handed back`: the window was in front with nobody holding the keyboard;
+ * it cannot be activated any more and the remembered window has the focus again. `not handed back`: the same, but
+ * the focus did not go back (the remembered window is gone, or Windows refused): the player has to click the game.
+ */
+export type Stray = 'none' | 'handed back' | 'not handed back';
 
 export interface KeyboardHolds {
   /**
@@ -97,11 +122,11 @@ export interface KeyboardHolds {
    * comes right after the pointer left a field may have activated the window: the disarm had not reached Windows yet.
    * Nobody holds the keyboard then, so it would stay in the window. Hence: when nobody holds the keyboard and the window
    * is still armed, or was disarmed less than `settleMs` ago, Windows is asked whether the window is the foreground one,
-   * and if it is, the keyboard goes back to the game at once. Resolves to `true` when it did.
+   * and if it is, the keyboard goes back to the game at once. Resolves to what became of it.
    *
    * Outside that time a press makes no request at all. Whether to look is decided when it is called, like `drop`.
    */
-  pressOutsideField(): Promise<boolean>;
+  pressOutsideField(): Promise<Stray>;
   /**
    * The window says it got the focus (the event of the shell). Usually that is the echo of a press on a field (its
    * holder is here or on its way), or nothing at all: the web view reports a focus for a click on a window that was
@@ -110,12 +135,18 @@ export interface KeyboardHolds {
    * the keyboard then, and no press follows that would notice. So, when the window could have been activated at all
    * (it is armed, or was until less than `settleMs` ago): wait `settleMs` (a press on a field has become a holder by
    * then); if still nobody holds the keyboard and no request is on its way, ask Windows, and if the window is the
-   * foreground one, give the keyboard back. Resolves to `true` when it did.
+   * foreground one, give the keyboard back. Resolves to what became of it.
    *
    * The event of a window that cannot be activated costs nothing: no wait, no request (a plain click on a button).
    * While one look is waiting, further events start no second one.
    */
-  focusGained(): Promise<boolean>;
+  focusGained(): Promise<Stray>;
+  /**
+   * Call it from time to time (the watchdog of the page does). While the window is armed, the window that will get
+   * the focus back is remembered again, so that it follows a foreground that changed while the pointer rested on a
+   * field. Idle or held it does nothing: nothing can take the focus, or the foreground window is our own.
+   */
+  refreshRemembered(): Promise<void>;
   /** At least one holder is there. */
   readonly held: boolean;
   readonly state: HoldState;
@@ -214,16 +245,16 @@ export function createKeyboardHolds(
 
   /**
    * A job of the queue. Nobody holds the keyboard; when Windows says the window is the foreground one all the same,
-   * it was activated without being asked for: the keyboard goes back to the game. Resolves to whether it did.
+   * it was activated without being asked for: the keyboard goes back to the game, when Windows lets it.
    */
-  const handBackIfStray = async (): Promise<boolean> => {
+  const handBackIfStray = async (): Promise<Stray> => {
     // a field was pressed before this turn came: the window is active because the keyboard is wanted
-    if (holders.size > 0) return false;
-    if (!(await effects.isForeground())) return false;
+    if (holders.size > 0) return 'none';
+    if (!(await effects.isForeground())) return 'none';
     armed = false;
-    await run(() => effects.give(true));
+    const restored = await run(() => effects.give(true));
     await followPointer();
-    return true;
+    return restored ? 'handed back' : 'not handed back';
   };
 
   return {
@@ -287,12 +318,12 @@ export function createKeyboardHolds(
     },
 
     pressOutsideField: async () => {
-      if (holders.size > 0 || !activatableLately()) return false;
+      if (holders.size > 0 || !activatableLately()) return 'none';
       return request(handBackIfStray);
     },
 
     focusGained: async () => {
-      if (holders.size > 0 || looking || !activatableLately()) return false;
+      if (holders.size > 0 || looking || !activatableLately()) return 'none';
       looking = true;
       try {
         await wait(settleMs);
@@ -300,8 +331,16 @@ export function createKeyboardHolds(
         looking = false;
       }
       // a holder: the event was the echo of a press on a field. A request on its way: it is that request that decides.
-      if (holders.size > 0 || pending > 0) return false;
+      if (holders.size > 0 || pending > 0) return 'none';
       return request(handBackIfStray);
+    },
+
+    refreshRemembered: () => {
+      if (holders.size > 0 || !armed) return Promise.resolve();
+      // not a `request`: it moves no focus. Judged again when its turn comes: a press may have taken the keyboard.
+      return queue(async () => {
+        if (holders.size === 0 && armed) await effects.remember();
+      });
     },
 
     get held() {

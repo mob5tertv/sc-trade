@@ -214,10 +214,11 @@ export async function moveWindow(rect: Rect, log: Logger): Promise<void> {
 }
 
 /**
- * Shows or hides the window; showing never takes the focus, because a window is never shown activatable. It is made
- * not activatable right before it is shown: it may have been hidden while it was armed (folded by a key with the
- * pointer resting on a field: nothing tells the page that the pointer has left a window that is gone), and Windows
- * activates an activatable window that is shown. A hidden window has no holder of the keyboard, so nothing is lost.
+ * Shows or hides the window; showing never takes the focus, because a window is never shown activatable: Windows
+ * activates an activatable window that is shown. The state tells the holds that the pointer is gone when it folds
+ * the window and again before it shows it (`#pointerGone` in ui/state.svelte.ts), so a window that comes here is
+ * disarmed already and the holds know it. The call below is this layer's own rule, kept so that it does not depend
+ * on a caller; a hidden window has no holder of the keyboard, so nothing is lost by it.
  */
 export async function setWindowVisible(visible: boolean, log: Logger): Promise<void> {
   try {
@@ -323,14 +324,38 @@ export async function isWindowFocused(log: Logger): Promise<boolean> {
  * The keyboard is not needed any more: the window stops being focusable and, when `restore` is set,
  * the remembered window gets the focus back. Pass `restore: false` when the player has already moved on
  * (clicked the game): the focus is where he put it and is not pulled anywhere by force.
+ *
+ * Resolves to whether the remembered window has the focus again: `false` without `restore`, and when that window
+ * is gone or Windows refused (the Rust side says which in its own line).
  */
-export async function giveKeyboard(log: Logger, restore: boolean): Promise<void> {
+export async function giveKeyboard(log: Logger, restore: boolean): Promise<boolean> {
   try {
     await getCurrentWindow().setFocusable(false);
     const restored = restore ? await invoke<boolean>('restore_foreground') : null;
     log.info('window', 'keyboard given', { restore, restored });
+    return restored === true;
   } catch (err) {
     log.error('window', 'cannot give the keyboard back', { restore, err });
     throw err;
+  }
+}
+
+/** A refresh that failed has been logged; it is said once, not every time the watchdog comes round. */
+let refreshFailed = false;
+
+/**
+ * Remembers the window that has the focus once more, while the pointer rests on a text field and the window is
+ * armed: the foreground may have changed since the pointer came (the player switched to another program with the
+ * keyboard), and `Esc` must give the focus to the window that had it last. Called every few hundred milliseconds,
+ * so it is quiet: the Rust side writes a line only when the window changed, and here only a failure is logged, once.
+ * Never throws.
+ */
+export async function refreshRemembered(log: Logger): Promise<void> {
+  try {
+    await invoke('remember_foreground', { quiet: true });
+    refreshFailed = false;
+  } catch (err) {
+    if (!refreshFailed) log.warn('window', 'cannot refresh the remembered window', { err });
+    refreshFailed = true;
   }
 }

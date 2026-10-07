@@ -12,7 +12,8 @@ import type { KeyboardHolds } from './vm/keyboard-holds';
 //  - a press on anything else is told to the holds: right after the pointer left a field it may have activated the window;
 //  - `Esc` in a field (when nothing else used it) leaves the field and gives the keyboard back to the game,
 //    the window stays open;
-//  - a watchdog gives the keyboard back when the field is gone (an answer was sent and the screen was redrawn);
+//  - a watchdog gives the keyboard back when the field is gone (an answer was sent and the screen was redrawn), and
+//    while the window is armed keeps the remembered window (the one the focus goes back to) up to date;
 //  - the guard against a game key that is still held down.
 
 /** The holder name of a text field being edited. */
@@ -72,11 +73,14 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
 
   /** The text field the pointer is over; `null` when it is over none, or not over the window at all. */
   let hovered: HTMLElement | null = null;
-  /** Tells the holds when the pointer comes over a field or leaves it; from one field straight to another nothing changes. */
+  /**
+   * Tells the holds whether the pointer is over a field. They are told every time, and they ignore what they know
+   * already (from one field straight to another nothing changes): the state tells them too, when the window is folded
+   * or hidden, so what was said here last is not what they know.
+   */
   const pointerAt = (field: HTMLElement | null): void => {
-    const wasOver = hovered !== null;
     hovered = field;
-    if (wasOver !== (field !== null)) void quietly(holds.pointerOverField(field !== null));
+    void quietly(holds.pointerOverField(field !== null));
   };
 
   const onPointerOver = (event: PointerEvent): void => pointerAt(fieldAt(event.target));
@@ -91,8 +95,12 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
       // whatever was seen last, the pointer is over no field now
       pointerAt(null);
       void holds.pressOutsideField().then(
-        (givenBack) => {
-          if (givenBack) log.info('ui', 'a press next to a field had activated the window, the keyboard went back to the game');
+        (stray) => {
+          if (stray === 'handed back') {
+            log.info('ui', 'a press next to a field had activated the window with nobody holding the keyboard: the keyboard went back to the game');
+          } else if (stray === 'not handed back') {
+            log.warn('ui', 'a press next to a field had activated the window with nobody holding the keyboard. The window cannot be activated any more, but the focus did NOT go back to the game: click the game');
+          }
         },
         () => undefined, // the window layer has logged it
       );
@@ -135,6 +143,9 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   const watchdog = window.setInterval(() => {
     // the same goes for the field under the pointer (the window was folded): the pointer is over no field then
     if (hovered !== null && !hovered.isConnected) pointerAt(null);
+    // While the pointer rests on a field the window that gets the focus back is the one remembered when the pointer
+    // came; the foreground may have changed since. Quiet: no line unless it did.
+    if (holds.state === 'armed') void quietly(holds.refreshRemembered());
     if (!holds.held || isEditable(document.activeElement)) return;
     if (performance.now() - lastPressAt < PRESS_GRACE_MS) return;
     log.debug('ui', 'no field is being edited, the keyboard goes back to the game');

@@ -15,8 +15,8 @@ import { tauriFetchJson } from '../../src/platform/tauri-http';
 import { applyLogLevel } from '../../src/platform/tauri-logger';
 import { bindTriggers } from '../../src/platform/triggers';
 import {
-  armKeyboard, disarmKeyboard, fitWindow, giveKeyboard, isWindowFocused, moveWindow, setWindowVisible, showWindow,
-  takeKeyboard, watchFocus, windowGeometry, type WindowLayout,
+  armKeyboard, disarmKeyboard, fitWindow, giveKeyboard, isWindowFocused, moveWindow, refreshRemembered, setWindowVisible,
+  showWindow, takeKeyboard, watchFocus, windowGeometry, type WindowLayout,
 } from '../../src/platform/window';
 import { logicalSize, parseMonitor } from '../../src/preview/monitor';
 import { startPreviewHarness, type PreviewHarness } from '../helpers/preview-fixtures';
@@ -500,6 +500,50 @@ describe('the keyboard focus', () => {
     expect(seen).toEqual([true]);
     expect(await isWindowFocused(logger())).toBe(true);
     stop();
+  });
+
+  it('says whether the focus went back: yes after a restore, no without one or with no window to give it to', async () => {
+    const { win } = start();
+    await showWindow(layout, logger());
+    expect(await giveKeyboard(logger(), true)).toBe(false); // nothing was ever remembered
+    await pressField(win);
+    expect(await giveKeyboard(logger(), true)).toBe(true);
+    await pressField(win);
+    win.clickGame();
+    expect(await giveKeyboard(logger(), false)).toBe(false); // not asked to
+  });
+
+  it('the refresh of the remembered window while armed is silent: no line of the app, no command but the one', async () => {
+    const { win, unknown } = start();
+    const sink = memorySink();
+    const log = createLogger(sink);
+    await showWindow(layout, logger());
+    await armKeyboard(logger());
+    const before = win.snapshot();
+    for (let tick = 0; tick < 5; tick++) await refreshRemembered(log);
+    expect(sink.lines).toEqual([]);
+    expect(win.snapshot()).toEqual(before); // the same game window: nothing new was remembered, nothing else moved
+    expect(unknown).toEqual([]);
+  });
+
+  it('a refresh that fails says so once, not at every tick', async () => {
+    const { win } = start();
+    const sink = memorySink();
+    const log = createLogger(sink);
+    await showWindow(layout, logger());
+    const rememberForeground = win.rememberForeground;
+    win.rememberForeground = () => {
+      throw new Error('the command failed');
+    };
+    for (let tick = 0; tick < 3; tick++) await refreshRemembered(log);
+    expect(sink.lines.map((l) => l.level)).toEqual(['warn']);
+    win.rememberForeground = rememberForeground;
+    await refreshRemembered(log); // it works again
+    win.rememberForeground = () => {
+      throw new Error('the command failed');
+    };
+    await refreshRemembered(log);
+    expect(sink.lines.map((l) => l.level)).toEqual(['warn', 'warn']); // and a new failure is said again
   });
 
   it('answers the focus questions with booleans', async () => {

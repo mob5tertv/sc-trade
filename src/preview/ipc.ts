@@ -221,7 +221,7 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
         return null;
       }
       case 'remember_foreground':
-        win.rememberForeground();
+        win.rememberForeground(args.quiet === true);
         return null;
       case 'restore_foreground':
         return win.restoreForeground();

@@ -93,6 +93,21 @@ describe('focus model', () => {
     expect(focus.state().gameRemembered).toBe(3);
   });
 
+  it('a quiet refresh that finds the game it already knows is not counted; one that finds it for the first time is', () => {
+    const focus = createFocusModel();
+    focus.remember(true); // nothing was remembered yet: this is news
+    expect(focus.state().gameRemembered).toBe(1);
+    focus.remember(true);
+    focus.remember(true);
+    expect(focus.state().gameRemembered).toBe(1); // the same window every 400 ms
+    focus.remember(); // the pointer came over a field again: asked aloud
+    expect(focus.state().gameRemembered).toBe(2);
+    focus.take(true);
+    focus.remember(true); // the overlay's own window is never remembered, quietly or not
+    expect(focus.state().gameRemembered).toBe(2);
+    expect(focus.restore()).toEqual({ restored: true, event: 'blur' });
+  });
+
   it('keeps what it remembered, so a later restore works again', () => {
     const focus = createFocusModel();
     focus.remember();

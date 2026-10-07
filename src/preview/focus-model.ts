@@ -22,8 +22,12 @@ export interface FocusState {
 export interface FocusModel {
   state(): FocusState;
   isFocused(): boolean;
-  /** `remember_foreground`: the window that has the keyboard now is the game. */
-  remember(): void;
+  /**
+   * `remember_foreground`: the window that has the keyboard now is the game. `quiet` is the refresh the application
+   * makes while the pointer rests on a field: the preview has one game window, so a quiet call that knows it already
+   * finds nothing new and is not counted (the Rust side writes no line for it either).
+   */
+  remember(quiet?: boolean): void;
   /** `restore_foreground`: the keyboard goes back to the remembered game window, if there is one. */
   restore(): { restored: boolean; event: FocusEvent | null };
   /**
@@ -61,9 +65,10 @@ export function createFocusModel(): FocusModel {
   return {
     state: () => ({ keyboard, focusable, gameRemembered, focusReturnedToGame }),
     isFocused: () => keyboard === 'overlay',
-    remember() {
+    remember(quiet = false) {
       // The Rust side never remembers its own window: while the overlay holds the keyboard, nothing is stored.
       if (keyboard !== 'game') return;
+      if (quiet && gameKnown) return;
       gameKnown = true;
       gameRemembered++;
     },

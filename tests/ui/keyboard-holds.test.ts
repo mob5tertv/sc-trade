@@ -39,9 +39,10 @@ function setup(options: Options = {}) {
   const gates: Gate[] = [];
   /**
    * What Windows answers; a test changes it. `foreground`: "is the overlay the foreground window". `refusals`: how
-   * many of the next takes it refuses (the overlay is not brought to the front); after those it agrees.
+   * many of the next takes it refuses (the overlay is not brought to the front); after those it agrees. `restores`:
+   * whether a give that hands the focus back gets it to the remembered window (it may be gone, Windows may refuse).
    */
-  const windows = { foreground: false, refusals: 0 };
+  const windows = { foreground: false, refusals: 0, restores: true };
   const wait = async (): Promise<void> => {
     if (!options.slow) return;
     const g = gate();
@@ -78,6 +79,12 @@ function setup(options: Options = {}) {
       await wait();
       if (options.failGive) throw new Error('give failed');
       calls.push(`give:end:${restore}`);
+      return restore && windows.restores;
+    },
+    async remember() {
+      calls.push('remember:start');
+      await wait();
+      calls.push('remember:end');
     },
     async isForeground() {
       calls.push(`foreground?:${windows.foreground}`);
@@ -586,7 +593,7 @@ describe('a press next to a field right after the window was armed', () => {
     await holds.pointerOverField(false);
     clock.t = 140;
     windows.foreground = true; // the press landed while the window was still activatable
-    expect(await holds.pressOutsideField()).toBe(true);
+    expect(await holds.pressOutsideField()).toBe('handed back');
     expect(calls.slice(4)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true']);
     expect(holds.state).toBe('idle');
     expect(holds.held).toBe(false);
@@ -598,7 +605,7 @@ describe('a press next to a field right after the window was armed', () => {
     clock.t = 100;
     await holds.pointerOverField(false);
     clock.t = 140;
-    expect(await holds.pressOutsideField()).toBe(false);
+    expect(await holds.pressOutsideField()).toBe('none');
     expect(calls.slice(4)).toEqual(['foreground?:false']);
     expect(holds.state).toBe('idle');
   });
@@ -647,7 +654,7 @@ describe('a press next to a field right after the window was armed', () => {
     expect(calls.slice(3)).toEqual(['disarm:end', 'foreground?:true', 'give:start:true']);
     gates[2].open(); // the give
     await disarming;
-    expect(await pressing).toBe(true);
+    expect(await pressing).toBe('handed back');
     expect(holds.state).toBe('idle');
   });
 
@@ -667,14 +674,14 @@ describe('a press next to a field right after the window was armed', () => {
     expect(calls.slice(3)).toEqual(['disarm:end', 'foreground?:true', 'give:start:true']);
     gates[2].open();
     await disarming;
-    expect(await pressing).toBe(true);
+    expect(await pressing).toBe('handed back');
   });
 
   it('asks while the window is still armed (the pointer was not seen leaving the field)', async () => {
     const { holds, calls, windows } = setup({ settleMs: SETTLE });
     await holds.pointerOverField(true);
     windows.foreground = true;
-    expect(await holds.pressOutsideField()).toBe(true);
+    expect(await holds.pressOutsideField()).toBe('handed back');
     // the keyboard went back; the pointer still counts as over a field, so the window is armed again
     expect(calls.slice(2)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true', 'arm:start', 'arm:end']);
     expect(holds.state).toBe('armed');
@@ -682,13 +689,13 @@ describe('a press next to a field right after the window was armed', () => {
 
   it('makes no request at all when the window was not armed lately: plain clicks on buttons cost nothing', async () => {
     const { holds, calls, clock } = setup({ settleMs: SETTLE });
-    expect(await holds.pressOutsideField()).toBe(false);
+    expect(await holds.pressOutsideField()).toBe('none');
     await holds.pointerOverField(true);
     clock.t = 100;
     await holds.pointerOverField(false);
     clock.t = 1000;
-    expect(await holds.pressOutsideField()).toBe(false);
-    expect(await holds.pressOutsideField()).toBe(false);
+    expect(await holds.pressOutsideField()).toBe('none');
+    expect(await holds.pressOutsideField()).toBe('none');
     expect(calls).toEqual(['arm:start', 'arm:end', 'disarm:start', 'disarm:end']);
   });
 
@@ -697,7 +704,7 @@ describe('a press next to a field right after the window was armed', () => {
     await holds.pointerOverField(true);
     await holds.hold('field');
     windows.foreground = true;
-    expect(await holds.pressOutsideField()).toBe(false);
+    expect(await holds.pressOutsideField()).toBe('none');
     expect(calls).toEqual(['arm:start', 'arm:end', 'take:start', 'take:end']);
     expect(holds.held).toBe(true);
   });
@@ -713,7 +720,7 @@ describe('a press next to a field right after the window was armed', () => {
     await settle();
     gates[1].open(); // the take
     await Promise.all([arming, holding]);
-    expect(await pressing).toBe(false);
+    expect(await pressing).toBe('none');
     expect(calls).toEqual(['arm:start', 'arm:end', 'take:start', 'take:end']);
     expect(holds.held).toBe(true);
   });
@@ -723,7 +730,7 @@ describe('a press next to a field right after the window was armed', () => {
     windows.foreground = true;
     await holds.pointerOverField(true);
     await holds.pointerOverField(false);
-    expect(await holds.pressOutsideField()).toBe(false);
+    expect(await holds.pressOutsideField()).toBe('none');
     expect(calls).toEqual(['arm:start', 'arm:end', 'disarm:start', 'disarm:end']);
   });
 });
@@ -815,7 +822,7 @@ describe('a take that Windows refuses', () => {
     await holds.hold('field'); // refused, the pointer is not on a field: disarmed at t = 0
     clock.t = 100;
     windows.foreground = true; // a press on a button landed before the disarm reached Windows
-    expect(await holds.pressOutsideField()).toBe(true);
+    expect(await holds.pressOutsideField()).toBe('handed back');
     expect(calls.slice(-3)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true']);
   });
 
@@ -842,7 +849,7 @@ describe('the window says it got the focus', () => {
     expect(waits.map((w) => w.ms)).toEqual([SETTLE]);
     expect(calls).toEqual(['arm:start', 'arm:end']); // nothing is asked before the time is over
     waits[0].pass();
-    expect(await looking).toBe(true);
+    expect(await looking).toBe('handed back');
     // the pointer still rests on the field, so the window is armed again once the keyboard is back
     expect(calls.slice(2)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true', 'arm:start', 'arm:end']);
     expect(holds.state).toBe('armed');
@@ -854,19 +861,19 @@ describe('the window says it got the focus', () => {
     const looking = holds.focusGained();
     await settle();
     waits[0].pass();
-    expect(await looking).toBe(false);
+    expect(await looking).toBe('none');
     expect(calls.slice(2)).toEqual(['foreground?:false']);
     expect(holds.state).toBe('armed');
   });
 
   it('costs nothing for a window that cannot be activated: no wait, no question (a plain click on a button)', async () => {
     const { holds, calls, waits, clock } = setup({ settleMs: SETTLE });
-    expect(await holds.focusGained()).toBe(false);
+    expect(await holds.focusGained()).toBe('none');
     await holds.pointerOverField(true);
     clock.t = 100;
     await holds.pointerOverField(false);
     clock.t = 100 + SETTLE; // long enough after the disarm
-    expect(await holds.focusGained()).toBe(false);
+    expect(await holds.focusGained()).toBe('none');
     expect(waits).toEqual([]);
     expect(calls).toEqual(['arm:start', 'arm:end', 'disarm:start', 'disarm:end']);
   });
@@ -881,7 +888,7 @@ describe('the window says it got the focus', () => {
     const looking = holds.focusGained();
     await settle();
     waits[0].pass();
-    expect(await looking).toBe(true);
+    expect(await looking).toBe('handed back');
     expect(calls.slice(4)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true']);
     expect(holds.state).toBe('idle');
   });
@@ -893,7 +900,7 @@ describe('the window says it got the focus', () => {
     const looking = holds.focusGained();
     await holds.hold('field');
     waits[0].pass();
-    expect(await looking).toBe(false);
+    expect(await looking).toBe('none');
     expect(calls).toEqual(['arm:start', 'arm:end', 'take:start', 'take:end']);
     expect(holds.held).toBe(true);
   });
@@ -903,7 +910,7 @@ describe('the window says it got the focus', () => {
     await holds.pointerOverField(true);
     await holds.hold('field');
     windows.foreground = true;
-    expect(await holds.focusGained()).toBe(false);
+    expect(await holds.focusGained()).toBe('none');
     expect(waits).toEqual([]);
   });
 
@@ -920,7 +927,7 @@ describe('the window says it got the focus', () => {
     const holding = holds.hold('field'); // a slow take
     await settle();
     waits[0].pass();
-    expect(await looking).toBe(false);
+    expect(await looking).toBe('none');
     expect(calls.some((c) => c.startsWith('foreground?'))).toBe(false);
     gates[1].open();
     await holding;
@@ -934,9 +941,9 @@ describe('the window says it got the focus', () => {
     const second = holds.focusGained();
     await settle();
     expect(waits).toHaveLength(1);
-    expect(await second).toBe(false);
+    expect(await second).toBe('none');
     waits[0].pass();
-    expect(await first).toBe(true);
+    expect(await first).toBe('handed back');
     expect(calls.filter((c) => c.startsWith('foreground?'))).toHaveLength(1);
     // and once that look is over, the next event is looked at again
     const third = holds.focusGained();
@@ -949,12 +956,103 @@ describe('the window says it got the focus', () => {
   it('with no settle time it looks at once, and only at a window that is armed', async () => {
     const { holds, calls, waits, windows } = setup(); // settleMs: 0
     windows.foreground = true;
-    expect(await holds.focusGained()).toBe(false);
+    expect(await holds.focusGained()).toBe('none');
     await holds.pointerOverField(true);
     const looking = holds.focusGained();
     await settle();
     waits[0].pass();
-    expect(await looking).toBe(true);
+    expect(await looking).toBe('handed back');
     expect(calls.slice(2, 5)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true']);
+  });
+});
+
+// "The keyboard went back to the game" is only true when it did: the remembered window may be gone (the game was
+// closed: that is why Windows activated the overlay), or Windows may refuse to bring it to the front.
+describe('an activation nobody asked for that cannot be handed back', () => {
+  const SETTLE = 500;
+
+  it('after a press next to a field: the window is made not activatable, and the answer says the focus did not go back', async () => {
+    const { holds, calls, clock, windows } = setup({ settleMs: SETTLE });
+    await holds.pointerOverField(true);
+    clock.t = 100;
+    await holds.pointerOverField(false);
+    windows.foreground = true;
+    windows.restores = false;
+    expect(await holds.pressOutsideField()).toBe('not handed back');
+    expect(calls.slice(4)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true']);
+    expect(holds.state).toBe('idle');
+  });
+
+  it('after the window said it got the focus: the same answer', async () => {
+    const { holds, waits, windows } = setup({ settleMs: SETTLE });
+    await holds.pointerOverField(true);
+    windows.foreground = true;
+    windows.restores = false;
+    const looking = holds.focusGained();
+    await settle();
+    waits[0].pass();
+    expect(await looking).toBe('not handed back');
+  });
+});
+
+// The game window is remembered when the pointer comes over a field. While the pointer rests there the foreground
+// window may change (the player switches to another program with the keyboard): `Esc` must give the focus to the
+// window that had it last, not to the one of a minute ago.
+describe('the remembered window while the window is armed', () => {
+  it('is remembered again on request, and only while the window is armed', async () => {
+    const { holds, calls } = setup();
+    await holds.refreshRemembered(); // idle: nothing can take the focus, nothing to keep fresh
+    expect(calls).toEqual([]);
+    await holds.pointerOverField(true);
+    await holds.refreshRemembered();
+    await holds.refreshRemembered();
+    expect(calls.slice(2)).toEqual(['remember:start', 'remember:end', 'remember:start', 'remember:end']);
+    expect(holds.state).toBe('armed');
+    await holds.hold('field');
+    await holds.refreshRemembered(); // held: the foreground window is our own
+    expect(calls.slice(6)).toEqual(['take:start', 'take:end']);
+    await holds.release('field');
+    await holds.pointerOverField(false);
+    const before = calls.length;
+    await holds.refreshRemembered();
+    expect(calls).toHaveLength(before);
+  });
+
+  it('waits for its turn like every request, and is judged when the turn comes', async () => {
+    const { holds, calls, gates } = setup({ slow: true });
+    const arming = holds.pointerOverField(true);
+    await settle(); // the arm is running: the window counts as armed
+    const refreshing = holds.refreshRemembered();
+    const leaving = holds.pointerOverField(false);
+    await settle();
+    expect(calls).toEqual(['arm:start']);
+    gates[0].open(); // the arm
+    await settle();
+    expect(calls).toEqual(['arm:start', 'arm:end', 'remember:start']);
+    gates[1].open(); // the refresh
+    await settle();
+    gates[2].open(); // the disarm
+    await Promise.all([arming, refreshing, leaving]);
+    expect(calls.slice(3)).toEqual(['remember:end', 'disarm:start', 'disarm:end']);
+
+    // asked while armed, but a press took the keyboard before its turn: nothing is remembered
+    const again = holds.pointerOverField(true);
+    await settle();
+    const holding = holds.hold('field');
+    const late = holds.refreshRemembered();
+    gates[3].open(); // the arm
+    await settle();
+    gates[4].open(); // the take
+    await Promise.all([again, holding, late]);
+    expect(calls.slice(6)).toEqual(['arm:start', 'arm:end', 'take:start', 'take:end']);
+  });
+
+  it('moves no focus: it does not hide a real loss of the focus from drop', async () => {
+    const { holds, clock } = setup({ settleMs: 500 });
+    await holds.pointerOverField(true);
+    void holds.refreshRemembered();
+    await holds.hold('field');
+    clock.t = 5000;
+    expect(await holds.drop()).toBe(true);
   });
 });

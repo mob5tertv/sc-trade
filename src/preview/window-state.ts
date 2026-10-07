@@ -44,7 +44,8 @@ export interface PreviewWindow {
   isFocused(): boolean;
   setSkipTaskbar(skip: boolean): void;
   setIgnoreCursorEvents(ignore: boolean): void;
-  rememberForeground(): void;
+  /** `remember_foreground`; `quiet` is the refresh made while the pointer rests on a field (see focus-model.ts). */
+  rememberForeground(quiet?: boolean): void;
   restoreForeground(): boolean;
   /** The player clicks the game: an overlay that holds the keyboard loses it. */
   clickGame(): void;
@@ -116,7 +117,7 @@ export function createPreviewWindow(options: PreviewWindowOptions = {}): Preview
     isFocused: () => focus.isFocused(),
     setSkipTaskbar: (value) => apply(() => { skipTaskbar = value; }),
     setIgnoreCursorEvents: (value) => apply(() => { ignoreCursorEvents = value; }),
-    rememberForeground: () => apply(() => focus.remember()),
+    rememberForeground: (quiet) => apply(() => focus.remember(quiet)),
     restoreForeground() {
       let restored = false;
       apply(() => {

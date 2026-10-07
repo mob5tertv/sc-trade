@@ -28,6 +28,7 @@ import {
   giveKeyboard,
   isWindowFocused,
   moveWindow,
+  refreshRemembered,
   setWindowVisible,
   showWindow,
   takeKeyboard,
@@ -264,6 +265,7 @@ class AppState {
       disarm: () => disarmKeyboard(this.#log),
       take: () => this.#takeKeyboard(),
       give: (restore) => giveKeyboard(this.#log, restore),
+      remember: () => refreshRemembered(this.#log),
       isForeground: () => isWindowFocused(this.#log),
     },
     (held) => {
@@ -658,6 +660,9 @@ class AppState {
         // The window shrinks under the cursor and may never report that the cursor left it; the idle timer must not
         // wait for the cursor of a window that is not there any more (the next movement over it says "inside" again).
         this.#pointerInside = false;
+        // The same goes for the holds: the pointer is over no field of a window that is folded, so the window must not
+        // stay armed (activatable) behind them. Told before the release, which would arm it again under the pointer.
+        await this.#pointerGone();
         // the player is done with the window: the keyboard goes back to the game, the window may fold
         await this.keyboard.release('field').catch(() => undefined); // a failure is logged by the window layer
       }
@@ -694,10 +699,22 @@ class AppState {
     await this.#refit();
   }
 
+  /**
+   * The pointer is over no field: the window is being folded, or is hidden. The page cannot be relied on to say so (a
+   * window that shrinks or disappears under the cursor reports no leave), so the holds are told here, and they disarm
+   * the window if it was armed. Never throws: a failure is logged by the window layer.
+   */
+  async #pointerGone(): Promise<void> {
+    await this.keyboard.pointerOverField(false).catch(() => undefined);
+  }
+
   /** Shows or hides the window as the mode and the "show the mini bar" setting say. */
   async #syncVisibility(): Promise<void> {
     const visible = this.#wantVisible();
     if (visible === this.#visible) return;
+    // A window that was hidden has had no pointer over a field: the holds are told before it is shown, so that they
+    // and the window layer (which never shows a window activatable) agree on what the window is.
+    if (visible) await this.#pointerGone();
     await setWindowVisible(visible, this.#log);
     this.#visible = visible;
   }
@@ -939,8 +956,12 @@ class AppState {
   #onFocusGained(): void {
     void this.keyboard
       .focusGained()
-      .then((handedBack) => {
-        if (handedBack) this.#log.info('window', 'the window was activated with nobody holding the keyboard and no press on a field: the keyboard went back to the game');
+      .then((stray) => {
+        if (stray === 'handed back') {
+          this.#log.info('window', 'the window was activated with nobody holding the keyboard and no press on a field: the keyboard went back to the game');
+        } else if (stray === 'not handed back') {
+          this.#log.warn('window', 'the window was activated with nobody holding the keyboard and no press on a field. It cannot be activated any more, but the focus did NOT go back to the game (its window may be gone): click the window you want');
+        }
       })
       .catch(() => undefined); // a failure is logged by the window layer
   }
