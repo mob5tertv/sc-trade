@@ -3,11 +3,14 @@ import { distKey, obsKey, priceKey } from '../../src/core/types';
 import type { Db } from '../../src/data/db';
 import { createLogger, memorySink } from '../../src/data/logger';
 import { addObservation } from '../../src/data/repo/diary';
-import { getMeta, loadDistances } from '../../src/data/repo/uex-cache';
-import { loadMarket, suggestFrom, suggestTo, type SuggestDeps } from '../../src/data/suggest';
+import { getMeta, loadDistances, putDistances } from '../../src/data/repo/uex-cache';
+import {
+  loadMarket, suggestFrom, suggestFromDetailed, suggestTo, suggestToDetailed, type SuggestDeps,
+} from '../../src/data/suggest';
 import { ref, term } from '../helpers/factories';
 import { FakeUex } from '../helpers/fake-uex';
 import { GOLD, NOW } from '../helpers/route-fixtures';
+import { countingDb, expectSoundProgress, recordProgress } from '../helpers/suggest-progress-fixtures';
 import { addUexBuy, addUexSell, seedRouteScenario, suggestDeps } from '../helpers/suggest-fixtures';
 import { migratedDb } from '../helpers/test-db';
 
@@ -357,5 +360,360 @@ describe('suggestTo', () => {
       commodity: 'GOLD', originId: 1, destId: 2,
       buy: { price: 6120, source: 'own', temp: 'hot' }, sell: { price: 6900, source: 'uex' },
     });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Task 25a: answer from the cache first, report the progress of the distance requests
+// ---------------------------------------------------------------------------------------------
+
+const cached = { distances: 'cached' } as const;
+const noUexCalls = () => expect([uex.routeCalls, uex.distanceCalls]).toEqual([[], []]);
+const seedDistances = (rows: Array<[number, number, number | null]>) => putDistances(db, rows.map(([a, b, gm]) => ({ a, b, gm })));
+const warnings = () => sink.lines.filter((l) => l.level === 'warn' && l.line.startsWith('[suggest]'));
+
+describe("suggestFromDetailed, distances 'cached'", () => {
+  it('asks UEX nothing, answers without a time and counts the distances it lacks', async () => {
+    const r = await suggestFromDetailed(deps, 1, 696, undefined, cached);
+    expect(r.options.map((x) => x.destId)).toEqual([2, 3]);
+    expect(r.options.map((x) => [x.timeSec, x.timeSource, x.uecPerHour])).toEqual([[null, null, null], [null, null, null]]);
+    expect(r.missing).toBe(2);
+    noUexCalls();
+    expect(await getMeta(db, 'routes_fetched:1')).toBeNull();      // not even an attempt is recorded
+    expect(await loadDistances(db)).toEqual(new Map());
+  });
+
+  it('times the trips whose distance is in the cache and counts only the others', async () => {
+    await seedDistances([[1, 2, 59]]);
+    const r = await suggestFromDetailed(deps, 1, 696, undefined, cached);
+    expect(r.options.map((x) => [x.destId, x.timeSec])).toEqual([[2, 1015], [3, null]]);
+    expect(r.missing).toBe(1);
+    noUexCalls();
+  });
+
+  it('counts nothing for a distance that is recorded as unknown', async () => {
+    await seedDistances([[1, 2, null], [1, 3, null]]);
+    const r = await suggestFromDetailed(deps, 1, 696, undefined, cached);
+    expect(r.missing).toBe(0);
+    expect(r.options.map((x) => x.timeSec)).toEqual([null, null]);
+    noUexCalls();
+  });
+
+  it('keeps my own median time as the time of a trip without a distance', async () => {
+    const r = await suggestFromDetailed({ ...deps, ownMedian: new Map([['1>3', 600]]) }, 1, 696, undefined, cached);
+    expect(r.options.find((x) => x.destId === 3)).toMatchObject({ timeSec: 600, timeSource: 'own' });
+    expect(r.options.find((x) => x.destId === 2)).toMatchObject({ timeSec: null });
+  });
+
+  it('counts the distances of the 20 best candidates only, as the fetching mode would ask them', async () => {
+    const reference = { ...ref, terminals: new Map(ref.terminals) };
+    for (let id = 101; id <= 125; id++) {
+      reference.terminals.set(id, term(id, { starSystemId: 68 }));
+      await addUexSell(db, id, GOLD, 7000 + id);
+    }
+    const r = await suggestFromDetailed({ ...deps, reference }, 1, 696, undefined, cached);
+    expect(r.missing).toBe(20);
+    noUexCalls();
+  });
+
+  it('counts a pair needed by two terminals once', async () => {
+    // From 5 to 1 needs the pair 5-1 (asked of 5) and, because 5 is not where I stand, the empty flight 1-5 (asked of 1).
+    await addUexBuy(db, 5, GOLD, 6000);
+    await addUexSell(db, 1, GOLD, 7000);
+    const r = await suggestFromDetailed(withNearby(deps), 1, 696, undefined, cached);
+    // 1-2, 1-3, 1-5 (= 5-1), 5-2, 5-3
+    expect(r.missing).toBe(5);
+    noUexCalls();
+  });
+
+  it('never calls onProgress', async () => {
+    const { points, onProgress } = recordProgress();
+    await suggestFromDetailed(deps, 1, 696, undefined, { ...cached, onProgress });
+    expect(points).toEqual([]);
+  });
+
+  it('logs the mode and what is missing, and no distance was ensured', async () => {
+    await suggestFromDetailed(deps, 1, 696, undefined, cached);
+    const ctx = JSON.parse(suggestLines('from').at(-1)!.line.replace(/^[^{]*/, ''));
+    expect(ctx).toMatchObject({ distances: 'cached', missing: 2, ensured: [] });
+  });
+});
+
+describe("suggestFromDetailed, distances 'fetch'", () => {
+  it('is the default and answers as suggestFrom does', async () => {
+    const r = await suggestFromDetailed(deps, 1, 696);
+    expect(r.options.map((x) => [x.destId, x.timeSec])).toEqual([[2, 1015], [3, 1025]]);
+    expect(r.missing).toBe(0);
+    expect(uex.routeCalls).toEqual([1]);
+    const explicit = await suggestFromDetailed(deps, 1, 696, undefined, { distances: 'fetch' });
+    expect(explicit).toEqual(r);
+  });
+
+  it('makes suggestFrom the options of the detailed answer', async () => {
+    const detailed = await suggestFromDetailed(deps, 1, 696, GOLD);
+    expect(await suggestFrom(deps, 1, 696, GOLD)).toEqual(detailed.options);
+  });
+
+  it('is followed by the same answer from the cache, with nothing missing', async () => {
+    const fetched = await suggestFromDetailed(deps, 1, 696);
+    uex.routeCalls.length = 0;
+    expect(await suggestFromDetailed(deps, 1, 696, undefined, cached)).toEqual(fetched);
+    expect(fetched.missing).toBe(0);
+    noUexCalls();
+  });
+
+  it('reports what is still missing when UEX is down, and the cache says the same', async () => {
+    uex.failRoutes = true;
+    uex.failDistances = () => true;
+    const fetched = await suggestFromDetailed(deps, 1, 696);
+    expect(fetched.missing).toBe(2);
+    expect(fetched.options.map((x) => x.timeSec)).toEqual([null, null]);
+    expect(await suggestFromDetailed(deps, 1, 696, undefined, cached)).toEqual(fetched);
+  });
+
+  it('reports the best candidates the 20-candidate limit left out, which the next run would ask', async () => {
+    const reference = { ...ref, terminals: new Map(ref.terminals) };
+    for (let id = 101; id <= 125; id++) {
+      reference.terminals.set(id, term(id, { starSystemId: 68 }));
+      await addUexSell(db, id, GOLD, 7000 + id);
+    }
+    uex.failRoutes = true;
+    const d = { ...deps, reference };
+    const fetched = await suggestFromDetailed(d, 1, 696);
+    expect(uex.distanceCalls).toHaveLength(20);
+    expect(fetched.missing).toBe(7);                        // 101-105 and the terminals 2 and 3
+    expect(await suggestFromDetailed(d, 1, 696, undefined, cached)).toEqual(fetched);
+  });
+
+  it('logs the mode and what is missing after the requests', async () => {
+    uex.routes = [{ destId: 2, gm: 59 }];
+    uex.failDistances = () => true;
+    await suggestFromDetailed(deps, 1, 696);
+    const ctx = JSON.parse(suggestLines('from').at(-1)!.line.replace(/^[^{]*/, ''));
+    expect(ctx).toMatchObject({ distances: 'fetch', missing: 1, ensured: [{ from: 1, pairs: 2 }] });
+  });
+});
+
+describe('suggestFromDetailed progress', () => {
+  it('counts the route list and every pair, and shrinks the plan when the route list covers the pairs', async () => {
+    const { points, onProgress } = recordProgress();
+    await suggestFromDetailed(deps, 1, 696, undefined, { onProgress });
+    // planned: the route list and two pairs; the route list answered both pairs
+    expect(points).toEqual([{ done: 0, total: 3 }, { done: 1, total: 1 }]);
+    expectSoundProgress(points);
+  });
+
+  it('counts each single pair that the route list did not cover', async () => {
+    uex.routes = [{ destId: 2, gm: 59 }];
+    const { points, onProgress } = recordProgress();
+    await suggestFromDetailed(deps, 1, 696, undefined, { onProgress });
+    expect(points).toEqual([{ done: 0, total: 3 }, { done: 1, total: 2 }, { done: 2, total: 2 }]);
+    expect(uex.distanceCalls).toEqual([[1, 3]]);
+  });
+
+  it('counts a failed request as done and drops the pairs it stopped', async () => {
+    uex.routes = [];
+    uex.failDistances = (_a, b) => b === 2;                 // the first pair fails: the second is not asked
+    const { points, onProgress } = recordProgress();
+    const r = await suggestFromDetailed(deps, 1, 696, undefined, { onProgress });
+    expect(points).toEqual([{ done: 0, total: 3 }, { done: 1, total: 3 }, { done: 2, total: 2 }]);
+    expectSoundProgress(points);
+    expect(r.missing).toBe(2);
+    expect(uex.distanceCalls).toEqual([[1, 2]]);
+  });
+
+  it('keeps the plan when a request that is not the last fails', async () => {
+    uex.routes = [];
+    uex.failDistances = (_a, b) => b === 3;
+    const { points, onProgress } = recordProgress();
+    const r = await suggestFromDetailed(deps, 1, 696, undefined, { onProgress });
+    expect(points).toEqual([{ done: 0, total: 3 }, { done: 1, total: 3 }, { done: 2, total: 3 }, { done: 3, total: 3 }]);
+    expect(r.missing).toBe(1);
+  });
+
+  it('counts a route list that failed, and goes on with the pairs', async () => {
+    uex.failRoutes = true;
+    const { points, onProgress } = recordProgress();
+    const r = await suggestFromDetailed(deps, 1, 696, undefined, { onProgress });
+    expect(points).toEqual([{ done: 0, total: 3 }, { done: 1, total: 3 }, { done: 2, total: 3 }, { done: 3, total: 3 }]);
+    expect(r.missing).toBe(0);
+  });
+
+  it('with everything failing still ends at done === total', async () => {
+    uex.failRoutes = true;
+    uex.failDistances = () => true;
+    const { points, onProgress } = recordProgress();
+    await suggestFromDetailed(deps, 1, 696, undefined, { onProgress });
+    expectSoundProgress(points);
+    expect(points.at(-1)).toEqual({ done: 2, total: 2 });    // the route list and the first pair
+  });
+
+  it('is not called when nothing has to be requested', async () => {
+    await seedDistances([[1, 2, 59], [1, 3, 61]]);
+    const { points, onProgress } = recordProgress();
+    const r = await suggestFromDetailed(deps, 1, 696, undefined, { onProgress });
+    expect(points).toEqual([]);
+    expect(r.missing).toBe(0);
+    noUexCalls();
+  });
+
+  it('covers the whole series of several terminals, one request at a time', async () => {
+    await addUexBuy(db, 5, GOLD, 6000);
+    const { points, onProgress } = recordProgress();
+    await suggestFromDetailed(withNearby(deps), 1, 696, undefined, { onProgress });
+    expectSoundProgress(points);
+    const requests = uex.routeCalls.length + uex.distanceCalls.length;
+    expect(points.at(-1)).toEqual({ done: requests, total: requests });
+    expect(points[0].total).toBeGreaterThan(requests);       // the plan was larger: the route lists covered pairs
+    expect(uex.maxInFlight).toBe(1);
+  });
+
+  it('lowers the total when a pair asked of one terminal was already answered for another', async () => {
+    await addUexBuy(db, 5, GOLD, 6000);
+    await addUexSell(db, 1, GOLD, 7000);
+    uex.failRoutes = true;                                   // pairs only: 5-1 is asked once, 1-5 is the same pair
+    const { points, onProgress } = recordProgress();
+    const r = await suggestFromDetailed(withNearby(deps), 1, 696, undefined, { onProgress });
+    expectSoundProgress(points);
+    expect(points[0]).toEqual({ done: 0, total: 8 });        // two groups: the route list and three pairs each
+    expect(points.at(-1)).toEqual({ done: 7, total: 7 });
+    expect(uex.routeCalls).toHaveLength(2);
+    expect(uex.distanceCalls).toHaveLength(5);
+    expect(r.missing).toBe(0);
+  });
+
+  it('survives a callback that throws: the answer, the cache and every request are as without it', async () => {
+    const calls: number[] = [];
+    const r = await suggestFromDetailed(deps, 1, 696, undefined, {
+      onProgress: (p) => { calls.push(p.done); throw new Error('the screen is gone'); },
+    });
+    expect(calls).toEqual([0, 1]);                           // it is called again after it threw
+    expect(r.options.map((x) => [x.destId, x.timeSec])).toEqual([[2, 1015], [3, 1025]]);
+    expect(r.missing).toBe(0);
+    expect(await loadDistances(db)).toEqual(new Map([[distKey(1, 2), 59], [distKey(1, 3), 61]]));
+    expect(warnings()).toHaveLength(2);
+    expect(warnings()[0].line).toContain('the screen is gone');
+  });
+
+  it('survives a callback that throws a value that is not an Error', async () => {
+    const r = await suggestFromDetailed(deps, 1, 696, undefined, { onProgress: () => { throw 'plain text'; } });
+    expect(r.options).toHaveLength(2);
+    expect(warnings()[0].line).toContain('plain text');
+  });
+});
+
+describe('suggestFromDetailed progress across terminals', () => {
+  it('stays sound and ends complete when a request of an earlier terminal fails and a later one still runs', async () => {
+    await addUexBuy(db, 5, GOLD, 6000);
+    uex.failRoutes = true;                                   // pairs only
+    uex.failDistances = (a) => a === 5;                      // the pairs asked of terminal 5 (the first group) fail
+    const { points, onProgress } = recordProgress();
+    const r = await suggestFromDetailed(withNearby(deps), 1, 696, undefined, { onProgress });
+    // terminal 5: the route list and two pairs planned (3), terminal 1: the route list and three pairs (4);
+    // the first pair of 5 fails, so its second pair is dropped; terminal 1 goes on with all of its own
+    expect(points).toEqual([
+      { done: 0, total: 7 }, { done: 1, total: 7 }, { done: 2, total: 6 },
+      { done: 3, total: 6 }, { done: 4, total: 6 }, { done: 5, total: 6 }, { done: 6, total: 6 },
+    ]);
+    expectSoundProgress(points);
+    expect(uex.routeCalls).toEqual([5, 1]);
+    expect(uex.distanceCalls).toEqual([[5, 2], [1, 5], [1, 2], [1, 3]]);
+    expect(uex.maxInFlight).toBe(1);
+    expect(r.missing).toBe(2);                               // 5-2 and 5-3 are still unknown
+  });
+});
+
+describe('suggestFromDetailed, cached then fetch then cached', () => {
+  it('leaves no trace in the first call, and the third call returns what the second did', async () => {
+    const first = await suggestFromDetailed(deps, 1, 696, undefined, cached);
+    expect(first.missing).toBe(2);
+    noUexCalls();
+    expect(await loadDistances(db)).toEqual(new Map());
+    expect(await getMeta(db, 'routes_fetched:1')).toBeNull();
+
+    const second = await suggestFromDetailed(deps, 1, 696);
+    expect(second.missing).toBe(0);
+    expect(second.options.map((x) => x.timeSec)).toEqual([1015, 1025]);
+    expect(uex.routeCalls).toEqual([1]);
+
+    uex.routeCalls.length = 0;
+    const third = await suggestFromDetailed(deps, 1, 696, undefined, cached);
+    expect(third).toEqual(second);
+    noUexCalls();
+    expect(third.options).not.toEqual(first.options);        // the first answer had no times
+  });
+});
+
+describe('what a suggestion spends on planning', () => {
+  it('reads nothing for a plan when nobody asked for progress', async () => {
+    const counted = countingDb(db);
+    await suggestFromDetailed({ ...deps, db: counted.db }, 1, 696);
+    // the table once for the ranking and once in the one terminal's ensureDistances; the meta once (is its route list due)
+    expect(counted.reads()).toEqual({ distances: 2, meta: 1 });
+  });
+
+  it('with progress the plan costs one meta read per terminal and no read of the distance table', async () => {
+    const counted = countingDb(db);
+    const { onProgress } = recordProgress();
+    await suggestFromDetailed({ ...deps, db: counted.db }, 1, 696, undefined, { onProgress });
+    expect(counted.reads()).toEqual({ distances: 2, meta: 2 });
+  });
+
+  it('reads the table once per terminal, however many terminals are asked', async () => {
+    await addUexBuy(db, 5, GOLD, 6000);
+    const counted = countingDb(db);
+    await suggestFromDetailed(withNearby({ ...deps, db: counted.db }), 1, 696);
+    expect(uex.routeCalls.sort()).toEqual([1, 5]);
+    expect(counted.reads()).toEqual({ distances: 3, meta: 2 });
+  });
+
+  it("reads nothing but the table once in the 'cached' mode", async () => {
+    const counted = countingDb(db);
+    await suggestFromDetailed({ ...deps, db: counted.db }, 1, 696, undefined, cached);
+    expect(counted.reads()).toEqual({ distances: 1, meta: 0 });
+  });
+});
+
+describe('suggestToDetailed', () => {
+  it("'cached' asks UEX nothing and counts the pair of every origin", async () => {
+    const r = await suggestToDetailed(deps, 2, 696, undefined, cached);
+    expect(r.options.map((x) => [x.originId, x.timeSec])).toEqual([[1, null]]);
+    expect(r.missing).toBe(1);
+    noUexCalls();
+    const ctx = JSON.parse(suggestLines('to').at(-1)!.line.replace(/^[^{]*/, ''));
+    expect(ctx).toMatchObject({ distances: 'cached', missing: 1 });
+  });
+
+  it("'cached' times what the cache knows", async () => {
+    await seedDistances([[1, 2, 59]]);
+    const r = await suggestToDetailed(deps, 2, 696, undefined, cached);
+    expect(r.options.map((x) => [x.originId, x.timeSec])).toEqual([[1, 1015]]);
+    expect(r.missing).toBe(0);
+  });
+
+  it("'fetch' reports progress and is followed by the same answer from the cache", async () => {
+    await addUexBuy(db, 5, GOLD, 6000);
+    uex.routes = [{ destId: 1, gm: 59 }];                    // the route list of 2 covers 1-2 but not 5-2
+    const { points, onProgress } = recordProgress();
+    const fetched = await suggestToDetailed(deps, 2, 696, undefined, { onProgress });
+    expect(points).toEqual([{ done: 0, total: 3 }, { done: 1, total: 2 }, { done: 2, total: 2 }]);
+    expectSoundProgress(points);
+    expect(fetched.missing).toBe(0);
+    expect(uex.routeCalls).toEqual([2]);
+    expect(uex.distanceCalls).toEqual([[5, 2]]);
+    expect(await suggestToDetailed(deps, 2, 696, undefined, cached)).toEqual(fetched);
+    const ctx = JSON.parse(suggestLines('to').at(0)!.line.replace(/^[^{]*/, ''));
+    expect(ctx).toMatchObject({ distances: 'fetch', missing: 0 });
+  });
+
+  it('makes suggestTo the options of the detailed answer', async () => {
+    const detailed = await suggestToDetailed(deps, 2, 696);
+    expect(await suggestTo(deps, 2, 696)).toEqual(detailed.options);
+  });
+
+  it('survives a callback that throws', async () => {
+    const r = await suggestToDetailed(deps, 2, 696, undefined, { onProgress: () => { throw new Error('boom'); } });
+    expect(r.options.map((x) => x.originId)).toEqual([1]);
+    expect(warnings().length).toBeGreaterThan(0);
   });
 });
