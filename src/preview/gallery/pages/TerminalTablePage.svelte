@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import type { TerminalRow } from '../../../ui/vm/terminal-rows';
   import { roiCells } from '../../../ui/vm/row-roi';
   import type { RowRoi } from '../../../ui/vm/row-roi';
@@ -52,10 +53,33 @@
   ]));
   const longCells = roiCells(longRoi, 'buy', data.reference, threshold);
 
+  // A row with no price at all: the table never draws one (a side has a cell only when a price can be estimated), so it is made up
+  // from the UEX row of Gold on the sell side with the price taken away, to see what the field says when there is nothing to correct.
+  const gold = data.rows.find((r) => r.code === 'GOLD');
+  if (!gold?.sell) throw new Error('the table has no Gold on the sell side');
+  const noPrice: TerminalRow[] = [{
+    ...gold,
+    sell: { ...gold.sell, own: null, hint: null, hintScu: null, badge: null, ownLast: null, trend: null, warn: false, range: { kind: 'none' } },
+  }];
+
   async function badPrice(frame: HTMLElement): Promise<void> {
     const price = find<HTMLInputElement>(frame, '.in-price');
     await typeInto(price, '12x');
     await press(price, 'Enter');
+  }
+
+  // the price of UEX in the field, corrected by a little: the player's own text, in the normal colour
+  async function correctedPrice(frame: HTMLElement): Promise<void> {
+    const price = find<HTMLInputElement>(frame, '.in-price');
+    await typeInto(price, String(Number(price.value) + 10));
+  }
+
+  // a quantity over a row that has no price: leaving the cell is refused and the price is marked
+  async function quantityWithoutPrice(frame: HTMLElement): Promise<void> {
+    const scu = find<HTMLInputElement>(frame, '.in-scu');
+    await typeInto(scu, '50');
+    scu.blur();
+    await tick();
   }
 </script>
 
@@ -85,6 +109,18 @@
 </Frame>
 <Frame name="sell-fell" caption="sell · DIAM expanded: the price fell (red down: sold cheaper)">
   <TableDemo rows={data.rows} side="sell" selected={idOf('DIAM')} roi={hereSell} />
+</Frame>
+<Frame name="sell-uex" caption="sell · GOLD expanded, a price of UEX only: the price of the row stands in the field, muted · it is corrected in place, a quantity is saved alone, Enter confirms it as mine">
+  <TableDemo rows={data.rows} side="sell" selected={idOf('GOLD')} roi={hereSell} />
+</Frame>
+<Frame name="sell-uex-corrected" caption="sell · GOLD, the price in the field corrected by a little: now it is the player's text, in the normal colour" act={correctedPrice}>
+  <TableDemo rows={data.rows} side="sell" selected={idOf('GOLD')} roi={hereSell} />
+</Frame>
+<Frame name="no-price" caption="made up: a row with no price at all (the table never draws one): nothing stands in the field, only the dash of the placeholder">
+  <TableDemo rows={noPrice} side="sell" selected={idOf('GOLD')} />
+</Frame>
+<Frame name="no-price-refused" caption="made up: a row with no price, a quantity typed and the cell left: nothing is saved, the price is marked as required" act={quantityWithoutPrice}>
+  <TableDemo rows={noPrice} side="sell" selected={idOf('GOLD')} />
 </Frame>
 <Frame name="roi-sell" caption="Lorville, sell · the player typed what it pays · ROI of every tier (green ≥ 30, lime ≥ 15, amber ≥ 5, grey) · a bar from {threshold} % (DIAM, GOLD, MEDS, STIM) · PFOO and TUNG are great but below the bar · QUAR and BERY: no trip pays, the cell is empty">
   <TableDemo rows={lorville.rows} side="sell" roi={lorvilleSell} />
