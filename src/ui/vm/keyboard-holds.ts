@@ -18,11 +18,15 @@ import { createRequestQueue } from './request-queue';
  *   state | event                        | effects                                   | next
  *   ------+------------------------------+-------------------------------------------+---------------
  *   idle  | pointer comes over a field   | arm                                       | armed
- *   idle  | hold                         | take                                      | held
+ *   idle  | hold, the take says yes      | take                                      | held
+ *   idle  | hold, Windows refuses        | take; then disarm unless the pointer has  | armed or idle
+ *         |                              | come over a field (the take made the      |
+ *         |                              | window activatable); NO holder            |
  *   idle  | press next to a field        | (only within `settleMs` of a disarm:)     | idle
  *         |                              | isForeground, and if yes give(true)       |
  *   armed | pointer leaves the field     | disarm                                    | idle
- *   armed | hold                         | take                                      | held
+ *   armed | hold, the take says yes      | take                                      | held
+ *   armed | hold, Windows refuses        | take; NO holder                           | armed
  *   armed | press next to a field        | isForeground, and if yes give(true), arm  | armed
  *   held  | pointer comes or leaves      | none (remembered for the release)         | held
  *   held  | hold by another holder       | none                                      | held
@@ -48,8 +52,11 @@ export interface HoldEffects {
   /**
    * A field was pressed: remember the window that has the focus, make the overlay activatable and make sure it is the
    * foreground window. After a press on an armed window it already is; otherwise Windows is asked once and may refuse.
+   * Resolves to whether the overlay is the foreground window now. On `false` nothing was taken (and nothing is to be
+   * given back), but the overlay IS activatable. When it throws, the effect itself has made the overlay not activatable
+   * again and handed back whatever focus it had.
    */
-  take(): Promise<void>;
+  take(): Promise<boolean>;
   /** Stop taking the keyboard: the overlay cannot be activated; `restore` hands the focus back to the remembered window. */
   give(restore: boolean): Promise<void>;
   /** Whether the overlay is the foreground window: Windows' answer, not the focus of the page. */
@@ -59,8 +66,14 @@ export interface HoldEffects {
 export type HoldState = 'idle' | 'armed' | 'held';
 
 export interface KeyboardHolds {
-  /** `why` needs the keyboard. The first holder takes it; a holder that is already there changes nothing. */
-  hold(why: string): Promise<void>;
+  /**
+   * `why` needs the keyboard. The first holder takes it; a holder that is already there changes nothing. Resolves to
+   * whether the keyboard is held now. `false`: Windows refused to bring the window to the front, so nothing was taken
+   * and `why` is NOT a holder (a holder with the game in front would keep the window activatable for good and show a
+   * caret in a field whose keys go to the game). The window is left armed while the pointer is on a field, so the
+   * player's next press activates it; with the pointer gone it is disarmed.
+   */
+  hold(why: string): Promise<boolean>;
   /**
    * `why` does not need the keyboard any more. The last holder to leave gives it back to the game; when the pointer is
    * still over a text field the window is armed again, so that the next press on the field activates it.
@@ -106,8 +119,8 @@ export interface KeyboardHoldsOptions {
 
 /**
  * `onChange` is told each time `held` flips. When an effect throws, the state is made consistent first
- * (a failed `take` forgets its holder, a failed `arm` is not armed, a failed `give` or `disarm` still counts as
- * done) and the error goes to the caller.
+ * (a failed `take` forgets its holder and the window follows the pointer again, a failed `arm` is not armed, a failed
+ * `give` or `disarm` still counts as done) and the error goes to the caller.
  */
 export function createKeyboardHolds(
   effects: HoldEffects,
@@ -140,9 +153,9 @@ export function createKeyboardHolds(
   };
 
   /** Runs a take or a give and remembers when it ended, whether it worked or not. */
-  const run = async (effect: () => Promise<void>): Promise<void> => {
+  const run = async <T>(effect: () => Promise<T>): Promise<T> => {
     try {
-      await effect();
+      return await effect();
     } finally {
       effectEndedAt = now();
     }
@@ -177,21 +190,34 @@ export function createKeyboardHolds(
   return {
     hold: (why) =>
       request(async () => {
-        if (holders.has(why)) return;
+        if (holders.has(why)) return true;
         const first = holders.size === 0;
         holders.add(why);
-        if (!first) return;
+        if (!first) return true;
         // from here on it is the holder that keeps the window activatable
         armed = false;
         onChange?.(true);
+        let taken: boolean;
         try {
-          await run(() => effects.take());
+          taken = await run(() => effects.take());
         } catch (err) {
           // nothing else can have joined while the take was running: the queue lets one request at a time in
           holders.delete(why);
           onChange?.(false);
+          // The effect has made the window not activatable; the pointer may still be on the field. A second failure
+          // adds nothing to the first, which is the one the caller gets.
+          await followPointer().catch(() => undefined);
           throw err;
         }
+        if (taken) return true;
+        // Windows refused: nothing was taken, so nobody holds anything. But the take HAS made the window activatable:
+        // it counts as armed, and follows the pointer from here (still on the field: it stays armed and the next press
+        // activates it; gone: it is disarmed, or it would stay activatable with nobody to make it not so).
+        holders.delete(why);
+        onChange?.(false);
+        armed = true;
+        await followPointer();
+        return false;
       }),
 
     release: (why) =>

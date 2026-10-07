@@ -37,8 +37,11 @@ function setup(options: Options = {}) {
   const clock = { t: 0 };
   const calls: string[] = [];
   const gates: Gate[] = [];
-  /** What Windows answers to "is the overlay the foreground window"; a test changes it. */
-  const windows = { foreground: false };
+  /**
+   * What Windows answers; a test changes it. `foreground`: "is the overlay the foreground window". `refusals`: how
+   * many of the next takes it refuses (the overlay is not brought to the front); after those it agrees.
+   */
+  const windows = { foreground: false, refusals: 0 };
   const wait = async (): Promise<void> => {
     if (!options.slow) return;
     const g = gate();
@@ -62,7 +65,13 @@ function setup(options: Options = {}) {
       calls.push('take:start');
       await wait();
       if (options.failTake) throw new Error('take failed');
+      if (windows.refusals > 0) {
+        windows.refusals--;
+        calls.push('take:refused');
+        return false;
+      }
       calls.push('take:end');
+      return true;
     },
     async give(restore) {
       calls.push(`give:start:${restore}`);
@@ -514,13 +523,33 @@ describe('the pointer over a text field', () => {
     expect(calls.slice(-2)).toEqual(['take:start', 'take:end']);
   });
 
-  it('a failed take on an armed window leaves it idle: the window layer has made it not activatable', async () => {
+  it('a take that throws on an armed window leaves no holder and arms the window again under the pointer', async () => {
     const { holds, calls, changes } = setup({ failTake: true });
     await holds.pointerOverField(true);
     await expect(holds.hold('field')).rejects.toThrow('take failed');
-    expect(holds.state).toBe('idle');
+    expect(holds.held).toBe(false);
     expect(changes).toEqual([true, false]);
+    // the window layer has made the window not activatable (and handed the focus back); the pointer is still on the field
+    expect(calls).toEqual(['arm:start', 'arm:end', 'take:start', 'arm:start', 'arm:end']);
+    expect(holds.state).toBe('armed');
+  });
+
+  it('a take that throws with the pointer gone leaves the window idle', async () => {
+    const { holds, calls } = setup({ failTake: true });
+    await holds.pointerOverField(true);
+    const holding = holds.hold('field');
+    const leaving = holds.pointerOverField(false);
+    await expect(holding).rejects.toThrow('take failed');
+    await leaving;
     expect(calls).toEqual(['arm:start', 'arm:end', 'take:start']);
+    expect(holds.state).toBe('idle');
+  });
+
+  it('a take that throws is the error the caller gets, even when arming again fails too', async () => {
+    const { holds } = setup({ failTake: true, failArm: true });
+    await expect(holds.pointerOverField(true)).rejects.toThrow('arm failed');
+    await expect(holds.hold('field')).rejects.toThrow('take failed');
+    expect(holds.state).toBe('idle');
   });
 
   it('a failed give is not followed by a new arm', async () => {
@@ -684,5 +713,104 @@ describe('a press next to a field right after the window was armed', () => {
     await holds.pointerOverField(false);
     expect(await holds.pressOutsideField()).toBe(false);
     expect(calls).toEqual(['arm:start', 'arm:end', 'disarm:start', 'disarm:end']);
+  });
+});
+
+// A press that Windows did not turn into an activation (the window was not armed in time: touch, a pen, a press faster
+// than the arm) asks Windows once, and Windows may refuse. Nothing was taken then, so nobody holds anything: a holder
+// that stayed would keep the window activatable with the game in front, show a caret in a field whose keys go to the
+// game, and switch off the check that hands a stray activation back.
+describe('a take that Windows refuses', () => {
+  it('leaves no holder, and `hold` says that the keyboard was not taken', async () => {
+    const { holds, calls, changes, windows } = setup();
+    windows.refusals = 1;
+    expect(await holds.hold('field')).toBe(false);
+    expect(holds.held).toBe(false);
+    expect(changes).toEqual([true, false]);
+    expect(calls.slice(0, 2)).toEqual(['take:start', 'take:refused']);
+    // nothing was taken, so nothing is given back
+    expect(calls.some((c) => c.startsWith('give'))).toBe(false);
+  });
+
+  it('`hold` says yes when the keyboard is held: after the take, for another holder, for the same one again', async () => {
+    const { holds } = setup();
+    expect(await holds.hold('field')).toBe(true);
+    expect(await holds.hold('dialog')).toBe(true);
+    expect(await holds.hold('field')).toBe(true);
+  });
+
+  it('with the pointer still on the field the window stays armed: the take has made it activatable, the next press activates it', async () => {
+    const { holds, calls, windows } = setup();
+    windows.refusals = 1;
+    const holding = holds.hold('field'); // a press with no pointer seen before it
+    const over = holds.pointerOverField(true); // the page says where the pointer is right after the press
+    expect(await holding).toBe(false);
+    await over;
+    expect(holds.state).toBe('armed');
+    // no arm of its own and no disarm: the window is activatable already, and it stays so
+    expect(calls).toEqual(['take:start', 'take:refused']);
+    // the second press activates the window by itself: Windows has nothing to refuse
+    expect(await holds.hold('field')).toBe(true);
+    expect(calls.slice(2)).toEqual(['take:start', 'take:end']);
+    expect(holds.state).toBe('held');
+  });
+
+  it('with the pointer gone the window is disarmed: it must not stay activatable with nobody holding the keyboard', async () => {
+    const { holds, calls, windows } = setup();
+    windows.refusals = 1;
+    expect(await holds.hold('field')).toBe(false);
+    expect(calls).toEqual(['take:start', 'take:refused', 'disarm:start', 'disarm:end']);
+    expect(holds.state).toBe('idle');
+  });
+
+  it('on a window that was armed: it stays armed, with nothing sent to Windows', async () => {
+    const { holds, calls, windows } = setup();
+    await holds.pointerOverField(true);
+    windows.refusals = 1;
+    expect(await holds.hold('field')).toBe(false);
+    expect(calls).toEqual(['arm:start', 'arm:end', 'take:start', 'take:refused']);
+    expect(holds.state).toBe('armed');
+    // the pointer leaves: the usual disarm
+    await holds.pointerOverField(false);
+    expect(calls.slice(4)).toEqual(['disarm:start', 'disarm:end']);
+    expect(holds.state).toBe('idle');
+  });
+
+  it('two quick presses: the first is refused, the second waits for its turn and takes the keyboard', async () => {
+    const { holds, calls, gates, windows, changes } = setup({ slow: true });
+    windows.refusals = 1;
+    const first = holds.hold('field');
+    const over = holds.pointerOverField(true);
+    const second = holds.hold('field'); // pressed while the first take is still on its way
+    await settle();
+    expect(calls).toEqual(['take:start']);
+    gates[0].open();
+    expect(await first).toBe(false);
+    await settle();
+    // the second press is a take of its own, not "already held": the holder of the first is gone
+    expect(calls).toEqual(['take:start', 'take:refused', 'take:start']);
+    expect(holds.held).toBe(true); // it holds from the moment its turn came
+    gates[1].open();
+    expect(await second).toBe(true);
+    await over;
+    expect(changes).toEqual([true, false, true]);
+    expect(holds.state).toBe('held');
+  });
+
+  it('a press next to a field is looked at again after a refusal: no holder is in its way', async () => {
+    const { holds, calls, clock, windows } = setup({ settleMs: 500 });
+    windows.refusals = 1;
+    await holds.hold('field'); // refused, the pointer is not on a field: disarmed at t = 0
+    clock.t = 100;
+    windows.foreground = true; // a press on a button landed before the disarm reached Windows
+    expect(await holds.pressOutsideField()).toBe(true);
+    expect(calls.slice(-3)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true']);
+  });
+
+  it('a loss of the focus right after a refusal drops nothing: there is nothing to drop', async () => {
+    const { holds, windows } = setup({ settleMs: 500 });
+    windows.refusals = 1;
+    await holds.hold('field');
+    expect(await holds.drop()).toBe(false);
   });
 });

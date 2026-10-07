@@ -267,19 +267,28 @@ export async function disarmKeyboard(log: Logger): Promise<void> {
  * overlay activatable and makes sure it is the foreground window (`take_foreground`, src-tauri/src/focus.rs).
  * After a press on an armed window it already is (the press activated it), and Windows is not asked for
  * anything. Otherwise (touch, a pen, a press that came before the arm reached Windows) Windows is asked ONCE
- * and may refuse: the process that got the click is the WebView's, not ours. A refusal is a warning and
- * nothing more. Nothing is done to change Windows' mind; the window stays activatable, so the player's next
- * press on a field activates it. The Rust side logs whether Windows had to be asked (`[focus] ... (asked: ...)`).
+ * and may refuse: the process that got the click is the WebView's, not ours. The Rust side logs whether Windows
+ * had to be asked (`[focus] ... (asked: ...)`).
+ *
+ * Resolves to whether the window is the foreground window. `false` is a refusal: a warning that says what the
+ * player can do, and nothing more. Nothing is done to change Windows' mind, and nothing is given back (nothing
+ * was taken); the window IS left activatable, and it is the caller (the holds) that decides what becomes of that.
  */
-export async function takeKeyboard(log: Logger): Promise<void> {
+export async function takeKeyboard(log: Logger): Promise<boolean> {
   try {
     await invoke('remember_foreground');
     await getCurrentWindow().setFocusable(true);
     const foreground = await invoke<boolean>('take_foreground');
     if (foreground) log.info('window', 'keyboard taken', { foreground });
     else {
-      log.warn('window', 'keyboard wanted, but Windows refused to make the window the foreground one; the next press on a field activates it', { foreground });
+      log.warn(
+        'window',
+        'keyboard NOT taken: Windows refused to bring the window to the front, the keys still go to the game. '
+          + 'Click the field once more: with the pointer on a field the click itself activates the window',
+        { foreground },
+      );
     }
+    return foreground;
   } catch (err) {
     log.error('window', 'cannot take the keyboard', { err });
     // Nobody holds the keyboard after a failure, so nobody would undo what is done by now. The window may already be

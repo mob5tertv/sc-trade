@@ -7,7 +7,8 @@ import type { KeyboardHolds } from './vm/keyboard-holds';
 // and giving it mean) is in `vm/keyboard-holds.ts` and `platform/window.ts`; here are the listeners:
 //  - the pointer over a text field makes the window activatable, so that the player's own press activates it; the
 //    pointer leaving the field makes it not activatable again;
-//  - a press on a text field takes the keyboard first and puts the cursor into the field afterwards;
+//  - a press on a text field takes the keyboard first and puts the cursor into the field afterwards; when Windows
+//    refuses the take, nobody holds the keyboard and the cursor is taken out of the field again;
 //  - a press on anything else is told to the holds: right after the pointer left a field it may have activated the window;
 //  - `Esc` in a field (when nothing else used it) leaves the field and gives the keyboard back to the game,
 //    the window stays open;
@@ -101,9 +102,22 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     if (!holds.held) {
       log.debug('ui', 'field pressed, the window needs the keyboard', { field: field.id || field.tagName, armed: holds.state === 'armed' });
     }
-    void quietly(holds.hold(FIELD)).then(() => {
-      if (field.isConnected) field.focus();
-    });
+    void holds
+      .hold(FIELD)
+      .then(
+        (taken) => taken,
+        () => false, // the take failed; the window layer has logged it
+      )
+      .then((taken) => {
+        if (taken) {
+          if (field.isConnected) field.focus();
+          return;
+        }
+        // Not taken (Windows refused to bring the window to the front): the keys still go to the game, so the field must
+        // not look as if it were being edited, and the browser has put the cursor into it at the press. Looked at NOW,
+        // not at the press: a second press may have taken the keyboard meanwhile, and then the field is edited after all.
+        if (!holds.held && document.activeElement === field) field.blur();
+      });
     // A press with no pointer seen over the field before it (touch, a pen): it is over the field now. Told after the
     // hold, so that the hold is not kept waiting for an arm of its own.
     pointerAt(field);

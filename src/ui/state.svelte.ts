@@ -895,10 +895,10 @@ class AppState {
     if (collapse) void this.#changeMode(() => 'mini', `idle ${idleSec} s`);
   }
 
-  /** `take` of the keyboard holds: a key of the game that is still down must not type into a field. */
-  async #takeKeyboard(): Promise<void> {
+  /** `take` of the keyboard holds: a key of the game that is still down must not type into a field. Says whether the window is in front. */
+  async #takeKeyboard(): Promise<boolean> {
     resetHeldKeys();
-    await takeKeyboard(this.#log);
+    return takeKeyboard(this.#log);
   }
 
   /**

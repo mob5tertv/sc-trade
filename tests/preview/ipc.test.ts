@@ -360,16 +360,23 @@ describe('the keyboard focus', () => {
     expect(focusEvents).toEqual([true, false]);
   });
 
-  it('a take with no arm before it is refused by a strict Windows: a warning, nothing else is tried, and the next press activates the window', async () => {
+  it('a take with no arm before it is refused by a strict Windows: it says no, warns in plain words, tries nothing else and gives nothing back', async () => {
     const { win, focusEvents, logged, unknown } = start();
     const sink = memorySink();
     await showWindow(layout, logger());
 
-    await takeKeyboard(createLogger(sink)); // touch, a pen, a press that came before the arm
-    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: true, gameRemembered: 1 });
+    // touch, a pen, a press that came before the arm
+    expect(await takeKeyboard(createLogger(sink))).toBe(false);
+    // nothing was taken, so nothing is undone here: the window is activatable (the holds decide what becomes of that),
+    // and no focus is "handed back" to a game that never lost it
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: true, gameRemembered: 1, focusReturnedToGame: 0 });
     expect(focusEvents).toEqual([]);
     expect(sink.lines.filter((l) => l.line.startsWith('[window] keyboard'))).toEqual([
-      expect.objectContaining({ level: 'warn', line: expect.stringContaining('Windows refused to make the window the foreground one') }),
+      {
+        level: 'warn',
+        line: '[window] keyboard NOT taken: Windows refused to bring the window to the front, the keys still go to the game. '
+          + 'Click the field once more: with the pointer on a field the click itself activates the window {"foreground":false}',
+      },
     ]);
     expect(logged.filter((line) => line.includes('take_foreground'))).toEqual([
       '[warn] [preview] take_foreground: a strict Windows refuses, the overlay is not the foreground window (asked: true)',
@@ -379,6 +386,7 @@ describe('the keyboard focus', () => {
     win.pressInside(); // the player presses the field again: the window is activatable, Windows activates it
     expect(win.snapshot().keyboard).toBe('overlay');
     expect(focusEvents).toEqual([true]);
+    expect(await takeKeyboard(createLogger(sink))).toBe(true);
   });
 
   it('never calls set_focus of Tauri (it sends a key press when Windows refuses): the preview does not even answer it', async () => {
