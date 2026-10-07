@@ -1,4 +1,5 @@
 import { parsePrice, parseScu } from '../../core/input';
+import { shownPrice } from './terminal-rows';
 import type { Cell } from './terminal-rows';
 
 // What the typed texts of the price and quantity inputs mean. The components only show the outcome.
@@ -16,15 +17,12 @@ export interface EditBase { price: number | null; scu: number | null; priceIsOwn
  * placeholder. A stock estimated for now is shown as text next to an empty input: it is a calculation, not something I
  * saw, so it must never be saved as if I had typed it.
  *
- * The price is the whole number the row writes (`formatUec` rounds with `Math.round`): UEX averages are REAL, and the field
- * must agree with the row and must not hold what the typed path (`parsePrice`: whole numbers above zero) would refuse. A price
- * that rounds to zero is no price here: the row shows "0", nothing can be confirmed, and the price is required.
+ * The price is `shownPrice`: the whole number the row writes, so the field agrees with the row and never holds what the typed
+ * path (`parsePrice`) would refuse. A price that rounds to zero is no price here: nothing can be confirmed, the price is required.
  */
 export function cellEditBase(cell: Pick<Cell, 'own' | 'hint' | 'ownScu' | 'ownScuBase'>): EditBase {
-  const shown = cell.own ?? cell.hint;
-  const price = shown === null ? null : Math.round(shown);
-  const usable = price !== null && price > 0 ? price : null;
-  return { price: usable, scu: cell.ownScuBase === null ? cell.ownScu : null, priceIsOwn: cell.own !== null && usable !== null };
+  const price = shownPrice(cell);
+  return { price, scu: cell.ownScuBase === null ? cell.ownScu : null, priceIsOwn: cell.own !== null && price !== null };
 }
 
 /** The texts of the inputs for a base: plain digits (no grouping, so they are easy to edit), empty for unknown. */

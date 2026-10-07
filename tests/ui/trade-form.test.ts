@@ -38,6 +38,14 @@ describe('tradeDefaults, buying', () => {
     expect(buyIn({ cell: cell({ hint: 6000, ownScu: 5 }) })).toMatchObject({ price: 6000 });
     expect(buyIn({ cell: cell({ ownScu: 5 }) })).toMatchObject({ price: null });
   });
+  it('offers the whole price the row shows: UEX gives REAL averages, and a form that is refused a number nobody typed is no help', () => {
+    expect(buyIn({ cell: cell({ hint: 7345.6, ownScu: 5 }) })).toMatchObject({ price: 7346 });
+    expect(buyIn({ cell: cell({ hint: 7345.4, ownScu: 5 }) })).toMatchObject({ price: 7345 });
+    expect(buyIn({ cell: cell({ own: 6120, hint: 7345.6, ownScu: 5 }) })).toMatchObject({ price: 6120 }); // mine, whole, unchanged
+  });
+  it('offers no price when the one of the row rounds to zero (the typed price is refused there too), and then no budget limit', () => {
+    expect(buyIn({ cell: cell({ hint: 0.3, ownScu: 50 }), budget: 1000 })).toEqual({ scu: 50, price: null });
+  });
   it('does not guess a quantity when nothing limits it, or when nothing can be carried', () => {
     expect(buyIn({ capacity: 0, cell: cell({ own: 6120 }) })).toEqual({ scu: null, price: 6120 });       // no ship, no stock
     expect(buyIn({ capacity: 0 })).toMatchObject({ scu: 340 });                                          // no ship: the stock
@@ -64,6 +72,11 @@ describe('tradeDefaults, selling', () => {
   it('has no quantity for a commodity that is not on board, and no price when the row has none', () => {
     expect(sellIn({ cargo: [tita(40)] })).toMatchObject({ scu: null });
     expect(sellIn({ cell: cell() })).toMatchObject({ price: null });
+  });
+  it('offers the whole price the row shows, and none when it rounds to zero', () => {
+    expect(sellIn({ cell: cell({ hint: 3000.6 }) })).toEqual({ scu: 96, price: 3001 });
+    expect(sellIn({ cell: cell({ own: 6900 }) })).toEqual({ scu: 96, price: 6900 });
+    expect(sellIn({ cell: cell({ hint: 0.3 }) })).toEqual({ scu: 96, price: null });
   });
 });
 
