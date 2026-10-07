@@ -39,12 +39,13 @@
 <Frame name="empty" caption="empty: product search (stretches) · side · price · SCU · write — no location field, no status block">
   {@render entry()}
 </Frame>
-<Frame name="list" caption="«ste» typed: the list of the search is open (solid, 22 px rows)" minHeight={150} act={openList}>
-  {@render entry()}
-</Frame>
 <Frame name="filled" caption="commodity chosen (the field shows it), side follows the terminal, price and SCU typed" act={filled}>
   {@render entry()}
 </Frame>
 <Frame name="bad-price" caption="«12x» sent: the price is marked and the one line of the reason appears under the row" act={badPrice}>
+  {@render entry()}
+</Frame>
+<!-- last: an open list lives only while the field keeps the focus, and the acts of the states run in this order -->
+<Frame name="list" caption="«ste» typed: the list of the search is open (solid, 22 px rows)" minHeight={150} act={openList}>
   {@render entry()}
 </Frame>

@@ -36,6 +36,7 @@
   /* a bright scene of the game under the glass: sky, a white wall, a dark hull; the glass has to hold its own on all of it */
   .gallery.light {
     --gallery-caption: #1f2d36;
+    --gallery-caption-bg: rgb(255 255 255 / 0.78);
     padding: 12px;
     background:
       linear-gradient(100deg, #f7f9fb 0 22%, transparent 22% 100%),

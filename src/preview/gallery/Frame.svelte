@@ -44,10 +44,13 @@
   }
 
   .caption {
+    width: fit-content;
+    max-width: 440px;
     margin-bottom: 3px;
+    padding: 0 3px;
+    background: var(--gallery-caption-bg, transparent);
     color: var(--gallery-caption);
     font-size: 10.5px;
     letter-spacing: 0.04em;
-    white-space: nowrap;
   }
 </style>

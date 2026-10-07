@@ -22,9 +22,12 @@
 <section class="card" aria-label="Продать здесь или лететь дальше: {commodityCode}">
   <div class="here" title="Продать весь груз здесь и сейчас">
     <span class="caption">Здесь <span class="code">{commodityCode}</span></span>
-    <span class="sc-num">{hereRow.qty}</span>
-    <span class="sc-num" class:good={!hereRow.loss} class:loss={hereRow.loss} title="Прибыль, если продать здесь">{hereRow.profit}</span>
-    <span class="sc-num" title="ROI">{hereRow.roi}</span>
+    <span class="sc-num qty">{hereRow.qty}</span>
+    <span class="item" title="Прибыль, если продать здесь">
+      <span class="sc-label">Прибыль</span>
+      <span class="sc-num" class:good={!hereRow.loss} class:loss={hereRow.loss}>{hereRow.profit}</span>
+    </span>
+    <span class="item" title="Прибыль к вложенному"><span class="sc-label">ROI</span><span class="sc-num">{hereRow.roi}</span></span>
     <span class="sc-num" title="UEC в час за время, что прошло с начала рейса">{hereRow.rate}</span>
   </div>
 
@@ -63,20 +66,31 @@
   }
 
   .here {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 62px 62px 52px 56px;
+    display: flex;
     align-items: center;
-    column-gap: var(--sc-gap);
+    gap: 10px;
     height: var(--sc-row-h);
     padding: 0 var(--sc-pad-x);
     background: var(--sc-surface);
+    white-space: nowrap;
   }
 
   .caption {
-    overflow: hidden;
+    flex: none;
     font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+
+  .qty {
+    color: var(--sc-muted);
+  }
+
+  .item {
+    display: flex;
+    gap: 5px;
+  }
+
+  .here > :last-child {
+    margin-left: auto;
   }
 
   .code {

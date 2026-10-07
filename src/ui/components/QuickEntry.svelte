@@ -188,7 +188,7 @@
 
   {#if status !== null}
     <p class="status" class:error={status.kind === 'error'} role="status" aria-live="polite" title={status.text}>
-      {#if chosen && status.kind === 'error'}<span class="code">{chosen.code}</span> · {/if}{status.text}
+      {#if chosen && status.kind === 'error'}<span class="code">{chosen.code}</span>&nbsp;·&nbsp;{/if}{status.text}
     </p>
   {/if}
 </form>

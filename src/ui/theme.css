@@ -31,7 +31,7 @@
 
   /* how good a trip is, by ROI (thresholds in `vm/roi-tier.ts`): a bar at the edge of an option and its ROI number */
   --sc-roi-great: #3ee08f;
-  --sc-roi-good: #4fae82;
+  --sc-roi-good: #86c24f;
   --sc-roi-ok: #ffb347;
   --sc-roi-poor: #6f95a3;
   --sc-roi-loss: #ff5d5d;

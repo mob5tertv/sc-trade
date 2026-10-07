@@ -4,22 +4,20 @@ import { tick } from 'svelte';
 // (a click, typing, a key), so a state that needs an open list or a failed field is made by the component itself.
 // `mountGallery` waits for every scheduled act before it measures the page.
 
-const pending: Array<Promise<void>> = [];
+// The acts run one after another, in the order of the states on the page: there is one keyboard focus on a page, so
+// a state that leaves a field focused or a list open keeps it only when no later state takes the focus away.
+let chain: Promise<void> = Promise.resolve();
 
-/** Runs `job` after the state is on the page; the page is not measured until it is done. */
+/** Runs `job` after the state is on the page and after every act scheduled before it; the page is not measured until it is done. */
 export function schedule(job: () => void | Promise<void>): void {
-  pending.push(
-    Promise.resolve()
-      .then(job)
-      .catch((err: unknown) => {
-        // a broken act must show up in the picture log, not vanish: the state is then drawn as far as it got
-        console.error(`[gallery] a state act failed: ${err instanceof Error ? err.message : String(err)}`);
-      }),
-  );
+  chain = chain.then(job).catch((err: unknown) => {
+    // a broken act must show up in the picture log, not vanish: the state is then drawn as far as it got
+    console.error(`[gallery] a state act failed: ${err instanceof Error ? err.message : String(err)}`);
+  });
 }
 
 export async function settled(): Promise<void> {
-  while (pending.length > 0) await Promise.all(pending.splice(0));
+  await chain;
 }
 
 const pause = (ms = 0): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

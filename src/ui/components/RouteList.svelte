@@ -45,12 +45,14 @@
 </script>
 
 {#snippet price(label: string, view: RouteOptionRow['buy'])}
-  <span class="inline">
+  <div class="fact">
     <span class="sc-label">{label}</span>
-    <span class="sc-num">{view.price}</span>
-    {#if view.range}<span class="muted sc-num" title="Диапазон цен">{view.range}</span>{/if}
-    <TempBadge text={view.badge.text} kind={view.badge.kind} />
-  </span>
+    <span class="inline">
+      <span class="sc-num">{view.price}</span>
+      {#if view.range}<span class="muted sc-num" title="Диапазон цен">{view.range}</span>{/if}
+      <TempBadge text={view.badge.text} kind={view.badge.kind} />
+    </span>
+  </div>
 {/snippet}
 
 {#if rows.length === 0}
@@ -59,7 +61,7 @@
   <div class="list" role="table" aria-label="Варианты">
     <div class="grid head sc-label" role="row">
       <span role="columnheader">{mode === 'to' ? 'Откуда' : 'Куда'}</span>
-      <span role="columnheader" class="r">Цена</span>
+      <span role="columnheader" class="r price-head">Цена</span>
       <span role="columnheader" class="r">Мин–макс</span>
       <span role="columnheader" class="r">ROI</span>
       <span role="columnheader" class="r">UEC/ч</span>
@@ -113,8 +115,8 @@
 <style>
   .grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 62px 78px 44px 56px;
-    column-gap: var(--sc-gap);
+    grid-template-columns: minmax(0, 1fr) 54px 74px 40px 54px;
+    column-gap: 4px;
     align-items: center;
     padding: 0 var(--sc-pad-x);
   }
@@ -128,6 +130,11 @@
 
   .r {
     text-align: right;
+  }
+
+  /* the number stands left of its 6 px mark: the caption stands over the number */
+  .price-head {
+    padding-right: 10px;
   }
 
   /* the bar at the edge of a row and its ROI number: how good the trip is, by one colour */
@@ -253,6 +260,10 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--sc-gap);
+  }
+
+  .prices .inline {
+    height: 18px;
   }
 
   .foot {

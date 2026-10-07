@@ -14,11 +14,12 @@
 <Frame name="selected" caption="a click (here: focus) selects the whole value, the next key replaces it" act={(frame) => find<HTMLInputElement>(frame, 'input').focus()}>
   <div class="pad"><SearchBox items={data.terminalItems} value={data.viewedName} placeholder="Локация" onPick={pick} /></div>
 </Frame>
-<Frame name="typing" caption="«hur» typed over the value: the list of the matches" minHeight={160} act={(frame) => typeInto(find<HTMLInputElement>(frame, 'input'), 'hur')}>
-  <div class="pad"><SearchBox items={data.terminalItems} value={data.viewedName} boostIds={data.boostIds} placeholder="Локация" onPick={pick} /></div>
-</Frame>
 <Frame name="empty" caption="no value: the placeholder">
   <div class="pad"><SearchBox items={data.terminalItems} placeholder="Сменить локацию" onPick={pick} /></div>
+</Frame>
+<!-- last: the focus of the page stays with the state whose act ran last -->
+<Frame name="typing" caption="«hur» typed over the value: the list of the matches" minHeight={160} act={(frame) => typeInto(find<HTMLInputElement>(frame, 'input'), 'hur')}>
+  <div class="pad"><SearchBox items={data.terminalItems} value={data.viewedName} boostIds={data.boostIds} placeholder="Локация" onPick={pick} /></div>
 </Frame>
 
 <style>

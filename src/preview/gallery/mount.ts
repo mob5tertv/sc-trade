@@ -6,6 +6,7 @@ import { tauriFetchJson } from '../../platform/tauri-http';
 import '../../ui/theme.css';
 import type { PreviewWindow } from '../window-state';
 import { settled } from './acts';
+import { auditGallery } from './audit';
 import { loadGalleryData } from './data';
 import Gallery from './Gallery.svelte';
 import { PAGES, pageNames, parseGalleryName } from './registry';
@@ -56,6 +57,7 @@ export async function mountGallery(options: GalleryOptions): Promise<void> {
   await tick();
   await document.fonts.ready;
 
+  (window as unknown as { __galleryAudit: typeof auditGallery }).__galleryAudit = auditGallery;
   const root = target.querySelector('.gallery');
   if (root === null) throw new Error('the gallery did not draw');
   if (state !== null && target.querySelector('[data-state]') === null) {

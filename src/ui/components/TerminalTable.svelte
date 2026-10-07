@@ -210,7 +210,7 @@
   <div class="table" role="table" aria-label={side === 'buy' ? 'Что можно купить' : 'Что можно продать'}>
     <div class="grid head sc-label" role="row">
       <span role="columnheader">Товар</span>
-      <span role="columnheader" class="r">Цена</span>
+      <span role="columnheader" class="r price-head">Цена</span>
       <span role="columnheader" class="r">Мин–макс</span>
       <span role="columnheader" class="r">SCU</span>
     </div>
@@ -256,6 +256,11 @@
 
   .r {
     text-align: right;
+  }
+
+  /* the number stands left of its 6 px mark: the caption stands over the number */
+  .price-head {
+    padding-right: 10px;
   }
 
   .row {
