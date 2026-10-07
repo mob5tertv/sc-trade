@@ -4,7 +4,7 @@ import { cargoOf } from '../../core/run';
 import type { Settings } from '../../core/settings';
 import type { CargoLine, Estimate, Market, Reference, RunWithEvents, Terminal } from '../../core/types';
 import { nextMarkOf, phaseCaps, runPhases, type RunPhase } from './run-phase';
-import { priceAtTarget, ratePerHour, routeSecOf, wholeRunSec, type PricedLine } from './run-rate';
+import { expectedRun, priceAtTarget } from './run-rate';
 import type { SessionFigure } from './stats-view';
 
 export type StripModel =
@@ -56,23 +56,12 @@ function expectTexts(sell: Estimate): { full: string; short: string } {
 }
 
 /**
- * '≈ 310k/ч': the profit of the commodities that have a price at the target over the time of the whole
- * run, which is at least what has passed and at least the flight from the first purchase to the target.
- * `null` when no commodity has a price there or no time is known.
- */
-function rateText(priced: PricedLine[], elapsedSec: number, routeSec: number | null): string | null {
-  const known = priced.filter((p): p is { line: CargoLine; sell: Estimate } => p.sell !== null);
-  if (known.length === 0) return null;
-  const profit = known.reduce((sum, { line, sell }) => sum + line.scu * (sell.price - line.avgBuyPrice), 0);
-  const rate = ratePerHour(profit, wholeRunSec(elapsedSec, routeSec));
-  return rate === null ? null : `≈ ${formatCompact(rate)}/ч`;
-}
-
-/**
  * What the small strip shows: the current location (and the target, when one is set) and what the session that is going
  * has earned (`session`) without a run; during a run the phase with its own timer, the cargo, the target terminal, what
  * the first commodity is expected to sell for there and the expected UEC per hour (that line is full: no session in it).
- * A target that is unset or missing from the reference leaves the last three out.
+ * The rate is the number of the card of the run, over the whole run (`expectedRun`): none while the time of the run is not
+ * known, or while the target pays for only a part of the hold. A target that is unset or missing from the reference leaves
+ * the last three out.
  */
 export function stripModel(
   active: RunWithEvents | null, m: Market, ref: Reference, s: Settings, ctx: RouteCtx, session: SessionFigure | null = null,
@@ -96,13 +85,13 @@ export function stripModel(
 
   if (!target) return { ...head, target: null, expect: null, expectShort: null, rate: null };
 
-  const priced = priceAtTarget(cargo, m, target.id, ctx);
-  const firstSell = priced[0]?.sell ?? null;
+  const firstSell = priceAtTarget(cargo, m, target.id, ctx)[0]?.sell ?? null;
   const expect = firstSell ? expectTexts(firstSell) : null;
+  const rate = expectedRun(active, m, target.id, ctx)?.rate ?? null;
   return {
     ...head,
     target: terminalLabel(target),
     expect: expect?.full ?? null, expectShort: expect?.short ?? null,
-    rate: rateText(priced, elapsedSec, routeSecOf(events, target.id, ctx)),
+    rate: rate === null ? null : `≈ ${formatCompact(rate)}/ч`,
   };
 }

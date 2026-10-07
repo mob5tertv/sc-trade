@@ -241,12 +241,21 @@ fn run() {
     }
 }
 
-/// Starts the watcher. Call it once, after the log plugin is set up. A failure to start it is logged and
-/// the app goes on without the diagnostics.
+/// The watcher runs only when a file of this name lies next to the exe (and the app is restarted).
+const WATCH_FLAG: &str = "cursor-watch.flag";
+
+/// Starts the watcher if `cursor-watch.flag` lies next to the exe; says in the log which it is. Call it
+/// once, after the log plugin is set up. A failure to start it is logged and the app goes on without the
+/// diagnostics.
 pub fn start() {
     if !cfg!(windows) {
         return;
     }
+    if !crate::logging::flag_next_to_exe(WATCH_FLAG) {
+        log::info!("[cursor] watcher off: no {WATCH_FLAG} next to the exe");
+        return;
+    }
+    log::info!("[cursor] watcher on: {WATCH_FLAG} found next to the exe");
     if let Err(err) = thread::Builder::new()
         .name("cursor-watch".into())
         .spawn(run)
@@ -271,6 +280,11 @@ mod tests {
             over_overlay,
             overlay_active,
         }
+    }
+
+    #[test]
+    fn the_watcher_is_asked_for_by_the_file_the_readme_names() {
+        assert_eq!(WATCH_FLAG, "cursor-watch.flag");
     }
 
     /// The game hides the cursor with the display counter (`ShowCursor(FALSE)`): the flag is cleared and

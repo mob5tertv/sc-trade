@@ -562,17 +562,24 @@ describe('overlapping calls', () => {
 });
 
 describe('a write that fails half-way', () => {
-  it('leaves only a truthful observation and an empty active run when the event cannot be written, and the next buy joins that run', async () => {
-    const broken = { ...deps, db: failingOn(db, 'INSERT INTO run_event') };
-    await expect(recordBuy(broken, buyIn(300))).rejects.toThrow('disk full');
+  it('leaves only a truthful observation and an empty active run when the event cannot be written, and the next buy starts its own run', async () => {
+    // one session: the same `Db` object throughout; the next call of the service repairs the run before it looks at it
+    let failing = true;
+    const session = {
+      ...deps,
+      db: { select: <T>(sql: string, params?: unknown[]) => db.select<T>(sql, params), execute: (sql: string, params?: unknown[]) => (failing && sql.startsWith('INSERT INTO run_event') ? Promise.reject(new Error('disk full')) : db.execute(sql, params)) },
+    };
+    await expect(recordBuy(session, buyIn(300))).rejects.toThrow('disk full');
     expect(await rowCounts()).toEqual({ runs: 1, events: 0, observations: 1 });
     const left = (await getActiveRun(db))!;
     expect(left.events).toEqual([]);
 
+    failing = false;
     clock.advance(30);
-    const r = await recordBuy(deps, buyIn(300));
-    expect(r.run.id).toBe(left.run.id);
+    const r = await recordBuy(session, buyIn(300));
+    expect(r.run.startedAt).toBe(NOW + 30);    // not the old start: the empty run is gone and this one is new
     expect(r.events).toHaveLength(1);
+    expect(await rowCounts()).toEqual({ runs: 1, events: 1, observations: 2 });
   });
 
   it('writes nothing at all when the observation cannot be written', async () => {

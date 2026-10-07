@@ -50,6 +50,33 @@ describe('uex cache: prices', () => {
     expect((await loadUexPrices(db))[0]).toEqual(p);
   });
 
+  describe('of a terminal that is not live', () => {
+    it('are not loaded once the reference marks the terminal as not live, but the rows stay in the cache', async () => {
+      await saveReference(db, { terminals: [term(1), term(2)] });
+      await upsertPrices(db, [1, 2], [px(1, 10), px(2, 10), px(2, 11)], 100);
+      expect((await loadUexPrices(db)).map((p) => priceKey(p.terminalId, p.commodityId))).toEqual(['1:10', '2:10', '2:11']);
+
+      await saveReference(db, { terminals: [term(1), term(2, { isAvailableLive: false })] });
+
+      expect((await loadUexPrices(db)).map((p) => priceKey(p.terminalId, p.commodityId))).toEqual(['1:10']);
+      expect((await db.select<{ n: number }>('SELECT COUNT(*) AS n FROM uex_price'))[0].n).toBe(3);
+    });
+
+    it('are loaded again when the terminal is marked live again: nothing was thrown away', async () => {
+      await saveReference(db, { terminals: [term(2, { isAvailableLive: false })] });
+      await upsertPrices(db, [2], [px(2, 10)], 100);
+      expect(await loadUexPrices(db)).toEqual([]);
+      await saveReference(db, { terminals: [term(2)] });
+      expect((await loadUexPrices(db)).map((p) => p.terminalId)).toEqual([2]);
+    });
+
+    it('are loaded for a terminal the reference does not list at all (the routes drop such a terminal themselves)', async () => {
+      await saveReference(db, { terminals: [term(1)] });
+      await upsertPrices(db, [], [px(1, 10), px(9, 10)], 100);
+      expect((await loadUexPrices(db)).map((p) => p.terminalId)).toEqual([1, 9]);
+    });
+  });
+
   it('overwrites a row that is synced again', async () => {
     await upsertPrices(db, [1], [px(1, 10, { sell: { last: 1 } })], 100);
     await upsertPrices(db, [1], [px(1, 10, { sell: { last: 2 } })], 200);

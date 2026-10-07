@@ -19,6 +19,8 @@
     onTarget?: (option: RouteOption) => void;
     /** Set: in the expanded row of the option that IS the target, the button says "Снять цель" and calls it. */
     onClearTarget?: () => void;
+    /** A row was opened (`open`) or taken back, by a click on it. */
+    onToggleRow?: (option: RouteOption, open: boolean) => void;
     /**
      * The viewed terminal. A trip whose own end is another terminal (bought elsewhere on the planet) shows both its
      * ends; without it every row shows both.
@@ -33,7 +35,7 @@
     uexRange?: UexRangeOf;
   }
   let {
-    options, reference, runCounts, mode, showCommodity, emptyText, onTarget, onClearTarget, anchorTerminalId = null, targetTerminalId = null, uexRange,
+    options, reference, runCounts, mode, showCommodity, emptyText, onTarget, onClearTarget, onToggleRow, anchorTerminalId = null, targetTerminalId = null, uexRange,
   }: Props = $props();
 
   const rows = $derived(
@@ -50,8 +52,10 @@
 
   // One row is expanded at a time; the click on it again takes it back.
   let expandedKey = $state<string | null>(null);
-  const toggle = (key: string): void => {
-    expandedKey = expandedKey === key ? null : key;
+  const toggle = (key: string, option: RouteOption): void => {
+    const open = expandedKey !== key;
+    expandedKey = open ? key : null;
+    onToggleRow?.(option, open);
   };
 
   const trip = (row: RouteOptionRow): string => (row.bothEnds ? `${row.origin} → ${row.dest}` : row.terminal);
@@ -82,7 +86,7 @@
     {#each rows as { option, row } (row.key)}
       {@const expanded = expandedKey === row.key}
       <div class="row tier-{row.tier}" class:expanded role="row">
-        <button type="button" class="grid line" aria-expanded={expanded} onclick={() => toggle(row.key)}>
+        <button type="button" class="grid line" aria-expanded={expanded} onclick={() => toggle(row.key, option)}>
           <span class="where" title={trip(row)}>
             {#if showCommodity}<span class="code">{row.commodity}</span>{/if}
             <span class="end">{row.bothEnds ? row.origin : row.terminal}</span>

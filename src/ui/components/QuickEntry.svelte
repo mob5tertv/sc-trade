@@ -18,8 +18,8 @@
     sideFor: (commodityId: number) => Side;
     /** Writes the price; answers the sentence to show when it was not saved, `null` when it was. */
     onSave: (entry: PriceEntry) => Promise<string | null>;
-    /** Enter was pressed with something missing or unreadable (nothing was saved). */
-    onReject?: (e: { reason: Rejection; price: string; scu: string }) => void;
+    /** Enter was pressed with something missing or unreadable (nothing was saved): which of the parts it was, never what was typed. */
+    onReject?: (e: { reason: Rejection }) => void;
     /** `onSave` threw instead of answering: the player sees a short sentence, the details belong in the log. */
     onFailure?: (err: unknown, entry: PriceEntry) => void;
   }
@@ -64,7 +64,7 @@
 
   function reject(reason: Rejection, text: string): void {
     status = { text, kind: 'error' };
-    onReject?.({ reason, price: priceText, scu: scuText });
+    onReject?.({ reason });
   }
 
   async function save(): Promise<void> {

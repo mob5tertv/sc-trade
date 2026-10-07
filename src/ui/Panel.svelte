@@ -55,7 +55,7 @@
   {#if app.notice !== null}
     <div class="notice" class:error={app.notice.kind === 'error'} role="status">
       <span>{app.notice.text}</span>
-      <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Скрыть сообщение" title="Скрыть" onclick={() => app.dismissNotice()}>
+      <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Скрыть сообщение" title="Скрыть" onclick={() => app.closeNotice()}>
         <Icon name="cross" size={12} />
       </button>
     </div>

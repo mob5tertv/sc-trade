@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createLogger, memorySink } from '../../src/data/logger';
-import { UEX_BASE, UexError, createUexClient } from '../../src/data/uex-client';
+import {
+  UEX_BASE, UEX_MIN_GAP_MS, UexError, createUexClient, isNetworkFailure, isRateLimit, isUnreachable,
+} from '../../src/data/uex-client';
 
 // Real UEX responses, trimmed to the first rows by hand (see tests/fixtures/uex).
 const fixture = (name: string): unknown =>
@@ -320,5 +322,172 @@ describe('uex client: logging', () => {
     expect(sink.lines.at(-1)!.line).toBe(
       '[uex] request {"url":"https://api.uexcorp.uk/2.0/commodities","status":200,"ms":250,"rows":3}',
     );
+  });
+});
+
+describe('uex client: the request limit (HTTP 429)', () => {
+  it('is an http error that says which status it was and names the limit', async () => {
+    const err = await client({ commodities: { status: 'requests_limit_reached', data: [] } }, 429).commodities().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UexError);
+    expect(err).toMatchObject({ kind: 'http', httpStatus: 429 });
+    expect((err as UexError).message).toContain('429');
+    expect((err as UexError).message).toContain('limit');
+    expect(isRateLimit(err)).toBe(true);
+    expect(isNetworkFailure(err)).toBe(false);
+    expect(isUnreachable(err)).toBe(true);
+  });
+
+  it('is written to the log as a failed request with the status 429, and not asked again by the client', async () => {
+    await client({ commodities: { status: 'requests_limit_reached', data: [] } }, 429).commodities().catch(() => {});
+    expect(calls).toHaveLength(1);
+    expect(sink.lines).toHaveLength(1);
+    expect(sink.lines[0].level).toBe('warn');
+    expect(sink.lines[0].line).toContain('"status":429');
+    expect(sink.lines[0].line).toContain('limit');
+  });
+
+  it('is told apart from the other failures', async () => {
+    const refused = await client({ commodities: 'oops' }, 503).commodities().catch((e: unknown) => e);
+    expect(refused).toMatchObject({ kind: 'http', httpStatus: 503 });
+    expect(isRateLimit(refused)).toBe(false);
+    expect(isUnreachable(refused)).toBe(false);
+
+    const stalled = await createUexClient(async () => { throw new Error('timed out after 15 s'); }, log).commodities().catch((e: unknown) => e);
+    expect(stalled).toMatchObject({ kind: 'network', httpStatus: null });
+    expect(isNetworkFailure(stalled)).toBe(true);
+    expect(isUnreachable(stalled)).toBe(true);
+    expect(isRateLimit(stalled)).toBe(false);
+
+    expect(isRateLimit(new Error('HTTP 429'))).toBe(false); // only the client's own error counts
+  });
+});
+
+describe('uex client: the gap between requests', () => {
+  /**
+   * A clock the test moves. `sleep` moves it by what it is asked to wait; an answer that takes `took` ms moves it as well.
+   * `starts` is the time every request began.
+   */
+  function timeline(took: number | ((n: number) => number) = 0) {
+    let now = 50_000;
+    const sleeps: number[] = [];
+    const starts: number[] = [];
+    const fetchJson = async (_url: string) => {
+      starts.push(now);
+      now += typeof took === 'number' ? took : took(starts.length);
+      return { status: 200, body: { status: 'ok', data: [] } };
+    };
+    return {
+      clock: () => now, sleeps, starts, fetchJson,
+      sleep: async (ms: number) => { sleeps.push(ms); now += ms; },
+    };
+  }
+
+  const paced = (t: ReturnType<typeof timeline>, minGapMs?: number) =>
+    createUexClient(t.fetchJson, log, t.clock, { sleep: t.sleep, ...(minGapMs === undefined ? {} : { minGapMs }) });
+
+  it('sends the first request at once', async () => {
+    const t = timeline();
+    await paced(t).commodities();
+    expect(t.sleeps).toEqual([]);
+    expect(t.starts).toEqual([50_000]);
+  });
+
+  it('keeps quick answers at least 500 ms apart by default: a start every half second, 120 a minute at most', async () => {
+    const t = timeline();
+    const c = paced(t);
+    for (let i = 0; i < 4; i++) await c.commodities();
+    expect(t.sleeps).toEqual([500, 500, 500]);
+    expect(t.starts).toEqual([50_000, 50_500, 51_000, 51_500]);
+  });
+
+  it('adds nothing when the previous request itself took longer than the gap', async () => {
+    const t = timeline(800);
+    const c = paced(t);
+    for (let i = 0; i < 3; i++) await c.commodities();
+    expect(t.sleeps).toEqual([]);
+    expect(t.starts).toEqual([50_000, 50_800, 51_600]);
+  });
+
+  it('adds only what is left of the gap after a request of 200 ms', async () => {
+    const t = timeline(200);
+    const c = paced(t);
+    await c.commodities();
+    await c.commodities();
+    expect(t.sleeps).toEqual([300]);
+    expect(t.starts).toEqual([50_000, 50_500]);
+  });
+
+  it('counts from the START of the previous request, so a slow one and a quick one alternate without a double wait', async () => {
+    const t = timeline((n) => (n % 2 === 1 ? 700 : 50));
+    const c = paced(t);
+    for (let i = 0; i < 4; i++) await c.commodities();
+    expect(t.starts).toEqual([50_000, 50_700, 51_200, 51_900]);
+    expect(t.sleeps).toEqual([450]);
+  });
+
+  it('takes the gap from the option: any interval, and none at 0', async () => {
+    const slow = timeline();
+    const c = paced(slow, 2000);
+    await c.commodities();
+    await c.commodities();
+    expect(slow.sleeps).toEqual([2000]);
+
+    const none = timeline();
+    const d = paced(none, 0);
+    for (let i = 0; i < 3; i++) await d.commodities();
+    expect(none.sleeps).toEqual([]);
+    expect(none.starts).toEqual([50_000, 50_000, 50_000]);
+  });
+
+  it('keeps no gap without the option, and then asks the clock only twice per request, as it always did', async () => {
+    let reads = 0;
+    const c = createUexClient(async () => ({ status: 200, body: { status: 'ok', data: [] } }), log, () => { reads++; return 1000; });
+    await c.commodities();
+    await c.commodities();
+    expect(reads).toBe(4);
+  });
+
+  it('counts a failed request as a start too', async () => {
+    const t = timeline();
+    let n = 0;
+    const c = createUexClient(async (url) => {
+      if (n++ === 0) { t.starts.push(t.clock()); throw new Error('ECONNRESET'); }
+      return t.fetchJson(url);
+    }, log, t.clock, { sleep: t.sleep });
+    await c.commodities().catch(() => {});
+    await c.commodities();
+    expect(t.starts).toEqual([50_000, 50_500]);
+  });
+
+  it('holds back requests that are asked for at once: they start one after another, a gap apart', async () => {
+    const t = timeline();
+    const c = paced(t);
+    await Promise.all([c.commodities(), c.starSystems(), c.vehicles(195)]);
+    expect(t.starts).toEqual([50_000, 50_500, 51_000]);
+  });
+
+  it('writes the duration of the request without the wait before it', async () => {
+    const t = timeline(120);
+    const c = paced(t);
+    await c.commodities();
+    await c.commodities();
+    expect(sink.lines.map((l) => /"ms":(\d+)/.exec(l.line)?.[1])).toEqual(['120', '120']);
+  });
+
+  it('never waits for longer than the gap, even when the clock jumped back', async () => {
+    let now = 50_000;
+    const sleeps: number[] = [];
+    const c = createUexClient(async () => ({ status: 200, body: { status: 'ok', data: [] } }), log, () => now, {
+      sleep: async (ms) => { sleeps.push(ms); },
+    });
+    await c.commodities();
+    now -= 3_600_000; // the player changed the system clock
+    await c.commodities();
+    expect(sleeps).toEqual([500]);
+  });
+
+  it('exports the default gap: 500 ms is 120 requests a minute', () => {
+    expect(UEX_MIN_GAP_MS).toBe(500);
+    expect(60_000 / UEX_MIN_GAP_MS).toBe(120);
   });
 });

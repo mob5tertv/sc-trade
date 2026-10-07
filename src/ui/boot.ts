@@ -7,7 +7,9 @@ import type { Db } from '../data/db';
 import type { Logger } from '../data/logger';
 import { migrate } from '../data/migrations';
 import { loadSettings } from '../data/repo/settings';
+import { repairRuns } from '../data/trade';
 import { createUexClient } from '../data/uex-client';
+import { appPacing } from '../data/uex-pacing';
 import { openTauriDb } from '../platform/tauri-db';
 import { tauriFetchJson } from '../platform/tauri-http';
 import { applyLogLevel } from '../platform/tauri-logger';
@@ -112,8 +114,9 @@ async function prepare(log: Logger): Promise<void> {
   const schema = started.schema;
   const settings = await loadSettings(db, log);
   await applyLogLevel(log, settings.logLevel);
+  await repairRuns({ db, log }); // before the active run is read: a run that a write cut off is never shown
 
-  app.attach({ db, uex: createUexClient(tauriFetchJson, log), now: nowSec });
+  app.attach({ db, uex: createUexClient(tauriFetchJson, log, Date.now, appPacing()), now: nowSec });
   app.setSettings(settings);
   // The start line comes first: the window logs its own lines as soon as it is shown.
   await logStart(log, schema);
@@ -123,8 +126,11 @@ async function prepare(log: Logger): Promise<void> {
 }
 
 function fail(reason: string): BootResult {
-  // The window is shown even when the start broke before the settings were read: the error must be seen.
+  // The window is shown even when the start broke before the settings were read: the error must be seen. It unfolds with
+  // the text of the error whatever the setting of the mini line says: with that line switched off the window is hidden, and
+  // the player would not know why nothing is there. (The window that is already unfolded stays as it is.)
   app.ensureShown();
+  void app.expand('start failed');
   app.bootError = reason;
   app.phase = 'failed';
   app.log.warn('app', 'start failed', { reason });

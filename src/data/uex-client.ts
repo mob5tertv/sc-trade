@@ -10,15 +10,46 @@ export type UexErrorKind = 'network' | 'http' | 'status' | 'shape';
 
 export class UexError extends Error {
   readonly kind: UexErrorKind;
+  /** The HTTP status of an answer that was refused (kind `http`); `null` for every other kind. */
+  readonly httpStatus: number | null;
 
-  constructor(kind: UexErrorKind, message: string, options?: ErrorOptions) {
+  constructor(kind: UexErrorKind, message: string, options?: ErrorOptions & { httpStatus?: number }) {
     super(message, options);
     this.name = 'UexError';
     this.kind = kind;
+    this.httpStatus = options?.httpStatus ?? null;
   }
 }
 
+/**
+ * Whether `err` says that UEX could not be reached (the connection failed or the request timed out), as opposed to an
+ * answer that was refused or could not be read.
+ */
+export const isNetworkFailure = (err: unknown): boolean => err instanceof UexError && err.kind === 'network';
+
+const HTTP_TOO_MANY_REQUESTS = 429;
+
+/** Whether UEX answered "too many requests" (HTTP 429): it asks us to wait. */
+export const isRateLimit = (err: unknown): boolean => err instanceof UexError && err.httpStatus === HTTP_TOO_MANY_REQUESTS;
+
+/**
+ * Whether the next request of a series would meet the same fate: the network failed, or UEX asked to wait (429). A series
+ * of requests that meets this has no use in asking on, and a batch that failed this way is not worth splitting.
+ */
+export const isUnreachable = (err: unknown): boolean => isNetworkFailure(err) || isRateLimit(err);
+
 export const UEX_BASE = 'https://api.uexcorp.uk/2.0';
+
+/** UEX allows 120 requests a minute: a request starts no sooner than this after the start of the previous one. */
+export const UEX_MIN_GAP_MS = 500;
+
+/** What the client needs to keep its distance between requests: the wait is handed in, the client never sets a timer itself. */
+export interface UexPacing {
+  /** Resolves after `ms` milliseconds. */
+  sleep: (ms: number) => Promise<void>;
+  /** The least time between the STARTS of two requests; `UEX_MIN_GAP_MS` when absent, no gap at 0. */
+  minGapMs?: number;
+}
 
 /** UEX allows at most ten terminals per `commodities_prices` request. */
 const MAX_PRICE_TERMINALS = 10;
@@ -158,7 +189,33 @@ function mapRoute(r: Row): { destId: number; gm: number | null } | null {
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-export function createUexClient(fetchJson: FetchJson, log: Logger, clockMs: () => number = Date.now): UexClient {
+/**
+ * `pacing` keeps the requests a gap apart (`UEX_MIN_GAP_MS` by default): a request starts at least that long after the
+ * start of the previous one, and at once when the previous one itself took longer. Without `pacing` there is no gap
+ * (tests, and the preview, whose network is a fake). The client never retries a request by itself.
+ */
+export function createUexClient(fetchJson: FetchJson, log: Logger, clockMs: () => number = Date.now, pacing?: UexPacing): UexClient {
+  const minGapMs = pacing === undefined ? 0 : (pacing.minGapMs ?? UEX_MIN_GAP_MS);
+  let lastStartMs: number | null = null;
+  /** The starts wait in line: requests asked for at the same moment still start a gap apart. */
+  let turn: Promise<unknown> = Promise.resolve();
+
+  /** Waits until a request may start and returns the time it starts at. */
+  function startTime(): Promise<number> {
+    if (pacing === undefined || minGapMs <= 0) return Promise.resolve(clockMs());
+    const mine = turn.then(async () => {
+      if (lastStartMs !== null) {
+        // never longer than the gap: a clock that was set back must not make the application wait for an hour
+        const wait = Math.min(minGapMs, lastStartMs + minGapMs - clockMs());
+        if (wait > 0) await pacing.sleep(wait);
+      }
+      lastStartMs = clockMs();
+      return lastStartMs;
+    });
+    turn = mine.then(() => undefined, () => undefined);
+    return mine;
+  }
+
   /**
    * Runs one request: fetch, check HTTP status and the UEX envelope, then let `extract` pull the
    * payload out of `data`. Every request ends in exactly one log line: `request` at info level,
@@ -169,7 +226,7 @@ export function createUexClient(fetchJson: FetchJson, log: Logger, clockMs: () =
     extract: (data: unknown) => { value: T; rows: number; skipped?: number },
   ): Promise<T> {
     const url = `${UEX_BASE}/${path}`;
-    const startedAt = clockMs();
+    const startedAt = await startTime();
     let status: number | undefined;
     try {
       let response: Awaited<ReturnType<FetchJson>>;
@@ -179,7 +236,10 @@ export function createUexClient(fetchJson: FetchJson, log: Logger, clockMs: () =
         throw new UexError('network', `request failed: ${errorMessage(err)}`, { cause: err });
       }
       status = response.status;
-      if (status < 200 || status >= 300) throw new UexError('http', `HTTP ${status}`);
+      if (status < 200 || status >= 300) {
+        const message = status === HTTP_TOO_MANY_REQUESTS ? `HTTP ${status}: UEX request limit reached` : `HTTP ${status}`;
+        throw new UexError('http', message, { httpStatus: status });
+      }
 
       const body = response.body;
       if (!isRow(body) || typeof body.status !== 'string') {

@@ -3,7 +3,7 @@ import { distKey, obsKey, priceKey } from '../../src/core/types';
 import type { Db } from '../../src/data/db';
 import { createLogger, memorySink } from '../../src/data/logger';
 import { addObservation } from '../../src/data/repo/diary';
-import { getMeta, loadDistances, putDistances } from '../../src/data/repo/uex-cache';
+import { getMeta, loadDistances, putDistances, saveReference } from '../../src/data/repo/uex-cache';
 import {
   loadMarket, suggestFrom, suggestFromDetailed, suggestTo, suggestToDetailed, type SuggestDeps,
 } from '../../src/data/suggest';
@@ -70,6 +70,36 @@ describe('loadMarket', () => {
     expect(m.own.get(obsKey(1, GOLD, 'buy'))).toMatchObject({ price: 6200 });
     expect(m.ownPrev.get(obsKey(1, GOLD, 'buy'))).toEqual({ ts: NOW - 600, price: 6120 });        // the seeded one, not the older 6000
     expect(m.ownPrev.has(obsKey(3, GOLD, 'sell'))).toBe(false);                                   // seeded once: nothing to compare with
+  });
+});
+
+describe('a terminal that UEX stopped marking as live', () => {
+  /** The reference as the last sync stored it: terminals 1 to 5, the given one no longer live. */
+  const referenceWithout = async (goneId: number) => saveReference(db, {
+    terminals: [1, 2, 3, 4, 5].map((id) => term(id, { isAvailableLive: id !== goneId })),
+  });
+
+  it('has no UEX price in the market any more, and keeps what the player saw there', async () => {
+    await referenceWithout(-1); // all five live
+    await addObservation(db, log, { ts: NOW - 30, terminalId: 2, commodityId: GOLD, side: 'sell', price: 6950, scu: null });
+    const before = await loadMarket(db);
+    expect(before.uex.has(priceKey(2, GOLD))).toBe(true);
+
+    await referenceWithout(2);
+    const after = await loadMarket(db);
+
+    expect([...after.uex.keys()]).toEqual([priceKey(4, GOLD)]);
+    expect(after.own.get(obsKey(2, GOLD, 'sell'))).toMatchObject({ price: 6950, ts: NOW - 30 });
+    expect(after.byTerminal.get(2)).toEqual(new Set([GOLD])); // the own record still puts the terminal on the map
+  });
+
+  it('is no longer offered as the destination of a route', async () => {
+    uex.routes = [{ destId: 2, gm: 59 }, { destId: 3, gm: 61 }];
+    expect((await suggestFrom(deps, 1, 696)).map((x) => x.destId)).toEqual([2, 3]);
+
+    await referenceWithout(2);
+
+    expect((await suggestFrom(deps, 1, 696)).map((x) => x.destId)).toEqual([3]);
   });
 });
 

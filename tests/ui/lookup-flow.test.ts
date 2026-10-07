@@ -139,3 +139,59 @@ describe('answerLookup: failures', () => {
     expect(h.events).toEqual(['suggest:cached']);
   });
 });
+
+describe('answerLookup: the distances the fetching wrote reach the owner', () => {
+  /** The harness flow that also tells when the owner is asked to read the distances again. */
+  const withDistances = (h: ReturnType<typeof flowHarness>) => ({
+    ...h.flow,
+    distancesChanged: async () => {
+      h.events.push('distances');
+    },
+  });
+
+  it('asks for them to be read again once the fetching has answered, outside the job of the UEX queue', async () => {
+    const h = flowHarness();
+    await answerLookup(withDistances(h));
+    expect(h.events).toEqual([
+      'suggest:cached', 'answer:12:preliminary',
+      'queue:wait', 'queue:run', 'suggest:fetch', 'answer:213:final', 'distances',
+    ]);
+  });
+
+  it('asks for them also when the fetching failed: what was fetched before the failure is in the database', async () => {
+    const h = flowHarness();
+    h.state.secondAnswer = new Error('no network');
+    await answerLookup(withDistances(h));
+    expect(h.events.slice(-2)).toEqual(['refine-failed', 'distances']);
+  });
+
+  it('asks for them also when a newer request has taken the screen: the distances are stored all the same', async () => {
+    const h = flowHarness();
+    let go!: () => void;
+    h.hold.second = new Promise<void>((resolve) => (go = resolve));
+    const done = answerLookup(withDistances(h));
+    await tick();
+    h.state.newest = false;
+    go();
+    await done;
+    expect(h.events.some((e) => e.startsWith('answer:213'))).toBe(false);
+    expect(h.events.at(-1)).toBe('distances');
+  });
+
+  it('does not ask when nothing was fetched: no distances were missing, or the fetching never started', async () => {
+    const complete = flowHarness();
+    complete.state.firstAnswer = { ...CACHED_ANSWER, missing: 0 };
+    await answerLookup(withDistances(complete));
+    expect(complete.events).not.toContain('distances');
+
+    const waiting = flowHarness();
+    let free!: () => void;
+    waiting.state.queueBusy = new Promise<void>((resolve) => (free = resolve));
+    const done = answerLookup(withDistances(waiting));
+    await tick();
+    waiting.state.capacity = false;
+    free();
+    await done;
+    expect(waiting.events).not.toContain('distances');
+  });
+});

@@ -72,16 +72,49 @@ describe('knownScuOf', () => {
     expect(knownScuOf(cell({ ownScu: 340 }))).toBe(340);
     expect(knownScuOf(cell({ ownScu: 0 }))).toBe(0);
   });
-  it('is unknown when the row shows an estimate of the refill timer: that is a calculation, not what the player read', () => {
+  it('is the estimate of the refill timer when the row shows one: what the row says is what the trade is counted from', () => {
     // the stock was read as 380, the timer has moved it to 427: the row shows 427 and remembers the reading it started from
-    expect(knownScuOf(cell({ ownScu: 427, ownScuBase: { scu: 380, age: '7 мин' } }))).toBeNull();
+    expect(knownScuOf(cell({ ownScu: 427, ownScuBase: { scu: 380, age: '7 мин' } }))).toBe(427);
   });
   it('is the quantity when the estimate has not moved away from the reading', () => {
     expect(knownScuOf(cell({ ownScu: 380 }))).toBe(380);
   });
   it('is unknown without one: a quantity of UEX is not what the player saw', () => {
     expect(knownScuOf(cell({ hintScu: 500 }))).toBeNull();
+    expect(knownScuOf(cell({ own: 6120, hintScu: 500 }))).toBeNull();
     expect(knownScuOf(null)).toBeNull();
+  });
+  it('is the quantity the buyer holds on the side of a sale (it has no estimate there)', () => {
+    expect(knownScuOf(cell({ own: 6900, ownScu: 120, ownScuBase: null }))).toBe(120);
+  });
+});
+
+describe('the stock the diary keeps after a trade (spec 14.3: "was 340, bought 300 -> 40")', () => {
+  /** The quantity of the observation that the trade wrote, by the stock the row showed. */
+  async function stockAfter(side: 'buy' | 'sell', row: Parameters<typeof cell>[0], scu: number): Promise<number | null> {
+    const { deps } = await tradeFixture();
+    const input = { ...(side === 'buy' ? goldBought(scu) : goldSold(scu, 7000)), knownScu: knownScuOf(cell(row)) };
+    if (side === 'sell') await recordBuy(deps, goldBought(scu));
+    await (side === 'buy' ? recordBuy(deps, input) : recordSell(deps, input));
+    const rows = await deps.db.select<{ scu: number | null }>('SELECT scu FROM observation WHERE side = ? ORDER BY id DESC LIMIT 1', [side]);
+    return rows[0]?.scu ?? null;
+  }
+
+  it('is what was read less what was bought, when the row shows the reading as it was read', async () => {
+    expect(await stockAfter('buy', { own: 6120, ownScu: 340 }, 300)).toBe(40);
+  });
+  it('is counted from the estimate of the timer when the row shows one: the old reading must not keep growing', async () => {
+    // read 280 nine minutes ago, the timer has moved it to 340: the row shows 340 and the player bought 300 of it
+    expect(await stockAfter('buy', { own: 6120, ownScu: 340, ownScuBase: { scu: 280, age: '9 мин' } }, 300)).toBe(40);
+  });
+  it('is zero when more is bought than the estimate says is there', async () => {
+    expect(await stockAfter('buy', { own: 6120, ownScu: 340, ownScuBase: { scu: 280, age: '9 мин' } }, 400)).toBe(0);
+  });
+  it('is none when the row has only the quantity of UEX', async () => {
+    expect(await stockAfter('buy', { own: 6120, hintScu: 500 }, 300)).toBeNull();
+  });
+  it('is what the buyer held plus what was sold, on the side of a sale', async () => {
+    expect(await stockAfter('sell', { own: 7000, ownScu: 120 }, 96)).toBe(216);
   });
 });
 

@@ -4,6 +4,13 @@ import { PRICE_SYNC_IDLE, windowHeader, type PriceSync } from '../../src/ui/vm/w
 import { ref } from '../helpers/factories';
 
 const NOW = 1_790_000_000;
+/** '05.01 09:07': the date of the data in the tooltip, in the time zone of the machine. */
+function stampOf(unixSec: number): string {
+  const d = new Date(unixSec * 1000);
+  const two = (n: number): string => String(n).padStart(2, '0');
+  return `${two(d.getDate())}.${two(d.getMonth() + 1)} ${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
 const settings = (currentTerminalId: number | null) => ({ ...DEFAULT_SETTINGS, currentTerminalId, vehicleId: 7, scuCapacity: 696, starSystemId: 68 });
 
 describe('windowHeader: the location field', () => {
@@ -62,11 +69,25 @@ describe('windowHeader: the freshness of UEX', () => {
     expect(uex(null, true)).toMatchObject({ text: 'UEX не загружен', stale: false });
   });
 
-  it('warns when UEX does not answer, and keeps the date of the data it has in the tooltip', () => {
-    const when = new Date(2026, 0, 5, 9, 7).getTime() / 1000;
-    expect(uex(when, false)).toEqual({ text: 'UEX недоступен', title: `UEX недоступен, данные от 05.01 09:07\n${HINT}`, stale: true, busy: false });
+  it('warns when UEX does not answer, says how old the data it has are, and keeps the date of them in the tooltip', () => {
+    const when = NOW - 3 * 3600;
+    expect(uex(when, false)).toEqual({ text: 'UEX офлайн 3 ч', title: `UEX недоступен, данные от ${stampOf(when)}\n${HINT}`, stale: true, busy: false });
+    // the age is written the way the age of the data that are fresh is
+    expect(uex(NOW - 12 * 60, false).text).toBe('UEX офлайн 12 мин');
+    expect(uex(NOW - 5400, false).text).toBe('UEX офлайн 1,5 ч');
+    expect(uex(NOW - 2 * 86_400, false).text).toBe('UEX офлайн 2 д');
+    expect(uex(NOW - 12 * 60, true).text).toBe('UEX 12 мин');
+  });
+
+  it('says only that UEX is not available when there are no data at all', () => {
     expect(uex(null, false)).toEqual({ text: 'UEX недоступен', title: `UEX недоступен\n${HINT}`, stale: true, busy: false });
   });
+
+  it('writes an age under a minute as 0 мин (the data are there, UEX is not)', () => {
+    expect(uex(NOW - 20, false).text).toBe('UEX офлайн 0 мин');
+    expect(uex(NOW + 600, false).text).toBe('UEX офлайн 0 мин');
+  });
+
 
   it('offers the refresh in the tooltip of every state that is not a refresh', () => {
     for (const [synced, ok] of [[NOW - 60, true], [NOW - 30, true], [null, true], [null, false]] as const) {
@@ -105,13 +126,13 @@ describe('windowHeader: the price sync that is going', () => {
 });
 
 describe('windowHeader: after a sync that did not fetch everything', () => {
-  const when = new Date(2026, 0, 5, 9, 7).getTime() / 1000;
+  const when = NOW - 3 * 3600;
   const failed = (unfetched: number): PriceSync => ({ ...PRICE_SYNC_IDLE, unfetched });
 
-  it('stays "недоступен" in the warning colour and says in the tooltip how many terminals were not updated', () => {
+  it('says "офлайн" with the age in the warning colour and says in the tooltip how many terminals were not updated', () => {
     expect(windowHeader(ref, settings(1), 1, when, false, NOW, failed(3)).uex).toEqual({
-      text: 'UEX недоступен',
-      title: 'UEX недоступен, данные от 05.01 09:07\nНе обновилось терминалов: 3\nНажми, чтобы обновить цены сейчас',
+      text: 'UEX офлайн 3 ч',
+      title: `UEX недоступен, данные от ${stampOf(when)}\nНе обновилось терминалов: 3\nНажми, чтобы обновить цены сейчас`,
       stale: true,
       busy: false,
     });

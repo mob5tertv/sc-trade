@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { baseTexts, cellEditBase, resolveCellEdit, resolveTrade } from '../../src/ui/vm/inputs';
+import { baseTexts, cellEditBase, rejectedFields, resolveCellEdit, resolveTrade } from '../../src/ui/vm/inputs';
 import type { Cell } from '../../src/ui/vm/terminal-rows';
 
 const cell = (partial: Partial<Cell> = {}): Cell => ({
@@ -105,5 +105,14 @@ describe('resolveTrade', () => {
   });
   it('marks both fields when both are wrong', () => {
     expect(resolveTrade('x', 'y')).toEqual({ ok: false, scu: true, price: true });
+  });
+});
+
+describe('rejectedFields', () => {
+  it('names the fields that were refused, in the order of the form, and nothing of what was typed', () => {
+    expect(rejectedFields({ price: false, scu: true })).toEqual(['scu']);
+    expect(rejectedFields({ price: true, scu: false })).toEqual(['price']);
+    expect(rejectedFields({ price: true, scu: true })).toEqual(['price', 'scu']);
+    expect(rejectedFields({ price: false, scu: false })).toEqual([]);
   });
 });
