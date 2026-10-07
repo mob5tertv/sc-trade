@@ -1,8 +1,7 @@
 import { estimate } from '../../core/estimate';
 import { formatDuration } from '../../core/format';
 import type { RouteCtx, RouteOption } from '../../core/routes';
-import { cargoOf, runTotals } from '../../core/run';
-import type { RunTotals } from '../../core/run';
+import { cargoOf } from '../../core/run';
 import { sellOrContinue } from '../../core/sell';
 import type { SellAlternative, SellHere } from '../../core/sell';
 import type { Searchable } from '../../core/search';
@@ -23,6 +22,8 @@ import { commoditySearchItems, terminalSearchItems } from '../../ui/vm/header';
 import { lookupTitle } from '../../ui/vm/lookup';
 import { locationModel } from '../../ui/vm/location';
 import { defaultSide } from '../../ui/vm/quick-entry';
+import { runOutlook } from '../../ui/vm/run-outlook';
+import type { RunOutlook } from '../../ui/vm/run-outlook';
 import { phaseLine, runPhases } from '../../ui/vm/run-phase';
 import type { PhaseLine } from '../../ui/vm/run-phase';
 import { META_PRICES_SYNCED_AT, metaSeconds } from '../../ui/vm/sync-plan';
@@ -79,7 +80,7 @@ export interface GalleryData {
   runCounts: Map<string, number>;
   titles: { from: string; nearby: string; to: string; long: string };
   strip: { idle: StripModel; run: StripModel; long: StripModel };
-  runCard: { cargo: Array<{ code: string; scu: number; avgBuyPrice: number }>; timer: string; phases: PhaseLine; totals: RunTotals };
+  runCard: { cargo: Array<{ code: string; scu: number; avgBuyPrice: number }>; timer: string; phases: PhaseLine; outlook: RunOutlook };
   sell: { commodityCode: string; here: SellHere; alternatives: SellAlternative[] };
   history: HistoryRow[];
   sessions: SessionRow[];
@@ -211,7 +212,10 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
     timer: active === null ? '0:00' : formatDuration(now - active.run.startedAt),
     // the leg of the run in progress: loading since the first purchase
     phases: phaseLine(runPhases(active?.run ?? { id: 0, vehicleId: null, scuCapacity: 0, startedAt: now, endedAt: null, status: 'active' }, active?.events ?? [], now)),
-    totals: runTotals(active?.run ?? { id: 0, vehicleId: null, scuCapacity: 0, startedAt: now, endedAt: null, status: 'active' }, active?.events ?? [], now),
+    // the money of a run that goes on: what is put in and sold, and the result EXPECTED at the target of the settings
+    outlook: active === null
+      ? { invested: '0', revenue: '0', expected: null, why: null }
+      : runOutlook(active, market0, reference, settings, ctx),
   };
 
   // "продать или лететь дальше": the first line of the cargo, weighed at the target

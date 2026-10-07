@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { CargoLine } from '../../src/core/types';
+import type { Cell } from '../../src/ui/vm/terminal-rows';
 import { knownScuOf, tradeDefaults, tradeRefusal } from '../../src/ui/vm/trade-form';
 import { bought, GOLD, runOf, sold, TITA } from '../helpers/run-wiring-fixtures';
 
-/** The parts of a table cell the form reads. */
-const cell = (p: Partial<{ own: number | null; hint: number | null; ownScu: number | null; hintScu: number | null }> = {}) => (
-  { own: null, hint: null, ownScu: null, hintScu: null, ...p }
+/** The parts of a table cell the form reads; the quantity is a reading (no estimate of the refill timer) unless said. */
+const cell = (p: Partial<Pick<Cell, 'own' | 'hint' | 'ownScu' | 'hintScu' | 'ownScuBase'>> = {}) => (
+  { own: null, hint: null, ownScu: null, hintScu: null, ownScuBase: null, ...p }
 );
 
 const gold = (scu: number): CargoLine => ({ commodityId: GOLD, scu, avgBuyPrice: 6120 });
@@ -67,6 +68,13 @@ describe('knownScuOf', () => {
   it('is the quantity of my own the row shows, a known zero included', () => {
     expect(knownScuOf(cell({ ownScu: 340 }))).toBe(340);
     expect(knownScuOf(cell({ ownScu: 0 }))).toBe(0);
+  });
+  it('is unknown when the row shows an estimate of the refill timer: that is a calculation, not what the player read', () => {
+    // the stock was read as 380, the timer has moved it to 427: the row shows 427 and remembers the reading it started from
+    expect(knownScuOf(cell({ ownScu: 427, ownScuBase: { scu: 380, age: '7 мин' } }))).toBeNull();
+  });
+  it('is the quantity when the estimate has not moved away from the reading', () => {
+    expect(knownScuOf(cell({ ownScu: 380 }))).toBe(380);
   });
   it('is unknown without one: a quantity of UEX is not what the player saw', () => {
     expect(knownScuOf(cell({ hintScu: 500 }))).toBeNull();

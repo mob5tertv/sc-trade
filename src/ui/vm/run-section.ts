@@ -4,6 +4,7 @@ import { cargoOf } from '../../core/run';
 import { sellOrContinue, type SellAlternative, type SellHere } from '../../core/sell';
 import type { CargoLine, Market, Reference, RunWithEvents } from '../../core/types';
 import { phaseName } from './run-phase';
+import { ratePerHour } from './run-rate';
 import { isOwnPrice } from './terminal-rows';
 import type { StripModel } from './strip';
 
@@ -85,6 +86,26 @@ export function sellDecisions(active: RunWithEvents | null, m: Market, ref: Refe
     });
   }
   return decisions;
+}
+
+/**
+ * The decision as it stands `elapsedSec` after the run began. The alternatives, their prices and flights depend on the market,
+ * the viewed terminal, the cargo and the price, and are counted when those change (`sellDecisions`); only the rates depend on
+ * the clock: the time already spent stands under every one of them. This is the cheap part that follows the clock, with
+ * the very formula of the core (`perHour` in core/sell.ts: profit over the time of the whole run).
+ */
+export function decisionAtClock(d: SellDecision, elapsedSec: number): SellDecision {
+  const elapsed = Math.max(0, elapsedSec);
+  return {
+    ...d,
+    elapsedSec: elapsed,
+    here: { ...d.here, uecPerHour: ratePerHour(d.here.profit, elapsed) },
+    alternatives: d.alternatives.map((a) => ({
+      ...a,
+      expectedUecPerHour: a.extraSec === null ? null : ratePerHour(a.expectedProfit, elapsed + a.extraSec),
+      worstUecPerHour: a.extraSec === null ? null : ratePerHour(a.qty * (a.sell.low - d.line.avgBuyPrice), elapsed + a.extraSec),
+    })),
+  };
 }
 
 /** What is written to the log (`sell`, debug) for one calculation: the sale on the spot and every option it was compared with. */

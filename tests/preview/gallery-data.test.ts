@@ -197,6 +197,9 @@ describe('the gallery run, mini line and history', () => {
   it('has the card of the run, the sale decision and the three lists of the player', () => {
     expect(data.runCard.cargo.map((l) => l.code)).toEqual(['MEDS', 'STIM']);
     expect(data.runCard.timer).toBe('25:05');
+    // a run that goes on shows its expected result (the target of the dataset has prices for both commodities), not a loss
+    expect(data.runCard.outlook.expected).toMatchObject({ profitLoss: false });
+    expect(data.runCard.outlook.revenue).toBe('0');
     expect(data.sell.commodityCode).toBe('MEDS');
     expect(data.sell.alternatives.length).toBeGreaterThan(0);
     expect(data.history.length).toBeGreaterThanOrEqual(2);

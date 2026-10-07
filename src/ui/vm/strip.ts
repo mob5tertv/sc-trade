@@ -1,11 +1,10 @@
-import { estimate } from '../../core/estimate';
 import { formatCompact, formatDuration, formatUec } from '../../core/format';
 import type { RouteCtx } from '../../core/routes';
 import { cargoOf } from '../../core/run';
-import { flightSec } from '../../core/sell';
 import type { Settings } from '../../core/settings';
 import type { CargoLine, Estimate, Market, Reference, RunWithEvents, Terminal } from '../../core/types';
 import { nextMarkOf, phaseCaps, runPhases, type RunPhase } from './run-phase';
+import { priceAtTarget, ratePerHour, routeSecOf, wholeRunSec, type PricedLine } from './run-rate';
 
 export type StripModel =
   | {
@@ -29,11 +28,7 @@ export type StripModel =
     rate: string | null;
   };
 
-const SEC_PER_HOUR = 3600;
 const NO_LOCATION = 'Локация не выбрана';
-
-/** A cargo line with what the target terminal pays for it; the sale price is unknown when nothing is known there. */
-interface PricedLine { line: CargoLine; sell: Estimate | null }
 
 // the nickname is what players know a terminal by; UEX leaves it empty on rare rows
 const terminalLabel = (t: Terminal): string => t.nickname || t.displayname || t.name;
@@ -66,8 +61,8 @@ function rateText(priced: PricedLine[], elapsedSec: number, routeSec: number | n
   const known = priced.filter((p): p is { line: CargoLine; sell: Estimate } => p.sell !== null);
   if (known.length === 0) return null;
   const profit = known.reduce((sum, { line, sell }) => sum + line.scu * (sell.price - line.avgBuyPrice), 0);
-  const sec = Math.max(elapsedSec, routeSec ?? 0);
-  return sec > 0 ? `≈ ${formatCompact((profit * SEC_PER_HOUR) / sec)}/ч` : null;
+  const rate = ratePerHour(profit, wholeRunSec(elapsedSec, routeSec));
+  return rate === null ? null : `≈ ${formatCompact(rate)}/ч`;
 }
 
 /**
@@ -93,14 +88,13 @@ export function stripModel(active: RunWithEvents | null, m: Market, ref: Referen
 
   if (!target) return { ...head, target: null, expect: null, expectShort: null, rate: null };
 
-  const priced = cargo.map((line): PricedLine => ({ line, sell: estimate(m, target.id, line.commodityId, 'sell', ctx) }));
+  const priced = priceAtTarget(cargo, m, target.id, ctx);
   const firstSell = priced[0]?.sell ?? null;
-  const originId = events.find(e => e.type === 'buy')?.terminalId ?? null;
   const expect = firstSell ? expectTexts(firstSell) : null;
   return {
     ...head,
     target: terminalLabel(target),
     expect: expect?.full ?? null, expectShort: expect?.short ?? null,
-    rate: rateText(priced, elapsedSec, originId === null ? null : flightSec(ctx, originId, target.id)),
+    rate: rateText(priced, elapsedSec, routeSecOf(events, target.id, ctx)),
   };
 }

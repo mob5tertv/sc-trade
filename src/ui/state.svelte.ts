@@ -42,6 +42,7 @@ import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './v
 import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
 import { markRefusal } from './vm/run-phase';
+import { sameRun } from './vm/same-run';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
 import { validateSetting } from './vm/settings-validation';
 import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, syncPlan } from './vm/sync-plan';
@@ -73,7 +74,7 @@ import { uexErrorText } from './vm/uex-error';
 //    two steps (the cached answer at once, the fetching of missing distances after it), one answer at a time, the
 //    newest request wins;
 //  - trades and the run (`buy`, `sell`, `mark`, `loseCargo`): they never touch UEX. Each one is a job of `#tradeQueue`: it
-//    writes through the trade service, then reads the active run and the market again, and only then the next one
+//    writes through the trade service, then reads the active run (and, unless the service refused, the market) again, and only then the next one
 //    starts, so that a double click or a key pressed twice judges the state the first press left. A refusal comes back as
 //    a Russian sentence (the form under a row shows it); marks say it with `flash` (the mini line) and the notice line
 //    (the expanded window). `ask` / `answer` are the one in-flow question of the window (a line under the header);
@@ -360,11 +361,15 @@ class AppState {
     this.#showTerminal(settings.currentTerminalId);
   }
 
-  /** The numbers the route services need, from the settings and the loaded data. */
-  routeCtx(freeScu: number = this.settings.scuCapacity): RouteCtx {
+  /**
+   * The numbers the route services need, from the settings and the loaded data. `now` is the one-second clock unless the
+   * caller counts on a slower one (a screen that recounts something heavy every 15 seconds passes `rowsNow`, and then does
+   * not depend on the one-second clock).
+   */
+  routeCtx(freeScu: number = this.settings.scuCapacity, now: number = this.now): RouteCtx {
     const s = this.settings;
     return {
-      now: this.now,
+      now,
       thresholds: { hotMin: s.hotMin, warmMin: s.warmMin, coolingMin: s.coolingMin },
       serverChangedAt: s.serverChangedAt,
       refillFullMin: s.refillFullMin,
@@ -1069,14 +1074,20 @@ class AppState {
     return { db, log, now, settings: this.settings };
   }
 
-  /** Reads the active run and the market again after a trade (or a refusal: the screens show what is stored). */
-  async #reloadRun(): Promise<void> {
+  /**
+   * Reads the active run again after a trade, and keeps the one the state has when the database says the same (whoever follows
+   * `activeRun` by identity, the statistics, is woken only by a change). The market is read again only when something may have
+   * been written: a refusal of the service (`TradeError`) wrote nothing, a failure of the database may have written a part.
+   */
+  async #reloadRun(mayHaveWritten: boolean): Promise<void> {
     try {
-      this.activeRun = await getActiveRun(this.#syncDeps().db);
+      const read = await getActiveRun(this.#syncDeps().db);
+      if (!sameRun(read, this.activeRun)) this.activeRun = read;
     } catch (err) {
       this.#log.error('ui', 'cannot read the active run', { err });
       this.notify(RUN_READ_FAILED, 'error');
     }
+    if (!mayHaveWritten) return;
     await this.reloadMarket();
     this.rowsNow = nowSec();
   }
@@ -1111,12 +1122,14 @@ class AppState {
       this.#log.info('ui', 'buy', { ...input });
       const startsRun = this.activeRun === null;
       let failure: string | null = null;
+      let mayHaveWritten = true;
       try {
         await recordBuy(this.#tradeDeps(), input);
       } catch (err) {
         failure = this.#tradeFailure('buy', err, { ...input });
+        mayHaveWritten = !(err instanceof TradeError);
       }
-      await this.#reloadRun();
+      await this.#reloadRun(mayHaveWritten);
       if (failure === null && startsRun) void this.openSection(RUN_SECTION);
       return failure;
     });
@@ -1131,12 +1144,14 @@ class AppState {
       this.#log.info('ui', 'sell', { ...input });
       let failure: string | null = null;
       let finished = false;
+      let mayHaveWritten = true;
       try {
         finished = (await recordSell(this.#tradeDeps(), input)).finished;
       } catch (err) {
         failure = this.#tradeFailure('sell', err, { ...input });
+        mayHaveWritten = !(err instanceof TradeError);
       }
-      await this.#reloadRun();
+      await this.#reloadRun(mayHaveWritten);
       if (failure === null && finished) await this.#runEnded('done');
       return failure;
     });
@@ -1156,13 +1171,15 @@ class AppState {
         return refusal;
       }
       let failure: string | null = null;
+      let mayHaveWritten = true;
       try {
         await recordMark(this.#tradeDeps(), type);
       } catch (err) {
         failure = this.#tradeFailure('mark', err, { type });
+        mayHaveWritten = !(err instanceof TradeError);
         this.#say(failure, 'error');
       }
-      await this.#reloadRun();
+      await this.#reloadRun(mayHaveWritten);
       return failure;
     });
   }
@@ -1172,13 +1189,15 @@ class AppState {
     return this.#tradeQueue(async () => {
       this.#log.info('ui', 'lose cargo');
       let failure: string | null = null;
+      let mayHaveWritten = true;
       try {
         await closeAsLost(this.#tradeDeps());
       } catch (err) {
         failure = this.#tradeFailure('lose cargo', err, {});
+        mayHaveWritten = !(err instanceof TradeError);
         this.#say(failure, 'error');
       }
-      await this.#reloadRun();
+      await this.#reloadRun(mayHaveWritten);
       if (failure === null) await this.#runEnded('lost');
       return failure;
     });
@@ -1198,8 +1217,9 @@ class AppState {
    * answer are "no". The window does not fold by itself while the question is there. A new question replaces the old one.
    */
   ask(question: Confirm, onYes: () => void | Promise<void>): void {
+    // a question that is still up is answered "no" first, and the log says so
+    if (this.confirm !== null) this.answer(false, 'replaced');
     this.#log.info('ui', 'ask', { text: question.text });
-    this.#dropQuestion();
     this.confirm = question;
     this.#confirmAction = onYes;
     this.holdBusy(CONFIRM_BUSY);

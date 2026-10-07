@@ -1,27 +1,31 @@
 <script lang="ts">
-  import { formatCompact, formatPct, formatUec } from '../../core/format';
-  import type { RunTotals } from '../../core/run';
+  import { formatUec } from '../../core/format';
   import type { PhaseLine } from '../vm/run-phase';
+  import type { RunOutlook } from '../vm/run-outlook';
 
   interface Props {
     cargo: Array<{ code: string; scu: number; avgBuyPrice: number }>;
     /** The three phases of the current leg and the whole time, for the line at the top. */
     phases: PhaseLine;
-    totals: RunTotals;
-    onDepart: () => void;
-    onArrive: () => void;
+    /** The money: what is put in and sold (facts), and the EXPECTED result of the whole run. A run that goes on is not a loss. */
+    outlook: RunOutlook;
+    /** The marks of the body: the ones the header of the section does not offer (`cardMarks`). */
+    marks: Array<'depart' | 'arrive'>;
+    onMark: (type: 'depart' | 'arrive') => void;
     /** Called when the player pressed "Груз потерян". The owner asks the question (a line under the header of the window). */
     onLost: () => void;
   }
-  let { cargo, phases, totals, onDepart, onArrive, onLost }: Props = $props();
+  let { cargo, phases, outlook, marks, onMark, onLost }: Props = $props();
 
   const NONE = '—';
-  const MIN_RATE_SEC = 60;
-
-  const roi = $derived(totals.roi === null ? NONE : formatPct(totals.roi));
-  // the first minute of a run gives a rate of millions an hour that means nothing: it is shown from the first minute on
-  const rate = $derived(totals.uecPerHour === null || totals.durationSec < MIN_RATE_SEC ? NONE : `${formatCompact(totals.uecPerHour)}/ч`);
+  const MARK_LABEL = { depart: 'Взлетел', arrive: 'Прилетел' } as const;
+  const expected = $derived(outlook.expected);
+  const dashTitle = $derived(outlook.why ?? undefined);
 </script>
+
+{#snippet lost()}
+  <button type="button" class="sc-btn sc-btn--act danger" onclick={() => onLost()}>Груз потерян</button>
+{/snippet}
 
 <section class="card" aria-label="Текущий рейс">
   <div class="phases" role="group" aria-label="Фазы рейса">
@@ -32,14 +36,21 @@
     {/each}
     <span class="spacer"></span>
     <span class="total" title="Время с первой покупки">всего <span class="sc-num">{phases.total}</span></span>
+    {#if marks.length === 0}
+      <!-- nothing else to press: the button of the lost cargo takes the end of this line, no line of its own -->
+      {@render lost()}
+    {/if}
   </div>
 
-  <div class="top">
-    <button type="button" class="sc-btn sc-btn--act" onclick={() => onDepart()}>Взлетел</button>
-    <button type="button" class="sc-btn sc-btn--act" onclick={() => onArrive()}>Прилетел</button>
-    <span class="spacer"></span>
-    <button type="button" class="sc-btn sc-btn--act danger" onclick={() => onLost()}>Груз потерян</button>
-  </div>
+  {#if marks.length > 0}
+    <div class="top">
+      {#each marks as type (type)}
+        <button type="button" class="sc-btn sc-btn--act" onclick={() => onMark(type)}>{MARK_LABEL[type]}</button>
+      {/each}
+      <span class="spacer"></span>
+      {@render lost()}
+    </div>
+  {/if}
 
   {#if cargo.length === 0}
     <p class="empty">В трюме пусто</p>
@@ -56,14 +67,20 @@
   {/if}
 
   <dl class="totals">
-    <div><dt class="sc-label">Вложено</dt><dd class="sc-num">{formatUec(totals.invested)}</dd></div>
-    <div><dt class="sc-label">Выручка</dt><dd class="sc-num">{formatUec(totals.revenue)}</dd></div>
+    <div><dt class="sc-label" title="Всё, что куплено">Вложено</dt><dd class="sc-num">{outlook.invested}</dd></div>
+    <div><dt class="sc-label" title="Всё, что уже продано">Выручка</dt><dd class="sc-num">{outlook.revenue}</dd></div>
     <div>
-      <dt class="sc-label">Прибыль</dt>
-      <dd class="sc-num" class:good={totals.profit > 0} class:loss={totals.profit < 0}>{formatUec(totals.profit)}</dd>
+      <dt class="sc-label" title="Ожидаемая прибыль всего рейса: уже проданное плюс то, что в трюме, по ожидаемой цене в точке цели, минус вложенное">Прибыль</dt>
+      <dd class="sc-num" class:loss={expected?.profitLoss} title={expected === null ? dashTitle : undefined}>{expected?.profit ?? NONE}</dd>
     </div>
-    <div><dt class="sc-label">ROI</dt><dd class="sc-num">{roi}</dd></div>
-    <div><dt class="sc-label">UEC/ч</dt><dd class="sc-num">{rate}</dd></div>
+    <div>
+      <dt class="sc-label" title="Ожидаемое отношение прибыли ко вложенному">ROI</dt>
+      <dd class="sc-num" title={expected === null ? dashTitle : undefined}>{expected?.roi ?? NONE}</dd>
+    </div>
+    <div>
+      <dt class="sc-label" title="Ожидаемые UEC в час за время всего рейса: не меньше, чем прошло, и не меньше, чем лететь до цели">UEC/ч</dt>
+      <dd class="sc-num" title={expected === null ? dashTitle : undefined}>{expected?.rate ?? NONE}</dd>
+    </div>
   </dl>
 </section>
 
@@ -77,7 +94,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    height: var(--sc-row-h);
+    height: calc(var(--sc-ctl-h) + 4px);
     white-space: nowrap;
   }
 
@@ -181,10 +198,6 @@
     height: var(--sc-row-h);
     color: var(--sc-muted);
     line-height: var(--sc-row-h);
-  }
-
-  .good {
-    color: var(--sc-good);
   }
 
   .loss {

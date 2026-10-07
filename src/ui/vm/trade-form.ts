@@ -1,6 +1,7 @@
 import { quantity } from '../../core/routes';
 import { cargoOf } from '../../core/run';
 import type { CargoLine, RunWithEvents, Side } from '../../core/types';
+import { cellEditBase } from './inputs';
 import type { Cell } from './terminal-rows';
 
 // What the trade form under a table row starts with, and when "Продал" has nothing to sell. Pure: the form is
@@ -47,11 +48,14 @@ export function tradeDefaults(i: DefaultsInput): TradeDefaults {
 }
 
 /**
- * The quantity the player sees at the terminal before the trade, as it goes into the record (`knownScu`): the quantity of
- * my own the row shows, a known zero included. A quantity of UEX is not what the player saw, so it is not taken.
+ * The quantity the player saw at the terminal before the trade, as it goes into the record (`knownScu`): the quantity of
+ * my own the row shows, a known zero included, and only while it is still what he read. The estimate of the refill timer
+ * (the row remembers the reading it started from, `ownScuBase`) is a calculation, not something he saw: the record then
+ * carries no quantity reading. A quantity of UEX is not what the player saw either. The same rule as for what a row of the
+ * table saves (`cellEditBase`).
  */
-export function knownScuOf(cell: Pick<Cell, 'ownScu'> | null): number | null {
-  return cell?.ownScu ?? null;
+export function knownScuOf(cell: Pick<Cell, 'own' | 'ownScu' | 'ownScuBase'> | null): number | null {
+  return cell === null ? null : cellEditBase(cell).scu;
 }
 
 /** Why "Продал" has nothing to open, in a sentence; `null` when it has. A purchase always has: the first one starts the run. */

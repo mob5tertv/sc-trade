@@ -1,12 +1,14 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { runTotals } from '../../core/run';
   import RunCard from '../components/RunCard.svelte';
   import SellDecisionView from '../components/SellDecisionView.svelte';
   import Section from '../components/Section.svelte';
   import { app } from '../state.svelte';
-  import { phaseLine, runPhases } from '../vm/run-phase';
-  import { cargoRows, planSummary, runHeader, runSectionKind, sellDecisionKey, sellDecisions, sellLogContext } from '../vm/run-section';
+  import { runOutlook } from '../vm/run-outlook';
+  import { cardMarks, phaseLine, runPhases } from '../vm/run-phase';
+  import {
+    cargoRows, decisionAtClock, planSummary, runHeader, runSectionKind, sellDecisionKey, sellDecisions, sellLogContext,
+  } from '../vm/run-section';
 
   const SECTION = 'run';
   // The window gives up the length of this section after the table (shrink 1) and before the options (0.2): it is short
@@ -24,22 +26,34 @@
   const summary = $derived(header !== null ? header.summary : model.kind === 'idle' && model.target !== null ? planSummary(model.target) : '');
   const hasTarget = $derived(model.target !== null);
 
-  // the three phases of the leg and the money so far, on the clock of the window (once a second)
+  // the three phases of the leg and the money, on the clock of the window (once a second); the money of a run that goes on
+  // is its EXPECTED result (a run that is not finished is not a loss)
   const phases = $derived(active === null ? null : phaseLine(runPhases(active.run, active.events, app.now)));
-  const totals = $derived(active === null ? null : runTotals(active.run, active.events, app.now));
+  const outlook = $derived(active === null ? null : runOutlook(active, app.market, app.reference, app.settings, app.routeCtx()));
   const cargo = $derived(active === null ? [] : cargoRows(active.events, app.reference));
+  // the header offers the mark that comes next; the body only what the header does not
+  const marks = $derived(model.kind === 'run' ? cardMarks(model.phase) : []);
 
-  // "Sell here or fly on": for the commodities of the hold that have a price of my own at the viewed terminal. It is
-  // counted only while the section is open, and written to the log once per decision, not once per second.
-  const decisions = $derived(
-    open && active !== null ? sellDecisions(active, app.market, app.reference, app.viewTerminalId, app.routeCtx()) : [],
+  // "Sell here or fly on": for the commodities of the hold that have a price of my own at the viewed terminal. The
+  // alternatives (every terminal that buys the commodity) are counted when their inputs change (the market, the viewed
+  // terminal, the cargo, the price, the settings), and again every 15 seconds on the slow clock of the table, which moves
+  // the temperatures of the prices; they do not depend on the one-second clock. Only the rates follow it (`decisionAtClock`).
+  // Counted only while the section is open.
+  const counted = $derived(
+    open && active !== null
+      ? sellDecisions(active, app.market, app.reference, app.viewTerminalId, app.routeCtx(undefined, app.rowsNow))
+      : [],
   );
-  const decisionKey = $derived(sellDecisionKey(decisions));
+  const decisions = $derived(
+    active === null ? [] : counted.map((d) => decisionAtClock(d, app.now - active.run.startedAt)),
+  );
+  // and written to the log once per decision (what is decided, not the clock)
+  const decisionKey = $derived(sellDecisionKey(counted));
   $effect(() => {
     void decisionKey;
     void app.market;
     untrack(() => {
-      for (const d of decisions) app.log.debug('sell', 'sell or continue', sellLogContext(d));
+      for (const d of counted) app.log.debug('sell', 'sell or continue', sellLogContext(d));
     });
   });
 
@@ -77,15 +91,8 @@
   >
     {#if kind === 'plan'}
       <p class="plan">Таймер пойдёт с первой покупки</p>
-    {:else if active !== null && phases !== null && totals !== null}
-      <RunCard
-        {cargo}
-        {phases}
-        {totals}
-        onDepart={() => void app.mark('depart')}
-        onArrive={() => void app.mark('arrive')}
-        onLost={askLost}
-      />
+    {:else if active !== null && phases !== null && outlook !== null}
+      <RunCard {cargo} {phases} {outlook} {marks} onMark={(type) => void app.mark(type)} onLost={askLost} />
       {#each decisions as d (d.commodityId)}
         <SellDecisionView commodityCode={d.code} here={d.here} alternatives={d.alternatives} reference={app.reference} />
       {/each}

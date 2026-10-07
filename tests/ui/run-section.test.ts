@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { distKey } from '../../src/core/types';
-import { cargoRows, planSummary, runHeader, runSectionKind, sellDecisionKey, sellDecisions, sellLogContext } from '../../src/ui/vm/run-section';
+import { cargoRows, decisionAtClock, planSummary, runHeader, runSectionKind, sellDecisionKey, sellDecisions, sellLogContext } from '../../src/ui/vm/run-section';
+import { sameRun } from '../../src/ui/vm/same-run';
 import { stripModel } from '../../src/ui/vm/strip';
 import { buildMarket } from '../../src/core/market';
 import { ev, obs, ref } from '../helpers/factories';
@@ -97,6 +98,60 @@ describe('sellDecisions', () => {
   it('does not let the inventory recorded at the place limit the sale', () => {
     const [empty] = sellDecisions(active, withOwnSell(market, 3, GOLD, 6840, NOW - 60, 0), ref, 3, here);
     expect(empty.here.qty).toBe(96);
+  });
+});
+
+describe('decisionAtClock', () => {
+  const here = { ...ctx, distances: new Map<string, number | null>([[distKey(1, 2), 59], [distKey(3, 2), 10]]) };
+  const [d] = sellDecisions(active, withOwnSell(market, 3, GOLD, 6840, NOW - 60), ref, 3, here);
+
+  it('is what the core said at the moment it was counted', () => {
+    const same = decisionAtClock(d, d.elapsedSec);
+    expect(same.here).toEqual(d.here);
+    expect(same.alternatives).toEqual(d.alternatives);
+  });
+  it('moves the rates with the time since the run began and nothing else', () => {
+    const later = decisionAtClock(d, d.elapsedSec + 600);
+    expect(later.elapsedSec).toBe(d.elapsedSec + 600);
+    expect(later.here.uecPerHour).toBeCloseTo((d.here.profit * 3600) / (d.elapsedSec + 600), 6);
+    expect(later.here.profit).toBe(d.here.profit);
+    const [a, b] = [d.alternatives[0], later.alternatives[0]];
+    expect(b.expectedUecPerHour).toBeCloseTo((a.expectedProfit * 3600) / (d.elapsedSec + 600 + (a.extraSec ?? 0)), 6);
+    expect(b.worstUecPerHour).toBeCloseTo((d.line.scu * (a.sell.low - d.line.avgBuyPrice) * 3600) / (d.elapsedSec + 600 + (a.extraSec ?? 0)), 6);
+    expect([b.destId, b.expectedProfit, b.extraSec, b.sell]).toEqual([a.destId, a.expectedProfit, a.extraSec, a.sell]);
+  });
+  it('agrees with a calculation made at that moment (the same rates the core gives)', () => {
+    const [recounted] = sellDecisions(active, withOwnSell(market, 3, GOLD, 6840, NOW - 60), ref, 3, { ...here, now: ctx.now + 600 });
+    const moved = decisionAtClock(d, recounted.elapsedSec);
+    expect(moved.here.uecPerHour).toBeCloseTo(recounted.here.uecPerHour ?? NaN, 6);
+    expect(moved.alternatives[0].expectedUecPerHour).toBeCloseTo(recounted.alternatives[0].expectedUecPerHour ?? NaN, 6);
+  });
+  it('keeps an unknown flight time unknown and a moment without time without a rate', () => {
+    const lonely = sellDecisions(active, withOwnSell(market, 3, GOLD, 6840, NOW - 60), ref, 3, { ...here, distances: new Map() })[0];
+    expect(lonely.alternatives[0].extraSec).toBeNull();
+    expect(decisionAtClock(lonely, 500).alternatives[0].expectedUecPerHour).toBeNull();
+    expect(decisionAtClock(d, 0).here.uecPerHour).toBeNull();
+  });
+});
+
+describe('sameRun', () => {
+  const copy = <T,>(x: T): T => structuredClone(x);
+
+  it('is the same for a run read again that did not change, and for two nothings', () => {
+    expect(sameRun(copy(active), active)).toBe(true);
+    expect(sameRun(null, null)).toBe(true);
+  });
+  it('differs for a run and nothing', () => {
+    expect(sameRun(active, null)).toBe(false);
+    expect(sameRun(null, active)).toBe(false);
+  });
+  it('differs when an event was added, or the run was closed', () => {
+    const more = { run: active.run, events: [...active.events, ev({ id: 9, runId: 1, ts: NOW, type: 'depart' })] };
+    expect(sameRun(more, active)).toBe(false);
+    expect(sameRun({ run: { ...active.run, status: 'lost', endedAt: NOW }, events: active.events }, active)).toBe(false);
+  });
+  it('differs for another run', () => {
+    expect(sameRun({ run: { ...active.run, id: 2 }, events: active.events }, active)).toBe(false);
   });
 });
 

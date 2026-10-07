@@ -1,3 +1,4 @@
+import { tick } from 'svelte';
 import type { Scene } from './scenes';
 
 // The scenes of task 15c: trades from the row of the table, the section «Рейс», the marks on the mini line, the question
@@ -185,6 +186,79 @@ export const RUN_SCENES: readonly Scene[] = [
     },
   ]),
 
+  {
+    // 50 of 120 MEDS are sold at ARC-L1 after the arrival: the card shows what is in hand and the result expected for the rest
+    name: 'run-partly-sold',
+    title: '«Рейс» после продажи части груза: выручка уже есть, результат всего рейса ожидаемый (≈)',
+    dataset: 'run-unloading',
+    act: async (app) => {
+      await app.expand('preview');
+      await app.toggleSection('run');
+      app.setViewTerminal(ARC_L1);
+      await app.sell({ terminalId: ARC_L1, commodityId: MEDS, scu: 50, price: 2540 });
+      await pause(200);
+    },
+  },
+  {
+    // the target is taken away in the middle of the run: the three expected numbers are dashes and say why
+    name: 'run-no-target',
+    title: '«Рейс» без цели: ожидаемые прибыль, ROI и UEC/ч — прочерки с подсказкой «выбери цель»',
+    dataset: 'run-loading',
+    act: async (app) => {
+      await app.expand('preview');
+      await app.toggleSection('run');
+      await app.setTarget(null);
+      await pause(100);
+    },
+  },
+  {
+    // the whole way with the keyboard-free parts of the window: `--do` buys, marks, sells a part and the rest (see the task report)
+    name: 'trade-flow',
+    title: 'Покупка, отметки, продажа части и остатка: сценарий для --do (рейс начинается в HUR-L1, цель ARC-L1)',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      await app.setTarget(ARC_L1);
+      await openTradeForm('MEDS', 'Купил');
+    },
+  },
+  {
+    // a write that is refused changes nothing, so the run the state holds stays THE SAME object (whoever follows it by
+    // identity is not woken); a mark that is written replaces it. The result is in `window.__runIdentity` (`--do eval`).
+    name: 'run-identity',
+    title: 'Отказ службы не подменяет активный рейс в состоянии (проверка тождества объекта)',
+    dataset: 'run-loading',
+    act: async (app) => {
+      const before = app.activeRun;
+      const refusal = await app.buy({ terminalId: 3, commodityId: MEDS, scu: 9999, price: 100 });
+      const afterRefusal = app.activeRun === before;
+      const refusedMark = await app.mark('depart').then(() => app.mark('depart'));
+      const afterRepeat = app.activeRun === before;
+      (window as unknown as { __runIdentity: unknown }).__runIdentity = {
+        refusal, sameAfterRefusedBuy: afterRefusal, repeatedMark: refusedMark, changedAfterWrittenMark: !afterRepeat,
+      };
+      await app.expand('preview');
+    },
+  },
+  {
+    // the player goes to another row and opens its form while the write of the first one is still on its way: the answer
+    // (a refusal) must stay with the first form. `--do eval`: the form of PFOO has no message.
+    name: 'trade-switched-row',
+    title: 'Ответ службы приходит, когда открыта форма другой строки: он не должен попасть в неё',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      await openTradeForm('MEDS', 'Купил');
+      await typeInto(QUANTITY, '9999');
+      document.querySelector<HTMLFormElement>('form.trade')?.requestSubmit();
+      // no pause from here to the second form: the write is still under way (it goes through the database)
+      [...document.querySelectorAll<HTMLElement>('.table button.line')].find((el) => (el.textContent ?? '').includes('PFOO'))?.click();
+      await tick();
+      [...document.querySelectorAll<HTMLElement>('.expand button')].find((el) => (el.textContent ?? '').includes('Купил'))?.click();
+      await tick();
+      await pause(500);
+    },
+  },
   {
     // what the state knew is thrown away and read again from the database, as after a restart in the middle of a run
     name: 'run-restart',

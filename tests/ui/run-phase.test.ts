@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { phases } from '../../src/core/run';
-import { markRefusal, nextMarkOf, phaseCaps, phaseLine, runPhases } from '../../src/ui/vm/run-phase';
+import { cardMarks, markRefusal, nextMarkOf, phaseCaps, phaseLine, runPhases } from '../../src/ui/vm/run-phase';
 import { bought, marked, runOf, sold, T0, TITA } from '../helpers/run-wiring-fixtures';
 
 /** `runPhases` of a run with these events, `at` seconds after the first purchase. */
@@ -64,6 +64,45 @@ describe('runPhases', () => {
     const core = phases(events);
     expect(core).toEqual({ loadingSec: 360, flightSec: 1140, unloadingSec: 90 });
     expect(at(1590, ...events).slots).toEqual({ loading: core?.loadingSec, flight: core?.flightSec, unloading: core?.unloadingSec });
+  });
+});
+
+describe('runPhases of a finished run', () => {
+  const finished = (now: number) => {
+    const active = runOf(bought(0), marked(180, 'depart'), marked(700, 'arrive'), sold(750));
+    const run = { ...active.run, status: 'done' as const, endedAt: T0 + 750 };
+    return runPhases(run, active.events, T0 + now);
+  };
+
+  it('counts to the end of the run: every number stops there and does not grow with the clock', () => {
+    const expected = {
+      phase: 'unloading', sinceSec: 50, totalSec: 750, slots: { loading: 180, flight: 520, unloading: 50 },
+    };
+    expect(finished(750)).toEqual(expected);
+    expect(finished(5000)).toEqual(expected);
+  });
+  it('stops a run that was lost in flight at the moment it was lost', () => {
+    const active = runOf(bought(0), marked(180, 'depart'));
+    const run = { ...active.run, status: 'lost' as const, endedAt: T0 + 400 };
+    expect(runPhases(run, active.events, T0 + 9999)).toMatchObject({ phase: 'flight', sinceSec: 220, totalSec: 400, slots: { loading: 180, flight: 220, unloading: null } });
+  });
+});
+
+describe('cardMarks', () => {
+  // the header of the section offers the NEXT mark (take-off while loading, arrival in flight); the card keeps the rest
+  it('offers nothing while loading and in flight: the header has the one mark that comes', () => {
+    expect(cardMarks('loading')).toEqual([]);
+    expect(cardMarks('flight')).toEqual([]);
+  });
+  it('offers the take-off of another leg while unloading, when the header offers no mark', () => {
+    expect(cardMarks('unloading')).toEqual(['depart']);
+  });
+  it('never offers what the header offers', () => {
+    for (const phase of ['loading', 'flight', 'unloading'] as const) {
+      const active = { loading: runOf(bought(0)), flight: runOf(bought(0), marked(10, 'depart')), unloading: runOf(bought(0), marked(10, 'depart'), marked(20, 'arrive')) }[phase];
+      const next = nextMarkOf(active, T0 + 30);
+      expect(cardMarks(phase).filter((mark) => mark === next)).toEqual([]);
+    }
   });
 });
 

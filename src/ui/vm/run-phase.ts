@@ -52,11 +52,15 @@ function segmentsOf(run: Run, events: RunEvent[]): Segment[] {
   return segments;
 }
 
-/** What the run is doing at `now` (Unix seconds), from its events; the events are in the order the database gives them (time, then id). */
+/**
+ * What the run is doing at `now` (Unix seconds), from its events; the events are in the order the database gives them
+ * (time, then id). A run that has ended counts to its end, not to `now`: every number of a finished run stands still.
+ */
 export function runPhases(run: Run, events: RunEvent[], now: number): RunPhases {
   const segments = segmentsOf(run, events);
   const current = segments[segments.length - 1];
-  const length = (i: number): number => Math.max(0, (segments[i + 1]?.from ?? now) - segments[i].from);
+  const end = run.endedAt ?? now;
+  const length = (i: number): number => Math.max(0, (segments[i + 1]?.from ?? end) - segments[i].from);
 
   const slots: Record<RunPhase, number | null> = { loading: null, flight: null, unloading: null };
   for (const phase of ORDER) {
@@ -66,9 +70,9 @@ export function runPhases(run: Run, events: RunEvent[], now: number): RunPhases 
   }
   return {
     phase: current.phase,
-    sinceSec: Math.max(0, now - current.from),
+    sinceSec: Math.max(0, end - current.from),
     slots,
-    totalSec: Math.max(0, (run.endedAt ?? now) - run.startedAt),
+    totalSec: Math.max(0, end - run.startedAt),
   };
 }
 
@@ -80,6 +84,15 @@ export function nextMarkOf(active: RunWithEvents | null, now: number): 'depart' 
   if (active === null) return null;
   const { phase } = runPhases(active.run, active.events, now);
   return phase === 'loading' ? 'depart' : phase === 'flight' ? 'arrive' : null;
+}
+
+/**
+ * The marks the card of the run offers in its body: the ones the header of the section does NOT offer. The header has the
+ * mark that comes next (the take-off while loading, the arrival in flight), so the card has nothing then; while unloading the
+ * header has none (the sale ends the run), and the card has the take-off of another leg with the cargo that is still aboard.
+ */
+export function cardMarks(phase: RunPhase): Array<'depart' | 'arrive'> {
+  return phase === 'unloading' ? ['depart'] : [];
 }
 
 const NO_RUN = 'Нет активного рейса';

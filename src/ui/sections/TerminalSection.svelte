@@ -75,14 +75,20 @@
 
   // ---- the form of a trade, under the open row ----------------------------------------------------------------------
 
-  /** The form belongs to the terminal, the side and the commodity it was opened under; `error` is what the write said. */
-  interface TradeFormState { terminalId: number; side: Side; commodityId: number; defaults: TradeDefaults; error: string | null }
+  /**
+   * The form belongs to the terminal, the side and the commodity it was opened under; `error` is what the write said. `id`
+   * is the number of this very opening: the answer of a write that was started from it may only touch it, not a form that
+   * was opened after the player went to another row (or the same row again).
+   */
+  interface TradeFormState { id: number; terminalId: number; side: Side; commodityId: number; defaults: TradeDefaults; error: string | null }
   let tradeState = $state.raw<TradeFormState | null>(null);
+  let tradeFormCount = 0;
   const tradeFor = $derived(tradeState === null ? null : tradeState.commodityId);
   const tradeOpen = $derived(tradeState !== null);
 
-  function closeTrade(why: string): void {
-    if (tradeState === null) return;
+  /** Closes the open form; with `id` only that opening (it may be gone already, and another one open). */
+  function closeTrade(why: string, id?: number): void {
+    if (tradeState === null || (id !== undefined && tradeState.id !== id)) return;
     app.log.debug('ui', 'trade form closed', { why });
     tradeState = null;
   }
@@ -120,7 +126,7 @@
       cargo: cargoOf(app.activeRun?.events ?? []), capacity: app.settings.scuCapacity, budget: app.settings.budget,
     });
     app.log.info('ui', 'trade form', { terminalId: viewedId, ...e, ...defaults });
-    tradeState = { terminalId: viewedId, side: e.side, commodityId: e.commodityId, defaults, error: null };
+    tradeState = { id: ++tradeFormCount, terminalId: viewedId, side: e.side, commodityId: e.commodityId, defaults, error: null };
   }
 
   // The error of the form is cleared when the write starts, so that the same refusal twice in a row is a change for the form.
@@ -133,8 +139,9 @@
     const cell = app.terminalRows.find((r) => r.commodityId === form.commodityId)?.[form.side] ?? null;
     const input = { terminalId: form.terminalId, commodityId: form.commodityId, ...trade, knownScu: knownScuOf(cell) };
     const failure = await (form.side === 'buy' ? app.buy(input) : app.sell(input));
-    if (failure === null) closeTrade('written');
-    else if (tradeState !== null) tradeState = { ...tradeState, error: failure };
+    // the answer belongs to the form the write was started from: the player may have gone to another row meanwhile
+    if (failure === null) closeTrade('written', form.id);
+    else if (tradeState !== null && tradeState.id === form.id) tradeState = { ...tradeState, error: failure };
   }
 </script>
 
