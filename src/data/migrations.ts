@@ -102,14 +102,44 @@ export const MIGRATIONS: Migration[] = [
   },
 ];
 
+/**
+ * The database was written by a NEWER version of the application: its schema is above the newest migration this build
+ * knows. The message is meant for the player, as it is, and says what to do.
+ */
+export class NewerDatabaseError extends Error {
+  constructor(readonly schema: number, readonly known: number) {
+    super(`База создана более новой версией программы (схема ${schema}, эта версия знает ${known}). Обнови программу.`);
+    this.name = 'NewerDatabaseError';
+  }
+}
+
 async function readVersion(db: Db): Promise<number> {
   const rows = await db.select<{ user_version: number }>('PRAGMA user_version');
   return rows[0]?.user_version ?? 0;
 }
 
-/** Applies every migration newer than `PRAGMA user_version`; returns the schema version afterwards. */
+/**
+ * Reads `PRAGMA user_version` and returns it, and nothing else: it writes nothing and applies no migration. A database whose
+ * version is above the newest migration is refused with a `NewerDatabaseError` (and a line in the log): working on a schema this
+ * build does not know could write rows that the newer version cannot read. It is the check `migrate` starts with, and a start
+ * that has to know BEFORE it touches anything (before a backup is made) can call it alone.
+ */
+export async function checkSchemaVersion(db: Db, log: Logger): Promise<number> {
+  const version = await readVersion(db);
+  const known = MIGRATIONS[MIGRATIONS.length - 1].version;
+  if (version > known) {
+    log.error('db', 'database is from a newer version', { schema: version, known });
+    throw new NewerDatabaseError(version, known);
+  }
+  return version;
+}
+
+/**
+ * Applies every migration newer than `PRAGMA user_version`; returns the schema version afterwards. A database from a newer
+ * version of the application is refused before anything is written (`checkSchemaVersion`).
+ */
 export async function migrate(db: Db, log: Logger): Promise<number> {
-  let version = await readVersion(db);
+  let version = await checkSchemaVersion(db, log);
   for (const migration of MIGRATIONS) {
     if (migration.version <= version) continue;
     try {

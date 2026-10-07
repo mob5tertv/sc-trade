@@ -3,7 +3,9 @@ import { installHttpFake, type FakeAnswer } from './http-fake';
 
 // The price requests of UEX for the scenes that show a price refresh: every request is answered with the rows the
 // application already has for its terminals (so the table does not change under the picture), but the scene decides how
-// far the refresh gets: a gate holds the request after the first few, and chosen terminals fail the way a stalled network does.
+// far the refresh gets: a gate holds the request after the first few, and chosen terminals are refused by the server (HTTP 503),
+// not by a stalled network: the application repeats a refused batch terminal by terminal, so such a terminal fails "even alone",
+// while a failure of the network would end the refresh after three requests.
 // Anything that is not a price request fails at once, as it does in the preview without a network.
 
 const PRICES_PATH = '/commodities_prices?id_terminal=';
@@ -76,7 +78,7 @@ export function installPriceFake({ rows, passes = Infinity, failTerminals = new 
     if (ids === null) throw new Error(`preview: no network for ${url}`);
     asked++;
     if (asked > allowed) await new Promise<void>((resolve) => waiting.push(resolve));
-    if (ids.some((id) => failTerminals.has(id))) throw new Error('preview: the request stalled');
+    if (ids.some((id) => failTerminals.has(id))) return { status: 503, body: { status: 'error' } };
     return { status: 200, body: { status: 'ok', data: [...rows()].filter((p) => ids.includes(p.terminalId)).map(priceRow) } };
   });
 

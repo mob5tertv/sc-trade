@@ -1,15 +1,19 @@
-import { distKey, type Commodity, type StarSystem, type Terminal, type Vehicle } from '../core/types';
+import { distKey, type Commodity, type StarSystem, type Terminal, type UexPrice, type Vehicle } from '../core/types';
 import type { Db } from './db';
 import type { Logger } from './logger';
+import { EMPTY_UNITS_IN_A_ROW, NETWORK_FAILURES_IN_A_ROW, Outage, type OutageReason } from './outage';
 import {
   getMeta, loadDistances, putDistances, saveReference, setMeta, upsertPrices, upsertVehicles,
 } from './repo/uex-cache';
-import { UexError, type UexClient } from './uex-client';
+import { isRateLimit, isUnreachable, UexError, type UexClient } from './uex-client';
 
 // Fills the local UEX cache. The network is throttled (see the amendment "UEX over a throttled
 // network"): a response of more than ~24 KB stalls, so lists are requested in small pieces and
 // strictly one request at a time. Failures of UEX never abort a run half-way unless the
-// documented contract says so; a failure of the local database always propagates.
+// documented contract says so; a failure of the local database always propagates. A series of
+// many requests (prices, vehicles) gives up when the network fails three times in a row, when three of its
+// batches in a row bring nothing in, or at once when UEX asks to wait (`outage.ts`): on a network that is
+// dead or a UEX that is down every further request would cost the whole timeout and hold the queue of UEX.
 
 export interface SyncDeps { db: Db; uex: UexClient; log: Logger; now: () => number }
 
@@ -28,6 +32,14 @@ const META_REFERENCE = 'reference_synced_at';
 const META_PRICES = 'prices_synced_at';
 const metaRoutesFetched = (originId: number) => `routes_fetched:${originId}`;
 
+/** The reasons for a series of requests to stop short, as the log tells them (`unit` is what the series is made of). */
+const LIMIT_REACHED = 'UEX request limit reached (HTTP 429), asking again later';
+const whyStopped = (reason: OutageReason, unit: string): string => (reason === 'limit'
+  ? LIMIT_REACHED
+  : reason === 'network'
+    ? `the network failed ${NETWORK_FAILURES_IN_A_ROW} times in a row`
+    : `${EMPTY_UNITS_IN_A_ROW} ${unit} in a row yielded nothing`);
+
 const isStale = (syncedAt: number | null, now: number, maxAge: number): boolean => syncedAt === null || now - syncedAt > maxAge;
 
 export const referenceIsStale = (syncedAt: number | null, now: number): boolean => isStale(syncedAt, now, REFERENCE_MAX_AGE_SEC);
@@ -42,7 +54,7 @@ function parseSeconds(value: string | null): number | null {
 
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-type Attempt<T> = { ok: true; value: T } | { ok: false };
+type Attempt<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
 /** Runs one UEX request that may fail without failing the run: a failure is logged as a warning. */
 async function attempt<T>(d: SyncDeps, what: string, ctx: object, call: () => Promise<T>): Promise<Attempt<T>> {
@@ -50,25 +62,49 @@ async function attempt<T>(d: SyncDeps, what: string, ctx: object, call: () => Pr
     return { ok: true, value: await call() };
   } catch (err) {
     d.log.warn('sync', `${what} failed`, { ...ctx, reason: reason(err) });
-    return { ok: false };
+    return { ok: false, error: err };
   }
+}
+
+/** Tells `outage` how a request of the series ended. */
+function note(outage: Outage, result: Attempt<unknown>): void {
+  if (result.ok) outage.reached();
+  else outage.failed(result.error);
 }
 
 // ---------------------------------------------------------------------------
 // Reference data
 // ---------------------------------------------------------------------------
 
-/** Vehicles of every manufacturer. `complete` is false when any request failed: then the list is only a part. */
+/**
+ * Vehicles of every manufacturer. `complete` is false when any request failed: then the list is only a part. The series
+ * gives up when the network fails three times in a row, when three manufacturers in a row fail whatever the kind of the
+ * failure (a manufacturer that answered, even with no vehicle, starts the count again), or at once on the answer "too many
+ * requests": the manufacturers that were not asked count as failed.
+ */
 async function fetchVehicles(d: SyncDeps): Promise<{ list: Vehicle[]; complete: boolean }> {
   const manufacturers = await attempt(d, 'vehicle manufacturers request', {}, () => d.uex.vehicleManufacturers());
   if (!manufacturers.ok) return { list: [], complete: false };
 
   const list: Vehicle[] = [];
+  const outage = new Outage();
   let complete = true;
+  let asked = 0;
   for (const companyId of manufacturers.value) {
+    if (outage.over) break;
     const vehicles = await attempt(d, 'vehicles request', { companyId }, () => d.uex.vehicles(companyId));
+    asked++;
+    note(outage, vehicles);
+    outage.unit(vehicles.ok);
     if (vehicles.ok) list.push(...vehicles.value);
     else complete = false;
+  }
+  if (asked < manufacturers.value.length && outage.reason !== null) {
+    complete = false;
+    const verb = outage.limited ? 'stopped' : 'gave up';
+    d.log.warn('sync', `vehicles sync ${verb}: ${whyStopped(outage.reason, 'manufacturers')}`, {
+      manufacturers: manufacturers.value.length, asked,
+    });
   }
   // An answer without a single vehicle is not trusted: it would wipe the stored vehicles.
   if (list.length === 0) {
@@ -135,34 +171,55 @@ export async function syncReference(d: SyncDeps): Promise<void> {
 // Prices
 // ---------------------------------------------------------------------------
 
-/** Fetches the prices of `terminalIds` and stores them; false when the request failed. */
-async function fetchAndStorePrices(d: SyncDeps, terminalIds: number[], syncedAt: number): Promise<boolean> {
-  const prices = await attempt(d, 'price request', { terminalIds }, () => d.uex.prices(terminalIds));
-  if (!prices.ok) return false;
-  await upsertPrices(d.db, terminalIds, prices.value, syncedAt);
-  return true;
+/**
+ * Fetches the prices of `terminalIds` and stores them; `error` is what the request failed with. A failure of the network
+ * (or the limit of requests) is not logged here: the client has written it, and the sync says it once, when the run ends.
+ */
+async function fetchAndStorePrices(
+  d: SyncDeps, terminalIds: number[], syncedAt: number, outage: Outage,
+): Promise<{ ok: true } | { ok: false; error: unknown }> {
+  let prices: UexPrice[];
+  try {
+    prices = await d.uex.prices(terminalIds);
+  } catch (err) {
+    if (!isUnreachable(err)) d.log.warn('sync', 'price request failed', { terminalIds, reason: reason(err) });
+    outage.failed(err);
+    return { ok: false, error: err };
+  }
+  outage.reached();
+  await upsertPrices(d.db, terminalIds, prices, syncedAt);
+  return { ok: true };
 }
 
 /**
- * One batch of terminals. When its request fails it is repeated once terminal by terminal; the result
- * lists the terminals that could not be fetched even alone (their stored rows stay as they are).
+ * One batch of terminals. When its request fails because the SERVER refused it (an HTTP error, an unreadable answer) it
+ * is repeated once terminal by terminal; when the NETWORK failed, or UEX asked to wait (429), it is not: the requests of
+ * the single terminals would stall the same way, or only add to the load. The result lists the terminals that could not
+ * be fetched even alone (their stored rows stay as they are).
  */
-async function syncPriceBatch(d: SyncDeps, batch: number[], syncedAt: number): Promise<number[]> {
-  if (await fetchAndStorePrices(d, batch, syncedAt)) return [];
+async function syncPriceBatch(d: SyncDeps, batch: number[], syncedAt: number, outage: Outage): Promise<number[]> {
+  const first = await fetchAndStorePrices(d, batch, syncedAt, outage);
+  if (first.ok) return [];
   // A batch of one terminal would repeat the very same request.
-  if (batch.length === 1) return batch;
+  if (batch.length === 1 || isUnreachable(first.error)) return batch;
 
   d.log.warn('sync', 'price batch failed, retrying one terminal at a time', { terminalIds: batch });
   const unresolved: number[] = [];
-  for (const terminalId of batch) {
-    if (!(await fetchAndStorePrices(d, [terminalId], syncedAt))) unresolved.push(terminalId);
+  for (const [i, terminalId] of batch.entries()) {
+    // The limit may be met by a single request of the repeat: the rest of the batch is not asked.
+    if (outage.over) {
+      unresolved.push(...batch.slice(i));
+      break;
+    }
+    if (!(await fetchAndStorePrices(d, [terminalId], syncedAt, outage)).ok) unresolved.push(terminalId);
   }
   return unresolved;
 }
 
 /**
  * How far one `syncPrices` run is, counted in price batches (two terminals each): a batch counts as done when it is
- * finished, fetched or not (its retry terminal by terminal belongs to it).
+ * finished, fetched or not (its retry terminal by terminal belongs to it). When the run gives up on a dead network,
+ * the batches that were never asked count as done at once, so the last report is still complete.
  */
 export interface PriceProgress {
   /** Batches finished. */
@@ -173,10 +230,11 @@ export interface PriceProgress {
 
 /** What one `syncPrices` run did: `failed` is counted in batches, `unfetched` in terminals. */
 export interface PriceSyncResult {
+  /** All the batches of the run, those a dead network kept from being asked included. */
   batches: number;
-  /** Batches with at least one terminal that could not be fetched even alone. */
+  /** Batches with at least one terminal that could not be fetched even alone, or that were never asked. */
   failed: number;
-  /** Terminals that could not be fetched even alone: their stored rows stay as they were. */
+  /** Terminals that could not be fetched (even alone) or were never asked: their stored rows stay as they were. */
   unfetched: number;
 }
 
@@ -184,6 +242,15 @@ export interface PriceSyncResult {
  * Refreshes the prices of every live terminal, two terminals per request. Never throws because of UEX;
  * `failed` counts the batches with a terminal that could not be fetched even alone (`unfetched` counts those
  * terminals), and only a run without such a batch marks the prices fresh.
+ *
+ * A batch that failed because the network did (no answer, a timeout) is not repeated terminal by terminal: the single
+ * requests would stall the same way; a batch the server refused is. After three failures of the network in a row (a request
+ * that went through, or one the server answered with a refusal, starts the count again) the run gives up: the terminals
+ * not asked yet are `unfetched`, and the log gets one warning about it instead of a line per batch. It gives up in the same
+ * way after three batches in a row that yielded NOTHING, whatever the kind of the failure (a CDN in front of UEX that is down
+ * answers 521 / 522 / 524: every batch and each of its singles fail); a batch that yielded even one terminal starts that count
+ * again, so a refusal of one batch whose single requests go through changes nothing. "Too many requests" (429) stops the run
+ * at once.
  *
  * `onProgress` is called before the first request (`done: 0`) and after every batch; the last call is complete
  * (`done === total`). With no live terminal there is nothing to report and it is never called. A callback that
@@ -212,28 +279,43 @@ export async function syncPrices(d: SyncDeps, onProgress?: (progress: PriceProgr
   };
   report(0);
 
-  let batches = 0;
+  const outage = new Outage();
+  let done = 0;
   let failed = 0;
   let unfetched = 0;
-  for (let i = 0; i < terminalIds.length; i += PRICE_BATCH_SIZE) {
-    const batch = terminalIds.slice(i, i + PRICE_BATCH_SIZE);
-    const unresolved = await syncPriceBatch(d, batch, syncedAt);
-    batches++;
+  let asked = 0; // terminals the run has gone through
+  while (asked < terminalIds.length && !outage.over) {
+    const batch = terminalIds.slice(asked, asked + PRICE_BATCH_SIZE);
+    asked += batch.length;
+    const unresolved = await syncPriceBatch(d, batch, syncedAt, outage);
+    outage.unit(unresolved.length < batch.length); // a batch that gave even one terminal is not a batch of nothing
+    done++;
     if (unresolved.length > 0) {
       failed++;
       unfetched += unresolved.length;
-      log.warn('sync', 'price batch incomplete, old rows kept', { batch: batches, terminalIds: batch, unresolved });
+      // A batch that ended in a failure of the network is already in the log (the client wrote it) and is counted at the end.
+      if (outage.streak === 0) log.warn('sync', 'price batch incomplete, old rows kept', { batch: done, terminalIds: batch, unresolved });
     } else {
-      log.info('sync', 'price batch done', { batch: batches, terminalIds: batch });
+      log.info('sync', 'price batch done', { batch: done, terminalIds: batch });
     }
-    report(batches);
+    report(done);
+  }
+
+  // The run gave up: the terminals that were not asked are unfetched, and the run is complete for the caller (N of N).
+  const notAsked = terminalIds.length - asked;
+  if (notAsked > 0) {
+    failed += Math.ceil(notAsked / PRICE_BATCH_SIZE);
+    unfetched += notAsked;
+    report(total);
   }
 
   if (failed === 0) await setMeta(db, META_PRICES, String(syncedAt));
-  const end = { batches, failed, unfetched, terminals: terminalIds.length };
+  const end = { batches: total, failed, unfetched, terminals: terminalIds.length };
   if (failed === 0) log.info('sync', 'prices sync finished', end);
+  else if (outage.limited) log.warn('sync', `prices sync stopped: ${LIMIT_REACHED}`, { ...end, notAsked });
+  else if (notAsked > 0 && outage.reason !== null) log.warn('sync', `prices sync gave up: ${whyStopped(outage.reason, 'batches')}`, { ...end, notAsked });
   else log.warn('sync', 'prices sync finished with failures', end);
-  return { batches, failed, unfetched };
+  return { batches: total, failed, unfetched };
 }
 
 // ---------------------------------------------------------------------------
@@ -288,7 +370,9 @@ export interface DistanceProgress {
 /**
  * Makes the distance cache as complete as it can cheaply be for `pairs`: one `distancesFrom(originId)` request
  * (never repeated once it succeeded, not repeated for a day after a failure: hub terminals may stall), then at most twenty
- * single-pair requests for the pairs that are still unknown. Never throws because of UEX; returns the cache.
+ * single-pair requests for the pairs that are still unknown (the first failure stops them; and when the route list is answered
+ * with "too many requests" (429) there are none, and the attempt is not remembered: a limit is over in a moment, it says nothing
+ * about the hub). Never throws because of UEX; returns the cache.
  *
  * `onProgress` is called with the plan before the first request and after every request; the last call is complete
  * (`done === total`). A callback that throws is logged and ignored, so what was fetched is never lost.
@@ -325,10 +409,14 @@ export async function ensureDistances(
       for (const { destId, gm } of routes.value) if (destId !== originId) distances.set(distKey(originId, destId), gm);
       log.info('sync', 'routes stored', { originId, destinations: routes.value.length });
     }
-    // A failure is remembered too, so a stalling hub is not asked again at every call.
-    await setMeta(db, metaRoutesFetched(originId), routes.ok ? ROUTES_FETCHED : String(now));
+    // A failure is remembered too, so a stalling hub is not asked again at every call. "Too many requests" is not a failure
+    // of this hub: it is over in a moment, and the hub must not be written off for a day because of it.
+    const limited = !routes.ok && isRateLimit(routes.error);
+    if (!limited) await setMeta(db, metaRoutesFetched(originId), routes.ok ? ROUTES_FETCHED : String(now));
 
-    missing = pairsToAsk(distances, pairs);
+    // A stalled route list falls back to the small pair requests; "too many requests" does not: UEX asked to wait.
+    if (limited) log.warn('sync', `distance requests stopped: ${LIMIT_REACHED}`, { originId, planned: missing.length });
+    missing = limited ? [] : pairsToAsk(distances, pairs);
     done = 1;
     total = done + missing.length;
     report();
@@ -340,7 +428,8 @@ export async function ensureDistances(
     done++;
     if (!answer.ok) {
       // A failure is most likely the network, not this pair: do not wait for the next timeouts.
-      log.warn('sync', 'distance requests stopped after a failure', { originId, asked: found.length + 1, planned: missing.length });
+      const what = isRateLimit(answer.error) ? `distance requests stopped: ${LIMIT_REACHED}` : 'distance requests stopped after a failure';
+      log.warn('sync', what, { originId, asked: found.length + 1, planned: missing.length });
       total = done;
       report();
       break;

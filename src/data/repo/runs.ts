@@ -115,9 +115,24 @@ export async function addFinishedRun(db: Db, r: { vehicleId: number | null; scuC
 }
 
 // What `addFinishedRun` can leave behind when its sale is never written: a finished run without a single event. An active run
-// without events is another thing (a failed first purchase leaves one, and the next purchase joins it), a lost run is the
-// player's own act, and a run with events is a record: none of those is ever matched.
+// without events is another thing (`EMPTY_ACTIVE_RUN` below), a lost run is the player's own act, and a run with events is a
+// record: none of those is ever matched.
 const EMPTY_FINISHED_RUN = "status = 'done' AND NOT EXISTS (SELECT 1 FROM run_event WHERE run_event.run_id = run.id)";
+
+// What `startRun` can leave behind when the first purchase is cut off before its event is written: an active run without a
+// single event. It has no cargo and no trade, but it has a start time, which would be wrong for the next purchase.
+const EMPTY_ACTIVE_RUN = "status = 'active' AND NOT EXISTS (SELECT 1 FROM run_event WHERE run_event.run_id = run.id)";
+
+/** The active runs that have no event at all (there is at most one active run). */
+export async function emptyActiveRuns(db: Db): Promise<Array<{ id: number; startedAt: number }>> {
+  const rows = await db.select<{ id: number; started_at: number }>(`SELECT id, started_at FROM run WHERE ${EMPTY_ACTIVE_RUN}`);
+  return rows.map(r => ({ id: Number(r.id), startedAt: Number(r.started_at) }));
+}
+
+/** Removes the run `id` when it is an active run without events. Any other run stays. */
+export async function removeEmptyActiveRun(db: Db, id: number): Promise<void> {
+  await db.execute(`DELETE FROM run WHERE id = ? AND ${EMPTY_ACTIVE_RUN}`, [id]);
+}
 
 /** Removes the run `id` when it is a finished run without events (what a write that failed half-way leaves). Any other run stays. */
 export async function removeEmptyRun(db: Db, id: number): Promise<void> {
