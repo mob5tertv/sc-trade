@@ -5,6 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { anchorFromRect, WINDOW_MARGIN, type Corner, type Rect, type Size } from '../core/layout';
 import type { RouteCtx, RouteOption } from '../core/routes';
+import { cargoOf } from '../core/run';
 import { DEFAULT_SETTINGS, type Settings } from '../core/settings';
 import type { Market, Reference, RunWithEvents, Side } from '../core/types';
 import type { Db } from '../data/db';
@@ -39,6 +40,7 @@ import {
 } from '../platform/window';
 import { resetHeldKeys } from './keyboard';
 import { stats } from './stats.svelte';
+import { arrivalView, type ArrivalView } from './vm/arrival-view';
 import { shouldCollapse } from './vm/idle';
 import { createKeyboardHolds, type KeyboardHolds } from './vm/keyboard-holds';
 import { createLatestRequest } from './vm/latest-request';
@@ -1318,6 +1320,22 @@ class AppState {
   }
 
   /**
+   * An arrival that was written, with a target set (spec 14.12): the window shows the target at once. It becomes the VIEWED terminal
+   * (the header and the Terminal section; even when the ship stood there already, the player may have been looking elsewhere), on the
+   * "sell" side while there is cargo aboard, and then the current location, the way a trade saves it (`#locateAt`: nothing is
+   * written or logged when the ship is there already). What to change is decided by `arrivalView`. The side is chosen after
+   * the viewed terminal is set, from the rows of the terminal now viewed (`#showTerminal`), and this runs after the run and the
+   * market were read again, so the rows are those of the arrival. The target stays: the run is not over.
+   */
+  async #followTarget(view: ArrivalView): Promise<void> {
+    if (view.show === null) return;
+    if (view.preferSide !== null) this.terminalSide = view.preferSide;
+    this.#showTerminal(view.show);
+    this.#log.info('ui', 'arrival: the view follows the target', { terminalId: view.show, side: this.terminalSide });
+    if (view.locateAt !== null) await this.#setLocation(view.locateAt);
+  }
+
+  /**
    * The player bought. `input.knownScu` is the quantity he saw at the terminal: the diary then keeps "was minus bought".
    * The first purchase starts the run (and opens its section). A purchase that was written sets the current location.
    * Returns the sentence to show at the form when it was not written, `null` when it was.
@@ -1379,6 +1397,7 @@ class AppState {
   /**
    * "Взлетел" / "Прилетел": the button of the mini line or of the section, or a key of the game. Without a run, or when it
    * repeats the mark before it, nothing is written and the player is told. Returns that sentence, `null` when the mark was written.
+   * An arrival that was written, with a target set, shows the target (`#followTarget`); a refused or failed mark changes nothing on screen.
    */
   mark(type: 'depart' | 'arrive'): Promise<string | null> {
     return this.#tradeQueue(async () => {
@@ -1399,6 +1418,10 @@ class AppState {
         this.#say(failure, 'error');
       }
       await this.#reloadRun(mayHaveWritten);
+      if (failure === null) {
+        const cargoAboard = cargoOf(this.activeRun?.events ?? []).length > 0;
+        await this.#followTarget(arrivalView(type, this.settings.targetTerminalId, cargoAboard, this.settings.currentTerminalId));
+      }
       return failure;
     });
   }

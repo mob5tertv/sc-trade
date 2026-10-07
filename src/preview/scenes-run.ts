@@ -1,11 +1,25 @@
 import { tick } from 'svelte';
-import type { Scene } from './scenes';
+import type { Scene, SceneApp } from './scenes';
 
 // The scenes of task 15c: trades from the row of the table, the section «Рейс», the marks on the mini line, the question
 // under the header and the target. They run inside the page, so they reach for the elements themselves, as the scenes of
 // `scenes.ts` do (that module imports this one, hence only the type comes from it).
 
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Where the window stands, for the scenes of the arrival mark (spec 14.12): `--do "eval:window.__arrival()"`. The location, the
+ * viewed terminal and the side are what the mark changes; the phase and the target show the mark was written and the target kept.
+ */
+function watchArrival(app: SceneApp): void {
+  (window as unknown as { __arrival: () => unknown }).__arrival = () => ({
+    location: app.settings.currentTerminalId,
+    viewed: app.viewTerminalId,
+    side: app.terminalSide,
+    target: app.settings.targetTerminalId,
+    phase: app.strip.kind === 'run' ? app.strip.phaseLabel : null,
+  });
+}
 
 /** A click on what is on the screen, the way a button handler sees it; a scene that names something that is not there fails with its name. */
 async function click(selector: string, text?: string): Promise<void> {
@@ -257,6 +271,128 @@ export const RUN_SCENES: readonly Scene[] = [
       app.activeRun = null;
       await pause(100);
       await app.loadFromDb();
+      await pause(100);
+    },
+  },
+
+  // ---- the arrival mark with a target (spec 14.12) ----
+  // The run is in flight from HUR-L1 (3) to its target ARC-L1 (1); the ship stands at HUR-L1 and the Terminal section looks at it,
+  // on «Купить». `window.__arrival()` says where things are (see `watchArrival`).
+  {
+    // `--do "eval:window.__arrival();click:section button.sc-btn--act;wait:400;eval:window.__arrival()"`: after the mark the location and the
+    // viewed terminal are ARC-L1 (1), the table is on «Продать» (cargo aboard), «Рейс» is in its unloading phase, the target is still there.
+    name: 'arrive-target',
+    title: 'Рейс в полёте к цели: «Прилетел» делает цель местом и показывает её терминал, стороной «Продать»',
+    dataset: 'run-flight',
+    act: async (app) => {
+      watchArrival(app);
+      await app.expand('preview');
+      await app.toggleSection('run');
+    },
+  },
+  {
+    // The window is folded: the mark is the button of the mini line (`--do "click:.marks button;wait:400;eval:window.__arrival();click:button.open;wait:600"`),
+    // and the window that is unfolded afterwards shows the target's terminal.
+    name: 'arrive-target-mini',
+    title: 'Мини-строка в полёте: «Прилетел» кнопкой мини-строки, потом окно разворачивается на терминале цели',
+    dataset: 'run-flight',
+    act: (app) => watchArrival(app),
+  },
+  {
+    // The player has picked a third terminal (MIC-L1, 4) in the header before the mark: after it the window shows the target all the same.
+    name: 'arrive-target-other-view',
+    title: 'Перед «Прилетел» в шапке выбран третий терминал (MIC-L1): после отметки показан терминал цели',
+    dataset: 'run-flight',
+    act: async (app) => {
+      watchArrival(app);
+      await app.expand('preview');
+      await app.toggleSection('run');
+      app.setViewTerminal(MIC_L1);
+      await pause(60);
+    },
+  },
+  {
+    // The ship was put at the target by hand ("Я здесь", one `set current terminal` line in the log) and the player looks at MIC-L1: the mark
+    // shows the target again and writes nothing about the location (the count of those lines stays one).
+    name: 'arrive-already-there',
+    title: 'Место уже равно цели, в шапке MIC-L1: «Прилетел» показывает цель и не пишет место второй раз',
+    dataset: 'run-flight',
+    act: async (app) => {
+      watchArrival(app);
+      await app.expand('preview');
+      await app.toggleSection('run');
+      await app.setCurrentTerminal(ARC_L1);
+      app.setViewTerminal(MIC_L1);
+      await pause(60);
+    },
+  },
+  {
+    // No target: the mark is written and nothing else changes (the location, the viewed terminal and the side stay).
+    name: 'arrive-no-target',
+    title: 'Цели нет: «Прилетел» только отмечает прилёт, место и просматриваемый терминал остаются',
+    dataset: 'run-flight',
+    act: async (app) => {
+      watchArrival(app);
+      await app.expand('preview');
+      await app.toggleSection('run');
+      await app.setTarget(null);
+      await pause(100);
+    },
+  },
+
+  {
+    // A form of a trade is open under MEDS at HUR-L1 and a price of 9999 is typed into its row: both belong to HUR-L1, so the mark must close
+    // them as any change of the viewed terminal does. `--do "click:section button.sc-btn--act;wait:400;eval:JSON.stringify(window.__arrival());
+    // eval:document.querySelectorAll('form.trade').length"`; then the MEDS row of ARC-L1 opened by hand shows its own price, not 9999.
+    name: 'arrive-target-form',
+    title: 'Открыта форма «Купил» и набрана цена на HUR-L1: после «Прилетел» их нет на терминале цели',
+    dataset: 'run-flight',
+    act: async (app) => {
+      watchArrival(app);
+      await app.expand('preview');
+      await app.toggleSection('run');
+      await openTradeForm('MEDS', 'Купил');
+      await typeInto('.expand input[aria-label^="MEDS: цена"]', '9999');
+    },
+  },
+  {
+    // The take-off is not an arrival: with a target and a third terminal in the header, nothing is switched.
+    name: 'depart-keeps-view',
+    title: 'Погрузка, цель задана, в шапке MIC-L1: «Взлетел» ничего не переключает',
+    dataset: 'run-loading',
+    act: async (app) => {
+      watchArrival(app);
+      await app.expand('preview');
+      await app.toggleSection('run');
+      app.setViewTerminal(MIC_L1);
+      await pause(60);
+    },
+  },
+  {
+    // The arrival is marked already: the state refuses it (the sentence is in `window.__arrivalRefusal`) and switches nothing.
+    name: 'arrive-refused',
+    title: 'Прилёт уже отмечен: повторная отметка отказана и ничего не переключает (в шапке MIC-L1)',
+    dataset: 'run-unloading',
+    act: async (app) => {
+      watchArrival(app);
+      await app.expand('preview');
+      app.setViewTerminal(MIC_L1);
+      (window as unknown as { __arrivalRefusal: string | null }).__arrivalRefusal = await app.mark('arrive');
+      await pause(100);
+    },
+  },
+  {
+    // The run is gone from the database behind the state's back: the service refuses the mark («Нет активного рейса») and nothing is switched.
+    name: 'arrive-run-gone',
+    title: 'Рейс исчез из базы мимо состояния: отметка «Прилетел» отказана службой и ничего не переключает',
+    dataset: 'run-flight',
+    act: async (app) => {
+      watchArrival(app);
+      await app.expand('preview');
+      const { db } = app.suggestDeps();
+      await db.execute("DELETE FROM run_event WHERE run_id IN (SELECT id FROM run WHERE status = 'active')");
+      await db.execute("DELETE FROM run WHERE status = 'active'");
+      (window as unknown as { __arrivalRefusal: string | null }).__arrivalRefusal = await app.mark('arrive');
       await pause(100);
     },
   },
