@@ -127,9 +127,11 @@
 <style>
   .grid {
     display: grid;
-    /* the price column holds the number and its 6 px mark (48 px) and the slot of the triangle with the gap before the number */
-    grid-template-columns: minmax(0, 1fr) calc(48px + var(--sc-trend-w) + 4px) 64px 36px 40px;
-    column-gap: 4px;
+    /* the price column holds a seven-digit number and its 6 px mark (62 px, as in the table of the terminal) and the slot of
+       the triangle with the gap before the number. The 14 px it needed come from the numbers that had room to spare (ROI
+       `42%` is 22 px of 36, UEC/ч `2,33M` 28 px of 40) and from the gaps, so that the names keep the room they had */
+    grid-template-columns: minmax(0, 1fr) calc(62px + var(--sc-trend-w) + 4px) 64px 32px 34px;
+    column-gap: 3px;
     align-items: center;
     padding: 0 var(--sc-pad-x);
   }
