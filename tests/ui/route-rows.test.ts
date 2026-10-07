@@ -11,7 +11,7 @@ const nb = (s: string) => s.replace(/ /g, String.fromCharCode(0xa0));
 
 const estimate = (partial: Partial<Estimate> = {}): Estimate => ({
   price: 6900, low: 6400, high: 7100, source: 'uex', temp: null, ageSec: 2 * 86_400, ageKnown: true,
-  ownLast: null, uexRange: null, scu: null, scuOrigin: null, stock: null, ...partial,
+  ownLast: null, uexRange: null, scu: null, scuOrigin: null, stock: null, prev: null, ...partial,
 });
 
 // Gold from ARC-L1 (1), bought at my own hot 6120, sold at TDD Area 18 (2) for the UEX 6900 (6400–7100)
