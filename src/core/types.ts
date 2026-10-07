@@ -36,6 +36,12 @@ export interface Observation { id: number; ts: number; terminalId: number; commo
  */
 export interface QuantityReading { terminalId: number; commodityId: number; side: Side; ts: number; scu: number }
 
+/**
+ * Предыдущий свой замер цены для той же точки, товара и стороны: самый поздний, который старше последнего не меньше
+ * чем на `MIN_READING_GAP_SEC`. Замер через несколько секунд после другого — исправление опечатки, а не движение рынка.
+ */
+export interface PriceReading { terminalId: number; commodityId: number; side: Side; ts: number; price: number }
+
 /** Выучено по своему дневнику для одной пары «терминал, товар, сторона»; `null` — нечего вывести. */
 export interface StockStats { maxScu: number | null; ratePerMin: number | null }
 /** Оценка количества на точке «сейчас»: от базы (своего замера) со скоростью пополнения, не выше максимума. */
@@ -50,6 +56,7 @@ export interface Market {
   uex: Map<string, UexPrice>;          // priceKey
   own: Map<string, Observation>;       // obsKey, только последнее наблюдение
   ownScu: Map<string, { ts: number; scu: number }>;   // obsKey → последний свой замер с количеством; своё время, не время наблюдения цены
+  ownPrev: Map<string, { ts: number; price: number }>;   // obsKey → предыдущий свой замер цены (см. PriceReading); пуст, пока рынок строят без него
   byTerminal: Map<number, Set<number>>;   // терминал → товары
   byCommodity: Map<number, Set<number>>;  // товар → терминалы
   stock: Map<string, StockStats>;      // obsKey
@@ -68,6 +75,7 @@ export interface Estimate {
   scu: number | null;            // на закупке — остаток у продавца; на продаже — склад покупателя (справка, ничего не ограничивает)
   scuOrigin: 'own' | 'uex' | null;   // откуда scu: свой не холодный замер количества (не обязательно того же наблюдения, что цена), UEX, или нигде
   stock: StockEstimate | null;   // только на закупке и только когда scuOrigin === 'own'; на продаже всегда null
+  prev: { price: number; ageSec: number } | null;   // предыдущий свой замер этой цены; только когда цена своя и не холодная, иначе null
 }
 
 export type RunEventType = 'buy' | 'sell' | 'depart' | 'arrive';

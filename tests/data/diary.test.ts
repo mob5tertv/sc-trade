@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/data/db';
 import { createLogger, memorySink } from '../../src/data/logger';
+import { MIN_READING_GAP_SEC } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
-import { addObservation, latestObservations, latestQuantities, stockStats } from '../../src/data/repo/diary';
+import { addObservation, latestObservations, latestQuantities, previousPrices, stockStats } from '../../src/data/repo/diary';
 import { migratedDb } from '../helpers/test-db';
 
 let db: Db;
@@ -131,6 +132,162 @@ describe('latestQuantities', () => {
     await addObservation(db, log, { ts: 100, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu: null });
     await addObservation(db, log, { ts: 200, terminalId: 1, commodityId: 10, side: 'buy', price: 6100, scu: null });
     expect(await latestQuantities(db)).toEqual([]);
+  });
+});
+
+describe('previousPrices', () => {
+  const T = 1_000_000;
+  const write = (ts: number, price: number, o: { terminalId?: number; commodityId?: number; side?: 'buy' | 'sell'; scu?: number | null } = {}) => addObservation(
+    db, log, { ts, terminalId: o.terminalId ?? 1, commodityId: o.commodityId ?? 10, side: o.side ?? 'buy', price, scu: o.scu ?? null },
+  );
+  const prices = async () => (await previousPrices(db)).map((p) => [p.ts - T, p.price]);
+
+  it('is empty for an empty diary', async () => {
+    expect(await previousPrices(db)).toEqual([]);
+  });
+
+  it('has no previous price after a single reading', async () => {
+    await write(T, 6000);
+    expect(await previousPrices(db)).toEqual([]);
+  });
+
+  it('takes the first of two readings that are far enough apart', async () => {
+    await write(T, 6000);
+    await write(T + 600, 6120);
+    expect(await previousPrices(db)).toEqual([{ terminalId: 1, commodityId: 10, side: 'buy', ts: T, price: 6000 }]);
+  });
+
+  it('takes the second of three readings', async () => {
+    await write(T, 5900);
+    await write(T + 600, 6000);
+    await write(T + 1200, 6120);
+    expect(await prices()).toEqual([[600, 6000]]);
+  });
+
+  it('counts a gap of exactly the minimum, and not a second less', async () => {
+    await write(T, 6000);
+    await write(T + 120, 6120);
+    expect(await prices()).toEqual([[0, 6000]]);
+
+    await write(T + 5000, 7000, { commodityId: 20 });
+    await write(T + 5000 + 119, 7100, { commodityId: 20 });
+    expect(await previousPrices(db)).toHaveLength(1);
+  });
+
+  it('treats a reading seconds after another as a correction, not as a move of the market', async () => {
+    await write(T, 6000);
+    await write(T + 30, 6120);
+    expect(await previousPrices(db)).toEqual([]);
+  });
+
+  it('does not take a correction made after a normal pair as the previous reading', async () => {
+    await write(T, 6000);
+    await write(T + 600, 6120);
+    await write(T + 610, 6150);        // I typed 6120 wrong and fixed it ten seconds later
+    expect(await prices()).toEqual([[0, 6000]]);
+  });
+
+  it('takes the corrected value of an earlier reading, not the typo that came before it', async () => {
+    await write(T, 6000);
+    await write(T + 10, 6010);         // a correction of the first reading
+    await write(T + 700, 6120);
+    expect(await prices()).toEqual([[10, 6010]]);
+  });
+
+  it('measures the gap against the latest reading, so a reading before a long run of corrections still counts', async () => {
+    await write(T, 6000);
+    await write(T + 600, 6100);
+    await write(T + 610, 6110);
+    await write(T + 620, 6120);
+    expect(await prices()).toEqual([[0, 6000]]);
+  });
+
+  it('moves on to the reading before the pair once a later reading is far enough from it', async () => {
+    await write(T, 6000);
+    await write(T + 600, 6100);
+    await write(T + 610, 6110);
+    await write(T + 1400, 6200);
+    expect(await prices()).toEqual([[610, 6110]]);
+  });
+
+  it('does not let readings of the same second be the previous of each other', async () => {
+    await write(T, 6000);
+    await write(T, 6120);
+    expect(await previousPrices(db)).toEqual([]);
+  });
+
+  it('takes the later timestamp even when it was written earlier', async () => {
+    await write(T + 600, 6120);
+    await write(T, 6000);
+    await write(T + 300, 6050);
+    expect(await prices()).toEqual([[300, 6050]]);
+  });
+
+  it('keeps the two sides apart', async () => {
+    await write(T, 6000, { side: 'buy' });
+    await write(T + 600, 6120, { side: 'sell' });
+    expect(await previousPrices(db)).toEqual([]);
+
+    await write(T + 900, 6200, { side: 'buy' });
+    expect(await previousPrices(db)).toEqual([{ terminalId: 1, commodityId: 10, side: 'buy', ts: T, price: 6000 }]);
+  });
+
+  it('keeps terminals and commodities apart', async () => {
+    await write(T, 6000, { terminalId: 1 });
+    await write(T + 600, 6120, { terminalId: 2 });
+    await write(T + 900, 6130, { commodityId: 20 });
+    expect(await previousPrices(db)).toEqual([]);
+  });
+
+  it('returns one price per stock, ordered by terminal, commodity and side', async () => {
+    for (const [terminalId, commodityId, side] of [[2, 10, 'buy'], [1, 20, 'buy'], [1, 10, 'sell'], [1, 10, 'buy']] as const) {
+      await write(T, terminalId * 1000 + commodityId, { terminalId, commodityId, side });
+      await write(T + 600, 1, { terminalId, commodityId, side });
+    }
+    expect((await previousPrices(db)).map((p) => [p.terminalId, p.commodityId, p.side, p.price])).toEqual([
+      [1, 10, 'buy', 1010], [1, 10, 'sell', 1010], [1, 20, 'buy', 1020], [2, 10, 'buy', 2010],
+    ]);
+  });
+
+  it('is about the price only: a reading with or without a quantity counts the same', async () => {
+    await write(T, 6000, { scu: 300 });
+    await write(T + 600, 6120, { scu: null });
+    await write(T + 1200, 6200, { scu: 0 });
+    expect(await prices()).toEqual([[600, 6120]]);
+  });
+
+  it('returns whole readings with numeric fields', async () => {
+    await write(T, 6840.5, { terminalId: 3, commodityId: 20, side: 'sell' });
+    await write(T + 600, 6900, { terminalId: 3, commodityId: 20, side: 'sell' });
+    expect(await previousPrices(db)).toEqual([{ terminalId: 3, commodityId: 20, side: 'sell', ts: T, price: 6840.5 }]);
+  });
+
+  it('is one SELECT with a bound parameter that never scans the diary table, only its index', async () => {
+    const seen: Array<{ sql: string; params: unknown[] }> = [];
+    const spy: Db = {
+      select: (sql, params) => { seen.push({ sql, params: params ?? [] }); return db.select(sql, params); },
+      execute: (sql, params) => db.execute(sql, params),
+    };
+    await previousPrices(spy);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].sql.trimStart()).toMatch(/^SELECT /);
+    expect(seen[0].params).toEqual([MIN_READING_GAP_SEC]);
+
+    const plan = (await db.select<{ detail: string }>(`EXPLAIN QUERY PLAN ${seen[0].sql}`, seen[0].params)).map((r) => r.detail);
+    expect(plan.filter((d) => /^SCAN (observation|o|i|p)$/.test(d))).toEqual([]);
+    expect(plan.some((d) => d.includes('USING COVERING INDEX observation_lookup'))).toBe(true);
+  });
+
+  it('answers a diary of thousands of observations', async () => {
+    // 200 stocks, 25 readings each, ten minutes apart: the previous one is always the second from the end
+    for (let stock = 0; stock < 200; stock++) {
+      for (let i = 0; i < 25; i++) {
+        await write(T + i * 600, stock * 100 + i, { terminalId: 1 + (stock % 20), commodityId: 10 + Math.floor(stock / 20), side: stock % 2 === 0 ? 'buy' : 'sell' });
+      }
+    }
+    const previous = await previousPrices(db);
+    expect(previous).toHaveLength(200);
+    expect(previous.every((p) => p.ts === T + 23 * 600 && p.price % 100 === 23)).toBe(true);
   });
 });
 
