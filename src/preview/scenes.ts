@@ -1,6 +1,7 @@
 import type { app } from '../ui/state.svelte';
 import type { DatasetName } from './datasets';
 import { ANCHOR_SCENES } from './scenes-anchor';
+import { INDICATOR_SCENES } from './scenes-indicators';
 import { RUN_SCENES } from './scenes-run';
 import { STATS_SCENES } from './scenes-stats';
 
@@ -256,6 +257,7 @@ export const SCENES: readonly Scene[] = [
     },
   },
   ...STATS_SCENES,
+  ...INDICATOR_SCENES,
 ];
 
 export const DEFAULT_SCENE = 'mini';

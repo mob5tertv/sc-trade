@@ -2,6 +2,7 @@ import { emit } from '@tauri-apps/api/event';
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks';
 import { tick } from 'svelte';
 import { GALLERY_SCENE } from './gallery/scene';
+import { currentHttpFake } from './http-fake';
 import { createIpcHandler, type PreviewLogLevel, type SqlOp } from './ipc';
 import { formatMonitor, parseMonitor } from './monitor';
 import { MESSAGE_SOURCE, type PreviewGlobal, type PreviewMessage, type PreviewState } from './protocol';
@@ -25,6 +26,11 @@ const unknown = new Set<string>();
 let lastActivity = performance.now();
 /** Commands of the application that have not been answered yet (a statement that waits for the dev server). */
 let inFlight = 0;
+/**
+ * A request that waits for the network is not an application that is busy: a scene may hold one on purpose, to show a
+ * refresh on its way, and the screen is settled all the same. (Without a network of the scene's own it is answered at once.)
+ */
+const WAITS_FOR_THE_NETWORK = 'plugin:http|fetch_send';
 
 /** How long nothing has crossed the mocked boundary; zero while a command is still being answered. */
 const idleMs = (): number => (inFlight > 0 ? 0 : performance.now() - lastActivity);
@@ -144,16 +150,18 @@ async function run(): Promise<void> {
       unknown.add(command);
       console.error(`[preview] unmocked Tauri command: ${command}`);
     },
+    http: currentHttpFake,
   });
 
   installOsPlugin();
   mockWindows('main');
   mockIPC(
     (command, payload) => {
-      inFlight++;
+      const counted = command !== WAITS_FOR_THE_NETWORK;
+      if (counted) inFlight++;
       lastActivity = performance.now();
       return handler(command, payload as Record<string, unknown> | undefined).finally(() => {
-        inFlight--;
+        if (counted) inFlight--;
         lastActivity = performance.now();
       });
     },
