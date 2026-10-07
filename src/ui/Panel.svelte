@@ -3,6 +3,7 @@
   import Icon from './components/Icon.svelte';
   import Header from './Header.svelte';
   import OptionsSection from './sections/OptionsSection.svelte';
+  import RoutesSection from './sections/RoutesSection.svelte';
   import TerminalSection from './sections/TerminalSection.svelte';
   import SettingsView from './SettingsView.svelte';
   import { app } from './state.svelte';
@@ -47,6 +48,7 @@
   <div class="sections">
     <TerminalSection />
     {#if app.lookup.request !== null}<OptionsSection />{/if}
+    <RoutesSection />
   </div>
 {/if}
 

@@ -1,6 +1,7 @@
 import type { app } from '../ui/state.svelte';
 import type { DatasetName } from './datasets';
 import { ANCHOR_SCENES } from './scenes-anchor';
+import { STATS_SCENES } from './scenes-stats';
 
 /** The one state of the application; scenes drive it only through its public methods. */
 export type SceneApp = typeof app;
@@ -252,6 +253,7 @@ export const SCENES: readonly Scene[] = [
       app.pointer(true);
     },
   },
+  ...STATS_SCENES,
 ];
 
 export const DEFAULT_SCENE = 'mini';

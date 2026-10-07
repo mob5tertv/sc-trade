@@ -30,7 +30,7 @@ const commodityLabel = (ref: Reference, id: number): string => ref.commodities.g
 const perHour = (uec: number | null): string => (uec === null ? NONE : `${formatCompact(uec)}/ч`);
 
 /** '518k' for the column of a list whose caption says "UEC/ч"; the dash when there is no rate. */
-const perHourBare = (uec: number | null): string => (uec === null ? NONE : formatCompact(uec));
+export const perHourBare = (uec: number | null): string => (uec === null ? NONE : formatCompact(uec));
 
 /**
  * The ROI of an option as the player reads it, in percents: whole, but with one decimal below 10% when the decimal is
