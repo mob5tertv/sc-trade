@@ -1,4 +1,4 @@
-import { formatCompact, formatDuration, formatPct, formatUec } from '../../core/format';
+import { formatCompact, formatDuration, formatUec } from '../../core/format';
 import type { RouteOption } from '../../core/routes';
 import type { SellAlternative, SellHere } from '../../core/sell';
 import { pairKey } from '../../core/types';
@@ -27,8 +27,12 @@ function terminalLabel(ref: Reference, id: number): string {
 
 const commodityLabel = (ref: Reference, id: number): string => ref.commodities.get(id)?.code || `#${id}`;
 
-/** '518k/ч'; the dash when there is no rate. */
-const perHour = (uec: number | null): string => (uec === null ? NONE : `${formatCompact(uec)}/ч`);
+/**
+ * '518k/ч'; the dash when there is no rate. The number is the one of the list of options (`perHourNarrow`, below), so that the
+ * card of "sell here or fly on" and the list never write the same rate two ways; the unit stays, because the card has no column
+ * caption "UEC/ч" that would say it.
+ */
+const perHour = (uec: number | null): string => (uec === null ? NONE : `${perHourNarrow(uec)}/ч`);
 
 /** '518k' for the column of a list whose caption says "UEC/ч"; the dash when there is no rate. */
 export const perHourBare = (uec: number | null): string => (uec === null ? NONE : formatCompact(uec));
@@ -189,9 +193,9 @@ export function routeOptionRow(
 
 export interface SellHereRow { qty: string; profit: string; loss: boolean; roi: string; rate: string }
 
-/** Selling the whole cargo line at the terminal where the player stands. */
+/** Selling the whole cargo line at the terminal where the player stands. The ROI is written as the lists write it (`formatRoi`). */
 export function sellHereRow(h: SellHere): SellHereRow {
-  return { qty: `${h.qty} SCU`, profit: formatUec(h.profit), loss: h.profit < 0, roi: formatPct(h.roi), rate: perHour(h.uecPerHour) };
+  return { qty: `${h.qty} SCU`, profit: formatUec(h.profit), loss: h.profit < 0, roi: formatRoi(h.roi), rate: perHour(h.uecPerHour) };
 }
 
 export interface SellAlternativeRow {

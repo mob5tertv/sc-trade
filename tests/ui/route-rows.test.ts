@@ -399,10 +399,23 @@ const alternative = (partial: Partial<SellAlternative> = {}): SellAlternative =>
 
 describe('sellHereRow', () => {
   it('formats the sale on the spot', () => {
-    expect(sellHereRow(here)).toEqual({ qty: '96 SCU', profit: nb('74 880'), loss: false, roi: '12,8%', rate: '310k/ч' });
+    expect(sellHereRow(here)).toEqual({ qty: '96 SCU', profit: nb('74 880'), loss: false, roi: '13%', rate: '310k/ч' });
   });
   it('shows a dash without a rate and marks a loss', () => {
     expect(sellHereRow({ ...here, profit: -1200, roi: -0.01, uecPerHour: null })).toMatchObject({ profit: nb('-1 200'), loss: true, rate: '—' });
+  });
+  it('writes the ROI the way the table and the list of options do: whole percents, one decimal below 10', () => {
+    for (const roi of [0.1275, 0.0904, 0.0251, 0.0996, 0, -0.0123, 4.2, Number.NaN]) {
+      expect(sellHereRow({ ...here, roi }).roi).toBe(formatRoi(roi));
+    }
+    expect(sellHereRow({ ...here, roi: 0.0904 }).roi).toBe('9%');
+    expect(sellHereRow({ ...here, roi: 0.0251 }).roi).toBe('2,5%');
+  });
+  it('writes the rate with the number of the list of options, and its own unit (the card has no «UEC/ч» caption)', () => {
+    for (const uec of [0, 950, 310_000, 9_270_000, 12_534_000, 123_400_000, -12_534_000]) {
+      expect(sellHereRow({ ...here, uecPerHour: uec }).rate).toBe(`${perHourNarrow(uec)}/ч`);
+    }
+    expect(sellHereRow({ ...here, uecPerHour: 12_534_000 }).rate).toBe('12,5M/ч');
   });
 });
 
@@ -421,6 +434,10 @@ describe('sellAlternativeRow', () => {
   it('shows dashes when no flight time is known, and marks a loss', () => {
     const row = sellAlternativeRow(alternative({ extraSec: null, expectedUecPerHour: null, worstUecPerHour: null, expectedProfit: -300 }), ref);
     expect(row).toMatchObject({ extra: '—', expectedRate: '—', worstRate: '—', loss: true });
+  });
+  it('writes both rates with the number of the list of options', () => {
+    const row = sellAlternativeRow(alternative({ expectedUecPerHour: 12_534_000, worstUecPerHour: 123_400_000 }), ref);
+    expect(row).toMatchObject({ expectedRate: '12,5M/ч', worstRate: '123M/ч' });
   });
   it('falls back to the id for an unknown terminal', () => {
     expect(sellAlternativeRow(alternative({ destId: 777 }), ref).terminal).toBe('#777');
