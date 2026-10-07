@@ -10,13 +10,19 @@ const SHOW_PANEL_EVENT: &str = "tray://show-panel";
 const SHOW_PANEL_ID: &str = "show-panel";
 const QUIT_ID: &str = "quit";
 
+/// Asks the webview to open the panel: what the tray item "Показать панель" does, and what a second
+/// start of the program does through the single-instance plugin (see `run` in `lib.rs`).
+pub fn show_panel(app: &AppHandle) {
+    if let Err(err) = app.emit(SHOW_PANEL_EVENT, ()) {
+        log::error!("[tray] cannot emit {SHOW_PANEL_EVENT}: {err}");
+    }
+}
+
 fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     match event.id().as_ref() {
         SHOW_PANEL_ID => {
             log::info!("[tray] show panel clicked");
-            if let Err(err) = app.emit(SHOW_PANEL_EVENT, ()) {
-                log::error!("[tray] cannot emit {SHOW_PANEL_EVENT}: {err}");
-            }
+            show_panel(app);
         }
         QUIT_ID => {
             log::info!("[tray] quit clicked, exiting");
