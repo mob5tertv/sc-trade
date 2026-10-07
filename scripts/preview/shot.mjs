@@ -17,7 +17,7 @@ import { findBrowser, launchBrowser, pageSocketUrl } from './browser.mjs';
 import { connect } from './cdp.mjs';
 import { projectRoot, startDevServer } from './server.mjs';
 import { charKey, parseSteps, pressKey } from './steps.mjs';
-import { describeUncaught, exceptionText, findUncaughtErrors } from './uncaught.mjs';
+import { exceptionText, findUncaughtErrors, uncaughtVerdict } from './uncaught.mjs';
 
 const HELP = `usage: npm run preview:shot -- --scene <name> [options]
   --scene <name>        scene of src/preview/scenes.ts (mini, mini-run, expanded, settings, boot-failed, idle, ...)
@@ -102,8 +102,12 @@ function readOptions() {
   };
 }
 
-/** Everything the page said that is worth reading when something goes wrong. */
-function watchDiagnostics(/** @type {import('./cdp.mjs').Cdp} */ cdp) {
+/**
+ * Everything the page said that is worth reading when something goes wrong. The one subscription to
+ * `Runtime.exceptionThrown` also fills `uncaught`: the text of every error nobody caught (a throw in a handler or an
+ * effect, a rejected promise), which fails the run.
+ */
+function watchDiagnostics(/** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {string[]} */ uncaught) {
   /** @type {string[]} */
   const lines = [];
   cdp.on('Runtime.consoleAPICalled', (event) => {
@@ -112,19 +116,12 @@ function watchDiagnostics(/** @type {import('./cdp.mjs').Cdp} */ cdp) {
   });
   cdp.on('Runtime.exceptionThrown', (event) => {
     lines.push(`exception: ${event.exceptionDetails.exception?.description ?? event.exceptionDetails.text}`);
+    uncaught.push(exceptionText(event.exceptionDetails));
   });
   cdp.on('Log.entryAdded', (event) => {
     if (event.entry.level === 'error') lines.push(`log: ${event.entry.text} ${event.entry.url ?? ''}`.trim());
   });
   return lines;
-}
-
-/** The text of every error nobody caught on the page (a throw in a handler or an effect, a rejected promise). */
-function watchUncaught(/** @type {import('./cdp.mjs').Cdp} */ cdp) {
-  /** @type {string[]} */
-  const texts = [];
-  cdp.on('Runtime.exceptionThrown', (event) => texts.push(exceptionText(event.exceptionDetails)));
-  return texts;
 }
 
 /** Runs `expression` in the desktop page; the value comes back as JSON. */
@@ -147,6 +144,11 @@ async function appLog(/** @type {import('./cdp.mjs').Cdp} */ cdp) {
 async function uncaughtErrors(/** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {string[]} */ exceptions) {
   const log = await evaluate(cdp, `${APP_FRAME}.contentWindow.__preview?.log ?? []`).catch(() => []);
   return findUncaughtErrors({ log, exceptions });
+}
+
+/** The mocked state of the window as one JSON line, with the number of uncaught errors. */
+async function stateJson(/** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {{ length: number }} */ errors) {
+  return JSON.stringify({ ...(await evaluate(cdp, `${APP_FRAME}.contentWindow.__preview.state()`)), uncaughtErrors: errors.length });
 }
 
 async function failureReport(/** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {string[]} */ diagnostics) {
@@ -340,8 +342,9 @@ async function main() {
     cleanups.push(() => browser.close());
     const cdp = await connect(await pageSocketUrl(browser.port));
     cleanups.push(async () => cdp.close());
-    const diagnostics = watchDiagnostics(cdp);
-    const uncaught = watchUncaught(cdp);
+    /** @type {string[]} */
+    const uncaught = [];
+    const diagnostics = watchDiagnostics(cdp, uncaught);
 
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
@@ -365,7 +368,7 @@ async function main() {
         console.log(`picture: ${isAbsolute(written) || written === '' ? options.out : written}`);
       }
       if (options.state) {
-        stateLine = await evaluate(cdp, `JSON.stringify(${APP_FRAME}.contentWindow.__preview.state())`).catch(() => null);
+        stateLine = await stateJson(cdp, await uncaughtErrors(cdp, uncaught)).catch(() => null);
       }
       throw new ShotError(`the scene started with an error: ${sceneError}\n${await failureReport(cdp, diagnostics)}`, 2);
     }
@@ -386,17 +389,16 @@ async function main() {
     const out = failedStep === null ? options.out : options.out.replace(/\.png$/i, '') + '-failed.png';
     await capture(cdp, out, options.view);
     const errors = await uncaughtErrors(cdp, uncaught);
-    if (options.state) {
-      stateLine = JSON.stringify({ ...(await evaluate(cdp, `${APP_FRAME}.contentWindow.__preview.state()`)), uncaughtErrors: errors.length });
-    }
+    if (options.state) stateLine = await stateJson(cdp, errors);
     const shown = relative(process.cwd(), out);
     console.log(`${failedStep === null ? 'picture' : 'picture at the moment of the failure'}: ${isAbsolute(shown) || shown === '' ? out : shown}`);
 
     // a failed step is reported first; an uncaught error is told about too (it is often what made the step fail)
-    if (errors.length > 0 && options.allowCrash) console.log(`${errors.length} uncaught error${errors.length === 1 ? '' : 's'} not counted against the run (--allow-crash)`);
-    if (errors.length > 0 && !options.allowCrash && failedStep !== null) console.error(describeUncaught(errors));
+    const verdict = uncaughtVerdict({ errors, allowCrash: options.allowCrash });
+    if (verdict.exitCode === 0 && verdict.note !== '') console.log(verdict.note);
+    if (verdict.exitCode !== 0 && failedStep !== null) console.error(verdict.note);
     if (failedStep !== null) throw failedStep;
-    if (errors.length > 0 && !options.allowCrash) throw new ShotError(describeUncaught(errors), 4);
+    if (verdict.exitCode !== 0) throw new ShotError(verdict.note, verdict.exitCode);
   } catch (err) {
     exitCode = err instanceof ShotError ? err.code : 1;
     console.error(err instanceof Error ? err.message : String(err));

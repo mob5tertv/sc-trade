@@ -80,3 +80,80 @@ export function describeUncaught(errors) {
   });
   return lines.join('\n');
 }
+
+// ---- what a run is worth ----------------------------------------------------------------------------------
+
+/** The exit code of a run in which an error nobody caught happened (`shot.mjs`; in a sweep it is the code of the item). */
+export const EXIT_UNCAUGHT = 4;
+
+/**
+ * Whether the uncaught errors of a run fail it. A scene that shows a crash on purpose is run with `allowCrash`: its
+ * errors are still counted, but they do not fail it.
+ * @param {{ errors: UncaughtError[], allowCrash: boolean }} run
+ * @returns {{ exitCode: 0 | 4, note: string }} `note`: what to say (the errors when it fails, a line when they are let through, nothing when there are none)
+ */
+export function uncaughtVerdict({ errors, allowCrash }) {
+  if (errors.length === 0) return { exitCode: 0, note: '' };
+  if (allowCrash) return { exitCode: 0, note: `${errors.length} uncaught error${errors.length === 1 ? '' : 's'} not counted against the run (--allow-crash)` };
+  return { exitCode: EXIT_UNCAUGHT, note: describeUncaught(errors) };
+}
+
+/**
+ * @typedef {{ name: string, exitCode: number, uncaught: number, detail: string }} ItemResult
+ *   One item of a sweep. `exitCode` is what `shot.mjs` would have exited with: 0 passed, 1 the scene was not ready,
+ *   2 it started with an error, 4 an uncaught error. `detail` is what to print under the line (empty when there is none).
+ */
+
+/**
+ * The result of one scene or gallery page of a sweep.
+ * @param {{ name: string, errors: UncaughtError[], allowCrash?: boolean, failure?: { exitCode: number, message: string } | null }} item
+ *   `failure`: the item did not get as far as being judged by its errors (not ready in time, started with an error)
+ * @returns {ItemResult}
+ */
+export function itemResult({ name, errors, allowCrash = false, failure = null }) {
+  const verdict = uncaughtVerdict({ errors, allowCrash });
+  if (failure === null) return { name, exitCode: verdict.exitCode, uncaught: errors.length, detail: verdict.note };
+  const detail = verdict.exitCode === 0 ? failure.message : `${failure.message}\n${verdict.note}`;
+  return { name, exitCode: failure.exitCode, uncaught: errors.length, detail };
+}
+
+/**
+ * `scene expanded-row        exit=0 uncaught=0`
+ * @param {ItemResult} result
+ * @param {number} width the width the names are padded to, so that the columns line up
+ */
+export const formatItemLine = (result, width) => `${result.name.padEnd(width)} exit=${result.exitCode} uncaught=${result.uncaught}`;
+
+/**
+ * 0 when every item passed. A sweep of nothing is not a pass: the lists it reads have gone stale or empty.
+ * @param {ItemResult[]} results
+ * @returns {0 | 1}
+ */
+export const sweepExitCode = (results) => (results.length > 0 && results.every((r) => r.exitCode === 0) ? 0 : 1);
+
+/** @param {ItemResult[]} results */
+export function sweepSummary(results) {
+  if (results.length === 0) return 'nothing was swept: the lists of scenes and gallery pages are empty';
+  const failed = results.filter((r) => r.exitCode !== 0);
+  const count = `${results.length} item${results.length === 1 ? '' : 's'}`;
+  return failed.length === 0 ? `${count}, all passed` : `${count}, ${failed.length} failed: ${failed.map((r) => r.name).join(', ')}`;
+}
+
+/**
+ * @typedef {{ name: string, params: Record<string, string>, monitor: string }} SweepItem
+ *   `params`: what goes into the address of the preview page (`scene`, and `gallery` for a page of the gallery)
+ */
+
+/**
+ * What a sweep visits: every scene, then every page of the gallery (all its states stacked). The lists come from the
+ * code (`src/preview/scenes.ts`, `src/preview/gallery/page-names.ts`), `sweep.mjs` reads them.
+ * @param {{ scenes: string[], pages: string[] }} lists
+ * @returns {SweepItem[]}
+ */
+export function sweepItems({ scenes, pages }) {
+  return [
+    ...scenes.map((scene) => ({ name: `scene ${scene}`, params: { scene }, monitor: '1920x1080@1' })),
+    // a page is taller than a monitor of 1080: the states are stacked
+    ...pages.map((page) => ({ name: `gallery ${page}`, params: { scene: `gallery-${page}`, gallery: page }, monitor: '1920x3200@1' })),
+  ];
+}
