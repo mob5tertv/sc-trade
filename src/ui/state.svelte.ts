@@ -301,6 +301,8 @@ class AppState {
   /** What "yes" does for the question on screen. */
   #confirmAction: (() => void | Promise<void>) | null = null;
   #shown = false;
+  /** The first show failed and is waiting for another try (made by the next request to change the window). */
+  #showFailed = false;
   /** The window was shown for the first time: from now on it is fitted to its content. */
   #windowReady = false;
   /** The window is on the screen (not hidden). */
@@ -584,11 +586,12 @@ class AppState {
   /**
    * Shows the window for the first time, whatever the start came to: the player must always see something
    * (with the mini bar switched off, the window is prepared and stays hidden until it is expanded).
-   * A failure is logged and allows another try.
+   * A failure is logged and allows another try: the next change of the mode makes it (`#changeMode`).
    */
   ensureShown(): void {
     if (this.#shown) return;
     this.#shown = true;
+    this.#showFailed = false;
     void this.#modeQueue(async () => {
       try {
         const visible = this.#wantVisible();
@@ -599,6 +602,7 @@ class AppState {
       } catch {
         // already logged by the window layer
         this.#shown = false;
+        this.#showFailed = true;
       }
     });
   }
@@ -606,6 +610,10 @@ class AppState {
   /** Runs one mode change after the previous ones; keeps the window and `mode` consistent. */
   #changeMode(pick: (current: WindowMode) => WindowMode, reason: string): Promise<void> {
     return this.#modeQueue(async () => {
+      // A first show that failed was set back for another try (`ensureShown`), and nothing else would make it: the tray and the
+      // key of the panel come here, so every request to change the window asks for the show again. It runs after this job, when
+      // `mode` is what the request made it. (A show that is still going, or has not started yet, is not repeated.)
+      if (this.#showFailed) this.ensureShown();
       const from = this.mode;
       const next = pick(from);
       if (next === from) return;

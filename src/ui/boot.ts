@@ -99,8 +99,11 @@ async function prepare(log: Logger): Promise<void> {
 }
 
 function fail(reason: string): BootResult {
-  // The window is shown even when the start broke before the settings were read: the error must be seen.
+  // The window is shown even when the start broke before the settings were read: the error must be seen. It unfolds with
+  // the text of the error whatever the setting of the mini line says: with that line switched off the window is hidden, and
+  // the player would not know why nothing is there. (The window that is already unfolded stays as it is.)
   app.ensureShown();
+  void app.expand('start failed');
   app.bootError = reason;
   app.phase = 'failed';
   app.log.warn('app', 'start failed', { reason });

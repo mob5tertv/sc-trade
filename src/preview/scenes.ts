@@ -20,6 +20,8 @@ export interface Scene {
   dataset: DatasetName;
   /** The monitor the scene needs, `<width>x<height>@<scale>`, when it is not the default one (`preview:sweep` loads it with it). */
   monitor?: string;
+  /** Runs before the application is loaded: puts in place what its start has to meet (a failure made on purpose, see `ipc.ts`). */
+  beforeStart?: () => void;
   /** What happens after the application has started and settled: expand the window, open the settings, and so on. */
   act?: (app: SceneApp) => Promise<void> | void;
 }
@@ -249,8 +251,14 @@ export const SCENES: readonly Scene[] = [
       for (const id of ['fresh', 'routes', 'keys', 'window', 'data']) await app.toggleSection(`settings:${id}`);
     },
   },
-  { name: 'mini-boot-failed', title: 'Мини-строка: ошибка запуска (клик разворачивает окно с текстом ошибки)', dataset: 'empty' },
-  { name: 'boot-failed', title: 'Ошибка запуска: пустая база, UEX недоступен', dataset: 'empty', act: (app) => app.expand('preview') },
+  {
+    // the window unfolds by itself when the start fails (`fail` in boot.ts); the player folds it, and the line says it
+    name: 'mini-boot-failed',
+    title: 'Мини-строка после ошибки запуска: окно развернулось само, игрок его свернул',
+    dataset: 'empty',
+    act: (app) => app.collapse('preview'),
+  },
+  { name: 'boot-failed', title: 'Ошибка запуска: пустая база, UEX недоступен (окно развернулось само)', dataset: 'empty' },
   {
     // The player has just clicked the mini bar, so the cursor is over the window. `hover:.sc-root;leave;wait:3000`
     // takes it away: the window folds 2 seconds later, unless the keyboard or a dialog holds it.

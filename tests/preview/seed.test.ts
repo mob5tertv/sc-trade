@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { temperature } from '../../src/core/temperature';
 import { distKey } from '../../src/core/types';
 import { DATASET_NAMES, isDatasetName } from '../../src/preview/datasets';
+import { prepareAnyDataset } from '../../src/preview/prepare';
 import { prepareDataset } from '../../src/preview/seed';
 import { createLogger, memorySink } from '../../src/data/logger';
 import { listRuns, getActiveRun } from '../../src/data/repo/runs';
@@ -22,12 +23,23 @@ async function dataset(name: Parameters<typeof prepareDataset>[1]) {
 }
 
 describe('datasets', () => {
-  it('are default, run, empty, window (seed-window.ts), stats, no-runs, no-records (seed-stats.ts) and the three run phases (seed-run.ts)', () => {
+  it('are default, run, empty, window (seed-window.ts), stats, no-runs, no-records (seed-stats.ts), the three run phases (seed-run.ts) and empty-no-strip (prepare.ts)', () => {
     expect([...DATASET_NAMES]).toEqual([
       'default', 'run', 'empty', 'window', 'stats', 'no-runs', 'no-records', 'run-loading', 'run-flight', 'run-unloading',
+      'empty-no-strip',
     ]);
     expect(isDatasetName('run')).toBe(true);
     expect(isDatasetName('other')).toBe(false);
+  });
+});
+
+describe('the empty-no-strip dataset', () => {
+  it('is a first launch of a player who switched the mini line off: the schema and that setting, and no reference', async () => {
+    const db = testDb();
+    await prepareAnyDataset(db, 'empty-no-strip', NOW);
+    expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 2 }]);
+    expect((await loadSettings(db, log())).showStrip).toBe(false);
+    expect((await loadReference(db)).terminals.size).toBe(0);
   });
 });
 

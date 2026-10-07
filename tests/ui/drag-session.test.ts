@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Rect, Size } from '../../src/core/layout';
-import { startDrag, type DragHost } from '../../src/ui/vm/drag-session';
+import { dragInput, startDrag, type DragHost } from '../../src/ui/vm/drag-session';
 
 const MONITOR: Size = { width: 1920, height: 1080 };
 const START: Rect = { x: 1464, y: 16, width: 440, height: 300 };
@@ -252,5 +252,35 @@ describe('startDrag', () => {
     expect(calls).toEqual(['begin', 'move', 'end']);
     expect(placed).toEqual([{ x: 1264, y: 16, width: 440, height: 300 }]);
     expect(ended).toEqual([{ x: 1264, y: 16, width: 440, height: 300 }]);
+  });
+});
+
+describe('dragInput: what an event of the pointer means for the drag of one pointer', () => {
+  const event = (type: string, pointerId = 7, screenX = 640, screenY = 380) => ({ type, pointerId, screenX, screenY });
+
+  it('takes a move of the pointer as the place the window follows to', () => {
+    expect(dragInput(7, event('pointermove'))).toEqual({ kind: 'move', point: { x: 640, y: 380 } });
+  });
+
+  it('takes the release as the end of the drag at the place of the release: the only event with a position that counts', () => {
+    expect(dragInput(7, event('pointerup'))).toEqual({ kind: 'up', point: { x: 640, y: 380 } });
+  });
+
+  it('takes a cancelled pointer and a lost capture as the end where the window stands, without a position', () => {
+    // a capture is lost also when the grip is taken out of the page during the drag (the window changes its mode): the drag must end then too
+    expect(dragInput(7, event('pointercancel'))).toEqual({ kind: 'cancel' });
+    expect(dragInput(7, event('lostpointercapture'))).toEqual({ kind: 'cancel' });
+  });
+
+  it('hears nothing of another pointer (a second finger, a pen)', () => {
+    for (const type of ['pointermove', 'pointerup', 'pointercancel', 'lostpointercapture']) {
+      expect(dragInput(7, event(type, 8))).toBeNull();
+    }
+  });
+
+  it('hears nothing of other events', () => {
+    expect(dragInput(7, event('pointerdown'))).toBeNull();
+    expect(dragInput(7, event('gotpointercapture'))).toBeNull();
+    expect(dragInput(7, event('pointerleave'))).toBeNull();
   });
 });

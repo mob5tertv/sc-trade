@@ -31,6 +31,44 @@ export interface DragSession {
   cancel(): Promise<void>;
 }
 
+/** What the page tells of a pointer event: the type, whose it is and where on the screen. */
+export interface PointerFact {
+  type: string;
+  pointerId: number;
+  screenX: number;
+  screenY: number;
+}
+
+/** What an event of the pointer of the drag means for the session. */
+export type DragInput =
+  | { kind: 'move'; point: Point }
+  | { kind: 'up'; point: Point }
+  | { kind: 'cancel' };
+
+/**
+ * What the event means for the drag of the pointer `pointerId`, `null` when it means nothing (another pointer, another
+ * event). A release ends the drag where the pointer is let go; a cancelled pointer and a lost capture end it where the window
+ * stands. The capture is lost not only when the system takes it: when the grip is taken out of the page during the drag (the
+ * window goes from the mini line to the expanded view, or the start screen gives way to the header) the capture goes with
+ * it, and the release that follows is heard by whatever is under the pointer, never by the grip. Without this the drag would
+ * never end.
+ */
+export function dragInput(pointerId: number, event: PointerFact): DragInput | null {
+  if (event.pointerId !== pointerId) return null;
+  const point = { x: event.screenX, y: event.screenY };
+  switch (event.type) {
+    case 'pointermove':
+      return { kind: 'move', point };
+    case 'pointerup':
+      return { kind: 'up', point };
+    case 'pointercancel':
+    case 'lostpointercapture':
+      return { kind: 'cancel' };
+    default:
+      return null;
+  }
+}
+
 const sameRect = (a: Rect, b: Rect): boolean =>
   a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 

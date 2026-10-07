@@ -19,6 +19,24 @@ async function forgetTheFlight(app: SceneApp): Promise<void> {
 
 export const REPAIR_SCENES: readonly Scene[] = [
   {
+    // The mini line is switched off and the start fails after the settings were read (an empty database, no network): the window
+    // is hidden by that setting, and the error would not be seen. It unfolds with the text of the error instead.
+    name: 'boot-failed-no-strip',
+    title: 'Мини-строка выключена, запуск не удался: окно разворачивается само, с текстом ошибки',
+    dataset: 'empty-no-strip',
+  },
+  {
+    // The first show of the window fails (`place_window` is refused once). The window stays hidden; the tray's «Показать панель»
+    // (`expand('tray')`, the same call) shows it again, and this time it works.
+    name: 'show-fails-once',
+    title: 'Первый показ окна не удался; «Показать панель» из трея показывает его снова',
+    dataset: 'default',
+    beforeStart: () => {
+      (globalThis as { __previewPlaceWindowFailures?: number }).__previewPlaceWindowFailures = 1;
+    },
+    act: (app) => app.expand('tray'),
+  },
+  {
     // a few minutes after the purchase, the flight to the target is not known: the line says what the cargo is expected to
     // sell for (the profit), and no «≈ …/ч» (the seconds since the purchase are not the time of the run)
     name: 'mini-run-unknown-flight',
