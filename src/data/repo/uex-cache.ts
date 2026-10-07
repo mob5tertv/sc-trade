@@ -208,8 +208,18 @@ function toPrice(r: Row): UexPrice {
   };
 }
 
+/**
+ * The cached prices, except those of a terminal that the reference says is NOT live (`is_available_live = 0`): the price sync asks
+ * only live terminals, so such a terminal would keep its last prices for ever and go on being offered. The rows stay in the table
+ * (the terminal may be marked live again); the player's own records of that terminal are not touched here. A terminal the
+ * reference does not list at all keeps its rows in the result: the routes leave out a terminal they do not know.
+ */
 export async function loadUexPrices(db: Db): Promise<UexPrice[]> {
-  return (await db.select<Row>('SELECT * FROM uex_price ORDER BY terminal_id, commodity_id')).map(toPrice);
+  return (await db.select<Row>(
+    'SELECT p.* FROM uex_price p '
+    + 'WHERE NOT EXISTS (SELECT 1 FROM uex_terminal t WHERE t.id = p.terminal_id AND t.is_available_live = 0) '
+    + 'ORDER BY p.terminal_id, p.commodity_id',
+  )).map(toPrice);
 }
 
 // ---------------------------------------------------------------------------
