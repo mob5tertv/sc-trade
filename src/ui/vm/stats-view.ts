@@ -1,6 +1,7 @@
 import { ownMedianIndex, ownRunCounts, routeStats, sessions } from '../../core/stats';
 import type { RouteStat, Session } from '../../core/stats';
 import type { RunWithEvents } from '../../core/types';
+import { NONE } from './stats-rows';
 import type { RouteRow } from './stats-rows';
 
 // What the "Мои маршруты" section decides without the screen: the lists it offers, the line of its header, and the
@@ -30,11 +31,14 @@ export const STATS_VIEWS: ReadonlyArray<{ id: StatsView; label: string; title: s
 
 const NO_FINISHED_RUNS = 'пока нет завершённых рейсов';
 
-/** The summary of the section header: the best route and its rate ('HUR-L1 → ARC-L1 · 310k/ч'), or that there are none. */
+/**
+ * The summary of the section header: the best route and its rate ('HUR-L1 → ARC-L1 · 310k/ч'), or that there are none.
+ * The rows carry the rate without its unit (their column has a caption); the header has none, so the unit is added here.
+ */
 export function routesSummary(rows: RouteRow[]): string {
   const best = rows[0];
   if (best === undefined) return NO_FINISHED_RUNS;
-  return best.rate === '—' ? best.route : `${best.route} · ${best.rate}`;
+  return best.rate === NONE ? best.route : `${best.route} · ${best.rate}/ч`;
 }
 
 /** Everything the interface takes from the history, counted once per load. */

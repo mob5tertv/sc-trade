@@ -109,10 +109,13 @@ describe('the no-records dataset', () => {
   });
 });
 
-describe('the window dataset keeps its two runs of the default history', () => {
-  it('one of them a simple route, the other a mixed one', async () => {
-    const { db } = await statsData('window');
-    const { stats } = figuresOf(await loadHistory(db));
-    expect(stats).toHaveLength(1);
+describe('the window dataset, whose history the stats dataset is made on', () => {
+  it('has the two runs of the default history: one is a route of the statistics, the other is a mixed run (two commodities)', async () => {
+    const { db, reference } = await statsData('window');
+    const history = await loadHistory(db);
+    expect(history.runs).toHaveLength(2);
+    expect(figuresOf(history).stats).toHaveLength(1);
+    const titles = historyRows(history.runs, reference, STATS_NOW).map((r) => r.title);
+    expect(titles.filter((t) => t.endsWith(': смешанный рейс'))).toHaveLength(1);
   });
 });
