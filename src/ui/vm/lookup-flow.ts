@@ -6,7 +6,8 @@ import type { Suggestion, SuggestProgress, SuggestRun } from '../../data/suggest
 //     and answers even while a sync is running. The answer is marked preliminary when distances are missing;
 //  2. only when distances are missing: ONE run that fetches them inside the UEX queue, with its progress, and replaces
 //     the answer. It is never repeated while distances are still missing afterwards (`Suggestion.missing`): UEX may
-//     never answer some pair, and the next run is the player's next request.
+//     never answer some pair, and the next run is the player's next request. The answer stays marked preliminary while
+//     some distance is still missing after the run, and when the run failed (the first answer stays on screen as it is).
 // The newest request wins: the answer of a request that was superseded is dropped, and a step that has not started
 // yet is not started. This module holds the order of things; `AppState.runLookup` holds the state they land in.
 
@@ -61,7 +62,9 @@ export async function answerLookup(flow: LookupFlow): Promise<void> {
         },
       });
     });
-    if (second !== null && flow.isNewest()) flow.show.answer(second.options, false);
+    // Final only when no distance is missing any more: UEX may not answer for some pair (the list then has no time and no income per hour
+    // for those trips), and an answer like that stays marked as preliminary. It is still not asked again (see the header).
+    if (second !== null && flow.isNewest()) flow.show.answer(second.options, second.missing > 0);
   } catch (err) {
     if (flow.isNewest()) flow.show.refineFailed(err);
   }

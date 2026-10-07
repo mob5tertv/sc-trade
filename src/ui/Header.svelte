@@ -6,7 +6,7 @@
   import { windowHeader } from './vm/window-header';
   import WindowGrip from './WindowGrip.svelte';
 
-  const header = $derived(windowHeader(app.reference, app.settings, app.viewTerminalId, app.pricesSyncedAt, app.uexOk, app.now, app.priceSync));
+  const header = $derived(windowHeader(app.reference, app.settings, app.viewTerminalId, app.pricesSyncedAt, app.uexOk, app.now, app.priceSync, app.referenceOk));
   const items = $derived(terminalSearchItems(app.reference, app.settings.starSystemId));
   const locked = $derived(app.windowLocked);
   const lockTitle = $derived(locked ? 'Открепить окно' : 'Закрепить окно');

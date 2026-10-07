@@ -96,6 +96,34 @@ describe('windowHeader: the freshness of UEX', () => {
   });
 });
 
+describe('windowHeader: the reference that did not update', () => {
+  const when = NOW - 3 * 3600;
+  const failed = (referenceOk: boolean) => windowHeader(ref, settings(1), 1, when, false, NOW, PRICE_SYNC_IDLE, referenceOk).uex;
+
+  it('says so in the tooltip, and offers to refresh the reference with the prices, not the prices alone', () => {
+    expect(failed(false)).toEqual({
+      text: 'UEX офлайн 3 ч',
+      title: `UEX недоступен, данные от ${stampOf(when)}\nСправочник UEX не обновился\nНажми, чтобы обновить справочник и цены сейчас`,
+      stale: true,
+      busy: false,
+    });
+  });
+
+  it('leaves the tooltip as it was when the reference is fine (the prices alone did not update)', () => {
+    expect(failed(true).title).toBe(`UEX недоступен, данные от ${stampOf(when)}\nНажми, чтобы обновить цены сейчас`);
+  });
+
+  it('keeps the line about the terminals that were not fetched, between the two', () => {
+    const lines = windowHeader(ref, settings(1), 1, when, false, NOW, { ...PRICE_SYNC_IDLE, unfetched: 2 }, false).uex.title.split('\n');
+    expect(lines.slice(1)).toEqual(['Справочник UEX не обновился', 'Не обновилось терминалов: 2', 'Нажми, чтобы обновить справочник и цены сейчас']);
+  });
+
+  it('shows the progress of a refresh that is going as it always does', () => {
+    expect(windowHeader(ref, settings(1), 1, when, false, NOW, { ...PRICE_SYNC_IDLE, running: true }, false).uex)
+      .toMatchObject({ text: 'UEX …', busy: true, stale: false });
+  });
+});
+
 describe('windowHeader: the price sync that is going', () => {
   const sync = (over: Partial<PriceSync>): PriceSync => ({ ...PRICE_SYNC_IDLE, running: true, ...over });
   const uex = (s: PriceSync, synced: number | null = NOW - 12 * 60, ok = true) => windowHeader(ref, settings(1), 1, synced, ok, NOW, s).uex;
