@@ -236,8 +236,14 @@ mod tests {
         // The target of a line written in this very module: the crate path of the application.
         assert!(passes_third_party_cap(module_path!(), log::Level::Debug));
         assert!(passes_third_party_cap("sc_trade_lib", log::Level::Debug));
-        assert!(passes_third_party_cap("sc_trade_lib::input_hook", log::Level::Debug));
-        assert!(passes_third_party_cap("sc_trade_lib::input_hook", log::Level::Trace));
+        assert!(passes_third_party_cap(
+            "sc_trade_lib::input_hook",
+            log::Level::Debug
+        ));
+        assert!(passes_third_party_cap(
+            "sc_trade_lib::input_hook",
+            log::Level::Trace
+        ));
     }
 
     #[test]
@@ -248,14 +254,23 @@ mod tests {
             "webview::http://tauri.localhost/assets/index-DwcJVy5X.js:1:2345",
             log::Level::Debug
         ));
-        assert!(passes_third_party_cap("webview::<anonymous>", log::Level::Debug));
+        assert!(passes_third_party_cap(
+            "webview::<anonymous>",
+            log::Level::Debug
+        ));
     }
 
     #[test]
     fn other_crates_do_not_write_debug_lines() {
         for target in THIRD_PARTY {
-            assert!(!passes_third_party_cap(target, log::Level::Debug), "{target}");
-            assert!(!passes_third_party_cap(target, log::Level::Trace), "{target}");
+            assert!(
+                !passes_third_party_cap(target, log::Level::Debug),
+                "{target}"
+            );
+            assert!(
+                !passes_third_party_cap(target, log::Level::Trace),
+                "{target}"
+            );
         }
     }
 
@@ -270,13 +285,22 @@ mod tests {
 
     #[test]
     fn a_name_that_only_starts_like_ours_is_not_ours() {
-        assert!(!passes_third_party_cap("sc_trade_lib_extra", log::Level::Debug));
-        assert!(!passes_third_party_cap("sc_trade_libs::x", log::Level::Debug));
+        assert!(!passes_third_party_cap(
+            "sc_trade_lib_extra",
+            log::Level::Debug
+        ));
+        assert!(!passes_third_party_cap(
+            "sc_trade_libs::x",
+            log::Level::Debug
+        ));
         assert!(!passes_third_party_cap("webview2", log::Level::Debug));
         assert!(!passes_third_party_cap("webviewer::x", log::Level::Debug));
         assert!(!passes_third_party_cap("", log::Level::Debug));
         // The other way round: a third-party module path that merely contains our name.
-        assert!(!passes_third_party_cap("hyper::sc_trade_lib", log::Level::Debug));
+        assert!(!passes_third_party_cap(
+            "hyper::sc_trade_lib",
+            log::Level::Debug
+        ));
         assert!(!passes_third_party_cap("hyper::webview", log::Level::Debug));
     }
 
@@ -321,8 +345,16 @@ mod tests {
     fn the_logger_drops_third_party_debug_lines_and_keeps_the_rest() {
         let text = written(&[
             ("sc_trade_lib::input_hook", log::Level::Debug, "own debug"),
-            ("webview::http://tauri.localhost/a.js:1:2", log::Level::Debug, "ui debug"),
-            ("reqwest::connect", log::Level::Debug, "proxy(http://host:8080/) intercepts"),
+            (
+                "webview::http://tauri.localhost/a.js:1:2",
+                log::Level::Debug,
+                "ui debug",
+            ),
+            (
+                "reqwest::connect",
+                log::Level::Debug,
+                "proxy(http://host:8080/) intercepts",
+            ),
             ("sqlx::query", log::Level::Debug, "INSERT INTO uex_prices"),
             ("h2::codec::framed_write", log::Level::Trace, "send frame"),
             ("reqwest::connect", log::Level::Info, "third-party info"),
