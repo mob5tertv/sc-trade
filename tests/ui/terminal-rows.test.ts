@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { badgeText, cellScu, sideCounts, terminalRows } from '../../src/ui/vm/terminal-rows';
+import { badgeText, cellScu, sideCounts, terminalRows, uexRangeOf } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
 import { obs, px, ref } from '../helpers/factories';
@@ -231,6 +231,19 @@ describe('terminalRows', () => {
     expect(terminalRows(withUexRange(base, 1, 10, 100, 300, 'sell'), ref, 1, ctx)[0].sell!.warn).toBe(true);
     // a wild UEX-derived hint is only a hint: nothing to warn about
     expect(terminalRows(withUexRange(market, 1, 30, 10, 20), ref, 1, ctx)[1].buy).toMatchObject({ own: null, warn: false });
+  });
+});
+
+describe('uexRangeOf', () => {
+  it('is the range UEX knows for a side of a terminal, whatever my diary says there', () => {
+    expect(uexRangeOf(market, 1, 10, 'buy', ctx)).toEqual({ low: 5900, high: 6200 }); // Gold: my own hot price, UEX week 5900–6200
+    expect(uexRangeOf(withOwnBuy(market, 1, 10, 6120, NOW - 5 * 3600), 1, 10, 'buy', ctx)).toEqual({ low: 5900, high: 6200 });
+  });
+
+  it('is null for a flat price, a side UEX knows nothing about and a place without a UEX row', () => {
+    expect(uexRangeOf(market, 1, 30, 'buy', ctx)).toBeNull(); // Tungsten 3980 flat
+    expect(uexRangeOf(market, 1, 10, 'sell', ctx)).toBeNull(); // nobody buys Gold here according to UEX
+    expect(uexRangeOf(market, 4, 10, 'buy', ctx)).toBeNull(); // no row for terminal 4
   });
 });
 

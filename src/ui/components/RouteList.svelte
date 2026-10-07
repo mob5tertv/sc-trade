@@ -2,7 +2,7 @@
   import type { RouteOption } from '../../core/routes';
   import type { Reference } from '../../core/types';
   import { routeOptionRow } from '../vm/route-rows';
-  import type { RouteMode, RouteOptionRow } from '../vm/route-rows';
+  import type { RouteMode, RouteOptionRow, UexRangeOf } from '../vm/route-rows';
   import TempBadge from './TempBadge.svelte';
 
   interface Props {
@@ -16,15 +16,25 @@
     emptyText: string;
     /** Set: the expanded row has a "Цель" button that calls it. */
     onTarget?: (option: RouteOption) => void;
-    /** The viewed terminal. A trip whose own end is another terminal (bought elsewhere on the planet) shows both its ends. */
+    /**
+     * The viewed terminal. A trip whose own end is another terminal (bought elsewhere on the planet) shows both its
+     * ends; without it every row shows both.
+     */
     anchorTerminalId?: number | null;
     /** The terminal of the current target: the option that leads there carries the word "цель". */
     targetTerminalId?: number | null;
+    /**
+     * The range UEX knows for a side of a terminal. It stands in «Мин–макс» beside a price of mine, as a reference;
+     * without it such a price has no range.
+     */
+    uexRange?: UexRangeOf;
   }
-  let { options, reference, runCounts, mode, showCommodity, emptyText, onTarget, anchorTerminalId = null, targetTerminalId = null }: Props = $props();
+  let {
+    options, reference, runCounts, mode, showCommodity, emptyText, onTarget, anchorTerminalId = null, targetTerminalId = null, uexRange,
+  }: Props = $props();
 
   const rows = $derived(
-    options.map(option => ({ option, row: routeOptionRow(option, reference, mode, runCounts, { anchorTerminalId, targetTerminalId }) })),
+    options.map(option => ({ option, row: routeOptionRow(option, reference, mode, runCounts, { anchorTerminalId, targetTerminalId, uexRange }) })),
   );
   // the best rate is the one number of the list that is told apart by colour on its own, apart from the ROI tiers
   const bestRate = $derived.by(() => {

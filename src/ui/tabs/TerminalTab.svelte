@@ -10,6 +10,7 @@
   import type { LookupKind } from '../vm/lookup';
   import { locationModel } from '../vm/location';
   import { defaultSide } from '../vm/quick-entry';
+  import { uexRangeOf } from '../vm/terminal-rows';
 
   // My finished runs per pair: there are none to count until the trade runs exist in the interface.
   const NO_RUNS = new Map<string, number>();
@@ -164,6 +165,7 @@
           emptyText={lookupEmptyText(lookup.request, app.reference)}
           anchorTerminalId={viewedId}
           targetTerminalId={app.settings.targetTerminalId}
+          uexRange={(terminalId, commodityId, side) => uexRangeOf(app.market, terminalId, commodityId, side, app.routeCtx())}
           onTarget={(option) => void app.setTarget(lookupTarget(option, kind))}
         />
       {/if}

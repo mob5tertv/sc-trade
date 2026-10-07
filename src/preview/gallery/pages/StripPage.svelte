@@ -7,7 +7,7 @@
   const { data } = useGallery();
   const open = (): void => console.info('[gallery] open');
   // what the strip says when the target was never picked: no target, no price there, no rate
-  const noTarget: StripModel = data.strip.run.kind === 'run' ? { ...data.strip.run, target: null, expect: null, rate: null } : data.strip.run;
+  const noTarget: StripModel = data.strip.run.kind === 'run' ? { ...data.strip.run, target: null, expect: null, expectShort: null, rate: null } : data.strip.run;
 </script>
 
 <Frame name="idle" caption="no run: the SC mark and the location" width="content">

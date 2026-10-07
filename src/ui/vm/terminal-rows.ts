@@ -54,20 +54,23 @@ export function sideCounts(rows: Array<Pick<TerminalRow, 'buy' | 'sell'>>): { bu
   return { buy: rows.filter(row => row.buy !== null).length, sell: rows.filter(row => row.sell !== null).length };
 }
 
+/** A flat price or one without bounds is no range. */
+const rangeOfUex = (e: Estimate | null): Cell['range'] =>
+  e !== null && e.source === 'uex' && e.low > 0 && e.high > e.low ? { low: e.low, high: e.high } : null;
+
 /**
- * The range UEX knows for one side. A price of my own has none in its estimate, so the same estimate is taken once
- * more with my diary left out; it picks the period (week, month, all time) exactly as the price does. A flat price or
- * one without bounds is no range.
+ * The range UEX knows for one side of a terminal, whatever my diary says there. A price of my own has none in its
+ * estimate, so the estimate is taken with my diary left out; it picks the period (week, month, all time) exactly as
+ * the price does. This is the reference that stands beside my own price in a table and in a list of trips.
  */
-function uexRange(m: Market, e: Estimate, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): Cell['range'] {
-  const uex = e.source === 'uex' ? e : estimate({ ...m, own: new Map() }, terminalId, commodityId, side, ctx);
-  return uex !== null && uex.source === 'uex' && uex.low > 0 && uex.high > uex.low ? { low: uex.low, high: uex.high } : null;
+export function uexRangeOf(m: Market, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): Cell['range'] {
+  return rangeOfUex(estimate({ ...m, own: new Map() }, terminalId, commodityId, side, ctx));
 }
 
 function cell(m: Market, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): Cell | null {
   const e = estimate(m, terminalId, commodityId, side, ctx);
   if (!e) return null;
-  const range = uexRange(m, e, terminalId, commodityId, side, ctx);
+  const range = e.source === 'uex' ? rangeOfUex(e) : uexRangeOf(m, terminalId, commodityId, side, ctx);
   // The quantity is a reading of its own, apart from the price (spec 14.6): mine whenever `scuOrigin` says so (zero
   // included), even next to a UEX price. On the buy side `e.stock` is its estimate for now; on the sell side it is
   // the buyer's inventory and stays as recorded, with no estimate (spec 14.5). A UEX quantity goes to the grey

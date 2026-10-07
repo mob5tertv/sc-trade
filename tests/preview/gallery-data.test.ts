@@ -63,8 +63,14 @@ describe('the gallery table of the viewed terminal', () => {
 describe('the gallery route lists', () => {
   const rowsOf = (options: GalleryData['routes']['from'], mode: 'from' | 'to') =>
     options.map((o) => routeOptionRow(o, data.reference, mode, data.runCounts, {
-      anchorTerminalId: VIEWED_TERMINAL, targetTerminalId: data.settings.targetTerminalId,
+      anchorTerminalId: VIEWED_TERMINAL, targetTerminalId: data.settings.targetTerminalId, uexRange: data.uexRange,
     }));
+
+  it('has trips whose far price is mine, with the range UEX knows beside it', () => {
+    const own = rowsOf(data.routes.to, 'to').filter((r) => r.price.badge.kind !== 'uex');
+    expect(own.length).toBeGreaterThan(0);
+    expect(own.every((r) => r.price.range !== null)).toBe(true); // UEX knows a range at every place of the dataset
+  });
 
   it('has trips from and to the viewed terminal', () => {
     expect(data.routes.from.length).toBeGreaterThan(0);

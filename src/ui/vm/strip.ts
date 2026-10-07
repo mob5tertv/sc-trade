@@ -8,7 +8,14 @@ import type { CargoLine, Estimate, Market, Reference, RunWithEvents, Terminal } 
 
 export type StripModel =
   | { kind: 'idle'; location: string }
-  | { kind: 'run'; timer: string; cargo: string; target: string | null; expect: string | null; rate: string | null };
+  | {
+    kind: 'run'; timer: string; cargo: string; target: string | null;
+    /** 'ждём 6 900 (6 400–7 100)': with the range, for a tooltip. */
+    expect: string | null;
+    /** 'ждём 6 900': the same without the range, for the one-line strip. */
+    expectShort: string | null;
+    rate: string | null;
+  };
 
 const SEC_PER_HOUR = 3600;
 const NO_LOCATION = 'Локация не выбрана';
@@ -31,10 +38,11 @@ function cargoText(ref: Reference, cargo: CargoLine[]): string {
   }).join(', ');
 }
 
-/** 'ждём 6 900 (6 400–7 100)'; no brackets when both bounds are the price. */
-function expectText(sell: Estimate): string {
+/** 'ждём 6 900 (6 400–7 100)', and its short form 'ждём 6 900'; no brackets when both bounds are the price. */
+function expectTexts(sell: Estimate): { full: string; short: string } {
   const [price, low, high] = [sell.price, sell.low, sell.high].map(formatUec);
-  return low === price && high === price ? `ждём ${price}` : `ждём ${price} (${low}–${high})`;
+  const short = `ждём ${price}`;
+  return { full: low === price && high === price ? short : `${short} (${low}–${high})`, short };
 }
 
 /**
@@ -65,15 +73,16 @@ export function stripModel(active: RunWithEvents | null, m: Market, ref: Referen
   const cargoLine = cargoText(ref, cargo);
 
   const target = s.targetTerminalId === null ? undefined : ref.terminals.get(s.targetTerminalId);
-  if (!target) return { kind: 'run', timer, cargo: cargoLine, target: null, expect: null, rate: null };
+  if (!target) return { kind: 'run', timer, cargo: cargoLine, target: null, expect: null, expectShort: null, rate: null };
 
   const priced = cargo.map((line): PricedLine => ({ line, sell: estimate(m, target.id, line.commodityId, 'sell', ctx) }));
   const firstSell = priced[0]?.sell ?? null;
   const originId = events.find(e => e.type === 'buy')?.terminalId ?? null;
+  const expect = firstSell ? expectTexts(firstSell) : null;
   return {
     kind: 'run', timer, cargo: cargoLine,
     target: terminalLabel(target),
-    expect: firstSell ? expectText(firstSell) : null,
+    expect: expect?.full ?? null, expectShort: expect?.short ?? null,
     rate: rateText(priced, elapsedSec, originId === null ? null : flightSec(ctx, originId, target.id)),
   };
 }

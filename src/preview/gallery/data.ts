@@ -28,7 +28,8 @@ import { historyRows, routeRows, sessionRows } from '../../ui/vm/stats-rows';
 import type { HistoryRow, RouteRow, SessionRow } from '../../ui/vm/stats-rows';
 import { stripModel } from '../../ui/vm/strip';
 import type { StripModel } from '../../ui/vm/strip';
-import { terminalRows } from '../../ui/vm/terminal-rows';
+import type { UexRangeOf } from '../../ui/vm/route-rows';
+import { terminalRows, uexRangeOf } from '../../ui/vm/terminal-rows';
 import type { TerminalRow } from '../../ui/vm/terminal-rows';
 
 // The data of the component gallery. Nothing here is typed by hand into a row: the rows come out of the real
@@ -60,6 +61,8 @@ export interface GalleryData {
   commodityItems: Searchable[];
   terminalItems: Searchable[];
   boostIds: Set<number>;
+  /** The range UEX knows for a side of a terminal: it stands beside a price of mine in the lists of trips. */
+  uexRange: UexRangeOf;
   sideFor: (commodityId: number) => Side;
   routes: {
     /** Trips from the viewed terminal only. */
@@ -223,6 +226,7 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
     commodityItems: commoditySearchItems(reference),
     terminalItems: terminalSearchItems(reference, settings.starSystemId),
     boostIds: new Set(market.byTerminal.get(VIEWED_TERMINAL)),
+    uexRange: (terminalId, commodityId, side) => uexRangeOf(market, terminalId, commodityId, side, ctx),
     sideFor: (commodityId) => defaultSide(rows.find((r) => r.commodityId === commodityId)),
     routes: { from, nearby, to, ladder },
     runCounts: ownRunCounts(runs),
