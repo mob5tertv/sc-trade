@@ -236,6 +236,7 @@ export const SCENES: readonly Scene[] = [
       for (const id of ['fresh', 'routes', 'keys', 'window', 'data']) await app.toggleSection(`settings:${id}`);
     },
   },
+  { name: 'mini-boot-failed', title: 'Мини-строка: ошибка запуска (клик разворачивает окно с текстом ошибки)', dataset: 'empty' },
   { name: 'boot-failed', title: 'Ошибка запуска: пустая база, UEX недоступен', dataset: 'empty', act: (app) => app.expand('preview') },
   {
     // The player has just clicked the mini bar, so the cursor is over the window. `hover:.sc-root;leave;wait:3000`
