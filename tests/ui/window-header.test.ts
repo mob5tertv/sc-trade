@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../src/core/settings';
 import { PRICE_SYNC_IDLE, windowHeader, type PriceSync } from '../../src/ui/vm/window-header';
-import { ref } from '../helpers/factories';
+import { ref, term } from '../helpers/factories';
 
 const NOW = 1_790_000_000;
 /** '05.01 09:07': the date of the data in the tooltip, in the time zone of the machine. */
@@ -24,9 +24,25 @@ describe('windowHeader: the location field', () => {
     expect(windowHeader(ref, settings(1), 777, NOW, true, NOW).location).toBeNull();
   });
 
-  it('keeps the full name in the tooltip, and where the ship stands when that is another place', () => {
-    expect(windowHeader(ref, settings(1), 1, NOW, true, NOW).locationTitle).toBe('ARC-L1 Wide Forest Station');
-    expect(windowHeader(ref, settings(1), 2, NOW, true, NOW).locationTitle).toBe('TDD Area 18\nСейчас: ARC-L1 Wide Forest Station');
+  it('keeps the full name in the tooltip, then where the terminal is, then where the ship stands when that is another place', () => {
+    // these terminals know their star system only by its id: the name comes from the list of the reference
+    expect(windowHeader(ref, settings(1), 1, NOW, true, NOW).locationTitle).toBe('ARC-L1 Wide Forest Station\nStanton');
+    expect(windowHeader(ref, settings(1), 2, NOW, true, NOW).locationTitle).toBe('TDD Area 18\nStanton\nСейчас: ARC-L1 Wide Forest Station');
+  });
+
+  it('says the whole place of the viewed terminal in the tooltip: system, planet, moon, city or station', () => {
+    const grim = term(13, {
+      displayname: 'GrimHEX', nickname: 'GrimHEX', starSystemId: 68, starSystemName: 'Stanton', planetName: 'Crusader', moonName: 'Yela', outpostName: 'GrimHEX',
+    });
+    const withGrim = { ...ref, terminals: new Map([...ref.terminals, [13, grim]]) };
+    expect(windowHeader(withGrim, settings(13), 13, NOW, true, NOW).locationTitle).toBe('GrimHEX\nStanton · Crusader · Yela');
+    expect(windowHeader(withGrim, settings(1), 13, NOW, true, NOW).locationTitle).toBe('GrimHEX\nStanton · Crusader · Yela\nСейчас: ARC-L1 Wide Forest Station');
+  });
+
+  it('adds no line for a place that is not known', () => {
+    const nowhere = term(14, { displayname: 'Nowhere', nickname: 'Nowhere' });
+    const withNowhere = { ...ref, terminals: new Map([...ref.terminals, [14, nowhere]]) };
+    expect(windowHeader(withNowhere, settings(14), 14, NOW, true, NOW).locationTitle).toBe('Nowhere');
   });
 
   it('has a tooltip for the empty field too', () => {

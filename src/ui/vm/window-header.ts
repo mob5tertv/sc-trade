@@ -3,12 +3,13 @@ import type { Settings } from '../../core/settings';
 import type { Reference } from '../../core/types';
 import { headerModel } from './header';
 import { locationModel } from './location';
+import { terminalFullPlace } from './terminal-place';
 
 /** What the one-line header of the expanded window shows. */
 export interface WindowHeader {
   /** The short name of the viewed terminal for the field of the location; `null` when none is viewed. */
   location: string | null;
-  /** The tooltip of the field: the full name, and where the ship stands when that is another place. */
+  /** The tooltip of the field: the full name, where the terminal is, and where the ship stands when that is another place. */
   locationTitle: string;
   /** The terminal "Я здесь" would make the current location; `null` when the button is not wanted at all. */
   hereTerminalId: number | null;
@@ -79,7 +80,9 @@ export function windowHeader(
   const terminal = viewTerminalId === null ? undefined : ref.terminals.get(viewTerminalId);
   const title = terminal === undefined
     ? EMPTY_FIELD_TITLE
-    : view.currentLocation === null ? view.header.location : `${view.header.location}\nСейчас: ${view.currentLocation}`;
+    : [view.header.location, terminalFullPlace(terminal, ref.starSystems), view.currentLocation === null ? '' : `Сейчас: ${view.currentLocation}`]
+      .filter((line) => line !== '')
+      .join('\n');
   const referenceFailed = referenceOk ? [] : [REFERENCE_FAILED];
   const unfetched = sync.unfetched > 0 ? [`Не обновилось терминалов: ${sync.unfetched}`] : [];
   return {

@@ -148,6 +148,28 @@ export const SCENES: readonly Scene[] = [
     },
   },
   {
+    // the star system of the settings is "all": the list holds the terminals of every system, and "Stanton Gateway" stands in
+    // two of them (`--do "click:header input;type:stanton g"`)
+    name: 'search-places',
+    title: 'Поиск локации: у вариантов подписано место (все системы, «Stanton Gateway» в двух системах)',
+    dataset: 'window',
+    act: async (app) => {
+      await app.updateSetting('starSystemId', null);
+      await app.expand('preview');
+    },
+  },
+  {
+    // the narrowest window the settings allow: the list must not be wider than the window (`--do "click:header input;type:stanton g"`)
+    name: 'search-places-narrow',
+    title: 'Поиск локации в самом узком окне (380 px): место подписано, список не шире окна',
+    dataset: 'window',
+    act: async (app) => {
+      await app.updateSetting('starSystemId', null);
+      await app.updateSetting('panelWidth', 380);
+      await app.expand('preview');
+    },
+  },
+  {
     name: 'expanded-empty',
     title: 'Терминал, о котором ничего не известно (Seraphim Station): одна приглушённая строка',
     dataset: 'window',

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { commoditySearchItems, headerModel, terminalSearchItems } from '../../src/ui/vm/header';
 import { DEFAULT_SETTINGS } from '../../src/core/settings';
 import { search } from '../../src/core/search';
-import { ref } from '../helpers/factories';
+import type { Terminal } from '../../src/core/types';
+import { ref, term } from '../helpers/factories';
 
 const NOW = 1_790_000_000;   // fixed Unix seconds
 
@@ -66,15 +67,53 @@ describe('terminalSearchItems', () => {
     expect(terminalSearchItems(ref, null).map(i => i.id)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(terminalSearchItems(ref, 99).map(i => i.id)).toEqual([4]);
   });
-  it('names an item after its display name and keeps the other names as aliases', () => {
+  it('names an item after its display name and keeps the other names, and the system, as aliases', () => {
     const t = { ...ref.terminals.get(1)!, name: 'Wide Forest', code: 'ARCL1', planetName: 'ArcCorp' };
     const item = terminalSearchItems({ ...ref, terminals: new Map([[1, t]]) }, null)[0];
-    expect(item).toEqual({ id: 1, code: 'ARCL1', name: 'ARC-L1 Wide Forest Station', aliases: ['ARC-L1', 'Wide Forest', 'ArcCorp'] });
+    expect(item).toEqual({
+      id: 1, code: 'ARCL1', name: 'ARC-L1 Wide Forest Station', aliases: ['ARC-L1', 'Wide Forest', 'ArcCorp', 'Stanton'],
+      place: 'Stanton · ArcCorp', title: 'ARC-L1 Wide Forest Station\nStanton · ArcCorp',
+    });
   });
   it('drops empty aliases and falls back to the nickname without a display name', () => {
     const item = terminalSearchItems(ref, null).find(i => i.id === 3)!;
     expect(item.name).toBe('CRU-L1');
-    expect(item.aliases).toEqual(['CRU-L1']);
+    expect(item.aliases).toEqual(['CRU-L1', 'Stanton']);
+  });
+
+  describe('where a terminal is', () => {
+    const gateway = (id: number, starSystemId: number, partial: Partial<Terminal> = {}): Terminal =>
+      term(id, { displayname: 'Stanton Gateway', nickname: 'Stanton Gateway', code: `SG${id}`, starSystemId, ...partial });
+    const gateways = {
+      ...ref,
+      terminals: new Map([
+        [20, gateway(20, 99, { planetName: 'Pyro', spaceStationName: 'Stanton Gateway' })],
+        [21, gateway(21, 99, { moonName: 'Ignis', planetName: 'Pyro' })],
+        [22, gateway(22, 68)],
+      ]),
+    };
+
+    it('says it beside every item: the system and the planet or the moon, the same short line as the place of the terminal', () => {
+      const items = terminalSearchItems(gateways, null);
+      expect(items.map(i => [i.id, i.place])).toEqual([[20, 'Pyro'], [21, 'Pyro · Ignis'], [22, 'Stanton']]);
+    });
+    it('keeps the whole place and the whole name for the tooltip of the item', () => {
+      const items = terminalSearchItems(gateways, null);
+      expect(items.find(i => i.id === 21)!.title).toBe('Stanton Gateway\nPyro · Ignis');
+    });
+    it('leaves the place out when nothing is known of it', () => {
+      const item = terminalSearchItems({ ...ref, terminals: new Map([[7, term(7, { nickname: 'Nowhere', code: 'NW' })]]), starSystems: [] }, null)[0];
+      expect(item).toEqual({ id: 7, code: 'NW', name: 'Nowhere', aliases: ['Nowhere'], title: 'Nowhere' });
+    });
+    it('is searchable by the name of the system', () => {
+      expect(search(terminalSearchItems(ref, null), 'pyro').map(i => i.id)).toEqual([4]);
+      expect(search(terminalSearchItems(gateways, null), 'pyro').map(i => i.id)).toEqual([20, 21]);
+    });
+    it('keeps the place on the items the search returns, so that the box can draw it', () => {
+      const found = search(terminalSearchItems(gateways, null), 'stanton g');
+      expect(found.map(i => i.id)).toEqual([20, 21, 22]);
+      expect(found.map(i => i.place)).toEqual(['Pyro', 'Pyro · Ignis', 'Stanton']);
+    });
   });
   it('is searchable by the nickname the player knows', () => {
     expect(search(terminalSearchItems(ref, null), 'arc-l').map(i => i.id)).toEqual([1]);

@@ -3,7 +3,7 @@ import { formatCompact } from '../../src/core/format';
 import { formatDistance, formatRoi, perHourBare, perHourNarrow, routeOptionRow, sellAlternativeRow, sellHereRow } from '../../src/ui/vm/route-rows';
 import type { RouteOption } from '../../src/core/routes';
 import type { SellAlternative, SellHere } from '../../src/core/sell';
-import type { Estimate } from '../../src/core/types';
+import type { Estimate, Terminal } from '../../src/core/types';
 import { pairKey } from '../../src/core/types';
 import { ref, term } from '../helpers/factories';
 import type { UexRange } from '../../src/ui/vm/terminal-rows';
@@ -145,6 +145,7 @@ describe('routeOptionRow', () => {
       price: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
       roi: '13%', rate: '256k', worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
       origin: 'ARC-L1', dest: 'TDD Area 18', bothEnds: true, isTarget: false, tier: 'ok',
+      whereTitle: 'ARC-L1 → TDD Area 18\nARC-L1: Stanton\nTDD Area 18: Stanton',
       invested: nb('587 520'), profit: nb('74 880'), profitLoss: false, trend: null, priceIsOwn: false,
       buy: { price: nb('6 120'), range: NO_PRICE, badge: { text: 'моя · 40 мин', kind: 'hot' } },
       sell: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
@@ -156,6 +157,37 @@ describe('routeOptionRow', () => {
     expect(row.terminal).toBe('ARC-L1');
     // my own price has no range, and its badge carries the temperature
     expect(row.price).toEqual({ price: nb('6 120'), range: NO_PRICE, badge: { text: 'моя · 40 мин', kind: 'hot' } });
+  });
+
+  describe('the tooltip of the terminal of the row: where it is', () => {
+    const placed = (partial1: Partial<Terminal> = {}, partial2: Partial<Terminal> = {}) => ({
+      ...ref,
+      terminals: new Map([
+        [1, { ...ref.terminals.get(1)!, starSystemName: 'Stanton', planetName: 'ArcCorp', ...partial1 }],
+        [2, { ...ref.terminals.get(2)!, starSystemName: 'Pyro', moonName: 'Ignis', ...partial2 }],
+      ]),
+    });
+
+    it('is the name and the whole place of the other end when the row names one end', () => {
+      const row = routeOptionRow(option(), placed(), 'from', new Map(), { anchorTerminalId: 1 });
+      expect(row.bothEnds).toBe(false);
+      expect(row.whereTitle).toBe('TDD Area 18\nPyro · Ignis');
+      expect(routeOptionRow(option(), placed(), 'to', new Map(), { anchorTerminalId: 2 }).whereTitle).toBe('ARC-L1\nStanton · ArcCorp');
+    });
+    it('is the trip and the place of each end when the row names both', () => {
+      const row = routeOptionRow(option(), placed(), 'from', new Map());
+      expect(row.bothEnds).toBe(true);
+      expect(row.whereTitle).toBe('ARC-L1 → TDD Area 18\nARC-L1: Stanton · ArcCorp\nTDD Area 18: Pyro · Ignis');
+    });
+    it('leaves out the line of an end whose place is not known, and is the plain name or trip as before without any', () => {
+      const unknown = { ...ref, starSystems: [] };
+      expect(routeOptionRow(option(), unknown, 'from', new Map(), { anchorTerminalId: 1 }).whereTitle).toBe('TDD Area 18');
+      expect(routeOptionRow(option(), unknown, 'from', new Map()).whereTitle).toBe('ARC-L1 → TDD Area 18');
+    });
+    it('does not change the text of the row, which is the names', () => {
+      const row = routeOptionRow(option(), placed(), 'from', new Map());
+      expect([row.terminal, row.origin, row.dest]).toEqual(['TDD Area 18', 'ARC-L1', 'TDD Area 18']);
+    });
   });
 
   describe('the trend of the price in the «Цена» column', () => {

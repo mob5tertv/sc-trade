@@ -1,6 +1,6 @@
 import { estimate } from '../core/estimate';
 import { DEFAULT_SETTINGS } from '../core/settings';
-import type { Commodity, UexPrice, UexSideStats } from '../core/types';
+import type { Commodity, StarSystem, Terminal, UexPrice, UexSideStats } from '../core/types';
 import type { Db } from '../data/db';
 import { createLogger } from '../data/logger';
 import { addObservation } from '../data/repo/diary';
@@ -12,7 +12,8 @@ import { loadMarket } from '../data/suggest';
 //  - the trips from HUR-L1 are five, one tier of ROI each (the bar at the edge of a row and its number are the point
 //    of the list: the default prices give five trips of the same two tiers);
 //  - Area 18 trades two dozen commodities, so that a table has to scroll;
-//  - Seraphim Station is a terminal nothing is known about.
+//  - Seraphim Station is a terminal nothing is known about;
+//  - two "Stanton Gateway" terminals stand in two other star systems, so that a search for the name finds two places of one name.
 // Everything else is the default dataset: the player, the history, the other terminals.
 
 const quiet = createLogger({ write() {} });
@@ -132,6 +133,30 @@ async function writeBusyTerminal(db: Db, now: number): Promise<void> {
   await upsertPrices(db, [], prices, now);
 }
 
+/**
+ * Two terminals of one name in different star systems, as UEX has many ("Stanton Gateway" stands in Pyro, in Nyx and in other
+ * systems): the list of the location search has to say where each of them is. They trade nothing, so no table or trip changes.
+ */
+async function writeGateways(db: Db): Promise<void> {
+  const reference = await loadReference(db);
+  const first = Math.max(...reference.terminals.keys()) + 1;
+  const gateway = (n: number, system: StarSystem, code: string, planet: string | null): Terminal => ({
+    id: first + n, starSystemId: system.id, planetId: 0, orbitId: first + n,
+    name: 'Admin - Stanton Gateway', nickname: 'Stanton Gateway', displayname: 'Stanton Gateway', code,
+    starSystemName: system.name, planetName: planet, orbitName: planet === null ? 'Stanton Jump Point' : planet,
+    moonName: null, spaceStationName: 'Stanton Gateway', outpostName: null, cityName: null,
+    hasFreightElevator: true, hasLoadingDock: false, isAutoLoad: true, isAvailableLive: true,
+  });
+  const system = (name: string): StarSystem => {
+    const found = reference.starSystems.find((s) => s.name === name);
+    if (found === undefined) throw new Error(`preview seed: unknown star system ${name}`);
+    return found;
+  };
+  await saveReference(db, {
+    terminals: [...reference.terminals.values(), gateway(0, system('Pyro'), 'STGWP', null), gateway(1, system('Nyx'), 'STGWN', 'Delamar')],
+  });
+}
+
 /** A terminal nothing is known about: no UEX price, no price of mine. */
 async function clearTerminal(db: Db, terminalId: number): Promise<void> {
   await db.execute('DELETE FROM uex_price WHERE terminal_id = ?', [terminalId]);
@@ -142,5 +167,6 @@ async function clearTerminal(db: Db, terminalId: number): Promise<void> {
 export async function extendForWindow(db: Db, now: number): Promise<void> {
   await writeLadder(db, now);
   await writeBusyTerminal(db, now);
+  await writeGateways(db);
   await clearTerminal(db, SERAPHIM);
 }

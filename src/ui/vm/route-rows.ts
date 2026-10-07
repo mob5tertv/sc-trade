@@ -8,6 +8,7 @@ import { priceTrend } from './price-trend';
 import type { PriceTrend } from './price-trend';
 import { roiTier } from './roi-tier';
 import type { RoiTier } from './roi-tier';
+import { terminalFullPlace } from './terminal-place';
 import { NO_RANGE, badgeText, isOwnPrice, rangeOfEstimate, rangeView } from './terminal-rows';
 import type { RangeView, UexRange } from './terminal-rows';
 
@@ -26,6 +27,23 @@ function terminalLabel(ref: Reference, id: number): string {
 }
 
 const commodityLabel = (ref: Reference, id: number): string => ref.commodities.get(id)?.code || `#${id}`;
+
+/** The whole place of a terminal of the reference; empty for one that is not there or says nothing of where it is. */
+function placeOf(ref: Reference, id: number): string {
+  const t = ref.terminals.get(id);
+  return t === undefined ? '' : terminalFullPlace(t, ref.starSystems);
+}
+
+/** 'Name\nStanton · Hurston' for a row of one end, 'A → B\nA: where\nB: where' for a row of both; a line of an end that says nothing of where it is is left out. */
+function whereTitle(ref: Reference, bothEnds: boolean, otherId: number, originId: number, destId: number): string {
+  const lines = bothEnds
+    ? [`${terminalLabel(ref, originId)} → ${terminalLabel(ref, destId)}`, ...[originId, destId].map((id) => {
+      const place = placeOf(ref, id);
+      return place === '' ? '' : `${terminalLabel(ref, id)}: ${place}`;
+    })]
+    : [terminalLabel(ref, otherId), placeOf(ref, otherId)];
+  return lines.filter((line) => line !== '').join('\n');
+}
 
 /**
  * '518k/ч'; the dash when there is no rate. The number is the one of the list of options (`perHourNarrow`, below), so that the
@@ -117,6 +135,11 @@ export interface RouteOptionRow {
    * planet. Without a viewed terminal to compare with, every row names both.
    */
   bothEnds: boolean;
+  /**
+   * The tooltip of the terminal(s) the row names: the name and where it is (the whole place), or for a row that names both
+   * ends the trip and one line of the place of each end. The text of the row is the names and is not changed by it.
+   */
+  whereTitle: string;
   /** The other end is the current target, the terminal the "Цель" button of this row would set. */
   isTarget: boolean;
   /** How good the trip is by its ROI: the colour of the bar at the edge of the row and of the ROI number. */
@@ -167,12 +190,14 @@ export function routeOptionRow(
   const ownEndId = from ? o.originId : o.destId;
   const buyView = priceView(o.buy, () => uexRange?.(o.originId, o.commodityId, 'buy') ?? NO_RANGE);
   const sellView = priceView(o.sell, () => uexRange?.(o.destId, o.commodityId, 'sell') ?? NO_RANGE);
+  const bothEnds = anchorTerminalId === null || ownEndId !== anchorTerminalId;
   return {
     key: `${pairKey(o.originId, o.destId)}:${o.commodityId}`,
     terminal: terminalLabel(ref, from ? o.destId : o.originId),
     origin: terminalLabel(ref, o.originId),
     dest: terminalLabel(ref, o.destId),
-    bothEnds: anchorTerminalId === null || ownEndId !== anchorTerminalId,
+    bothEnds,
+    whereTitle: whereTitle(ref, bothEnds, from ? o.destId : o.originId, o.originId, o.destId),
     isTarget: targetTerminalId !== null && lookupTarget(o, mode) === targetTerminalId,
     tier: shownTier(o.roi),
     commodity: commodityLabel(ref, o.commodityId),

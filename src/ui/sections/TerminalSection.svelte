@@ -15,6 +15,7 @@
   import { defaultSide } from '../vm/quick-entry';
   import { crossedRows, roiCells, type RoiSnapshot } from '../vm/row-roi';
   import { sideCounts, type TerminalRow } from '../vm/terminal-rows';
+  import { terminalFullPlace } from '../vm/terminal-place';
   import { selectedCommodity, type RowPick } from '../vm/terminal-side';
   import {
     goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, tradeDefaults, tradeMode, type TradeDefaults, type TradeMode,
@@ -36,6 +37,12 @@
       ? locationModel(app.reference, app.settings, viewedId, app.pricesSyncedAt, app.uexOk, app.now).header.location
       : 'Локация не выбрана',
   );
+  // the tooltip of the header says where it is (there are many terminals of one name in different star systems); the line itself is not changed
+  const place = $derived.by(() => {
+    const terminal = viewedId === null ? undefined : app.reference.terminals.get(viewedId);
+    return terminal === undefined ? '' : terminalFullPlace(terminal, app.reference.starSystems);
+  });
+  const nameTitle = $derived(place === '' ? undefined : `Терминал: ${name}\n${place}`);
 
   // The rows that flash now (see `enteringPrice`): commodity ids, so they belong to the table that was drawn when they crossed the threshold
   const PULSE_MS = 1300;
@@ -255,6 +262,7 @@
 <Section
   title="Терминал"
   summary={name}
+  summaryTitle={nameTitle}
   {open}
   onToggle={() => void app.toggleSection(SECTION)}
   {actions}

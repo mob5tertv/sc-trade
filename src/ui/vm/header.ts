@@ -2,6 +2,7 @@ import { formatAge } from '../../core/format';
 import type { Searchable } from '../../core/search';
 import type { Settings } from '../../core/settings';
 import type { Reference, Terminal } from '../../core/types';
+import { terminalFullPlace, terminalPlace, terminalSystem } from './terminal-place';
 
 export interface HeaderModel { location: string; ship: string; system: string; uex: string; uexStale: boolean }
 
@@ -47,16 +48,28 @@ export function headerModel(ref: Reference, s: Settings, pricesSyncedAt: number 
   };
 }
 
-/** Terminals of one star system (all when null); found by display name, nickname, name or planet. */
-export function terminalSearchItems(ref: Reference, starSystemId: number | null): Searchable[] {
-  const items: Searchable[] = [];
+/**
+ * An item of the list of a search box. `Searchable` (src/core/search.ts) is what the search needs; the box also draws, when
+ * they are set, `place` (muted, after the name: where a terminal is) and `title` (the tooltip of the row: the whole name and
+ * the whole place). A commodity has neither.
+ */
+export interface SearchItem extends Searchable { place?: string; title?: string }
+
+/** Terminals of one star system (all when null); found by display name, nickname, name, planet or star system, and told apart by where they are. */
+export function terminalSearchItems(ref: Reference, starSystemId: number | null): SearchItem[] {
+  const items: SearchItem[] = [];
   for (const t of ref.terminals.values()) {
     if (starSystemId !== null && t.starSystemId !== starSystemId) continue;
+    const name = terminalLabel(t);
+    const place = terminalPlace(t, ref.starSystems);
+    const whole = terminalFullPlace(t, ref.starSystems);
     items.push({
       id: t.id,
       code: t.code,
-      name: terminalLabel(t),
-      aliases: [t.nickname, t.name, t.planetName ?? ''].filter(a => a !== ''),
+      name,
+      aliases: [t.nickname, t.name, t.planetName ?? '', terminalSystem(t, ref.starSystems)].filter(a => a !== ''),
+      ...(place === '' ? {} : { place }),
+      title: whole === '' ? name : `${name}\n${whole}`,
     });
   }
   return items;

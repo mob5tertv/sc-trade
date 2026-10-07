@@ -57,8 +57,6 @@
     expandedKey = open ? key : null;
     onToggleRow?.(option, open);
   };
-
-  const trip = (row: RouteOptionRow): string => (row.bothEnds ? `${row.origin} → ${row.dest}` : row.terminal);
 </script>
 
 {#snippet price(label: string, view: RouteOptionRow['buy'])}
@@ -87,7 +85,7 @@
       {@const expanded = expandedKey === row.key}
       <div class="row tier-{row.tier}" class:expanded role="row">
         <button type="button" class="grid line" aria-expanded={expanded} onclick={() => toggle(row.key, option)}>
-          <span class="where" title={trip(row)}>
+          <span class="where" title={row.whereTitle}>
             {#if showCommodity}<span class="code">{row.commodity}</span>{/if}
             <span class="end">{row.bothEnds ? row.origin : row.terminal}</span>
             {#if row.bothEnds}<span class="arrow">→</span><span class="end">{row.dest}</span>{/if}

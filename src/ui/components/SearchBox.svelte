@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { search, type Searchable } from '../../core/search';
+  import { search } from '../../core/search';
+  import type { SearchItem } from '../vm/header';
 
   interface Props {
-    items: Searchable[];
+    /** What is found; an item may say `place` (muted, after the name) and `title` (the tooltip of its row). */
+    items: SearchItem[];
     /** Ids that come first among equally good matches (what the current terminal trades, say). */
     boostIds?: Set<number>;
     placeholder?: string;
@@ -160,7 +162,9 @@
             pick(item.id);
           }}
         >
-          <span class="name" title={item.name}>{item.name}</span>
+          <span class="name" title={item.title ?? item.name}>{item.name}</span>
+          <!-- where it is: the name is cut with an ellipsis before the place is; the whole text is in the tooltip -->
+          {#if item.place}<span class="place" title={item.title ?? item.place}>{item.place}</span>{/if}
           {#if item.code}<span class="code">{item.code}</span>{/if}
         </li>
       {/each}
@@ -219,6 +223,18 @@
   .name {
     min-width: 0;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* where a terminal is, beside the code: it keeps its size and gives way only past half of the row, so a long name is cut first */
+  .place {
+    flex: none;
+    max-width: 55%;
+    margin-left: auto;
+    overflow: hidden;
+    color: var(--sc-muted);
+    font-size: var(--sc-font-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
