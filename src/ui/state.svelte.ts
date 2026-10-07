@@ -2,23 +2,27 @@ import { listen } from '@tauri-apps/api/event';
 import { appLogDir, join } from '@tauri-apps/api/path';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
-import type { RouteCtx } from '../core/routes';
+import type { RouteCtx, RouteOption } from '../core/routes';
 import { DEFAULT_SETTINGS, type Settings } from '../core/settings';
-import type { Market, Reference, RunWithEvents } from '../core/types';
+import type { Market, Reference, RunWithEvents, Side } from '../core/types';
 import type { Db } from '../data/db';
 import { createLogger, type Logger } from '../data/logger';
+import { addObservation } from '../data/repo/diary';
 import { getActiveRun } from '../data/repo/runs';
 import { saveSetting } from '../data/repo/settings';
 import { getMeta, loadDistances, loadReference } from '../data/repo/uex-cache';
-import { loadMarket, type SuggestDeps } from '../data/suggest';
+import { loadMarket, suggestFrom, suggestTo, type SuggestDeps } from '../data/suggest';
 import { syncPrices, syncReference, type SyncDeps } from '../data/sync';
-import type { UexClient } from '../data/uex-client';
+import { UexError, type UexClient } from '../data/uex-client';
 import { applyLogLevel } from '../platform/tauri-logger';
 import { bindTriggers, type TriggerName } from '../platform/triggers';
 import { setMode, watchFocus, type SetModeOptions, type WindowLayout, type WindowMode } from '../platform/window';
+import { createLatestRequest } from './vm/latest-request';
+import { kindForSide, lookupTitle, terminalLabel, type LookupRequest } from './vm/lookup';
 import { createRequestQueue } from './vm/request-queue';
 import { validateSetting } from './vm/settings-validation';
 import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, syncPlan } from './vm/sync-plan';
+import { terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
 import { triggerErrorText } from './vm/trigger-error';
 import { uexErrorText } from './vm/uex-error';
 
@@ -34,21 +38,46 @@ import { uexErrorText } from './vm/uex-error';
 //    `withUex` itself, nor a method that does (`syncReferenceNow`, `syncPricesNow`, `refreshReference`):
 //    the inner call would wait for the queue slot the outer job holds, and the queue would deadlock;
 //  - `reloadMarket()` refreshes the market after anything wrote prices;
-//  - UEX health is tracked per sync (`referenceOk`, `pricesOk`); `uexOk` is both together.
+//  - UEX health is tracked per sync (`referenceOk`, `pricesOk`); `uexOk` is both together;
+//  - the Terminal tab: `terminalRows` (the table of the viewed terminal, on a 15 s clock), `recordPrice`
+//    (writes what the player saw), and the lookup (`lookup`, `runLookup`, `rerunLookup`, `newRoute`): where to
+//    buy / where to sell, one answer at a time, the newest request wins.
 
 export type Tab = 'terminal' | 'run' | 'routes' | 'settings';
 export type Phase = 'booting' | 'ready' | 'failed';
 export interface Notice { text: string; kind: 'info' | 'error' }
+
+/** What the lookup block of the Terminal tab shows (spec 14.2). */
+export interface LookupState {
+  /** What was asked; `null` before anything was. */
+  request: LookupRequest | null;
+  /** What the options are, in a sentence: 'Где купить Gold для HUR-L1 · продажа 5 088'. */
+  title: string;
+  options: RouteOption[];
+  loading: boolean;
+  /** A short Russian sentence when the lookup failed; never the raw text of an error. */
+  error: string | null;
+}
+
+/** What a price the player saw is: the observation's fields without a time (now is the time). */
+export interface PriceInput { terminalId: number; commodityId: number; side: Side; price: number; scu: number | null }
 
 /** What `boot()` opens once the database is there. */
 export interface DataDeps { db: Db; uex: UexClient; now: () => number }
 
 const EMPTY_REFERENCE: Reference = { starSystems: [], terminals: new Map(), commodities: new Map(), vehicles: [] };
 const EMPTY_MARKET: Market = { uex: new Map(), own: new Map(), byTerminal: new Map(), byCommodity: new Map(), stock: new Map() };
+const IDLE_LOOKUP: LookupState = { request: null, title: '', options: [], loading: false, error: null };
 
 /** Prices are fetched again every hour (spec 6). */
 const PRICE_SYNC_INTERVAL_MS = 60 * 60 * 1000;
 const NOTICE_MS = 8000;
+/** Temperatures and stock estimates move slowly: the table is refreshed this often, not every second. */
+const ROWS_TICK_MS = 15_000;
+
+const RECORD_FAILED = 'Не удалось записать цену. Подробности в логе.';
+const LOOKUP_FAILED = 'Не удалось подобрать маршруты. Подробности в логе.';
+const NO_CURRENT_LOCATION = 'Сначала укажи, где ты находишься: найди локацию в поиске и нажми «Я здесь».';
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
 
@@ -67,6 +96,31 @@ class AppState {
   pricesOk = $state(true);
   /** Unix seconds, updated once a second. */
   now = $state(nowSec());
+  /** Unix seconds, updated every 15 seconds: the moment the table of the Terminal tab is counted at. */
+  rowsNow = $state(nowSec());
+  /** The Terminal tab's lookup block. */
+  lookup = $state.raw<LookupState>(IDLE_LOOKUP);
+
+  /**
+   * The table of the viewed terminal: what is known about each commodity it trades, from UEX and from my
+   * diary. It follows the data and the 15 s clock, and never throws: a failure is logged and shows an empty table.
+   */
+  terminalRows = $derived.by((): TerminalRow[] => {
+    const terminalId = this.viewTerminalId;
+    if (terminalId === null) return [];
+    const s = this.settings;
+    try {
+      return buildTerminalRows(this.market, this.reference, terminalId, {
+        now: this.rowsNow,
+        thresholds: { hotMin: s.hotMin, warmMin: s.warmMin, coolingMin: s.coolingMin },
+        serverChangedAt: s.serverChangedAt,
+        refillFullMin: s.refillFullMin,
+      });
+    } catch (err) {
+      this.#log.error('ui', 'cannot build the terminal rows', { terminalId, err });
+      return [];
+    }
+  });
 
   // ---- window and screen ------------------------------------------------------------------------
   mode = $state<WindowMode>('strip');
@@ -97,6 +151,8 @@ class AppState {
   #noticeTimer: ReturnType<typeof setTimeout> | undefined;
   #backgroundStarted = false;
   #pricesInFlight = false;
+  /** Lookups overlap when the player asks again; only the newest one may show its answer. */
+  readonly #latestLookup = createLatestRequest();
 
   // ---- dependencies -----------------------------------------------------------------------------
 
@@ -106,6 +162,9 @@ class AppState {
     setInterval(() => {
       this.now = nowSec();
     }, 1000);
+    setInterval(() => {
+      this.rowsNow = nowSec();
+    }, ROWS_TICK_MS);
   }
 
   get log(): Logger {
@@ -424,6 +483,100 @@ class AppState {
     }
   }
 
+  // ---- the Terminal tab ---------------------------------------------------------------------------
+
+  /**
+   * Writes a price the player saw (own observation, with the quantity only when typed), reloads the market,
+   * makes that terminal the VIEWED one (the current location stays where it is) and runs the lookup the price
+   * asks for: a sell price, "where to buy" for that terminal; a buy price, "where to sell". Returns the sentence
+   * to show when the price was not saved, `null` when it was. The market is reloaded in either case, so the table
+   * shows what is stored. The lookup runs on its own: the caller does not wait for UEX.
+   */
+  async recordPrice(input: PriceInput): Promise<string | null> {
+    this.#log.info('ui', 'record price', input);
+    let failure: string | null = null;
+    try {
+      const { db, log, now } = this.#syncDeps();
+      await addObservation(db, log, { ts: now(), ...input });
+    } catch (err) {
+      this.#log.error('ui', 'cannot record the price', { ...input, err });
+      failure = RECORD_FAILED;
+    }
+    await this.reloadMarket();
+    this.rowsNow = nowSec();
+    if (failure !== null) return failure;
+
+    this.viewTerminalId = input.terminalId;
+    void this.runLookup({ kind: kindForSide(input.side), terminalId: input.terminalId, commodityId: input.commodityId, price: input.price });
+    return null;
+  }
+
+  /**
+   * Asks where to sell (`from`) or where to buy (`to`) for the terminal of the request, for one commodity or all
+   * of them, with the whole cargo space of the ship. Never throws; the answer lands in `lookup`. A newer request
+   * replaces an older one: the answer of the older one is dropped, and one still waiting in the queue is not run.
+   * Nothing is run while the cargo space is not set (the block says so).
+   */
+  async runLookup(request: LookupRequest, reason = 'player'): Promise<void> {
+    const isNewest = this.#latestLookup.begin();
+    const title = lookupTitle(request, this.reference);
+    this.#log.info('ui', 'lookup', { ...request, reason });
+
+    if (this.settings.scuCapacity <= 0) {
+      this.#log.info('ui', 'lookup not run, the cargo space is not set', { ...request });
+      this.lookup = { request, title, options: [], loading: false, error: null };
+      return;
+    }
+    this.lookup = { request, title, options: [], loading: true, error: null };
+
+    try {
+      const options = await this.withUex(async () => {
+        const freeScu = this.settings.scuCapacity;
+        if (!isNewest() || freeScu <= 0) return [];
+        const deps = this.suggestDeps();
+        const commodityId = request.commodityId ?? undefined;
+        return request.kind === 'from'
+          ? suggestFrom(deps, request.terminalId, freeScu, commodityId)
+          : suggestTo(deps, request.terminalId, freeScu, commodityId);
+      });
+      if (!isNewest()) return;
+      this.lookup = { request, title, options, loading: false, error: null };
+    } catch (err) {
+      this.#log.error('ui', 'lookup failed', { ...request, err });
+      if (!isNewest()) return;
+      this.lookup = { request, title, options: [], loading: false, error: err instanceof UexError ? uexErrorText(err) : LOOKUP_FAILED };
+    }
+  }
+
+  /** The same lookup again, after a setting that shapes its answer changed. Nothing to do before the first one. */
+  async rerunLookup(): Promise<void> {
+    const { request } = this.lookup;
+    if (request !== null) await this.runLookup(request, 'settings changed');
+  }
+
+  /**
+   * "Новый маршрут": where to take cargo from the CURRENT location, whatever the table shows. The location
+   * becomes the viewed terminal. Without a current location the player is asked to pick one.
+   */
+  async newRoute(): Promise<void> {
+    const terminalId = this.settings.currentTerminalId;
+    this.#log.info('ui', 'new route', { currentTerminalId: terminalId });
+    if (terminalId === null || !this.reference.terminals.has(terminalId)) {
+      this.notify(NO_CURRENT_LOCATION, 'info');
+      return;
+    }
+    this.viewTerminalId = terminalId;
+    await this.runLookup({ kind: 'from', terminalId, commodityId: null, price: null }, 'new route');
+  }
+
+  /** "Цель": the terminal the next trip is flown to. */
+  async setTarget(terminalId: number): Promise<void> {
+    this.#log.info('ui', 'set target', { terminalId });
+    if ((await this.updateSetting('targetTerminalId', terminalId)) === null) {
+      this.notify(`Цель рейса: ${terminalLabel(this.reference, terminalId)}.`, 'info');
+    }
+  }
+
   /**
    * Saves a setting and applies it right away: trigger keys are bound again, the window geometry and
    * opacity are applied, the log level changes. Returns the sentence to show next to the field when
@@ -467,6 +620,12 @@ class AppState {
         break;
       case 'logLevel':
         await applyLogLevel(this.#log, this.settings.logLevel);
+        break;
+      case 'sort':
+      case 'nearby':
+      case 'scuCapacity':
+        // the lookup on screen is answered again with the new setting (not awaited: it may wait for UEX)
+        void this.rerunLookup();
         break;
     }
   }
