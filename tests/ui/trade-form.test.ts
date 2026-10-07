@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { CargoLine } from '../../src/core/types';
 import type { Cell } from '../../src/ui/vm/terminal-rows';
-import { knownScuOf, tradeDefaults, tradeRefusal } from '../../src/ui/vm/trade-form';
+import { getActiveRun, listRuns } from '../../src/data/repo/runs';
+import { recordBuy, recordSell } from '../../src/data/trade';
+import { goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, tradeDefaults, tradeMode } from '../../src/ui/vm/trade-form';
 import { bought, GOLD, runOf, sold, TITA } from '../helpers/run-wiring-fixtures';
+import { buyIn as goldBought, sellIn as goldSold, tradeFixture } from '../helpers/trade-fixtures';
 
 /** The parts of a table cell the form reads; the quantity is a reading (no estimate of the refill timer) unless said. */
 const cell = (p: Partial<Pick<Cell, 'own' | 'hint' | 'ownScu' | 'hintScu' | 'ownScuBase'>> = {}) => (
@@ -82,17 +85,55 @@ describe('knownScuOf', () => {
   });
 });
 
-describe('tradeRefusal', () => {
-  it('lets a purchase through: the first one starts the run', () => {
-    expect(tradeRefusal('buy', null, GOLD)).toBeNull();
-    expect(tradeRefusal('buy', runOf(bought(0)), TITA)).toBeNull();
+describe('tradeMode', () => {
+  it('a purchase is a purchase: the first one starts the run', () => {
+    expect(tradeMode('buy', null, GOLD)).toBe('buy');
+    expect(tradeMode('buy', runOf(bought(0)), TITA)).toBe('buy');
   });
-  it('refuses a sale without a run, and of what is not on board', () => {
-    expect(tradeRefusal('sell', null, GOLD)).toBe('Нет активного рейса');
-    expect(tradeRefusal('sell', runOf(bought(0)), TITA)).toBe('Этого товара нет в трюме');
-    expect(tradeRefusal('sell', runOf(bought(0), sold(60)), GOLD)).toBe('Этого товара нет в трюме');
+  it('a sale of what is in the hold is a sale of the run', () => {
+    expect(tradeMode('sell', runOf(bought(0)), GOLD)).toBe('sell');
+    expect(tradeMode('sell', runOf(bought(0), sold(60, GOLD, 40)), GOLD)).toBe('sell');        // 56 SCU are still aboard
   });
-  it('lets a sale of what is on board through', () => {
-    expect(tradeRefusal('sell', runOf(bought(0)), GOLD)).toBeNull();
+  it('a sale of what is not in the hold is an income: there is no run, or the hold has none of it, or all of it is sold', () => {
+    expect(tradeMode('sell', null, GOLD)).toBe('income');
+    expect(tradeMode('sell', runOf(bought(0)), TITA)).toBe('income');
+    expect(tradeMode('sell', runOf(bought(0), sold(60)), GOLD)).toBe('income');
+    expect(tradeMode('sell', runOf(), GOLD)).toBe('income');                                   // a run that has bought nothing yet
+  });
+  it('keeps a sale of more than the hold has a sale, so that the service still refuses it', async () => {
+    const { deps } = await tradeFixture();
+    await recordBuy(deps, goldBought(96));
+    expect(tradeMode('sell', await getActiveRun(deps.db), 10)).toBe('sell');
+    await expect(recordSell(deps, goldSold(97, 7000))).rejects.toMatchObject({ code: 'oversell', message: 'В трюме только 96 SCU' });
+    expect((await listRuns(deps.db)).map(r => r.run.status)).toEqual(['active']);              // nothing was turned into an income
+  });
+  it('says in one muted line what an income is', () => {
+    expect(INCOME_NOTE).toBe('Нет в трюме — запишется как доход без закупки');
+  });
+});
+
+describe('goodsCameAboard', () => {
+  it('is true for a form opened as an income when the goods are in the hold by the time it is confirmed', () => {
+    expect(goodsCameAboard('income', runOf(bought(0)), GOLD)).toBe(true);                     // a purchase of the same goods in the meantime
+    expect(goodsCameAboard('income', runOf(bought(0), bought(30, TITA, 10)), TITA)).toBe(true);
+  });
+  it('is false while the goods are still not aboard, and for the forms that promised nothing about it', () => {
+    expect(goodsCameAboard('income', null, GOLD)).toBe(false);
+    expect(goodsCameAboard('income', runOf(bought(0)), TITA)).toBe(false);
+    expect(goodsCameAboard('sell', runOf(bought(0)), GOLD)).toBe(false);
+    expect(goodsCameAboard('sell', null, GOLD)).toBe(false);                                   // the hold was sold out: another refusal, not this one
+    expect(goodsCameAboard('buy', runOf(bought(0)), GOLD)).toBe(false);
+  });
+  it('has its own sentence for the notice line, which tells the player what to do', () => {
+    expect(GOODS_ABOARD_NOTICE).toBe('Этот товар уже в трюме — нажми «Продал» ещё раз');
+  });
+});
+
+describe('tradeDefaults, an income', () => {
+  it('starts with no quantity, the player types it, and with the price of the row', () => {
+    const d = tradeDefaults({ side: 'sell', commodityId: GOLD, cell: cell({ own: 6900, ownScu: 12 }), cargo: [], capacity: 696, budget: null });
+    expect(d).toEqual({ scu: null, price: 6900 });
+    const other = tradeDefaults({ side: 'sell', commodityId: GOLD, cell: cell({ hint: 6500 }), cargo: [tita(40)], capacity: 696, budget: null });
+    expect(other).toEqual({ scu: null, price: 6500 });
   });
 });

@@ -4,8 +4,8 @@ import type { CargoLine, RunWithEvents, Side } from '../../core/types';
 import { cellEditBase } from './inputs';
 import type { Cell } from './terminal-rows';
 
-// What the trade form under a table row starts with, and when "Продал" has nothing to sell. Pure: the form is
-// drawn by `TradeDialog`, the owner is `TerminalSection`.
+// What the trade form under a table row starts with, and what it writes (`tradeMode`: a purchase, a sale of the cargo, or
+// an income). Pure: the form is drawn by `TradeDialog`, the owner is `TerminalSection`.
 
 export interface TradeDefaults {
   /** `null`: nothing can be offered, the field is empty and the player types. */
@@ -58,9 +58,31 @@ export function knownScuOf(cell: Pick<Cell, 'own' | 'ownScu' | 'ownScuBase'> | n
   return cell === null ? null : cellEditBase(cell).scu;
 }
 
-/** Why "Продал" has nothing to open, in a sentence; `null` when it has. A purchase always has: the first one starts the run. */
-export function tradeRefusal(side: Side, active: RunWithEvents | null, commodityId: number): string | null {
-  if (side === 'buy') return null;
-  if (active === null) return 'Нет активного рейса';
-  return cargoOf(active.events).some((line) => line.commodityId === commodityId) ? null : 'Этого товара нет в трюме';
+/** What the form under a row writes: a purchase, a sale from the hold of the run, or a sale of goods that are not in the hold (an income). */
+export type TradeMode = 'buy' | 'sell' | 'income';
+
+/**
+ * The mode of the form that "Купил" / "Продал" opens (spec 14.10). A purchase is always a purchase: the first one starts the
+ * run. A sale is a sale of the run while the commodity is in the hold, whatever the quantity (a quantity larger than the
+ * hold is refused by the service, "В трюме только N SCU": it is almost always a typo, not goods from elsewhere), and an
+ * income once it is not: with no run, or a hold without it, or all of it sold. The income is written as a run of its own.
+ */
+export function tradeMode(side: Side, active: RunWithEvents | null, commodityId: number): TradeMode {
+  if (side === 'buy') return 'buy';
+  return cargoOf(active?.events ?? []).some((line) => line.commodityId === commodityId) ? 'sell' : 'income';
 }
+
+/** The one muted line under the form of an income. */
+export const INCOME_NOTE = 'Нет в трюме — запишется как доход без закупки';
+
+/**
+ * Whether a form that was opened as an income is out of date: the goods are in the hold of the run by now (a purchase came
+ * in between), so the form's promise ("нет в трюме") is no longer true, and the service refuses it. The owner then closes the
+ * form and says `GOODS_ABOARD_NOTICE`, and the next press of "Продал" opens the ordinary sale.
+ */
+export function goodsCameAboard(mode: TradeMode, active: RunWithEvents | null, commodityId: number): boolean {
+  return mode === 'income' && tradeMode('sell', active, commodityId) === 'sell';
+}
+
+/** What the notice line says when `goodsCameAboard`. */
+export const GOODS_ABOARD_NOTICE = 'Этот товар уже в трюме — нажми «Продал» ещё раз';

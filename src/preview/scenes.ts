@@ -1,6 +1,8 @@
 import type { app } from '../ui/state.svelte';
 import type { DatasetName } from './datasets';
 import { ANCHOR_SCENES } from './scenes-anchor';
+import { INCOME_SCENES } from './scenes-income';
+import { INDICATOR_SCENES } from './scenes-indicators';
 import { ROI_SCENES } from './scenes-roi';
 import { RUN_SCENES } from './scenes-run';
 import { STATS_SCENES } from './scenes-stats';
@@ -15,6 +17,8 @@ export interface Scene {
   title: string;
   /** The test data the database is filled with (`seed.ts`). */
   dataset: DatasetName;
+  /** The monitor the scene needs, `<width>x<height>@<scale>`, when it is not the default one (`preview:sweep` loads it with it). */
+  monitor?: string;
   /** What happens after the application has started and settled: expand the window, open the settings, and so on. */
   act?: (app: SceneApp) => Promise<void> | void;
 }
@@ -130,6 +134,7 @@ export const SCENES: readonly Scene[] = [
     name: 'expanded-tall',
     title: 'Терминал с 26 товарами на стороне «Продать»: таблица прокручивается (снимать с --monitor 1366x768@1)',
     dataset: 'window',
+    monitor: '1366x768@1',
     act: async (app) => {
       await app.expand('preview');
       app.setViewTerminal(5);
@@ -257,7 +262,9 @@ export const SCENES: readonly Scene[] = [
       app.pointer(true);
     },
   },
+  ...INCOME_SCENES,
   ...STATS_SCENES,
+  ...INDICATOR_SCENES,
 ];
 
 export const DEFAULT_SCENE = 'mini';

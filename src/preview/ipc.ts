@@ -1,3 +1,4 @@
+import type { FakeHttp } from './http-fake';
 import type { PreviewMonitor } from './monitor';
 import type { PreviewWindow } from './window-state';
 
@@ -25,6 +26,8 @@ export interface IpcDeps {
   log: (level: PreviewLogLevel, message: string) => void;
   /** A command nobody mocks was called. */
   onUnknown: (command: string) => void;
+  /** The network a scene has put in place (`http-fake.ts`), asked at every request; none (the default): UEX is unreachable at once. */
+  http?: () => FakeHttp | null;
 }
 
 type Payload = Record<string, unknown>;
@@ -173,8 +176,13 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
     });
   }
 
-  /** There is no network in the preview: UEX is unreachable at once, and the data lives in the database. */
+  /**
+   * There is no network in the preview: UEX is unreachable at once, and the data lives in the database. Unless a scene
+   * has put a network of its own in place (`deps.http`): then its requests are answered from there.
+   */
   function httpCommand(name: string, args: Payload): unknown {
+    const fake = deps.http?.() ?? null;
+    if (fake !== null && fake.handles(name)) return fake.command(name, args);
     if (name === 'fetch') {
       const url = String((args.clientConfig as Payload | undefined)?.url ?? '');
       throw new Error(`error sending request for url (${url}): preview mode, there is no network`);
