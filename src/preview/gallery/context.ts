@@ -6,5 +6,5 @@ export interface GalleryContext { data: GalleryData; only: string | null }
 
 const KEY = Symbol('gallery');
 
-export const provideGallery = (context: GalleryContext): void => setContext(KEY, context);
+export const provideGallery = (context: GalleryContext): GalleryContext => setContext(KEY, context);
 export const useGallery = (): GalleryContext => getContext<GalleryContext>(KEY);

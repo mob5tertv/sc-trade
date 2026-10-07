@@ -64,13 +64,13 @@
   <button type="button" class="backdrop" tabindex="-1" aria-label="Отмена" onclick={() => onCancel()}></button>
   <div class="dialog" role="dialog" aria-label={title} tabindex="-1" onkeydown={onKeydown}>
     <form onsubmit={submit} novalidate>
-      <h3 class="title">{title}</h3>
+      <h3 class="title" {title}>{title}</h3>
 
       <label class="field">
-        <span>Количество, SCU</span>
+        <span class="sc-label">Количество, SCU</span>
         <input
           bind:this={scuInput}
-          class:invalid={badScu}
+          class="sc-input sc-num"
           type="text"
           inputmode="numeric"
           autocomplete="off"
@@ -81,9 +81,9 @@
       </label>
 
       <label class="field">
-        <span>Цена за SCU, UEC</span>
+        <span class="sc-label">Цена за SCU, UEC</span>
         <input
-          class:invalid={badPrice}
+          class="sc-input sc-num"
           type="text"
           inputmode="numeric"
           autocomplete="off"
@@ -101,9 +101,8 @@
       {/if}
 
       <div class="buttons">
-        <button type="submit" class="primary">{side === 'buy' ? 'Купил' : 'Продал'}</button>
-        <button type="button" onclick={() => onCancel()}>Отмена</button>
-        <span class="hint keys">Enter — записать, Esc — отмена</span>
+        <button type="submit" class="sc-btn sc-btn--primary" title="Enter">{side === 'buy' ? 'Купил' : 'Продал'}</button>
+        <button type="button" class="sc-btn" title="Esc" onclick={() => onCancel()}>Отмена</button>
       </div>
     </form>
   </div>
@@ -124,26 +123,26 @@
     position: absolute;
     inset: 0;
     border: 0;
-    background: color-mix(in srgb, var(--sc-bg) 70%, transparent);
+    background: color-mix(in srgb, var(--sc-bg-solid) 70%, transparent);
     cursor: default;
   }
 
   .dialog {
     position: relative;
-    box-sizing: border-box;
     width: min(340px, 100%);
-    padding: 10px 12px 12px;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
+    padding: 6px var(--sc-pad-x) var(--sc-pad-x);
+    border: 1px solid var(--sc-frame);
     background: var(--sc-surface);
     color: var(--sc-text);
-    font-size: var(--sc-font);
   }
 
   .title {
-    margin: 0 0 6px;
+    margin: 0 0 4px;
+    overflow: hidden;
     font-size: var(--sc-font);
     font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .field {
@@ -151,37 +150,12 @@
     grid-template-columns: minmax(0, 1fr) 110px;
     align-items: center;
     gap: var(--sc-gap);
-    min-height: 32px;
-  }
-
-  input {
-    box-sizing: border-box;
-    height: 28px;
-    padding: 0 6px;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    background: var(--sc-bg);
-    color: var(--sc-text);
-    font: inherit;
-    font-family: var(--sc-mono);
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-  }
-
-  input.invalid {
-    border-color: var(--sc-bad);
-  }
-
-  input:focus-visible,
-  button:focus-visible {
-    outline: 2px solid var(--sc-accent);
-    outline-offset: 1px;
+    height: 26px;
   }
 
   .hint {
     margin: 4px 0 0;
     font-size: var(--sc-font-sm);
-    color: var(--sc-muted);
   }
 
   .bad {
@@ -190,33 +164,7 @@
 
   .buttons {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    margin-top: 8px;
-  }
-
-  .buttons button {
-    height: 28px;
-    padding: 0 12px;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    background: transparent;
-    color: var(--sc-text);
-    font: inherit;
-    font-size: var(--sc-font-sm);
-    cursor: pointer;
-  }
-
-  .buttons button:hover {
-    background: var(--sc-surface-2);
-  }
-
-  .primary {
-    border-color: var(--sc-accent);
-  }
-
-  .keys {
-    margin: 0 0 0 auto;
+    gap: var(--sc-gap);
+    margin-top: var(--sc-gap);
   }
 </style>

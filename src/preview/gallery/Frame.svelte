@@ -18,7 +18,7 @@
   let { name, caption, width = 440, minHeight, act, children }: Props = $props();
 
   const { only } = useGallery();
-  const shown = only === null || only === name;
+  const shown = $derived(only === null || only === name);
   let glass: HTMLElement | undefined = $state();
 
   onMount(() => {

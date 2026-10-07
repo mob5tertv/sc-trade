@@ -7,10 +7,10 @@
 </script>
 
 {#if rows.length === 0}
-  <p class="empty">Сессий пока нет.</p>
+  <p class="empty">Сессий пока нет</p>
 {:else}
   <div class="table" role="table" aria-label="Сессии">
-    <div class="row header" role="row">
+    <div class="row header sc-label" role="row">
       <span role="columnheader">Начало</span>
       <span role="columnheader" class="r">Длит.</span>
       <span role="columnheader" class="r">Рейсов</span>
@@ -18,12 +18,12 @@
       <span role="columnheader" class="r">UEC/ч</span>
     </div>
     {#each rows as row}
-      <div class="row" role="row">
-        <span role="cell" class="num when">{row.when}</span>
-        <span role="cell" class="num r">{row.duration}</span>
-        <span role="cell" class="num r">{row.runs}</span>
-        <span role="cell" class="num r profit" class:loss={isLoss(row.profit)}>{row.profit}</span>
-        <span role="cell" class="num r">{row.rate}</span>
+      <div class="row line" role="row">
+        <span role="cell" class="sc-num when">{row.when}</span>
+        <span role="cell" class="sc-num r">{row.duration}</span>
+        <span role="cell" class="sc-num r">{row.runs}</span>
+        <span role="cell" class="sc-num r profit" class:loss={isLoss(row.profit)}>{row.profit}</span>
+        <span role="cell" class="sc-num r">{row.rate}</span>
       </div>
     {/each}
   </div>
@@ -34,10 +34,8 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) 56px 48px 84px 64px;
     align-items: center;
-    gap: var(--sc-gap);
-    min-height: 28px;
-    padding: 0 6px;
-    border-bottom: 1px solid var(--sc-border);
+    column-gap: var(--sc-gap);
+    padding: 0 var(--sc-pad-x);
   }
 
   .row span {
@@ -47,17 +45,22 @@
   }
 
   .header {
+    height: 18px;
+    border-bottom: 1px solid var(--sc-border);
     color: var(--sc-muted);
-    font-size: var(--sc-font-sm);
+  }
+
+  .line {
+    height: var(--sc-row-h);
+    border-bottom: 1px solid var(--sc-surface-2);
   }
 
   .r {
     text-align: right;
   }
 
-  .num {
-    font-family: var(--sc-mono);
-    font-variant-numeric: tabular-nums;
+  .when {
+    text-align: left;
   }
 
   .profit {
@@ -70,7 +73,9 @@
 
   .empty {
     margin: 0;
-    padding: var(--sc-gap);
+    padding: 0 var(--sc-pad-x);
+    height: var(--sc-row-h);
     color: var(--sc-muted);
+    line-height: var(--sc-row-h);
   }
 </style>

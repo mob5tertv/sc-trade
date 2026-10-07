@@ -4,7 +4,7 @@ import type { Cell } from '../../src/ui/vm/terminal-rows';
 
 const cell = (partial: Partial<Cell> = {}): Cell => ({
   own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: null, hintScu: null,
-  badge: null, uexRange: null, ownLast: null, warn: false, ...partial,
+  badge: null, uexRange: null, range: null, ownLast: null, warn: false, ...partial,
 });
 
 describe('cellEditBase', () => {

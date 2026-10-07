@@ -7,85 +7,70 @@
 </script>
 
 {#if rows.length === 0}
-  <p class="empty">Заверши первый рейс — здесь появится твой рейтинг маршрутов</p>
+  <p class="empty">Заверши первый рейс — здесь появится рейтинг маршрутов</p>
 {:else}
-  <ul class="list">
+  <div class="table" role="table" aria-label="Мои маршруты">
+    <div class="grid head sc-label" role="row">
+      <span role="columnheader">Маршрут</span>
+      <span role="columnheader">Товар</span>
+      <span role="columnheader" class="r">UEC/ч</span>
+      <span role="columnheader" class="r" title="Число завершённых рейсов">Рейс</span>
+      <span role="columnheader" class="r">Время</span>
+      <span role="columnheader" class="r">Прибыль</span>
+      <span role="columnheader" class="r">ROI</span>
+    </div>
     {#each rows as row (row.key)}
-      <li class="item">
-        <div class="head">
-          <span class="route" title={row.route}>{row.route}</span>
-          <span class="code">{row.commodity}</span>
-          <span class="num strong" title="UEC в час">{row.rate}</span>
-        </div>
-        <div class="metrics">
-          <span title="Число завершённых рейсов"><span class="muted">рейсов</span> <span class="num">{row.runs}</span></span>
-          <span title="Медианное время рейса"><span class="num">{row.time}</span></span>
-          {#if row.phases}
-            <span title="Погрузка · полёт · разгрузка"><span class="num">{row.phases}</span></span>
-          {/if}
-          <span title="Суммарная прибыль"><span class="num" class:loss={isLoss(row.profit)}>{row.profit}</span></span>
-          <span title="Средний ROI"><span class="muted">ROI</span> <span class="num">{row.roi}</span></span>
-        </div>
-      </li>
+      <div class="grid line" role="row">
+        <span class="route" title={row.route}>{row.route}</span>
+        <span class="code">{row.commodity}</span>
+        <span class="sc-num strong" title="UEC в час">{row.rate}</span>
+        <span class="sc-num" title="Число завершённых рейсов">{row.runs}</span>
+        <span class="sc-num" title={row.phases ? `Медианное время: погрузка · полёт · разгрузка ${row.phases}` : 'Медианное время рейса'}>{row.time}</span>
+        <span class="sc-num" class:loss={isLoss(row.profit)} title="Суммарная прибыль">{row.profit}</span>
+        <span class="sc-num" title="Средний ROI">{row.roi}</span>
+      </div>
     {/each}
-  </ul>
+  </div>
 {/if}
 
 <style>
-  .list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .item {
-    padding: 2px 6px;
-    border-bottom: 1px solid var(--sc-border);
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 38px 54px 32px 46px 62px 46px;
+    column-gap: 4px;
+    align-items: center;
+    padding: 0 var(--sc-pad-x);
   }
 
   .head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto 72px;
-    align-items: center;
-    gap: var(--sc-gap);
-    min-height: 26px;
-  }
-
-  .route {
-    overflow: hidden;
-    text-overflow: ellipsis;
+    height: 18px;
+    border-bottom: 1px solid var(--sc-border);
+    color: var(--sc-muted);
     white-space: nowrap;
-    font-weight: 600;
   }
 
-  .code {
-    font-family: var(--sc-mono);
-  }
-
-  .head .num {
+  .r {
     text-align: right;
   }
 
-  .metrics {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 2px 12px;
-    min-height: 22px;
-    font-size: var(--sc-font-sm);
+  .line {
+    height: var(--sc-row-h);
+    border-bottom: 1px solid var(--sc-surface-2);
   }
 
-  .num {
-    font-family: var(--sc-mono);
-    font-variant-numeric: tabular-nums;
+  .line span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .code {
+    color: var(--sc-label);
+    font-weight: 600;
   }
 
   .strong {
     font-weight: 600;
-  }
-
-  .muted {
-    color: var(--sc-muted);
   }
 
   .loss {
@@ -94,7 +79,9 @@
 
   .empty {
     margin: 0;
-    padding: var(--sc-gap);
+    padding: 0 var(--sc-pad-x);
+    height: var(--sc-row-h);
     color: var(--sc-muted);
+    line-height: var(--sc-row-h);
   }
 </style>
