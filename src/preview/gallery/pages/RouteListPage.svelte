@@ -20,13 +20,13 @@
   }
 </script>
 
-<Frame name="from" caption="from: «Куда» · price at the destination, its range, ROI by tier, UEC/ч (best in green) · the second trip is the target">
+<Frame name="from" caption="from: «Куда» · sale price at the destination (green up MIC-L1: sold dearer; red down Port Tressler: sold cheaper; Lorville the same; UEX has no triangle), ROI by tier, UEC/ч (best in green) · the second trip is the target">
   <RouteList options={routes.from} {reference} {runCounts} mode="from" showCommodity={true} emptyText="" anchorTerminalId={viewedId} {uexRange} targetTerminalId={target} onTarget={log} />
 </Frame>
 <Frame name="nearby" caption="from + «и рядом»: a trip bought at another terminal of the planet shows both ends">
   <RouteList options={routes.nearby} {reference} {runCounts} mode="from" showCommodity={true} emptyText="" anchorTerminalId={viewedId} {uexRange} targetTerminalId={target} onTarget={log} />
 </Frame>
-<Frame name="to" caption="to: «Откуда» · price at the origin">
+<Frame name="to" caption="to: «Откуда» · purchase price at the origin (green down Everus Harbor: bought cheaper; red up ARC-L1: bought dearer; the rest UEX)">
   <RouteList options={routes.to} {reference} {runCounts} mode="to" showCommodity={true} emptyText="" anchorTerminalId={viewedId} {uexRange} targetTerminalId={toTarget} onTarget={log} />
 </Frame>
 <Frame name="one-commodity" caption="from, one commodity: no commodity code in the row">

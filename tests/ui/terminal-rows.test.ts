@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { badgeText, cellScu, sideCounts, terminalRows, uexRangeOf } from '../../src/ui/vm/terminal-rows';
+import { badgeText, cellScu, isOwnPrice, sideCounts, terminalRows, uexRangeOf } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
 import { obs, px, ref } from '../helpers/factories';
@@ -12,12 +12,12 @@ describe('terminalRows', () => {
     expect(rows.map(r => r.code)).toEqual(['GOLD', 'TUNG']);
     expect(rows[0].buy).toEqual({
       own: 6120, ownScu: 340, ownScuBase: null, ownScuRate: 'none', hint: null, hintScu: null, badge: { text: 'моя · 2 мин', kind: 'hot' },
-      uexRange: null, range: { low: 5900, high: 6200 }, ownLast: null, warn: false,
+      uexRange: null, range: { low: 5900, high: 6200 }, ownLast: null, trend: null, warn: false,
     });
     expect(rows[0].sell).toBeNull();
     expect(rows[1].buy).toEqual({
       own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 3980, hintScu: 410, badge: { text: 'UEX · 1 ч', kind: 'uex' },
-      uexRange: null, range: null, ownLast: null, warn: false,
+      uexRange: null, range: null, ownLast: null, trend: null, warn: false,
     });
   });
 
@@ -84,7 +84,7 @@ describe('terminalRows', () => {
     );
     expect(terminalRows(m, ref, 1, ctx)[0].buy).toEqual({
       own: null, ownScu: 130, ownScuBase: { scu: 40, age: '20 мин' }, ownScuRate: 'default', hint: 6000, hintScu: null,
-      badge: { text: 'UEX · 1 ч', kind: 'uex' }, uexRange: null, range: { low: 5900, high: 6200 }, ownLast: { price: 6120, age: '5 ч' }, warn: false,
+      badge: { text: 'UEX · 1 ч', kind: 'uex' }, uexRange: null, range: { low: 5900, high: 6200 }, ownLast: { price: 6120, age: '5 ч' }, trend: null, warn: false,
     });
   });
 
@@ -198,7 +198,7 @@ describe('terminalRows', () => {
     expect(row.buy).toMatchObject({ own: 6100, ownScu: 200 });
     expect(row.sell).toEqual({
       own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 6500, hintScu: 90, badge: { text: 'UEX · 2 ч', kind: 'uex' },
-      uexRange: null, range: null, ownLast: null, warn: false,
+      uexRange: null, range: null, ownLast: null, trend: null, warn: false,
     });
   });
 
@@ -206,7 +206,7 @@ describe('terminalRows', () => {
     const m = buildMarket([], [obs({ ts: NOW - 5 * 3600, terminalId: 1, commodityId: 10, side: 'buy', price: 6120, scu: 340 })]);
     expect(terminalRows(m, ref, 1, ctx)[0].buy).toEqual({
       own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 6120, hintScu: null, badge: { text: 'моя · 5 ч', kind: 'cold' },
-      uexRange: null, range: null, ownLast: null, warn: false,
+      uexRange: null, range: null, ownLast: null, trend: null, warn: false,
     });
   });
 
@@ -318,5 +318,69 @@ describe('cellScu', () => {
     const m = buildMarket([px(1, 10, { buy: { avgWeek: 6000 }, dateModified: NOW - 7200 })], []);
     expect(cellScu(buyOf(m), 'buy')).toBeNull();
     expect(cellScu(null, 'sell')).toBeNull();
+  });
+});
+
+describe('isOwnPrice', () => {
+  it('is true for my own price while it is hot, warm or cooling', () => {
+    for (const temp of ['hot', 'warm', 'cooling'] as const) expect(isOwnPrice({ ...est, source: 'own', temp }), temp).toBe(true);
+  });
+
+  it('is false for my cold price and for a UEX price', () => {
+    expect(isOwnPrice({ ...est, source: 'own', temp: 'cold' })).toBe(false);
+    expect(isOwnPrice({ ...est, source: 'uex', temp: null })).toBe(false);
+  });
+});
+
+describe('terminalRows: how my own price moved since my previous reading', () => {
+  const HOUR = 3600;
+  const nbsp = (s: string) => s.replace(/ /g, String.fromCharCode(0xa0));
+  const reading = (side: 'buy' | 'sell', price: number, agoSec: number) => ({ terminalId: 1, commodityId: 10, side, price, ts: NOW - agoSec });
+  const mine = (side: 'buy' | 'sell', price: number, agoSec: number) => obs({ ts: NOW - agoSec, terminalId: 1, commodityId: 10, side, price });
+  const uex = px(1, 10, { buy: { avgWeek: 6000, minWeek: 5900, maxWeek: 6200 }, sell: { avgWeek: 6500 }, dateModified: NOW - 3600 });
+
+  it('puts a trend on a price of mine that has a different previous reading: up where I buy is bad', () => {
+    const m = buildMarket([uex], [mine('buy', 6120, 120)], undefined, undefined, [reading('buy', 6000, 3 * HOUR)]);
+    expect(terminalRows(m, ref, 1, ctx)[0].buy?.trend).toEqual({ dir: 'up', good: false, title: `было ${nbsp('6 000')} · 3 ч назад (+120)` });
+  });
+
+  it('judges the sell side the other way round: up where I sell is good', () => {
+    const m = buildMarket([uex], [mine('sell', 6600, 120)], undefined, undefined, [reading('sell', 6500, 3 * HOUR)]);
+    expect(terminalRows(m, ref, 1, ctx)[0].sell?.trend).toEqual({ dir: 'up', good: true, title: `было ${nbsp('6 500')} · 3 ч назад (+100)` });
+  });
+
+  it('judges each side of one commodity on its own side', () => {
+    // both prices fell: the buy price falling is good, the sell price falling is bad
+    const m = buildMarket(
+      [uex], [mine('buy', 6120, 120), mine('sell', 6600, 120)], undefined, undefined,
+      [reading('buy', 6200, 3 * HOUR), reading('sell', 6700, 3 * HOUR)],
+    );
+    const [row] = terminalRows(m, ref, 1, ctx);
+    expect(row.buy?.trend).toMatchObject({ dir: 'down', good: true });
+    expect(row.sell?.trend).toMatchObject({ dir: 'down', good: false });
+  });
+
+  it('has no trend for a price of mine without a previous reading, or with the same price', () => {
+    const single = buildMarket([uex], [mine('buy', 6120, 120)]);
+    expect(terminalRows(single, ref, 1, ctx)[0].buy?.trend).toBeNull();
+    const same = buildMarket([uex], [mine('buy', 6120, 120)], undefined, undefined, [reading('buy', 6120, 3 * HOUR)]);
+    expect(terminalRows(same, ref, 1, ctx)[0].buy?.trend).toBeNull();
+  });
+
+  it('has no trend for a UEX price, nor for my own price that went cold and gave way to UEX', () => {
+    expect(terminalRows(buildMarket([uex], []), ref, 1, ctx)[0].buy?.trend).toBeNull();
+    const cold = buildMarket([uex], [mine('buy', 6120, 5 * HOUR)], undefined, undefined, [reading('buy', 6000, 8 * HOUR)]);
+    expect(terminalRows(cold, ref, 1, ctx)[0].buy).toMatchObject({ own: null, hint: 6000, trend: null });
+  });
+
+  it('has no trend for my cold price kept only because UEX has no row', () => {
+    const cold = buildMarket([], [mine('buy', 6120, 5 * HOUR)], undefined, undefined, [reading('buy', 6000, 8 * HOUR)]);
+    expect(terminalRows(cold, ref, 1, ctx)[0].buy).toMatchObject({ own: null, hint: 6120, trend: null });
+  });
+
+  it('keeps the previous reading through the helpers that copy a market', () => {
+    const m = buildMarket([uex], [mine('buy', 6120, 120)], undefined, undefined, [reading('buy', 6000, 3 * HOUR)]);
+    expect(terminalRows(withUexRange(m, 1, 10, 1000, 9000), ref, 1, ctx)[0].buy?.trend).toMatchObject({ dir: 'up' });
+    expect(terminalRows(withOwnBuy(m, 1, 10, 6120, NOW - 120), ref, 1, ctx)[0].buy?.trend).toMatchObject({ dir: 'up' });
   });
 });

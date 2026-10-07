@@ -51,6 +51,10 @@
   --sc-icon-w: 24px; /* an icon button of a header */
   --sc-field-w: 160px; /* the field of a line of the settings ("label · field"): the longest ship name fits */
 
+  /* the triangle of a price that moved; the slot for it left of a number is always as wide as the triangle */
+  --sc-trend-w: 8px;
+  --sc-trend-h: 6px;
+
   --sc-font: 12.5px;
   --sc-font-sm: 11px;
   /* Bahnschrift comes with Windows 10/11: technical, has Cyrillic, tabular digits. The narrow face is asked for by its own
