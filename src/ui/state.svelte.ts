@@ -1457,6 +1457,13 @@ class AppState {
     this.#noticeTimer = setTimeout(() => this.dismissNotice(), NOTICE_MS);
   }
 
+  /** The cross of the notice line: the player puts the message away before its time (the timer does it without a line). */
+  closeNotice(): void {
+    if (this.notice === null) return;
+    this.#log.info('ui', 'close notice', { kind: this.notice.kind });
+    this.dismissNotice();
+  }
+
   dismissNotice(): void {
     clearTimeout(this.#noticeTimer);
     this.notice = null;

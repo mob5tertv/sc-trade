@@ -9,6 +9,7 @@
   import TradeDialog from '../components/TradeDialog.svelte';
   import { app } from '../state.svelte';
   import { commoditySearchItems } from '../vm/header';
+  import { rejectedFields } from '../vm/inputs';
   import { locationModel } from '../vm/location';
   import { kindForSide, lookupPrice } from '../vm/lookup';
   import { defaultSide } from '../vm/quick-entry';
@@ -195,6 +196,13 @@
       app.notify(GOODS_ABOARD_NOTICE, 'info');
     } else if (tradeState !== null && tradeState.id === form.id) tradeState = { ...tradeState, error: failure };
   }
+
+  // A number the form refused (nothing was written): the line says which field it was, never what was typed.
+  function tradeRejected(fields: { scu: boolean; price: boolean }): void {
+    if (tradeState === null) return;
+    const { terminalId, side: formSide, commodityId, mode } = tradeState;
+    app.log.info('ui', 'trade form rejected', { terminalId, side: formSide, commodityId, mode, fields: rejectedFields(fields) });
+  }
 </script>
 
 {#snippet actions()}
@@ -239,6 +247,7 @@
       error={tradeState.error}
       onConfirm={(trade) => void confirmTrade(trade)}
       onCancel={() => closeTrade('cancelled')}
+      onReject={tradeRejected}
     />
   {/if}
 {/snippet}
@@ -262,6 +271,9 @@
       scope={viewedId}
       onSelect={select}
       onSavePrice={(edit) => void enteringPrice(() => savePrice(edit))}
+      onReject={({ commodityId, side: cellSide, ...flags }) => app.log.info('ui', 'price cell rejected', {
+        terminalId: viewedId, commodityId, side: cellSide, fields: rejectedFields(flags),
+      })}
       onLookup={lookupRow}
       onTrade={openTrade}
       {tradeFor}

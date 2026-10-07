@@ -31,6 +31,8 @@
      * observation": a price typed alone, or an emptied quantity. It does not mean the quantity became unknown.
      */
     onSavePrice: (e: { commodityId: number; side: Side; price: number; scu: number | null }) => void;
+    /** A cell was left with a number that cannot be saved (nothing was written): which of its two fields was marked. */
+    onReject?: (e: { commodityId: number; side: Side; price: boolean; scu: boolean }) => void;
     onLookup: (e: { commodityId: number; side: Side }) => void;
     onTrade: (e: { commodityId: number; side: Side }) => void;
     /**
@@ -51,7 +53,7 @@
     noCapacity?: boolean;
   }
   let {
-    rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onLookup, onTrade, tradeFor = null, tradeForm,
+    rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onReject, onLookup, onTrade, tradeFor = null, tradeForm,
     roi = NO_ROI, pulse = NO_PULSE, noCapacity = false,
   }: Props = $props();
 
@@ -116,7 +118,10 @@
       return;
     }
     if (edit.kind === 'invalid') {
+      // the same refusal again (Enter, then leaving the cell) is one refusal: typing clears the marks, so a new one is a new line
+      const again = draft.bad.price === edit.price && draft.bad.scu === edit.scu;
       draft.bad = { price: edit.price, scu: edit.scu };
+      if (!again) onReject?.({ commodityId, side, price: edit.price, scu: edit.scu });
       return;
     }
     drafts[key] = {
