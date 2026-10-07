@@ -7,16 +7,42 @@ import type { Estimate, Market, Reference } from '../core/types';
 import type { Db } from './db';
 import { latestObservations, latestQuantities, stockStats } from './repo/diary';
 import { loadDistances, loadUexPrices } from './repo/uex-cache';
-import { ensureDistances, type SyncDeps } from './sync';
+import { countDistanceRequests, ensureDistances, type SyncDeps } from './sync';
 
 // The suggestion service: loads the market from the database, fetches the distances the answer
-// needs and has not got yet, asks the pure core for the ranked trips and logs why they were shown.
+// needs and has not got yet (or, on request, answers at once from what the cache holds), asks the
+// pure core for the ranked trips and logs why they were shown.
 
 export interface SuggestDeps extends SyncDeps {
   reference: Reference;
   settings: Settings;
   /** Median trip time of my own runs, by `pairKey`. */
   ownMedian: Map<string, number>;
+}
+
+/** Distance requests of one suggestion: how many are finished out of how many are still planned. */
+export interface SuggestProgress { done: number; total: number }
+
+export interface SuggestRun {
+  /** 'cached' asks UEX nothing and counts by the distance cache; 'fetch' (the default) fetches what the best candidates lack. */
+  distances?: 'cached' | 'fetch';
+  /**
+   * Called before the first distance request (`done: 0`) and after each one, whether it worked or not; the last
+   * call has `done === total`, and `total` can only shrink. Only in the 'fetch' mode, and not at all when no
+   * request is needed. A callback that throws is logged and ignored.
+   */
+  onProgress?: (p: SuggestProgress) => void;
+}
+
+type DistanceMode = NonNullable<SuggestRun['distances']>;
+
+export interface Suggestion {
+  options: RouteOption[];
+  /**
+   * How many distances the best candidates (the ones the 'fetch' mode would fetch for) still lack. 0 means the
+   * answer is final; in the 'fetch' mode it counts what a repeated run would ask, such as the pairs UEX did not answer.
+   */
+  missing: number;
 }
 
 /** How many of the best candidates (by ROI) get their missing distances fetched in one suggestion. */
@@ -79,21 +105,86 @@ function missingDistances(
   return groups;
 }
 
+/** How many distinct pairs the groups hold: a pair that two terminals would be asked for counts once. */
+function countPairs(groups: Map<number, Map<string, [number, number]>>): number {
+  const keys = new Set<string>();
+  for (const pairs of groups.values()) for (const key of pairs.keys()) keys.add(key);
+  return keys.size;
+}
+
+const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
 /**
- * Ranks every candidate first, fetches the distances the best of them lack (one terminal at a time,
- * UEX failures never abort) and ranks again with what the cache holds then.
+ * Hands the progress points to the caller: a point equal to the last one is skipped, nothing is reported
+ * while nothing has to be requested, and a callback that throws is logged and never stops the suggestion.
+ */
+function progressReporter(d: SuggestDeps, onProgress: SuggestRun['onProgress']): (p: SuggestProgress) => void {
+  let last: SuggestProgress | null = null;
+  return (p) => {
+    if (!onProgress) return;
+    if (last === null ? p.total === 0 : p.done === last.done && p.total === last.total) return;
+    last = p;
+    try {
+      onProgress({ ...p });
+    } catch (err) {
+      d.log.warn('suggest', 'progress callback failed', { reason: reason(err) });
+    }
+  };
+}
+
+/**
+ * Asks UEX, one terminal at a time and never in parallel, for the distances the groups lack. The progress
+ * counts the requests of all the groups together: groups that have not started are counted as they were
+ * planned, a started one as it really goes (its plan can only shrink), so `total` never grows.
+ */
+async function fetchDistances(
+  d: SuggestDeps, distances: Map<string, number | null>,
+  groups: Map<number, Map<string, [number, number]>>, onProgress: SuggestRun['onProgress'],
+): Promise<Map<string, number | null>> {
+  const report = progressReporter(d, onProgress);
+  const asked = [...groups].map(([from, pairs]) => ({ from, pairs: [...pairs.values()] }));
+  const planned: number[] = [];
+  for (const { from, pairs } of asked) planned.push(await countDistanceRequests(d, from, pairs));
+  const plannedFrom = (index: number): number => planned.slice(index).reduce((sum, n) => sum + n, 0);
+  report({ done: 0, total: plannedFrom(0) });
+
+  let finished = 0;
+  for (const [index, { from, pairs }] of asked.entries()) {
+    let groupDone = 0;
+    distances = await ensureDistances(d, from, pairs, (p) => {
+      planned[index] = Math.min(planned[index], p.total);
+      groupDone = Math.min(p.done, planned[index]);
+      report({ done: finished + groupDone, total: finished + plannedFrom(index) });
+    });
+    finished += groupDone;
+  }
+  return distances;
+}
+
+/**
+ * Ranks every candidate first. In the `'fetch'` mode (the default) it then fetches the distances the best of
+ * them lack (UEX failures never abort) and ranks again with what the cache holds; in the `'cached'` mode it
+ * ranks again at once and asks UEX nothing. `missing` is what the best candidates still lack at the end.
  */
 async function rank(
   d: SuggestDeps, now: number, freeScu: number,
-  search: (ctx: RouteCtx) => RouteResult, needs: (o: RouteOption) => Need[],
-): Promise<{ result: RouteResult; ensured: Array<{ from: number; pairs: number }> }> {
+  search: (ctx: RouteCtx) => RouteResult, needs: (o: RouteOption) => Need[], run: SuggestRun,
+): Promise<{ result: RouteResult; ensured: Array<{ from: number; pairs: number }>; missing: number; mode: DistanceMode }> {
+  const mode = run.distances ?? 'fetch';
   let distances = await loadDistances(d.db);
   const candidates = search(routeCtx(d, now, freeScu, distances, Infinity)).options;
-  const missing = missingDistances(candidates, distances, needs);
-  for (const [from, pairs] of missing) distances = await ensureDistances(d, from, [...pairs.values()]);
+  const lacking = missingDistances(candidates, distances, needs);
+  let open = lacking;
+  let ensured: Array<{ from: number; pairs: number }> = [];
+  if (mode === 'fetch') {
+    distances = await fetchDistances(d, distances, lacking, run.onProgress);
+    ensured = [...lacking].map(([from, pairs]) => ({ from, pairs: pairs.size }));
+    // The candidates stay the same; what the best of them still lack is what a next fetch would ask.
+    open = missingDistances(candidates, distances, needs);
+  }
   return {
     result: search(routeCtx(d, now, freeScu, distances, d.settings.topN)),
-    ensured: [...missing].map(([from, pairs]) => ({ from, pairs: pairs.size })),
+    ensured, missing: countPairs(open), mode,
   };
 }
 
@@ -136,13 +227,16 @@ function purchaseOrigins(d: SuggestDeps, currentTerminalId: number): number[] {
 /**
  * Where to take cargo from `currentTerminalId` (and, with `settings.nearby`, from the terminals of its
  * planet): ranked trips to every terminal that buys what is sold there. `commodityId` narrows the
- * search to one commodity.
+ * search to one commodity. `run` chooses between answering from the distance cache at once and fetching
+ * the missing distances first (the default), and receives the progress of the fetching.
  */
-export async function suggestFrom(d: SuggestDeps, currentTerminalId: number, freeScu: number, commodityId?: number): Promise<RouteOption[]> {
+export async function suggestFromDetailed(
+  d: SuggestDeps, currentTerminalId: number, freeScu: number, commodityId?: number, run: SuggestRun = {},
+): Promise<Suggestion> {
   const now = d.now();
   const market = await loadMarket(d.db);
   const origins = purchaseOrigins(d, currentTerminalId);
-  const { result, ensured } = await rank(
+  const { result, ensured, missing, mode } = await rank(
     d, now, freeScu,
     (ctx) => routesFrom(market, origins, currentTerminalId, ctx, commodityId),
     (o) => {
@@ -151,33 +245,47 @@ export async function suggestFrom(d: SuggestDeps, currentTerminalId: number, fre
       if (o.originId !== currentTerminalId) needs.push({ from: currentTerminalId, pair: [currentTerminalId, o.originId] });
       return needs;
     },
+    run,
   );
   d.log.debug('suggest', 'from', {
     now, currentTerminalId, origins, freeScu,
     filters: { ...describeFilters(d.settings, commodityId), nearby: d.settings.nearby },
-    ensured, trace: result.trace, options: result.options.map((o) => describeOption(d, o)),
+    distances: mode, missing, ensured, trace: result.trace, options: result.options.map((o) => describeOption(d, o)),
   });
-  return result.options;
+  return { options: result.options, missing };
+}
+
+/** The ranked trips of `suggestFromDetailed` after fetching the missing distances. */
+export async function suggestFrom(d: SuggestDeps, currentTerminalId: number, freeScu: number, commodityId?: number): Promise<RouteOption[]> {
+  return (await suggestFromDetailed(d, currentTerminalId, freeScu, commodityId)).options;
 }
 
 /**
  * Where to buy for `destId`: ranked trips that end at that terminal, from every terminal that sells
  * what it buys. `commodityId` narrows the search to one commodity. The terminal need not be where the
- * player is, so there is no empty flight.
+ * player is, so there is no empty flight. `run` is the same as for `suggestFromDetailed`.
  */
-export async function suggestTo(d: SuggestDeps, destId: number, freeScu: number, commodityId?: number): Promise<RouteOption[]> {
+export async function suggestToDetailed(
+  d: SuggestDeps, destId: number, freeScu: number, commodityId?: number, run: SuggestRun = {},
+): Promise<Suggestion> {
   const now = d.now();
   const market = await loadMarket(d.db);
-  const { result, ensured } = await rank(
+  const { result, ensured, missing, mode } = await rank(
     d, now, freeScu,
     (ctx) => routesTo(market, destId, ctx, commodityId),
     // The destination's own route list covers the pair of every origin at once.
     (o) => [{ from: destId, pair: [o.originId, destId] }],
+    run,
   );
   d.log.debug('suggest', 'to', {
     now, destId, freeScu,
     filters: describeFilters(d.settings, commodityId),
-    ensured, trace: result.trace, options: result.options.map((o) => describeOption(d, o)),
+    distances: mode, missing, ensured, trace: result.trace, options: result.options.map((o) => describeOption(d, o)),
   });
-  return result.options;
+  return { options: result.options, missing };
+}
+
+/** The ranked trips of `suggestToDetailed` after fetching the missing distances. */
+export async function suggestTo(d: SuggestDeps, destId: number, freeScu: number, commodityId?: number): Promise<RouteOption[]> {
+  return (await suggestToDetailed(d, destId, freeScu, commodityId)).options;
 }
