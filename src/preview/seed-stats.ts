@@ -11,14 +11,16 @@ import { loseCargo, recordBuy, recordMark, recordSell, type TradeDeps } from '..
 // What the scenes of the "Мои маршруты" section need that the window dataset does not have: a long history of the
 // player's runs. It is written on top of the `window` dataset by the REAL trade functions (the first purchase starts a
 // run, the sale that empties the hold finishes it, `loseCargo` loses it), at times in the past, session after session:
-//  - 36 runs of mine over nine days in eight sessions (a pause of more than two hours between sessions), done and
-//    lost, a few with the departure and arrival marks, one of two commodities (a "mixed" run);
+//  - 35 runs of mine over nine days in eight sessions (a pause of more than two hours between sessions), done and
+//    lost, a few with the departure and arrival marks, and one of two commodities (a "mixed" run) on a day of its own:
+//    with the two runs of the default history and the one that is going, 39 in all;
 //  - the three runs on ONE pair, Stims from HUR-L1 to MIC-L1, that take longer than the estimate by the distance: the
 //    "Варианты" from HUR-L1 show my median time and "3 рейса" for that trip;
 //  - a run that is going now: Tungsten bought at Lorville a few minutes ago.
 // The prices of those three runs are exactly the prices the market shows now, and no other run touches a commodity that
 // HUR-L1 sells, so the trips from HUR-L1 are the five of the `window` dataset, with the same numbers.
-// The other half of this file's job: `removeRuns` makes the same data with no run at all (the empty state).
+// The other half of this file's job is the empty state: `removeRuns` makes the same data with no run at all, and
+// `removeDiary` takes the player's own prices out as well (a first launch after the first sync).
 
 const quiet = createLogger({ write() {} });
 
@@ -56,11 +58,14 @@ function randomOf(seed: number): () => number {
 
 const round5 = (n: number): number => Math.round(n / 5) * 5;
 
+/** The pair that is flown three times: Stims from HUR-L1 to MIC-L1 (the time of each run is given where it is flown). */
+const STIMS: Omit<Leg, 'minutes' | 'marks'> = { from: HUR_L1, to: MIC_L1, code: 'STIM', scu: 300 };
+
 /**
  * The sessions, oldest first: how long before `now` it began (days, hours) and the runs it held, one after the other.
  * Terminals: 1 ARC-L1, 2 CRU-L1, 3 HUR-L1, 4 MIC-L1, 5 Area 18, 6 Lorville, 9 Everus Harbor, 10 Baijini Point, 11 Port Tressler.
+ * The three runs of the pair last 24:10, 26:35 and 22:50, so the median is 24:10 (the estimate by the distance is 15:34).
  */
-const STIMS: Omit<Leg, 'minutes' | 'marks'> = { from: HUR_L1, to: MIC_L1, code: 'STIM', scu: 300 };
 const SESSIONS: ReadonlyArray<{ ago: readonly [days: number, hours: number]; legs: readonly Leg[] }> = [
   { ago: [9, 5], legs: [
     { from: 11, to: 5, code: 'GOLD', scu: 150, minutes: 34, marks: [6, 25] },
@@ -183,7 +188,8 @@ export async function extendForStats(db: Db, now: number): Promise<void> {
     }
   }
 
-  // one run of two commodities at once: a mixed run in the history (two days and a bit ago, after its session's pause)
+  // one run of two commodities at once, a mixed run in the history: four days and seven hours ago, between two sessions,
+  // so a session of its own
   const mixed = now - 4 * DAY - 7 * HOUR;
   const gold = commodityIdOf(reference, 'GOLD');
   const tung = commodityIdOf(reference, 'TUNG');

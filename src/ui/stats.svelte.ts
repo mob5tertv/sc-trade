@@ -1,5 +1,6 @@
 import { untrack } from 'svelte';
 import type { RunWithEvents } from '../core/types';
+import type { Db } from '../data/db';
 import { app } from './state.svelte';
 import { loadHistorySafely } from './stats-history';
 import { createLatestRequest } from './vm/latest-request';
@@ -86,7 +87,7 @@ class StatsState {
   async reload(reason = 'data loaded'): Promise<void> {
     this.#follow();
     const isNewest = this.#latest.begin();
-    let db;
+    let db: Db;
     try {
       ({ db } = app.suggestDeps());
     } catch (err) {
