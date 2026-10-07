@@ -7,7 +7,7 @@ import {
   countDistanceRequests, ensureDistances, pricesAreStale, referenceIsStale, syncPrices, syncReference,
   type DistanceProgress, type PriceProgress, type SyncDeps,
 } from '../../src/data/sync';
-import { UexError } from '../../src/data/uex-client';
+import { UexError, createUexClient } from '../../src/data/uex-client';
 import { px, seedTerminals, term, veh } from '../helpers/factories';
 import { FakeUex } from '../helpers/fake-uex';
 import { countingDb } from '../helpers/suggest-progress-fixtures';
@@ -276,22 +276,23 @@ describe('syncPrices on a network that does not answer', () => {
     expect((await priceKeys()).sort()).toEqual(['1:10', '2:10', '3:10', '4:10']);
   });
 
-  it('does not count a refusal of the server: the server is there, and its batches are still repeated one by one', async () => {
-    await seedTerminals(db, 8); // four batches
-    uex.failPrices = () => true;
+  it('does not count a refusal of the server as a failure of the network: its batches are repeated one by one, and the singles go through', async () => {
+    await seedTerminals(db, 10); // five batches, every batch of two refused, every single request answered
+    uex.failPrices = (ids) => ids.length === 2;
     failPricesAs(uex, serverRefusal);
 
-    expect(await syncPrices(deps)).toEqual({ batches: 4, failed: 4, unfetched: 8 });
-    expect(uex.priceCalls).toHaveLength(12); // every batch and its two single requests
+    expect(await syncPrices(deps)).toEqual({ batches: 5, failed: 0, unfetched: 0 });
+    expect(uex.priceCalls).toHaveLength(15); // every batch and its two single requests
+    expect(await getMeta(db, 'prices_synced_at')).toBe(String(NOW));
   });
 
-  it('ends the count at a refusal of the server between two network failures', async () => {
+  it('ends the network count at a refusal of the server between two network failures', async () => {
     await seedTerminals(db, 10); // five batches
-    uex.failPrices = (ids) => ids.some((id) => id !== 9 && id !== 10);
+    uex.failPrices = (ids) => ids.some((id) => [1, 2, 3, 4, 6, 7, 8].includes(id));
     failPricesAs(uex, (ids) => (ids.includes(5) || ids.includes(6) ? serverRefusal() : networkStall()));
 
-    // [1,2] and [3,4] stall, [5,6] is refused (and its singles refused as well), [7,8] stalls, [9,10] goes through
-    expect(await syncPrices(deps)).toEqual({ batches: 5, failed: 4, unfetched: 8 });
+    // [1,2] and [3,4] stall, [5,6] is refused and its single 5 goes through, [7,8] stalls, [9,10] goes through
+    expect(await syncPrices(deps)).toEqual({ batches: 5, failed: 4, unfetched: 7 });
     expect(uex.priceCalls).toEqual([[1, 2], [3, 4], [5, 6], [5], [6], [7, 8], [9, 10]]);
   });
 
@@ -311,6 +312,86 @@ describe('syncPrices on a network that does not answer', () => {
     expect(await syncPrices(deps)).toEqual({ batches: 3, failed: 3, unfetched: 6 });
     expect(uex.priceCalls).toHaveLength(3);
     expect(syncWarnings()).toHaveLength(1);
+  });
+});
+
+describe('syncPrices when UEX answers but gives nothing (a CDN that is down answers 521, 522, 524)', () => {
+  const syncWarnings = () => warnings().map((l) => l.line);
+
+  it('gives up after three batches in a row that yielded nothing: every request of them failed, the rest is unfetched', async () => {
+    await seedTerminals(db, 10); // five batches
+    uex.failPrices = () => true;
+    failPricesAs(uex, serverRefusal);
+
+    expect(await syncPrices(deps)).toEqual({ batches: 5, failed: 5, unfetched: 10 });
+
+    expect(uex.priceCalls).toEqual([[1, 2], [1], [2], [3, 4], [3], [4], [5, 6], [5], [6]]); // nothing after the third batch
+    expect(await getMeta(db, 'prices_synced_at')).toBeNull();
+  });
+
+  it('says it in one line that names the reason, and ends with a complete progress report', async () => {
+    await seedTerminals(db, 10);
+    uex.failPrices = () => true;
+    failPricesAs(uex, serverRefusal);
+    const seen: PriceProgress[] = [];
+
+    await syncPrices(deps, (p) => { seen.push({ ...p }); });
+
+    const summary = syncWarnings().filter((l) => l.includes('gave up'));
+    expect(summary).toHaveLength(1);
+    expect(summary[0]).toContain('3 batches in a row yielded nothing');
+    expect(summary[0]).toContain('"unfetched":10');
+    expect(seen).toEqual([{ done: 0, total: 5 }, { done: 1, total: 5 }, { done: 2, total: 5 }, { done: 3, total: 5 }, { done: 5, total: 5 }]);
+  });
+
+  it('is the same for the real client: a CDN that answers 521 to everything', async () => {
+    await seedTerminals(db, 10);
+    const asked: string[] = [];
+    const real = createUexClient(async (url) => { asked.push(url); return { status: 521, body: 'Web server is down' }; }, createLogger(sink));
+
+    const result = await syncPrices({ ...deps, uex: real });
+
+    expect(result).toEqual({ batches: 5, failed: 5, unfetched: 10 });
+    expect(asked).toHaveLength(9);
+    expect(syncWarnings().some((l) => l.includes('gave up'))).toBe(true);
+  });
+
+  it('does not stop for a batch that the server refused and whose single requests went through: that is what the repeat is for', async () => {
+    await seedTerminals(db, 10);
+    uex.failPrices = (ids) => ids.length === 2;
+    failPricesAs(uex, serverRefusal);
+
+    expect(await syncPrices(deps)).toEqual({ batches: 5, failed: 0, unfetched: 0 });
+    expect(await getMeta(db, 'prices_synced_at')).toBe(String(NOW));
+  });
+
+  it('starts the count again after a batch that yielded even one terminal', async () => {
+    await seedTerminals(db, 10); // [1,2] and [3,4] yield nothing, [5,6] yields 5, [7,8] and [9,10] yield nothing
+    const bad = new Set([1, 2, 3, 4, 6, 7, 8, 9, 10]);
+    uex.failPrices = (ids) => ids.some((id) => bad.has(id));
+    failPricesAs(uex, serverRefusal);
+
+    expect(await syncPrices(deps)).toEqual({ batches: 5, failed: 5, unfetched: 9 });
+    expect(uex.priceCalls).toHaveLength(15); // every batch and both its singles: nothing was given up
+    expect(await priceKeys()).toEqual(['5:10']);
+  });
+
+  it('counts the batches of every kind together: a stall, a refusal and a stall in a row are three batches of nothing', async () => {
+    await seedTerminals(db, 10);
+    uex.failPrices = () => true;
+    failPricesAs(uex, (ids) => (ids.includes(3) || ids.includes(4) ? serverRefusal() : networkStall()));
+
+    expect(await syncPrices(deps)).toEqual({ batches: 5, failed: 5, unfetched: 10 });
+    expect(uex.priceCalls).toEqual([[1, 2], [3, 4], [3], [4], [5, 6]]);
+  });
+
+  it('keeps the old rows of the batches it gave up on', async () => {
+    await seedTerminals(db, 10);
+    await upsertPrices(db, [9], [px(9, 10, { sell: { last: 7 } })], 50);
+    uex.failPrices = () => true;
+    failPricesAs(uex, serverRefusal);
+    await syncPrices(deps);
+    expect((await loadUexPrices(db)).map((p) => [p.terminalId, p.sell.last])).toEqual([[9, 7]]);
   });
 });
 
@@ -578,8 +659,18 @@ describe('syncReference', () => {
       expect((await loadReference(db)).vehicles.map((v) => v.id)).toEqual([4, 5]);
     });
 
-    it('does not count a refusal of the server', async () => {
+    it('gives up after three refusals of the server in a row as well: it answers, but gives nothing', async () => {
       uex.failVehiclesOf = new Set(uex.manufacturerIds);
+      failVehiclesAs(uex, serverRefusal);
+
+      await syncReference(deps);
+
+      expect(uex.vehicleCalls).toEqual([195, 196, 197]);
+      expect(warnings().some((l) => l.line.includes('vehicles sync gave up') && l.line.includes('3 manufacturers in a row yielded nothing'))).toBe(true);
+    });
+
+    it('starts the count again after a manufacturer that answered, even with no vehicle at all', async () => {
+      uex.failVehiclesOf = new Set([195, 196, 198, 199, 201, 202]); // 197 and 200 answer with an empty list
       failVehiclesAs(uex, serverRefusal);
 
       await syncReference(deps);

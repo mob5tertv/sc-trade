@@ -1,7 +1,7 @@
 import { distKey, type Commodity, type StarSystem, type Terminal, type UexPrice, type Vehicle } from '../core/types';
 import type { Db } from './db';
 import type { Logger } from './logger';
-import { NETWORK_FAILURES_IN_A_ROW, Outage } from './outage';
+import { EMPTY_UNITS_IN_A_ROW, NETWORK_FAILURES_IN_A_ROW, Outage, type OutageReason } from './outage';
 import {
   getMeta, loadDistances, putDistances, saveReference, setMeta, upsertPrices, upsertVehicles,
 } from './repo/uex-cache';
@@ -11,8 +11,9 @@ import { isRateLimit, isUnreachable, UexError, type UexClient } from './uex-clie
 // network"): a response of more than ~24 KB stalls, so lists are requested in small pieces and
 // strictly one request at a time. Failures of UEX never abort a run half-way unless the
 // documented contract says so; a failure of the local database always propagates. A series of
-// many requests (prices, vehicles) gives up when the network fails three times in a row (`outage.ts`):
-// on a dead network every further request would cost the whole timeout and hold the queue of UEX.
+// many requests (prices, vehicles) gives up when the network fails three times in a row, when three of its
+// batches in a row bring nothing in, or at once when UEX asks to wait (`outage.ts`): on a network that is
+// dead or a UEX that is down every further request would cost the whole timeout and hold the queue of UEX.
 
 export interface SyncDeps { db: Db; uex: UexClient; log: Logger; now: () => number }
 
@@ -31,9 +32,13 @@ const META_REFERENCE = 'reference_synced_at';
 const META_PRICES = 'prices_synced_at';
 const metaRoutesFetched = (originId: number) => `routes_fetched:${originId}`;
 
-/** The two reasons for a series of requests to stop short, as the log tells them. */
-const NETWORK_DEAD = `the network failed ${NETWORK_FAILURES_IN_A_ROW} times in a row`;
+/** The reasons for a series of requests to stop short, as the log tells them (`unit` is what the series is made of). */
 const LIMIT_REACHED = 'UEX request limit reached (HTTP 429), asking again later';
+const whyStopped = (reason: OutageReason, unit: string): string => (reason === 'limit'
+  ? LIMIT_REACHED
+  : reason === 'network'
+    ? `the network failed ${NETWORK_FAILURES_IN_A_ROW} times in a row`
+    : `${EMPTY_UNITS_IN_A_ROW} ${unit} in a row yielded nothing`);
 
 const isStale = (syncedAt: number | null, now: number, maxAge: number): boolean => syncedAt === null || now - syncedAt > maxAge;
 
@@ -73,7 +78,9 @@ function note(outage: Outage, result: Attempt<unknown>): void {
 
 /**
  * Vehicles of every manufacturer. `complete` is false when any request failed: then the list is only a part. The series
- * gives up when the network fails three times in a row: the manufacturers that were not asked count as failed.
+ * gives up when the network fails three times in a row, when three manufacturers in a row fail whatever the kind of the
+ * failure (a manufacturer that answered, even with no vehicle, starts the count again), or at once on the answer "too many
+ * requests": the manufacturers that were not asked count as failed.
  */
 async function fetchVehicles(d: SyncDeps): Promise<{ list: Vehicle[]; complete: boolean }> {
   const manufacturers = await attempt(d, 'vehicle manufacturers request', {}, () => d.uex.vehicleManufacturers());
@@ -88,12 +95,14 @@ async function fetchVehicles(d: SyncDeps): Promise<{ list: Vehicle[]; complete: 
     const vehicles = await attempt(d, 'vehicles request', { companyId }, () => d.uex.vehicles(companyId));
     asked++;
     note(outage, vehicles);
+    outage.unit(vehicles.ok);
     if (vehicles.ok) list.push(...vehicles.value);
     else complete = false;
   }
-  if (asked < manufacturers.value.length) {
+  if (asked < manufacturers.value.length && outage.reason !== null) {
     complete = false;
-    d.log.warn('sync', outage.limited ? `vehicles sync stopped: ${LIMIT_REACHED}` : `vehicles sync gave up: ${NETWORK_DEAD}`, {
+    const verb = outage.limited ? 'stopped' : 'gave up';
+    d.log.warn('sync', `vehicles sync ${verb}: ${whyStopped(outage.reason, 'manufacturers')}`, {
       manufacturers: manufacturers.value.length, asked,
     });
   }
@@ -237,7 +246,11 @@ export interface PriceSyncResult {
  * A batch that failed because the network did (no answer, a timeout) is not repeated terminal by terminal: the single
  * requests would stall the same way; a batch the server refused is. After three failures of the network in a row (a request
  * that went through, or one the server answered with a refusal, starts the count again) the run gives up: the terminals
- * not asked yet are `unfetched`, and the log gets one warning about it instead of a line per batch.
+ * not asked yet are `unfetched`, and the log gets one warning about it instead of a line per batch. It gives up in the same
+ * way after three batches in a row that yielded NOTHING, whatever the kind of the failure (a CDN in front of UEX that is down
+ * answers 521 / 522 / 524: every batch and each of its singles fail); a batch that yielded even one terminal starts that count
+ * again, so a refusal of one batch whose single requests go through changes nothing. "Too many requests" (429) stops the run
+ * at once.
  *
  * `onProgress` is called before the first request (`done: 0`) and after every batch; the last call is complete
  * (`done === total`). With no live terminal there is nothing to report and it is never called. A callback that
@@ -275,6 +288,7 @@ export async function syncPrices(d: SyncDeps, onProgress?: (progress: PriceProgr
     const batch = terminalIds.slice(asked, asked + PRICE_BATCH_SIZE);
     asked += batch.length;
     const unresolved = await syncPriceBatch(d, batch, syncedAt, outage);
+    outage.unit(unresolved.length < batch.length); // a batch that gave even one terminal is not a batch of nothing
     done++;
     if (unresolved.length > 0) {
       failed++;
@@ -287,7 +301,7 @@ export async function syncPrices(d: SyncDeps, onProgress?: (progress: PriceProgr
     report(done);
   }
 
-  // The network is dead: the terminals that were not asked are unfetched, and the run is complete for the caller (N of N).
+  // The run gave up: the terminals that were not asked are unfetched, and the run is complete for the caller (N of N).
   const notAsked = terminalIds.length - asked;
   if (notAsked > 0) {
     failed += Math.ceil(notAsked / PRICE_BATCH_SIZE);
@@ -299,7 +313,7 @@ export async function syncPrices(d: SyncDeps, onProgress?: (progress: PriceProgr
   const end = { batches: total, failed, unfetched, terminals: terminalIds.length };
   if (failed === 0) log.info('sync', 'prices sync finished', end);
   else if (outage.limited) log.warn('sync', `prices sync stopped: ${LIMIT_REACHED}`, { ...end, notAsked });
-  else if (notAsked > 0) log.warn('sync', `prices sync gave up: ${NETWORK_DEAD}`, { ...end, notAsked });
+  else if (notAsked > 0 && outage.reason !== null) log.warn('sync', `prices sync gave up: ${whyStopped(outage.reason, 'batches')}`, { ...end, notAsked });
   else log.warn('sync', 'prices sync finished with failures', end);
   return { batches: total, failed, unfetched };
 }
