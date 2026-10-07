@@ -137,6 +137,21 @@ export const REPAIR_SCENES: readonly Scene[] = [
     },
   },
   {
+    // No distance is stored and UEX does not answer for any: the second step of the lookup ends with every distance still missing. The list is
+    // on screen all the same, without the time and the income per hour (dashes), and its header keeps the «≈» of a preliminary answer:
+    // `--do "eval:document.querySelector('section .summary').textContent"` (it must begin with «≈ »).
+    name: 'options-distances-unknown',
+    title: '«Варианты» при недоступном UEX и без известных расстояний: прочерки вместо времени и дохода в час, в заголовке «≈»',
+    dataset: 'window',
+    act: async (app) => {
+      await app.suggestDeps().db.execute('DELETE FROM uex_distance');
+      await app.loadFromDb();
+      await app.expand('preview');
+      await app.newRoute();
+      await pause(600);
+    },
+  },
+  {
     // The mini line is switched off and the start fails after the settings were read (an empty database, no network): the window
     // is hidden by that setting, and the error would not be seen. It unfolds with the text of the error instead.
     name: 'boot-failed-no-strip',

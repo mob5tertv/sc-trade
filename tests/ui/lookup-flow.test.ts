@@ -41,6 +41,22 @@ describe('answerLookup: the two steps', () => {
     h.state.secondAnswer = { ...FINAL_ANSWER, missing: 4 };
     await answerLookup(h.flow);
     expect(h.runs).toEqual(['cached', 'fetch']);
+  });
+
+  it('keeps the answer preliminary while distances are still missing after the fetching (UEX did not answer for some pair)', async () => {
+    for (const missing of [1, 4]) {
+      const h = flowHarness();
+      h.state.secondAnswer = { ...FINAL_ANSWER, missing };
+      await answerLookup(h.flow);
+      expect(h.events.at(-1)).toBe('answer:213:preliminary');
+      expect(h.runs).toEqual(['cached', 'fetch']); // and it is not asked again
+    }
+  });
+
+  it('makes the answer final only when the fetching left no distance missing', async () => {
+    const h = flowHarness();
+    h.state.secondAnswer = { ...FINAL_ANSWER, missing: 0 };
+    await answerLookup(h.flow);
     expect(h.events.at(-1)).toBe('answer:213:final');
   });
 
@@ -124,6 +140,8 @@ describe('answerLookup: failures', () => {
       'suggest:cached', 'answer:12:preliminary',
       'queue:wait', 'queue:run', 'suggest:fetch', 'refine-failed',
     ]);
+    // no answer after the preliminary one: nothing marks it final (the owner leaves the mark where it is)
+    expect(h.events.some((e) => e.endsWith(':final'))).toBe(false);
   });
 
   it('is silent about a failure of a request that was superseded', async () => {

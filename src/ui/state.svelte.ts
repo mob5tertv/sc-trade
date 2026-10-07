@@ -1141,7 +1141,9 @@ class AppState {
       distancesChanged: () => this.#reloadDistances(),
       show: {
         answer: (options, preliminary) => {
-          this.lookup = { request, title, options, ...quiet, preliminary, progress: preliminary ? this.lookup.progress : null };
+          // an answer is never in the middle of the fetching: the first one comes before it, the second after it (a count of
+          // distances next to an answer that is only preliminary because UEX did not give some pair would say it still goes)
+          this.lookup = { request, title, options, ...quiet, preliminary };
         },
         progress: (progress) => {
           this.lookup = { ...this.lookup, progress };
