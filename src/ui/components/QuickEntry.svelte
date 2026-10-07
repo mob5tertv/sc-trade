@@ -25,8 +25,10 @@
     onSave: (entry: PriceEntry) => Promise<string | null>;
     /** Enter was pressed with something missing or unreadable (nothing was saved). */
     onReject?: (e: { reason: Rejection; price: string; scu: string }) => void;
+    /** `onSave` threw instead of answering: the player sees a short sentence, the details belong in the log. */
+    onFailure?: (err: unknown, entry: PriceEntry) => void;
   }
-  let { terminalId, terminalName, terminalItems, commodityItems, boostIds, sideFor, onPickTerminal, onSave, onReject }: Props = $props();
+  let { terminalId, terminalName, terminalItems, commodityItems, boostIds, sideFor, onPickTerminal, onSave, onReject, onFailure }: Props = $props();
 
   const uid = $props.id();
   const groupName = `side-${uid}`;
@@ -48,11 +50,6 @@
 
   const chosen = $derived(commodityId === null ? undefined : commodityItems.find((c) => c.id === commodityId));
   const side = $derived<Side>(pickedSide ?? (commodityId === null ? 'buy' : sideFor(commodityId)));
-
-  /** Puts the cursor into the commodity field: where a new entry starts. */
-  export function focus(): void {
-    commodityBox?.focus();
-  }
 
   function pickTerminal(id: number): void {
     onPickTerminal(id);
@@ -100,11 +97,17 @@
       return;
     }
 
+    // What is saved is what was on the line when Enter was pressed. The side and the commodity are derived and may
+    // change while the save is awaited, so the entry and the confirmation are built from these.
+    const entry: PriceEntry = { terminalId, commodityId, side, price: input.price, scu: input.scu };
+    const label = chosen?.code ?? `#${commodityId}`;
+
     busy = true;
     let failure: string | null;
     try {
-      failure = await onSave({ terminalId, commodityId, side, price: input.price, scu: input.scu });
-    } catch {
+      failure = await onSave(entry);
+    } catch (err) {
+      onFailure?.(err, entry);
       failure = 'Не удалось записать цену. Подробности в логе.';
     } finally {
       busy = false;
@@ -115,7 +118,7 @@
       return;
     }
     status = {
-      text: `Записано: ${chosen?.code ?? `#${commodityId}`} · ${side === 'buy' ? 'покупка' : 'продажа'} ${formatUec(input.price)}`,
+      text: `Записано: ${label} · ${entry.side === 'buy' ? 'покупка' : 'продажа'} ${formatUec(entry.price)}`,
       kind: 'ok',
     };
     commodityId = null;

@@ -6,7 +6,7 @@
   import TerminalTable from '../components/TerminalTable.svelte';
   import { app } from '../state.svelte';
   import { commoditySearchItems, terminalSearchItems } from '../vm/header';
-  import { kindForSide, lookupEmptyText, lookupTarget } from '../vm/lookup';
+  import { kindForSide, lookupEmptyText, lookupPrice, lookupTarget } from '../vm/lookup';
   import type { LookupKind } from '../vm/lookup';
   import { locationModel } from '../vm/location';
   import { defaultSide } from '../vm/quick-entry';
@@ -63,7 +63,8 @@
 
   function lookupRow(row: { commodityId: number; side: Side }): void {
     if (viewedId === null) return;
-    void app.runLookup({ kind: kindForSide(row.side), terminalId: viewedId, commodityId: row.commodityId, price: null });
+    const price = lookupPrice(rows.find((r) => r.commodityId === row.commodityId), row.side);
+    void app.runLookup({ kind: kindForSide(row.side), terminalId: viewedId, commodityId: row.commodityId, price });
     reveal();
   }
 
@@ -88,7 +89,12 @@
   }
 
   const setSort = (sort: Settings['sort']): void => void app.updateSetting('sort', sort);
-  const setNearby = (nearby: boolean): void => void app.updateSetting('nearby', nearby);
+
+  // The checkbox is the player's own click until the setting says otherwise: when it was not saved it shows the stored state again.
+  async function setNearby(box: HTMLInputElement): Promise<void> {
+    await app.updateSetting('nearby', box.checked);
+    box.checked = app.settings.nearby;
+  }
 
   function newRoute(): void {
     void app.newRoute();
@@ -107,6 +113,7 @@
     onPickTerminal={(id) => app.setViewTerminal(id)}
     onSave={(entry) => app.recordPrice(entry)}
     onReject={(e) => app.log.info('ui', 'quick entry rejected', { terminalId: viewedId, ...e })}
+    onFailure={(err, entry) => app.log.error('ui', 'quick entry save failed', { ...entry, err })}
   />
 
   <section class="lookup" bind:this={block} aria-label="Подсказки по маршрутам" aria-busy={lookup.loading}>
@@ -119,8 +126,14 @@
         <button type="button" class="seg" aria-pressed={app.settings.sort === 'uecPerHour'} title="Сначала то, что приносит больше UEC в час" onclick={() => setSort('uecPerHour')}>UEC/ч</button>
         <button type="button" class="seg" aria-pressed={app.settings.sort === 'roi'} title="Сначала то, что выгоднее по отношению прибыли к вложенному" onclick={() => setSort('roi')}>ROI</button>
       </div>
-      <label class="check" title="Искать закупку и на других точках той же планеты">
-        <input type="checkbox" checked={app.settings.nearby} onchange={(event) => setNearby(event.currentTarget.checked)} />
+      <label
+        class="check"
+        class:off={kind === 'to'}
+        title={kind === 'to'
+          ? 'Относится к «Отсюда»: в «Сюда» закупка и так ищется на всех точках'
+          : 'Искать закупку и на других точках той же планеты'}
+      >
+        <input type="checkbox" checked={app.settings.nearby} disabled={kind === 'to'} onchange={(event) => void setNearby(event.currentTarget)} />
         <span>искать и рядом</span>
       </label>
       <button type="button" class="sc-btn" title="Что везти из текущей локации" onclick={newRoute}>Новый маршрут</button>
@@ -225,6 +238,11 @@
     color: var(--sc-muted);
     font-size: var(--sc-font-sm);
     cursor: pointer;
+  }
+
+  .check.off {
+    opacity: 0.6;
+    cursor: default;
   }
 
   .bar .sc-btn {

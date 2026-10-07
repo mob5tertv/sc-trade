@@ -18,7 +18,7 @@ import { applyLogLevel } from '../platform/tauri-logger';
 import { bindTriggers, type TriggerName } from '../platform/triggers';
 import { setMode, watchFocus, type SetModeOptions, type WindowLayout, type WindowMode } from '../platform/window';
 import { createLatestRequest } from './vm/latest-request';
-import { kindForSide, lookupTitle, terminalLabel, type LookupRequest } from './vm/lookup';
+import { affectsLookup, kindForSide, lookupTitle, terminalLabel, type LookupRequest } from './vm/lookup';
 import { createRequestQueue } from './vm/request-queue';
 import { validateSetting } from './vm/settings-validation';
 import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, syncPlan } from './vm/sync-plan';
@@ -519,7 +519,7 @@ class AppState {
    */
   async runLookup(request: LookupRequest, reason = 'player'): Promise<void> {
     const isNewest = this.#latestLookup.begin();
-    const title = lookupTitle(request, this.reference);
+    const title = lookupTitle(request, this.reference, this.settings.nearby);
     this.#log.info('ui', 'lookup', { ...request, reason });
 
     if (this.settings.scuCapacity <= 0) {
@@ -621,13 +621,10 @@ class AppState {
       case 'logLevel':
         await applyLogLevel(this.#log, this.settings.logLevel);
         break;
-      case 'sort':
-      case 'nearby':
-      case 'scuCapacity':
-        // the lookup on screen is answered again with the new setting (not awaited: it may wait for UEX)
-        void this.rerunLookup();
-        break;
     }
+    // The lookup on screen is answered again when the setting shapes its answer (not awaited: it may wait for UEX).
+    const shown = this.lookup.request;
+    if (shown !== null && affectsLookup(key, shown.kind)) void this.rerunLookup();
   }
 
   async openLogs(): Promise<void> {
