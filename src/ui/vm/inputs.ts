@@ -15,9 +15,16 @@ export interface EditBase { price: number | null; scu: number | null; priceIsOwn
  * cold one, so that it can be corrected instead of typed over) and my own quantity. A quantity of UEX is only a
  * placeholder. A stock estimated for now is shown as text next to an empty input: it is a calculation, not something I
  * saw, so it must never be saved as if I had typed it.
+ *
+ * The price is the whole number the row writes (`formatUec` rounds with `Math.round`): UEX averages are REAL, and the field
+ * must agree with the row and must not hold what the typed path (`parsePrice`: whole numbers above zero) would refuse. A price
+ * that rounds to zero is no price here: the row shows "0", nothing can be confirmed, and the price is required.
  */
 export function cellEditBase(cell: Pick<Cell, 'own' | 'hint' | 'ownScu' | 'ownScuBase'>): EditBase {
-  return { price: cell.own ?? cell.hint, scu: cell.ownScuBase === null ? cell.ownScu : null, priceIsOwn: cell.own !== null };
+  const shown = cell.own ?? cell.hint;
+  const price = shown === null ? null : Math.round(shown);
+  const usable = price !== null && price > 0 ? price : null;
+  return { price: usable, scu: cell.ownScuBase === null ? cell.ownScu : null, priceIsOwn: cell.own !== null && usable !== null };
 }
 
 /** The texts of the inputs for a base: plain digits (no grouping, so they are easy to edit), empty for unknown. */

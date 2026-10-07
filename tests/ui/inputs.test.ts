@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { formatUec } from '../../src/core/format';
 import { baseTexts, cellEditBase, rejectedFields, resolveCellEdit, resolveTrade } from '../../src/ui/vm/inputs';
 import type { EditBase } from '../../src/ui/vm/inputs';
 import type { Cell } from '../../src/ui/vm/terminal-rows';
@@ -22,6 +23,35 @@ describe('cellEditBase', () => {
   });
   it('has no price when the row has none at all', () => {
     expect(cellEditBase(cell())).toEqual({ price: null, scu: null, priceIsOwn: false });
+  });
+  describe('a price that is not a whole number (UEX gives REAL averages)', () => {
+    it('holds what the row shows: the price rounded the way the row writes it', () => {
+      for (const hint of [7345.6, 7345.5, 7345.4, 1499.49, 99.5, 988]) {
+        const price = cellEditBase(cell({ hint })).price;
+        expect(price, String(hint)).toBe(Math.round(hint));
+        expect(Number.isInteger(price), String(hint)).toBe(true);
+        expect(formatUec(price ?? 0), String(hint)).toBe(formatUec(hint));
+      }
+      expect(cellEditBase(cell({ hint: 7345.6 }))).toEqual({ price: 7346, scu: null, priceIsOwn: false });
+      expect(baseTexts(cellEditBase(cell({ hint: 7345.6 }))).price).toBe('7346');
+    });
+    it('rounds my own price the same way, so that the field and the row never disagree', () => {
+      expect(cellEditBase(cell({ own: 6120.4 }))).toEqual({ price: 6120, scu: null, priceIsOwn: true });
+    });
+    it('is saved as the whole number the row shows: Enter, or a quantity typed alone', () => {
+      const base = cellEditBase(cell({ hint: 7345.6 }));
+      expect(resolveCellEdit({ price: null, scu: null }, base, 'enter')).toEqual({ kind: 'save', price: 7346, scu: null });
+      expect(resolveCellEdit({ price: null, scu: '50' }, base)).toEqual({ kind: 'save', price: 7346, scu: 50 });
+      expect(resolveCellEdit({ price: '7346', scu: null }, base)).toEqual({ kind: 'save', price: 7346, scu: null }); // confirmed as typed
+    });
+    it('has no price when it rounds to zero: the row shows 0, which the typed path refuses too, so the price is required', () => {
+      const base = cellEditBase(cell({ hint: 0.3 }));
+      expect(base).toEqual({ price: null, scu: null, priceIsOwn: false });
+      expect(baseTexts(base).price).toBe('');
+      expect(resolveCellEdit({ price: null, scu: null }, base, 'enter')).toEqual({ kind: 'invalid', price: true, scu: false });
+      expect(resolveCellEdit({ price: null, scu: '50' }, base)).toEqual({ kind: 'invalid', price: true, scu: false });
+      expect(resolveCellEdit({ price: '5', scu: null }, base)).toEqual({ kind: 'save', price: 5, scu: null });
+    });
   });
   it('never takes a quantity of UEX or an estimate for something I typed', () => {
     // a quantity of UEX is a placeholder; an estimated stock is shown as text next to an empty input

@@ -167,8 +167,8 @@
             pick(item.id);
           }}
         >
-          <span class="name" title={item.title ?? item.name}>{item.name}</span>
-          <!-- where it is: the name is cut with an ellipsis before the place is; the whole text is in the tooltip -->
+          <span class="name" class:with-place={Boolean(item.place)} title={item.title ?? item.name}>{item.name}</span>
+          <!-- where it is: when both do not fit the name is cut with an ellipsis before the place is; the whole text is in the tooltip -->
           {#if item.place}<span class="place" title={item.title ?? item.place}>{item.place}</span>{/if}
           {#if item.code}<span class="code">{item.code}</span>{/if}
         </li>
@@ -232,10 +232,18 @@
     white-space: nowrap;
   }
 
-  /* where a terminal is, beside the code: it keeps its size and gives way only past half of the row, so a long name is cut first */
+  /* A row with a place: when the name and the place do not fit together the NAME gives way first (its share of the shrinking is
+     so much larger that the place keeps its whole width, to the pixel, until the name is down to its floor), then the place does.
+     While they fit nothing is cut, whatever the lengths, so a short name does not cost a long place its room. */
+  .name.with-place {
+    flex: 0 1000000 auto;
+    min-width: 12ch;
+  }
+
+  /* where a terminal is, beside the code */
   .place {
-    flex: none;
-    max-width: 55%;
+    flex: 0 1 auto;
+    min-width: 0;
     margin-left: auto;
     overflow: hidden;
     color: var(--sc-muted);
