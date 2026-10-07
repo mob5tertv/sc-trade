@@ -23,8 +23,11 @@
   const full = $derived(
     flash ??
       (model.kind === 'idle'
-        ? model.location
-        : [model.timer, model.cargo, model.target === null ? 'цель не выбрана' : `→ ${model.target}`, model.expect, model.rate].filter(Boolean).join(' · ')),
+        ? model.target === null ? model.location : `${model.location} → ${model.target}`
+        : [
+          `${model.phaseLabel} ${model.phaseTimer}`, `всего ${model.timer}`, model.cargo,
+          model.target === null ? 'цель не выбрана' : `→ ${model.target}`, model.expect, model.rate,
+        ].filter(Boolean).join(' · ')),
   );
 </script>
 
@@ -34,9 +37,9 @@
       <span class="part flash" class:error={flashKind === 'error'} aria-live="polite">{flash}</span>
     {:else if model.kind === 'idle'}
       <span class="part mark">SC</span>
-      <span class="part location">{model.location}</span>
+      <span class="part location">{model.location}{#if model.target !== null}<span class="to">→</span><span class="goal">{model.target}</span>{/if}</span>
     {:else}
-      <span class="part timer">{model.timer}</span>
+      <span class="part timer" title="Всего: {model.timer}"><span class="phase">{model.phaseLabel}</span>{model.phaseTimer}</span>
       <span class="part cargo">{model.cargo}</span>
       <span class="part" class:muted={model.target === null}>{model.target === null ? 'цель не выбрана' : `→ ${model.target}`}</span>
       {#if expect}<span class="part">{expect}</span>{/if}
@@ -52,13 +55,13 @@
 </div>
 
 <style>
-  /* one line, as wide as what it says, and never wider than 520 px: a long cargo is cut; the glass and the frame
+  /* one line, as wide as what it says, and never wider than 600 px (the name of the phase takes room the cargo had): a long cargo is cut; the glass and the frame
      belong to the window around it (`.sc-frame`), so that the glass is painted once */
   .strip {
     display: flex;
     align-items: stretch;
     width: max-content;
-    max-width: 520px;
+    max-width: 600px;
     height: var(--sc-mini-h);
     overflow: hidden;
     color: var(--sc-text);
@@ -117,8 +120,26 @@
   }
 
   .timer {
+    gap: 6px;
     color: var(--sc-accent);
     font-weight: 600;
+  }
+
+  /* the name of the phase is a small caption, the number after it is the timer */
+  .phase {
+    color: var(--sc-label);
+    font-size: var(--sc-font-sm);
+    font-weight: 400;
+    letter-spacing: 0.06em;
+  }
+
+  .to {
+    padding: 0 6px;
+    color: var(--sc-muted);
+  }
+
+  .goal {
+    color: var(--sc-accent);
   }
 
   .rate {

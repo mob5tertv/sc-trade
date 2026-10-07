@@ -5,7 +5,7 @@
 export interface GalleryAudit {
   /** States whose glass is wider than its frame: a horizontal scroll. */
   sidewaysScroll: string[];
-  /** The states by the width of their frame (the window is 440 px; the mini line is as wide as its content, at most 520 px). */
+  /** The states by the width of their frame (the window is 440 px; the mini line is as wide as its content, at most 600 px). */
   widths: Record<string, string[]>;
   /** A cell with a number whose text does not fit it (a number must never be cut). */
   clippedNumbers: string[];

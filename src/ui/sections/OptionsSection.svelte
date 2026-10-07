@@ -80,6 +80,7 @@
         targetTerminalId={app.settings.targetTerminalId}
         uexRange={(terminalId, commodityId, side) => uexRangeOf(app.market, terminalId, commodityId, side, app.routeCtx())}
         onTarget={(option) => void app.setTarget(lookupTarget(option, asked.kind))}
+        onClearTarget={() => void app.setTarget(null)}
       />
     {/if}
   </Section>

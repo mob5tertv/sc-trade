@@ -11,7 +11,7 @@ export interface EditBase { price: number | null; scu: number | null }
  * my cold value is only a placeholder. A stock estimated for now is shown as text next to an empty input:
  * it is a calculation, not something I saw, so it must never be saved as if I had typed it.
  */
-export function cellEditBase(cell: Cell): EditBase {
+export function cellEditBase(cell: Pick<Cell, 'own' | 'ownScu' | 'ownScuBase'>): EditBase {
   return { price: cell.own, scu: cell.ownScuBase === null ? cell.ownScu : null };
 }
 

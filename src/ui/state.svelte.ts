@@ -17,6 +17,7 @@ import {
   loadMarket, suggestFromDetailed, suggestToDetailed, type SuggestDeps, type SuggestProgress, type SuggestRun,
 } from '../data/suggest';
 import { syncPrices, syncReference, type SyncDeps } from '../data/sync';
+import { loseCargo as closeAsLost, recordBuy, recordMark, recordSell, TradeError, type TradeDeps, type TradeInput } from '../data/trade';
 import { UexError, type UexClient } from '../data/uex-client';
 import { applyLogLevel } from '../platform/tauri-logger';
 import { bindTriggers, type TriggerName } from '../platform/triggers';
@@ -38,12 +39,15 @@ import { stats } from './stats.svelte';
 import { shouldCollapse } from './vm/idle';
 import { createKeyboardHolds, type KeyboardHolds } from './vm/keyboard-holds';
 import { createLatestRequest } from './vm/latest-request';
-import { affectsLookup, lookupTitle, sameRequest, terminalLabel, type LookupRequest } from './vm/lookup';
+import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './vm/lookup';
 import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
+import { markRefusal } from './vm/run-phase';
+import { sameRun } from './vm/same-run';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
 import { validateSetting } from './vm/settings-validation';
 import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, syncPlan } from './vm/sync-plan';
+import { stripModel, type StripModel } from './vm/strip';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
 import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
@@ -70,6 +74,11 @@ import { uexErrorText } from './vm/uex-error';
 //    the lookup (`lookup`, `runLookup`, `rerunLookup`, `newRoute`, `closeLookup`): where to buy / where to sell, in
 //    two steps (the cached answer at once, the fetching of missing distances after it), one answer at a time, the
 //    newest request wins;
+//  - trades and the run (`buy`, `sell`, `mark`, `loseCargo`): they never touch UEX. Each one is a job of `#tradeQueue`: it
+//    writes through the trade service, then reads the active run (and, unless the service refused, the market) again, and only then the next one
+//    starts, so that a double click or a key pressed twice judges the state the first press left. A refusal comes back as
+//    a Russian sentence (the form under a row shows it); marks say it with `flash` (the mini line) and the notice line
+//    (the expanded window). `ask` / `answer` are the one in-flow question of the window (a line under the header);
 //  - the window: it is the mini bar (`mini`) or the expanded view (`expanded`), as big as its content and
 //    anchored to a corner. It never takes the keyboard from the game by itself: the keyboard is taken only
 //    through `keyboard.hold(...)` (a text field is edited) and handed back by `release`. The expanded view
@@ -106,6 +115,9 @@ export interface LookupState {
   progress: SuggestProgress | null;
 }
 
+/** A question that waits for yes or no (the line under the header): what is asked, and the label of the "yes" button. */
+export interface Confirm { text: string; yes: string }
+
 /** What a price the player saw is: the observation's fields without a time (now is the time). */
 export interface PriceInput { terminalId: number; commodityId: number; side: Side; price: number; scu: number | null }
 
@@ -137,6 +149,14 @@ const REFINE_FAILED = 'Не удалось уточнить расстояния
 const LOOKUP_REPEAT = 'settings changed';
 /** The id of the "Варианты" section among the open sections. */
 const OPTIONS_SECTION = 'options';
+/** The id of the "Рейс" section among the open sections. */
+const RUN_SECTION = 'run';
+/** How long a message of the mini line (`flash`) stays, and how long a question waits before it counts as "no". */
+const FLASH_MS = 3000;
+const CONFIRM_MS = 10_000;
+const CONFIRM_BUSY = 'confirm';
+const TRADE_FAILED = 'Не удалось записать сделку. Подробности в логе.';
+const RUN_READ_FAILED = 'Не удалось прочитать рейс из базы. Подробности в логе.';
 const NO_CURRENT_LOCATION = 'Сначала укажи, где ты находишься: найди локацию в поиске и нажми «Я здесь».';
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
@@ -147,8 +167,12 @@ class AppState {
   reference = $state.raw<Reference>(EMPTY_REFERENCE);
   market = $state.raw<Market>(EMPTY_MARKET);
   distances = $state.raw<Map<string, number | null>>(new Map());
-  /** The active run; nothing writes runs yet, the mini line reads it. */
+  /** The active run: the trades write it, the mini line and the "Рейс" section read it. */
   activeRun = $state.raw<RunWithEvents | null>(null);
+  /** A short message of the mini line (3 seconds); in the expanded window the same text goes to the notice line. */
+  flash = $state<string | null>(null);
+  /** The question under the header that waits for yes or no; `null` when none is asked. */
+  confirm = $state.raw<Confirm | null>(null);
   pricesSyncedAt = $state<number | null>(null);
   /** The last reference sync worked (true until one fails; true again after the next good one). */
   referenceOk = $state(true);
@@ -181,6 +205,16 @@ class AppState {
       return [];
     }
   });
+
+  /**
+   * What the mini line and the "Рейс" section say: the location (and the target) without a run; the phase, the cargo, the
+   * target, the expectation and the rate during one. Follows the data and the one-second clock; nothing is shown before the start.
+   */
+  strip = $derived.by((): StripModel => (
+    this.phase === 'ready'
+      ? stripModel(this.activeRun, this.market, this.reference, this.settings, this.routeCtx())
+      : { kind: 'idle', location: '', target: null }
+  ));
 
   // ---- window and screen ------------------------------------------------------------------------
   mode = $state<WindowMode>('mini');
@@ -235,6 +269,12 @@ class AppState {
   readonly #fitQueue = createRequestQueue();
   /** Opening and closing a section is written to the settings one at a time, each from the state its turn finds. */
   readonly #sectionQueue = createRequestQueue();
+  /** Trades and marks are written one at a time, each after the run was read again (see the header of this file). */
+  readonly #tradeQueue = createRequestQueue();
+  #flashTimer: ReturnType<typeof setTimeout> | undefined;
+  #confirmTimer: ReturnType<typeof setTimeout> | undefined;
+  /** What "yes" does for the question on screen. */
+  #confirmAction: (() => void | Promise<void>) | null = null;
   #shown = false;
   /** The window was shown for the first time: from now on it is fitted to its content. */
   #windowReady = false;
@@ -322,11 +362,15 @@ class AppState {
     this.#showTerminal(settings.currentTerminalId);
   }
 
-  /** The numbers the route services need, from the settings and the loaded data. */
-  routeCtx(freeScu: number = this.settings.scuCapacity): RouteCtx {
+  /**
+   * The numbers the route services need, from the settings and the loaded data. `now` is the one-second clock unless the
+   * caller counts on a slower one (a screen that recounts something heavy every 15 seconds passes `rowsNow`, and then does
+   * not depend on the one-second clock).
+   */
+  routeCtx(freeScu: number = this.settings.scuCapacity, now: number = this.now): RouteCtx {
     const s = this.settings;
     return {
-      now: this.now,
+      now,
       thresholds: { hotMin: s.hotMin, warmMin: s.warmMin, coolingMin: s.coolingMin },
       serverChangedAt: s.serverChangedAt,
       refillFullMin: s.refillFullMin,
@@ -514,6 +558,7 @@ class AppState {
       this.#log.info('window', 'mode change', { from, to: next, reason });
       if (next === 'mini') {
         this.view = 'main';
+        if (this.confirm !== null) this.answer(false, 'collapse');
         // The window shrinks under the cursor and may never report that the cursor left it; the idle timer must not
         // wait for the cursor of a window that is not there any more (the next movement over it says "inside" again).
         this.#pointerInside = false;
@@ -580,6 +625,7 @@ class AppState {
   openSettings(): void {
     if (this.view === 'settings') return;
     this.#log.info('ui', 'open settings');
+    if (this.confirm !== null) this.answer(false, 'settings');
     this.view = 'settings';
     this.#touch();
   }
@@ -830,8 +876,8 @@ class AppState {
         { panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive },
         {
           panel: () => void this.toggleMode(),
-          depart: () => this.#log.info('ui', 'depart trigger, not wired yet'),
-          arrive: () => this.#log.info('ui', 'arrive trigger, not wired yet'),
+          depart: () => void this.mark('depart'),
+          arrive: () => void this.mark('arrive'),
         },
         this.#log,
       );
@@ -1007,12 +1053,197 @@ class AppState {
     await this.runLookup({ kind: 'from', terminalId, commodityId: null, price: null }, 'new route');
   }
 
-  /** "Цель": the terminal the next trip is flown to. */
-  async setTarget(terminalId: number): Promise<void> {
-    this.#log.info('ui', 'set target', { terminalId });
-    if ((await this.updateSetting('targetTerminalId', terminalId)) === null) {
-      this.notify(`Цель рейса: ${terminalLabel(this.reference, terminalId)}.`, 'info');
+  /**
+   * "Цель": the terminal the next trip is flown to; `null` takes the target away (a run that goes on keeps going).
+   * The "Рейс" section shows the target, so a new one opens that section: the effect of the click is seen at once. Taking it
+   * away says nothing: the section or the mark of the target going away is the answer.
+   */
+  async setTarget(terminalId: number | null): Promise<void> {
+    if (terminalId === null) {
+      this.#log.info('ui', 'clear target');
+      await this.updateSetting('targetTerminalId', null);
+      return;
     }
+    this.#log.info('ui', 'set target', { terminalId });
+    if ((await this.updateSetting('targetTerminalId', terminalId)) === null) void this.openSection(RUN_SECTION);
+  }
+
+  // ---- trades and the run ----------------------------------------------------------------------------------
+
+  /** What the trade service takes: the database and the clock of the application, and the settings as they are now. */
+  #tradeDeps(): TradeDeps {
+    const { db, log, now } = this.#syncDeps();
+    return { db, log, now, settings: this.settings };
+  }
+
+  /**
+   * Reads the active run again after a trade, and keeps the one the state has when the database says the same (whoever follows
+   * `activeRun` by identity, the statistics, is woken only by a change). The market is read again only when something may have
+   * been written: a refusal of the service (`TradeError`) wrote nothing, a failure of the database may have written a part.
+   */
+  async #reloadRun(mayHaveWritten: boolean): Promise<void> {
+    try {
+      const read = await getActiveRun(this.#syncDeps().db);
+      if (!sameRun(read, this.activeRun)) this.activeRun = read;
+    } catch (err) {
+      this.#log.error('ui', 'cannot read the active run', { err });
+      this.notify(RUN_READ_FAILED, 'error');
+    }
+    if (!mayHaveWritten) return;
+    await this.reloadMarket();
+    this.rowsNow = nowSec();
+  }
+
+  /** The sentence for a trade that was not written: the text of a refusal of the service, else a general one (the cause is in the log). */
+  #tradeFailure(what: string, err: unknown, context: Record<string, unknown>): string {
+    if (err instanceof TradeError) {
+      this.#log.info('ui', 'trade refused', { what, code: err.code, ...context });
+      return err.message;
+    }
+    this.#log.error('ui', 'cannot write the trade', { what, ...context, err });
+    return TRADE_FAILED;
+  }
+
+  /** A short message for the player where he looks now: the mini line for 3 seconds, the notice line in the expanded window. */
+  #say(text: string, kind: Notice['kind'] = 'info'): void {
+    this.flash = text;
+    clearTimeout(this.#flashTimer);
+    this.#flashTimer = setTimeout(() => {
+      this.flash = null;
+    }, FLASH_MS);
+    if (this.mode === 'expanded') this.notify(text, kind);
+  }
+
+  /**
+   * The player bought. `input.knownScu` is the quantity he saw at the terminal: the diary then keeps "was minus bought".
+   * The first purchase starts the run (and opens its section). Returns the sentence to show at the form when it was not
+   * written, `null` when it was.
+   */
+  buy(input: TradeInput): Promise<string | null> {
+    return this.#tradeQueue(async () => {
+      this.#log.info('ui', 'buy', { ...input });
+      const startsRun = this.activeRun === null;
+      let failure: string | null = null;
+      let mayHaveWritten = true;
+      try {
+        await recordBuy(this.#tradeDeps(), input);
+      } catch (err) {
+        failure = this.#tradeFailure('buy', err, { ...input });
+        mayHaveWritten = !(err instanceof TradeError);
+      }
+      await this.#reloadRun(mayHaveWritten);
+      if (failure === null && startsRun) void this.openSection(RUN_SECTION);
+      return failure;
+    });
+  }
+
+  /**
+   * The player sold. `input.knownScu` is what the buyer held before: the diary then keeps "was plus sold". The sale that
+   * empties the hold ends the run, and the target goes with it. Returns the sentence for the form, `null` when it was written.
+   */
+  sell(input: TradeInput): Promise<string | null> {
+    return this.#tradeQueue(async () => {
+      this.#log.info('ui', 'sell', { ...input });
+      let failure: string | null = null;
+      let finished = false;
+      let mayHaveWritten = true;
+      try {
+        finished = (await recordSell(this.#tradeDeps(), input)).finished;
+      } catch (err) {
+        failure = this.#tradeFailure('sell', err, { ...input });
+        mayHaveWritten = !(err instanceof TradeError);
+      }
+      await this.#reloadRun(mayHaveWritten);
+      if (failure === null && finished) await this.#runEnded('done');
+      return failure;
+    });
+  }
+
+  /**
+   * "Взлетел" / "Прилетел": the button of the mini line or of the section, or a key of the game. Without a run, or when it
+   * repeats the mark before it, nothing is written and the player is told. Returns that sentence, `null` when the mark was written.
+   */
+  mark(type: 'depart' | 'arrive'): Promise<string | null> {
+    return this.#tradeQueue(async () => {
+      this.#log.info('ui', 'mark', { type });
+      const refusal = markRefusal(type, this.activeRun);
+      if (refusal !== null) {
+        this.#log.info('ui', 'mark refused', { type, refusal });
+        this.#say(refusal);
+        return refusal;
+      }
+      let failure: string | null = null;
+      let mayHaveWritten = true;
+      try {
+        await recordMark(this.#tradeDeps(), type);
+      } catch (err) {
+        failure = this.#tradeFailure('mark', err, { type });
+        mayHaveWritten = !(err instanceof TradeError);
+        this.#say(failure, 'error');
+      }
+      await this.#reloadRun(mayHaveWritten);
+      return failure;
+    });
+  }
+
+  /** "Груз потерян" (after the question was answered with yes): the run is closed as lost, the hold is written off, the target goes. */
+  loseCargo(): Promise<string | null> {
+    return this.#tradeQueue(async () => {
+      this.#log.info('ui', 'lose cargo');
+      let failure: string | null = null;
+      let mayHaveWritten = true;
+      try {
+        await closeAsLost(this.#tradeDeps());
+      } catch (err) {
+        failure = this.#tradeFailure('lose cargo', err, {});
+        mayHaveWritten = !(err instanceof TradeError);
+        this.#say(failure, 'error');
+      }
+      await this.#reloadRun(mayHaveWritten);
+      if (failure === null) await this.#runEnded('lost');
+      return failure;
+    });
+  }
+
+  /** A run is over (the hold was sold or lost): the target of that run goes. */
+  async #runEnded(how: 'done' | 'lost'): Promise<void> {
+    this.#log.info('ui', 'run ended, the target is cleared', { how });
+    await this.updateSetting('targetTerminalId', null);
+  }
+
+  // ---- a question under the header --------------------------------------------------------------------------
+
+  /**
+   * Asks the player something that must not happen by a misclick: a line under the header with the question and two buttons.
+   * It takes no keyboard. `onYes` runs only on "yes"; "no", the collapse of the window, the settings and ten seconds without an
+   * answer are "no". The window does not fold by itself while the question is there. A new question replaces the old one.
+   */
+  ask(question: Confirm, onYes: () => void | Promise<void>): void {
+    // a question that is still up is answered "no" first, and the log says so
+    if (this.confirm !== null) this.answer(false, 'replaced');
+    this.#log.info('ui', 'ask', { text: question.text });
+    this.confirm = question;
+    this.#confirmAction = onYes;
+    this.holdBusy(CONFIRM_BUSY);
+    this.#confirmTimer = setTimeout(() => this.answer(false, 'no answer'), CONFIRM_MS);
+  }
+
+  /** The answer to the question on screen; nothing happens when there is none. */
+  answer(yes: boolean, why = 'player'): void {
+    if (this.confirm === null) return;
+    const onYes = this.#confirmAction;
+    this.#log.info('ui', 'answer', { yes, why, text: this.confirm.text });
+    this.#dropQuestion();
+    if (yes && onYes !== null) {
+      void Promise.resolve(onYes()).catch((err: unknown) => this.#log.error('ui', 'the confirmed action failed', { err }));
+    }
+  }
+
+  #dropQuestion(): void {
+    clearTimeout(this.#confirmTimer);
+    this.confirm = null;
+    this.#confirmAction = null;
+    this.releaseBusy(CONFIRM_BUSY);
   }
 
   /**

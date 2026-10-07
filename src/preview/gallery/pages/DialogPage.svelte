@@ -14,32 +14,19 @@
   }
 </script>
 
-<!-- `contain: layout` makes the box the frame of the fixed overlay of the dialog, as the window is in life -->
-<Frame name="buy" caption="«Купил»: quantity and price, the cut button confirms">
-  <div class="stage">
-    <TradeDialog title={trade.title} side="buy" defaultScu={trade.scu} defaultPrice={trade.price} error={null} onConfirm={confirm} onCancel={() => {}} />
-  </div>
+<!-- the form of a trade stands in the flow, under the row it belongs to: here it stands alone in its frame -->
+<Frame name="buy" caption="«Купил»: quantity × price, the sum, the cut button confirms">
+  <TradeDialog title={trade.title} side="buy" defaultScu={trade.scu} defaultPrice={trade.price} error={null} onConfirm={confirm} onCancel={() => {}} />
 </Frame>
 <Frame name="sell" caption="«Продал»">
-  <div class="stage">
-    <TradeDialog title="Продал Stims" side="sell" defaultScu={80} defaultPrice={3320} error={null} onConfirm={confirm} onCancel={() => {}} />
-  </div>
+  <TradeDialog title="Продал Stims" side="sell" defaultScu={80} defaultPrice={3320} error={null} onConfirm={confirm} onCancel={() => {}} />
+</Frame>
+<Frame name="empty" caption="nothing can be offered: the quantity is empty">
+  <TradeDialog title="Купил Gold" side="buy" defaultScu={null} defaultPrice={6120} error={null} onConfirm={confirm} onCancel={() => {}} />
 </Frame>
 <Frame name="bad-input" caption="quantity 0 sent: the field is marked, one line of the reason" act={bad}>
-  <div class="stage">
-    <TradeDialog title={trade.title} side="buy" defaultScu={trade.scu} defaultPrice={trade.price} error={null} onConfirm={confirm} onCancel={() => {}} />
-  </div>
+  <TradeDialog title={trade.title} side="buy" defaultScu={trade.scu} defaultPrice={trade.price} error={null} onConfirm={confirm} onCancel={() => {}} />
 </Frame>
 <Frame name="error" caption="the write failed: the reason from the owner">
-  <div class="stage">
-    <TradeDialog title={trade.title} side="buy" defaultScu={trade.scu} defaultPrice={trade.price} error="Свободно только 40 SCU" onConfirm={confirm} onCancel={() => {}} />
-  </div>
+  <TradeDialog title={trade.title} side="buy" defaultScu={trade.scu} defaultPrice={trade.price} error="Свободно только 40 SCU" onConfirm={confirm} onCancel={() => {}} />
 </Frame>
-
-<style>
-  .stage {
-    position: relative;
-    height: 190px;
-    contain: layout;
-  }
-</style>

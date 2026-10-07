@@ -10,6 +10,8 @@
     onToggle: () => void;
     /** A cross at the end of the header (the "Варианты" section closes for good). */
     onClose?: () => void;
+    /** What the cross does, in two words, for the tooltip and the screen reader ('Снять цель'); 'Закрыть' by default. */
+    closeTitle?: string;
     /** Small buttons at the right of the header; a click on them does not toggle the section. */
     actions?: Snippet;
     /**
@@ -26,7 +28,7 @@
      */
     shrink?: number;
   }
-  let { title, summary, open, onToggle, onClose, actions, lead, children, scroll = false, shrink = 1 }: Props = $props();
+  let { title, summary, open, onToggle, onClose, closeTitle = 'Закрыть', actions, lead, children, scroll = false, shrink = 1 }: Props = $props();
 
   const uid = $props.id();
   const bodyId = `${uid}-body`;
@@ -41,7 +43,7 @@
     </button>
     {#if actions}<div class="actions">{@render actions()}</div>{/if}
     {#if onClose}
-      <button type="button" class="close" aria-label="Закрыть: {title}" title="Закрыть" onclick={() => onClose?.()}>
+      <button type="button" class="close" aria-label="{closeTitle}: {title}" title={closeTitle} onclick={() => onClose?.()}>
         <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M1.5 1.5 8.5 8.5M8.5 1.5 1.5 8.5" /></svg>
       </button>
     {/if}

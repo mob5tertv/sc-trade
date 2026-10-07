@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import { formatUec } from '../../core/format';
   import type { Side } from '../../core/types';
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
@@ -28,8 +28,14 @@
     onSavePrice: (e: { commodityId: number; side: Side; price: number; scu: number | null }) => void;
     onLookup: (e: { commodityId: number; side: Side }) => void;
     onTrade: (e: { commodityId: number; side: Side }) => void;
+    /**
+     * The commodity whose trade form is open, and the form: it is drawn right under the expanded row of that commodity,
+     * in the flow of the table. The owner writes the form, the table only gives it the place.
+     */
+    tradeFor?: number | null;
+    tradeForm?: Snippet<[TerminalRow]>;
   }
-  let { rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onLookup, onTrade }: Props = $props();
+  let { rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onLookup, onTrade, tradeFor = null, tradeForm }: Props = $props();
 
   /**
    * What is being typed into one cell (one commodity, one side). A cell with no draft shows its values from
@@ -241,6 +247,7 @@
             <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu?.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
           </button>
           {#if selected}{@render expanded(row, cell)}{/if}
+          {#if selected && tradeForm && tradeFor === row.commodityId}{@render tradeForm(row)}{/if}
         </div>
       {/if}
     {/each}

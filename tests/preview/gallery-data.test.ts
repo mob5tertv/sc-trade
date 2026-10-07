@@ -186,7 +186,7 @@ describe('the gallery route lists', () => {
 
 describe('the gallery run, mini line and history', () => {
   it('has the idle line, the line of a run and the line of a run with a cargo that cannot fit', () => {
-    expect(data.strip.idle).toEqual({ kind: 'idle', location: 'HUR-L1' });
+    expect(data.strip.idle).toEqual({ kind: 'idle', location: 'HUR-L1', target: 'ARC-L1' });
     expect(data.strip.run).toMatchObject({ kind: 'run', target: 'ARC-L1', cargo: 'MEDS 120 SCU, STIM 80 SCU' });
     if (data.strip.run.kind !== 'run' || data.strip.long.kind !== 'run') throw new Error('expected runs');
     expect(data.strip.run.expect).not.toBeNull();
@@ -197,6 +197,9 @@ describe('the gallery run, mini line and history', () => {
   it('has the card of the run, the sale decision and the three lists of the player', () => {
     expect(data.runCard.cargo.map((l) => l.code)).toEqual(['MEDS', 'STIM']);
     expect(data.runCard.timer).toBe('25:05');
+    // a run that goes on shows its expected result (the target of the dataset has prices for both commodities), not a loss
+    expect(data.runCard.outlook.expected).toMatchObject({ profitLoss: false });
+    expect(data.runCard.outlook.revenue).toBe('0');
     expect(data.sell.commodityCode).toBe('MEDS');
     expect(data.sell.alternatives.length).toBeGreaterThan(0);
     expect(data.history.length).toBeGreaterThanOrEqual(2);

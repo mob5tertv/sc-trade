@@ -1,61 +1,54 @@
 <script lang="ts">
-  import { formatCompact, formatPct, formatUec } from '../../core/format';
-  import type { RunTotals } from '../../core/run';
+  import { formatUec } from '../../core/format';
+  import type { PhaseLine } from '../vm/run-phase';
+  import type { RunOutlook } from '../vm/run-outlook';
 
   interface Props {
     cargo: Array<{ code: string; scu: number; avgBuyPrice: number }>;
-    timer: string;
-    totals: RunTotals;
-    onDepart: () => void;
-    onArrive: () => void;
-    /** Called only after the player has confirmed inside the card. */
+    /** The three phases of the current leg and the whole time, for the line at the top. */
+    phases: PhaseLine;
+    /** The money: what is put in and sold (facts), and the EXPECTED result of the whole run. A run that goes on is not a loss. */
+    outlook: RunOutlook;
+    /** The marks of the body: the ones the header of the section does not offer (`cardMarks`). */
+    marks: Array<'depart' | 'arrive'>;
+    onMark: (type: 'depart' | 'arrive') => void;
+    /** Called when the player pressed "Груз потерян". The owner asks the question (a line under the header of the window). */
     onLost: () => void;
   }
-  let { cargo, timer, totals, onDepart, onArrive, onLost }: Props = $props();
+  let { cargo, phases, outlook, marks, onMark, onLost }: Props = $props();
 
   const NONE = '—';
-
-  let confirming = $state(false);
-  let cancelButton: HTMLButtonElement | undefined = $state();
-
-  // The safe answer gets the focus: a stray Enter must not lose the cargo.
-  $effect(() => {
-    if (confirming) cancelButton?.focus();
-  });
-
-  function confirmLost(): void {
-    confirming = false;
-    onLost();
-  }
-
-  // Esc takes the question back; with no question asked it goes on and closes the panel.
-  function onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape' && confirming) {
-      e.stopPropagation();
-      confirming = false;
-    }
-  }
-
-  const roi = $derived(totals.roi === null ? NONE : formatPct(totals.roi));
-  const rate = $derived(totals.uecPerHour === null ? NONE : `${formatCompact(totals.uecPerHour)}/ч`);
+  const MARK_LABEL = { depart: 'Взлетел', arrive: 'Прилетел' } as const;
+  const expected = $derived(outlook.expected);
+  const dashTitle = $derived(outlook.why ?? undefined);
 </script>
 
+{#snippet lost()}
+  <button type="button" class="sc-btn sc-btn--act danger" onclick={() => onLost()}>Груз потерян</button>
+{/snippet}
+
 <section class="card" aria-label="Текущий рейс">
-  {#if confirming}
-    <div class="confirm" role="alertdialog" aria-label="Груз потерян?" tabindex="-1" onkeydown={onKeydown}>
-      <p class="ask">Рейс будет закрыт как потерянный, груз спишется. Продолжить?</p>
-      <div class="buttons">
-        <button type="button" class="sc-btn sc-btn--act danger" onclick={confirmLost}>Да, груз потерян</button>
-        <button type="button" class="sc-btn sc-btn--act" bind:this={cancelButton} onclick={() => (confirming = false)}>Отмена</button>
-      </div>
-    </div>
-  {:else}
+  <div class="phases" role="group" aria-label="Фазы рейса">
+    {#each phases.items as item (item.phase)}
+      <span class="phase" class:running={item.state === 'running'} class:future={item.state === 'future'}>
+        <span class="name">{item.name}</span> <span class="sc-num">{item.text}</span>
+      </span>
+    {/each}
+    <span class="spacer"></span>
+    <span class="total" title="Время с первой покупки">всего <span class="sc-num">{phases.total}</span></span>
+    {#if marks.length === 0}
+      <!-- nothing else to press: the button of the lost cargo takes the end of this line, no line of its own -->
+      {@render lost()}
+    {/if}
+  </div>
+
+  {#if marks.length > 0}
     <div class="top">
-      <span class="timer" title="Время с начала рейса">{timer}</span>
+      {#each marks as type (type)}
+        <button type="button" class="sc-btn sc-btn--act" onclick={() => onMark(type)}>{MARK_LABEL[type]}</button>
+      {/each}
       <span class="spacer"></span>
-      <button type="button" class="sc-btn sc-btn--act" onclick={() => onDepart()}>Взлетел</button>
-      <button type="button" class="sc-btn sc-btn--act" onclick={() => onArrive()}>Прилетел</button>
-      <button type="button" class="sc-btn sc-btn--act danger" onclick={() => (confirming = true)}>Груз потерян</button>
+      {@render lost()}
     </div>
   {/if}
 
@@ -74,14 +67,20 @@
   {/if}
 
   <dl class="totals">
-    <div><dt class="sc-label">Вложено</dt><dd class="sc-num">{formatUec(totals.invested)}</dd></div>
-    <div><dt class="sc-label">Выручка</dt><dd class="sc-num">{formatUec(totals.revenue)}</dd></div>
+    <div><dt class="sc-label" title="Всё, что куплено">Вложено</dt><dd class="sc-num">{outlook.invested}</dd></div>
+    <div><dt class="sc-label" title="Всё, что уже продано">Выручка</dt><dd class="sc-num">{outlook.revenue}</dd></div>
     <div>
-      <dt class="sc-label">Прибыль</dt>
-      <dd class="sc-num" class:good={totals.profit > 0} class:loss={totals.profit < 0}>{formatUec(totals.profit)}</dd>
+      <dt class="sc-label" title="Ожидаемая прибыль всего рейса: уже проданное плюс то, что в трюме, по ожидаемой цене в точке цели, минус вложенное">Прибыль</dt>
+      <dd class="sc-num" class:loss={expected?.profitLoss} title={expected === null ? dashTitle : undefined}>{expected?.profit ?? NONE}</dd>
     </div>
-    <div><dt class="sc-label">ROI</dt><dd class="sc-num">{roi}</dd></div>
-    <div><dt class="sc-label">UEC/ч</dt><dd class="sc-num">{rate}</dd></div>
+    <div>
+      <dt class="sc-label" title="Ожидаемое отношение прибыли ко вложенному">ROI</dt>
+      <dd class="sc-num" title={expected === null ? dashTitle : undefined}>{expected?.roi ?? NONE}</dd>
+    </div>
+    <div>
+      <dt class="sc-label" title="Ожидаемые UEC в час за время всего рейса: не меньше, чем прошло, и не меньше, чем лететь до цели">UEC/ч</dt>
+      <dd class="sc-num" title={expected === null ? dashTitle : undefined}>{expected?.rate ?? NONE}</dd>
+    </div>
   </dl>
 </section>
 
@@ -90,17 +89,47 @@
     padding: 0 var(--sc-pad-x);
   }
 
+  /* the phases of the leg on one line: the finished ones fixed, the running one in the accent, the ones to come as a dash */
+  .phases {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: calc(var(--sc-ctl-h) + 4px);
+    white-space: nowrap;
+  }
+
+  .phase {
+    color: var(--sc-text);
+  }
+
+  .phase .name {
+    color: var(--sc-label);
+  }
+
+  .phase.running,
+  .phase.running .name {
+    color: var(--sc-accent);
+    font-weight: 600;
+  }
+
+  .phase.future,
+  .phase.future .name {
+    color: var(--sc-muted);
+  }
+
+  .total {
+    color: var(--sc-muted);
+  }
+
+  .total .sc-num {
+    color: var(--sc-text);
+  }
+
   .top {
     display: flex;
     align-items: center;
     gap: 4px;
     height: calc(var(--sc-ctl-h) + 6px);
-  }
-
-  .timer {
-    color: var(--sc-accent);
-    font-size: 15px;
-    font-weight: 600;
   }
 
   .spacer {
@@ -171,10 +200,6 @@
     line-height: var(--sc-row-h);
   }
 
-  .good {
-    color: var(--sc-good);
-  }
-
   .loss {
     color: var(--sc-bad);
   }
@@ -182,18 +207,5 @@
   .danger {
     border-color: var(--sc-bad);
     color: var(--sc-bad);
-  }
-
-  .confirm {
-    padding: 6px 0;
-  }
-
-  .ask {
-    margin: 0 0 6px;
-  }
-
-  .buttons {
-    display: flex;
-    gap: 4px;
   }
 </style>
