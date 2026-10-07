@@ -87,10 +87,22 @@ export const REPAIR_SCENES: readonly Scene[] = [
   {
     // The keyboard hook may have been dropped by Windows without a word, and only a new `set_trigger_keys` brings it back: the keys are set
     // again whenever the player opens the window by hand (a click on the mini line, the tray), not when the trigger key opened it and
-    // not on a collapse. `window.__emitTray()` is the click of the tray; the count is `window.__preview.log` lines `set_trigger_keys`:
+    // not on a collapse; and only while at least one key is assigned (this scene has the panel key). `window.__emitTray()` is the click of the
+    // tray; the count is `window.__preview.log` lines `set_trigger_keys`:
     // `--do "eval:KEYS();click:button.open;wait:300;eval:KEYS()"` with `KEYS = () => window.__preview.log.filter(l => l.includes('set_trigger_keys')).length`.
     name: 'trigger-keys-reapply',
-    title: 'Мини-строка: клавиши-триггеры задаются заново при открытии окна рукой (клик, трей), но не клавишей и не при сворачивании',
+    title: 'Мини-строка, клавиша панели назначена: клавиши-триггеры задаются заново при открытии окна рукой (клик, трей), но не клавишей и не при сворачивании',
+    dataset: 'default',
+    act: async (app) => {
+      (window as unknown as { __emitTray: () => Promise<void> }).__emitTray = () => emit('tray://show-panel');
+      await app.updateSetting('hotkeyPanel', 'Ctrl+Alt+T');
+    },
+  },
+  {
+    // No key is assigned (the default): there is no hook to bring back, so opening the window by hand sets nothing: `KEYS()` (see above) stays as
+    // it was, and the log has no «apply trigger keys again».
+    name: 'trigger-keys-unassigned',
+    title: 'Мини-строка, ни одна клавиша-триггер не назначена: открытие окна рукой не задаёт клавиши заново',
     dataset: 'default',
     act: () => {
       (window as unknown as { __emitTray: () => Promise<void> }).__emitTray = () => emit('tray://show-panel');

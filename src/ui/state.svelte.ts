@@ -723,6 +723,10 @@ class AppState {
   expandByHand(reason: string): Promise<void> {
     this.#log.info('ui', 'expand', { reason });
     return this.#changeMode(() => 'expanded', reason, () => {
+      // With no key assigned there is no hook to bring back (the Rust side holds one only while a key is assigned): that is by far
+      // the usual case, and not worth a line in the log and a call into Rust at every click on the mini line.
+      const s = this.settings;
+      if ([s.hotkeyPanel, s.hotkeyDepart, s.hotkeyArrive].every((key) => key.trim() === '')) return;
       this.#log.info('ui', 'apply trigger keys again', { why: reason });
       void this.applyTriggers().catch(() => undefined);
     });
