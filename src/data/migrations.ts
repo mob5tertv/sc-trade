@@ -119,17 +119,27 @@ async function readVersion(db: Db): Promise<number> {
 }
 
 /**
- * Applies every migration newer than `PRAGMA user_version`; returns the schema version afterwards. A database whose version
- * is above the newest migration is refused with a `NewerDatabaseError` before anything is written: working on a schema this
- * build does not know could write rows that the newer version cannot read.
+ * Reads `PRAGMA user_version` and returns it, and nothing else: it writes nothing and applies no migration. A database whose
+ * version is above the newest migration is refused with a `NewerDatabaseError` (and a line in the log): working on a schema this
+ * build does not know could write rows that the newer version cannot read. It is the check `migrate` starts with, and a start
+ * that has to know BEFORE it touches anything (before a backup is made) can call it alone.
  */
-export async function migrate(db: Db, log: Logger): Promise<number> {
-  let version = await readVersion(db);
+export async function checkSchemaVersion(db: Db, log: Logger): Promise<number> {
+  const version = await readVersion(db);
   const known = MIGRATIONS[MIGRATIONS.length - 1].version;
   if (version > known) {
     log.error('db', 'database is from a newer version', { schema: version, known });
     throw new NewerDatabaseError(version, known);
   }
+  return version;
+}
+
+/**
+ * Applies every migration newer than `PRAGMA user_version`; returns the schema version afterwards. A database from a newer
+ * version of the application is refused before anything is written (`checkSchemaVersion`).
+ */
+export async function migrate(db: Db, log: Logger): Promise<number> {
+  let version = await checkSchemaVersion(db, log);
   for (const migration of MIGRATIONS) {
     if (migration.version <= version) continue;
     try {

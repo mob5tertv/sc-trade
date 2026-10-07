@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Db } from '../../src/data/db';
 import { createLogger, memorySink } from '../../src/data/logger';
-import { MIGRATIONS, NewerDatabaseError, migrate } from '../../src/data/migrations';
+import { MIGRATIONS, NewerDatabaseError, checkSchemaVersion, migrate } from '../../src/data/migrations';
 import { migratedDb, testDb } from '../helpers/test-db';
 
 describe('migrations', () => {
@@ -113,6 +113,60 @@ describe('migrations', () => {
       const db = testDb();
       expect(await migrate(db, createLogger(memorySink()))).toBe(NEWEST);
       expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: NEWEST }]);
+    });
+  });
+
+  describe('checkSchemaVersion: the check alone, for a start that must know before it touches anything', () => {
+    const NEWEST = MIGRATIONS[MIGRATIONS.length - 1].version;
+    const spied = (inner: Db) => {
+      const statements: string[] = [];
+      const db: Db = {
+        select: (sql, params) => { statements.push(sql); return inner.select(sql, params); },
+        execute: (sql, params) => { statements.push(sql); return inner.execute(sql, params); },
+      };
+      return { db, statements };
+    };
+
+    it('says the version of a database, and only reads it: a new, an old and a current one', async () => {
+      const current = spied(await migratedDb());
+      expect(await checkSchemaVersion(current.db, createLogger(memorySink()))).toBe(NEWEST);
+      expect(current.statements).toEqual(['PRAGMA user_version']);
+
+      const fresh = spied(testDb());
+      expect(await checkSchemaVersion(fresh.db, createLogger(memorySink()))).toBe(0);
+      expect(fresh.statements).toEqual(['PRAGMA user_version']);
+
+      const old = testDb();
+      for (const sql of MIGRATIONS[0].statements) await old.execute(sql);
+      await old.execute('PRAGMA user_version = 1');
+      expect(await checkSchemaVersion(old, createLogger(memorySink()))).toBe(1);
+      expect(await old.select('PRAGMA user_version')).toEqual([{ user_version: 1 }]);   // not migrated
+    });
+
+    it('refuses a database from a newer version, with the same error and the same log line as migrate, and writes nothing', async () => {
+      const db = testDb();
+      await db.execute(`PRAGMA user_version = ${NEWEST + 1}`);
+      const { db: spy, statements } = spied(db);
+      const sink = memorySink();
+
+      const err = await checkSchemaVersion(spy, createLogger(sink)).catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(NewerDatabaseError);
+      expect(err).toMatchObject({
+        schema: NEWEST + 1, known: NEWEST,
+        message: `База создана более новой версией программы (схема ${NEWEST + 1}, эта версия знает ${NEWEST}). Обнови программу.`,
+      });
+      expect(statements).toEqual(['PRAGMA user_version']);
+      expect(sink.lines.map((l) => l.line)).toEqual([`[db] database is from a newer version {"schema":${NEWEST + 1},"known":${NEWEST}}`]);
+    });
+
+    it('is what migrate starts with: the refusal of migrate is the refusal of the check', async () => {
+      const db = testDb();
+      await db.execute(`PRAGMA user_version = ${NEWEST + 5}`);
+      const viaCheck = await checkSchemaVersion(db, createLogger(memorySink())).catch((e: unknown) => e);
+      const viaMigrate = await migrate(db, createLogger(memorySink())).catch((e: unknown) => e);
+      expect(viaMigrate).toBeInstanceOf(NewerDatabaseError);
+      expect((viaMigrate as Error).message).toBe((viaCheck as Error).message);
     });
   });
 
