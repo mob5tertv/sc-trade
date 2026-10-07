@@ -1,9 +1,8 @@
 [package]
-name = "app"
+name = "sc-trade"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
+description = "Price diary and trade-route helper overlay for Star Citizen, with UEX data"
+authors = ["mob5terdisk"]
 repository = ""
 edition = "2024"
 rust-version = "1.90"
@@ -11,7 +10,7 @@ rust-version = "1.90"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "app_lib"
+name = "sc_trade_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
