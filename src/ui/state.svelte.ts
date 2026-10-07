@@ -324,8 +324,8 @@ class AppState {
   #openIds = $derived(parseOpenSections(this.settings.openSections));
   #noticeTimer: ReturnType<typeof setTimeout> | undefined;
   #backgroundStarted = false;
-  /** The market is being read again in the middle of a price sync. */
-  #reloadingMidSync = false;
+  /** The reads of the market that belong to a price sync (in the middle of it and at its end) go one after another. */
+  readonly #syncReads = createRequestQueue();
   /** Lookups overlap when the player asks again; only the newest one may show its answer. */
   readonly #latestLookup = createLatestRequest();
 
@@ -513,21 +513,17 @@ class AppState {
       this.#log.warn('ui', 'price sync failed', { err });
     }
     try {
-      await this.#reloadAndSettle();
+      // after the read in the middle of the sync that may still be going: the last read must be the one that lands last
+      await this.#syncReads(() => this.#reloadAndSettle());
     } finally {
       this.priceSync = { ...PRICE_SYNC_IDLE, unfetched };
     }
   }
 
-  /** The market is read again in the middle of a price sync (not when the previous such read is still going). Never throws. */
+  /** The market is read again in the middle of a price sync (not while another such read is waiting or going). Never throws. */
   async #reloadWhileSyncing(): Promise<void> {
-    if (this.#reloadingMidSync) return;
-    this.#reloadingMidSync = true;
-    try {
-      await this.#reloadAndSettle();
-    } finally {
-      this.#reloadingMidSync = false;
-    }
+    if (this.#syncReads.pending() > 0) return;
+    await this.#syncReads(() => this.#reloadAndSettle());
   }
 
   /**
@@ -998,8 +994,16 @@ class AppState {
 
   /** "Я здесь": the viewed terminal becomes the current location. */
   async setCurrentTerminal(id: number): Promise<void> {
+    if ((await this.#setLocation(id)) === null) this.#showTerminal(id);
+  }
+
+  /**
+   * The current location is saved (one `ui` line, one setting). It does not touch what the Terminal section shows: "Я здесь" adds
+   * that (`setCurrentTerminal`), a trade does not (`#locateAt`). Returns the sentence of the refusal, `null` when it was saved.
+   */
+  #setLocation(id: number): Promise<string | null> {
     this.#log.info('ui', 'set current terminal', { terminalId: id });
-    if ((await this.updateSetting('currentTerminalId', id)) === null) this.#showTerminal(id);
+    return this.updateSetting('currentTerminalId', id);
   }
 
   /** The Buy / Sell switch of the Terminal section. */
@@ -1214,12 +1218,13 @@ class AppState {
 
   /**
    * A trade that was written says where the ship stands: the terminal of the trade becomes the current location, the way
-   * "Я здесь" makes it (spec 14.2: the location is changed by the button and by a trade), with the same line in the log.
-   * Nothing is written or logged when the ship is there already.
+   * "Я здесь" saves it (spec 14.2: the location is changed by the button and by a trade), with the same line in the log.
+   * Nothing is written or logged when the ship is there already. The terminal that is VIEWED, and its side, are not touched:
+   * the player may have gone to another one while the trade was being written.
    */
   async #locateAt(terminalId: number): Promise<void> {
     if (this.settings.currentTerminalId === terminalId) return;
-    await this.setCurrentTerminal(terminalId);
+    await this.#setLocation(terminalId);
   }
 
   /**

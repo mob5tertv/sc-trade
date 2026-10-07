@@ -53,9 +53,11 @@
     if (confirmed) return;
     const trade = resolveTrade(scuText, priceText);
     if (!trade.ok) {
+      // the same refusal again (a held Enter) is one refusal: typing clears the marks, so a new one is a new report
+      const again = badScu === trade.scu && badPrice === trade.price;
       badScu = trade.scu;
       badPrice = trade.price;
-      onReject?.({ scu: trade.scu, price: trade.price });
+      if (!again) onReject?.({ scu: trade.scu, price: trade.price });
       return;
     }
     confirmed = true;

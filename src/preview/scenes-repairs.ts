@@ -70,6 +70,34 @@ export const REPAIR_SCENES: readonly Scene[] = [
     },
   },
   {
+    // A first sync of 11 batches: the market is read again after the 10th (not awaited) and at the end, a moment later. The two reads
+    // must not overlap: the later one has to be the one that lands last. The order in which `reloadMarket` starts and ends is in
+    // `window.__reloadOrder` (`--do "eval:window.__reloadOrder"`): `start,end,start,end`.
+    name: 'first-sync-short',
+    title: 'Первая синхронизация из 11 пакетов: чтение рынка после 10-го и в конце идут одно за другим',
+    dataset: 'default',
+    act: async (app) => {
+      const { db } = app.suggestDeps();
+      const own = [...app.reference.terminals.values()];
+      await saveReference(db, { terminals: [...own, ...own.slice(0, 5).map((t) => ({ ...t, id: t.id + 100 }))] });
+      await db.execute('DELETE FROM uex_price');
+      await db.execute("DELETE FROM uex_meta WHERE key = 'prices_synced_at'");
+      const uex = [...app.market.uex.values()];
+      await app.loadFromDb();
+      const order: string[] = [];
+      (window as unknown as { __reloadOrder: string[] }).__reloadOrder = order;
+      const reload = app.reloadMarket.bind(app);
+      app.reloadMarket = async () => {
+        order.push('start');
+        await reload();
+        order.push('end');
+      };
+      installPriceFake({ rows: () => uex });
+      await app.syncPricesNow();
+      await pause(300);
+    },
+  },
+  {
     // The mini line is switched off and the start fails after the settings were read (an empty database, no network): the window
     // is hidden by that setting, and the error would not be seen. It unfolds with the text of the error instead.
     name: 'boot-failed-no-strip',

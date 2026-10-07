@@ -85,7 +85,7 @@
         uexRange={(terminalId, commodityId, side) => uexRangeOf(app.market, terminalId, commodityId, side, app.routeCtx(undefined, app.rowsNow))}
         onTarget={(option) => void app.setTarget(lookupTarget(option, asked.kind))}
         onClearTarget={() => void app.setTarget(null)}
-        onToggleRow={(option, open) => app.log.info('ui', open ? 'options row opened' : 'options row closed', rowContext(option))}
+        onToggleRow={(option, opened) => app.log.info('ui', opened ? 'options row opened' : 'options row closed', rowContext(option))}
       />
     {/if}
   </Section>
