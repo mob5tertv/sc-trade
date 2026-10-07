@@ -48,11 +48,16 @@ describe('validateSetting: numbers', () => {
     expect(validateSetting('refillFullMin', 75, S)).toBeNull();
   });
 
-  it('keeps the opacity between 0.3 and 1', () => {
-    expect(validateSetting('opacity', 0.29, S)).not.toBeNull();
-    expect(validateSetting('opacity', 0.3, S)).toBeNull();
+  it('keeps the opacity between 0.5 and 1 (below 0.5 the text cannot be read on a bright scene)', () => {
+    expect(validateSetting('opacity', 0.3, S)).not.toBeNull();
+    expect(validateSetting('opacity', 0.49, S)).not.toBeNull();
+    expect(validateSetting('opacity', 0.5, S)).toBeNull();
     expect(validateSetting('opacity', 1, S)).toBeNull();
     expect(validateSetting('opacity', 1.01, S)).not.toBeNull();
+  });
+
+  it('names the new lower bound of the opacity in the sentence for the field', () => {
+    expect(validateSetting('opacity', 0.3, S)).toBe('От 0,5 до 1');
   });
 
   it('keeps the panel width between 380 and 640', () => {

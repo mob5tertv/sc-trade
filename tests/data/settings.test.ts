@@ -108,6 +108,14 @@ describe('settings repository', () => {
     expect(sink.lines.some((l) => l.level === 'warn' && l.line.includes('topN'))).toBe(true);
   });
 
+  it('reads an opacity saved below the new lower bound (0.5) as it is: nothing is migrated, the next change replaces it', async () => {
+    const db = await migratedDb();
+    await db.execute("INSERT INTO setting VALUES ('opacity', '0.3')");
+    expect((await loadSettings(db, log)).opacity).toBe(0.3);
+    await saveSetting(db, log, 'opacity', 0.6);
+    expect((await loadSettings(db, log)).opacity).toBe(0.6);
+  });
+
   it('logs every saved value', async () => {
     await saveSetting(await migratedDb(), log, 'topN', 3);
     expect(sink.lines.at(-1)).toEqual({ level: 'info', line: '[settings] saved {"key":"topN","value":3}' });
