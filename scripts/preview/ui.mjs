@@ -15,7 +15,7 @@ try {
 }
 
 console.log('');
-console.log(`  Просмотр интерфейса: ${url}/preview.html?scene=panel`);
+console.log(`  Просмотр интерфейса: ${url}/preview.html?scene=expanded`);
 if (scenes.length > 0) console.log(`  Сцены: ${scenes.join(', ')} (выбор сцены и монитора на служебной полосе страницы)`);
-console.log('  Снимок сцены в PNG: npm run preview:shot -- --scene panel');
+console.log('  Снимок сцены в PNG: npm run preview:shot -- --scene expanded');
 console.log('');

@@ -12,11 +12,11 @@ function harness() {
 }
 
 describe('preview window', () => {
-  it('starts like the window of tauri.conf.json: hidden, 520x32, away from the taskbar', () => {
+  it('starts like the window of tauri.conf.json: hidden, 240x26, away from the taskbar', () => {
     const { win } = harness();
     expect(win.snapshot()).toEqual({
       visible: false, closed: false,
-      position: { x: 0, y: 0 }, size: { width: 520, height: 32 },
+      position: { x: 0, y: 0 }, size: { width: 240, height: 26 },
       focusable: true, ignoreCursorEvents: false, skipTaskbar: true,
       keyboard: 'game', remembered: 0, restored: 0,
     });
@@ -31,6 +31,15 @@ describe('preview window', () => {
     expect(changes[2]).toMatchObject({ visible: true, position: { x: 1644, y: 16 }, size: { width: 260, height: 36 } });
   });
 
+  it('places the position and the size together: one report, never a state with only one of them', () => {
+    const { win, changes } = harness();
+    win.place({ x: 1464, y: 16, width: 440, height: 300 });
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ position: { x: 1464, y: 16 }, size: { width: 440, height: 300 } });
+    win.place({ x: 1464, y: 16, width: 440, height: 300 });
+    expect(changes).toHaveLength(1);
+  });
+
   it('does not report a call that changes nothing', () => {
     const { win, changes } = harness();
     win.setIgnoreCursorEvents(false);
@@ -43,7 +52,7 @@ describe('preview window', () => {
     const { win } = harness();
     const before = win.snapshot();
     win.setSize({ width: 100, height: 100 });
-    expect(before.size).toEqual({ width: 520, height: 32 });
+    expect(before.size).toEqual({ width: 240, height: 26 });
   });
 
   it('gives the focus to the overlay only when the window is shown and focusable', () => {
