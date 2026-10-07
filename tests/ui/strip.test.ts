@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { runOutlook } from '../../src/ui/vm/run-outlook';
 import { stripModel } from '../../src/ui/vm/strip';
 import { currentSession, sessionFigure } from '../../src/ui/vm/stats-view';
-import { pairKey } from '../../src/core/types';
+import { distKey, pairKey } from '../../src/core/types';
 import type { RunEvent, RunWithEvents } from '../../src/core/types';
 import { ev, ref } from '../helpers/factories';
 import { CLOCK, MINUTE, sessionEndedAgo } from '../helpers/indicator-fixtures';
@@ -112,10 +113,27 @@ describe('stripModel', () => {
       // 96×(6900−6120) + 40×(3000−2500) = 94 880 per 1015 s
       expect(stripModel(mixedRun, both, ref, toTarget2, ctx)).toMatchObject({ expect: `ждём 6${NBSP}900 (6${NBSP}400–7${NBSP}100)`, rate: '≈ 337k/ч' });
     });
-    it('leaves the expectation out when only a later commodity has an estimate, but keeps its profit in the rate', () => {
+    it('leaves the expectation out when only a later commodity has an estimate, and the rate with it: a part of the hold is not the run', () => {
       const titaOnly = withUexSell(withUexSell(market, 2, GOLD, 0), 2, TITA, 3000);
-      // GOLD has no usable price (zero average means "no data"); 40×500 = 20 000 per 1015 s
-      expect(stripModel(mixedRun, titaOnly, ref, toTarget2, ctx)).toMatchObject({ expect: null, rate: '≈ 71k/ч' });
+      // GOLD has no usable price (zero average means "no data"): the result of the whole run is not known, as the card of the run says
+      expect(stripModel(mixedRun, titaOnly, ref, toTarget2, ctx)).toMatchObject({ expect: null, rate: null });
+    });
+  });
+
+  describe('the rate of the whole run, as the card of the run counts it', () => {
+    const sale = (id: number, scu: number, price: number): RunEvent => ev({ id, runId: 1, ts: NOW - 300, type: 'sell', terminalId: 2, commodityId: GOLD, scu, price });
+
+    it('counts what is already sold too, not only what is aboard', () => {
+      // 40 SCU sold at 6800 (272 000), 56 SCU aboard at 6900, 587 520 put in: 70 880 over max(872, 1015) s. The hold alone is 56×780 = 43 680.
+      expect(stripModel(withEvents(active, sale(5, 40, 6800)), market, ref, toTarget2, ctx)).toMatchObject({ rate: '≈ 251k/ч' });
+    });
+    it('is the number of the card of the run, whatever has been sold', () => {
+      for (const run of [active, withEvents(active, sale(5, 40, 6800)), mixedRun]) {
+        const strip = stripModel(run, withUexSell(market, 2, TITA, 3000), ref, toTarget2, ctx);
+        const outlook = runOutlook(run, withUexSell(market, 2, TITA, 3000), ref, toTarget2, ctx);
+        if (strip.kind !== 'run') throw new Error('a run was expected');
+        expect(`${outlook.expected?.rate}/ч`).toBe(strip.rate);
+      }
     });
   });
 
@@ -131,8 +149,32 @@ describe('stripModel', () => {
       const own = { ...ctx, ownMedian: new Map([[pairKey(1, 2), 600]]) };
       expect(stripModel(active, market, ref, toTarget2, own)).toMatchObject({ rate: '≈ 309k/ч' });   // 74 880 per 872 s
     });
-    it('is the elapsed time when neither a median nor a distance is known', () => {
-      expect(stripModel(active, market, ref, toTarget2, { ...ctx, distances: new Map() })).toMatchObject({ rate: '≈ 309k/ч' });
+    it('is not known when neither a median nor a distance is known: no number rather than one counted by the seconds so far', () => {
+      // the time of the whole run is not known; the profit "ждём" is still shown
+      const unknown = { ...ctx, distances: new Map<string, number | null>() };
+      expect(stripModel(active, market, ref, toTarget2, unknown)).toMatchObject({ expect: expect.stringContaining('ждём'), rate: null });
+      // a distance that is stored as unknown is as good as none
+      expect(stripModel(active, market, ref, toTarget2, { ...ctx, distances: new Map([[distKey(1, 2), null]]) })).toMatchObject({ rate: null });
+    });
+    it('is the elapsed time once the arrival is marked: the flight is over, so the time that has passed is the time of the run', () => {
+      const unknown = { ...ctx, distances: new Map<string, number | null>() };
+      const arrived = withEvents(active, ev({ id: 5, runId: 1, ts: NOW - 600, type: 'depart' }), ev({ id: 6, runId: 1, ts: NOW - 125, type: 'arrive' }));
+      expect(stripModel(arrived, market, ref, toTarget2, unknown)).toMatchObject({ rate: '≈ 309k/ч' });   // 74 880 per 872 s
+      // a flight that was shorter than the estimate does not stretch the time of the run
+      expect(stripModel(arrived, market, ref, toTarget2, ctx)).toMatchObject({ rate: '≈ 309k/ч' });
+    });
+    it('is not known again when the ship takes off again after the arrival: that flight has no time yet', () => {
+      const unknown = { ...ctx, distances: new Map<string, number | null>() };
+      const again = withEvents(active,
+        ev({ id: 5, runId: 1, ts: NOW - 600, type: 'depart' }), ev({ id: 6, runId: 1, ts: NOW - 400, type: 'arrive' }), ev({ id: 7, runId: 1, ts: NOW - 100, type: 'depart' }));
+      expect(stripModel(again, market, ref, toTarget2, unknown)).toMatchObject({ rate: null });
+    });
+    it('is the result in hand over the elapsed time when nothing is left aboard to fly', () => {
+      const soldAll = withEvents(mixedRun,
+        ev({ id: 3, runId: 1, ts: NOW - 100, type: 'sell', terminalId: 2, commodityId: GOLD, scu: 96, price: 6900 }),
+        ev({ id: 4, runId: 1, ts: NOW - 90, type: 'sell', terminalId: 2, commodityId: TITA, scu: 40, price: 3000 }));
+      // 96×780 + 40×500 = 94 880 per 872 s, without the flight to the target
+      expect(stripModel(soldAll, market, ref, toTarget2, ctx)).toMatchObject({ cargo: '', rate: '≈ 392k/ч' });
     });
     it('measures the route from the first purchase', () => {
       const laterBuy = ev({ id: 3, runId: 1, ts: NOW - 300, type: 'buy', terminalId: 3, commodityId: GOLD, scu: 4, price: 6120 });
@@ -175,7 +217,7 @@ describe('stripModel', () => {
       const soldSome = withEvents(mixedRun, ev({ id: 3, runId: 1, ts: NOW - 100, type: 'sell', terminalId: 2, commodityId: GOLD, scu: 96, price: 6900 }));
       expect(stripModel(soldSome, market, ref, s, ctx)).toMatchObject({ cargo: 'TITA 40 SCU' });
       const soldAll = withEvents(soldSome, ev({ id: 4, runId: 1, ts: NOW - 90, type: 'sell', terminalId: 2, commodityId: TITA, scu: 40, price: 3000 }));
-      expect(stripModel(soldAll, market, ref, toTarget2, ctx)).toMatchObject({ cargo: '', target: 'TDD Area 18', expect: null, rate: null });
+      expect(stripModel(soldAll, market, ref, toTarget2, ctx)).toMatchObject({ cargo: '', target: 'TDD Area 18', expect: null });
     });
     it('survives a commodity that left the reference', () => {
       const odd = withEvents(active, ev({ id: 3, runId: 1, ts: NOW - 800, type: 'buy', terminalId: 1, commodityId: 99, scu: 5, price: 100 }));

@@ -29,6 +29,11 @@ export interface LookupFlow {
     /** The second step failed: the preliminary answer stays on screen. */
     refineFailed(err: unknown): void;
   };
+  /**
+   * The second step has run (answered, failed, or was dropped as superseded): the distances it fetched are stored, so the
+   * owner reads them again into whatever counts with them. Called once, after the job of the UEX queue is over; it must not throw.
+   */
+  distancesChanged?(): Promise<void>;
 }
 
 export async function answerLookup(flow: LookupFlow): Promise<void> {
@@ -43,10 +48,12 @@ export async function answerLookup(flow: LookupFlow): Promise<void> {
   flow.show.answer(first.options, first.missing > 0);
   if (first.missing === 0) return;
 
+  let fetching = false;
   try {
     const second = await flow.withUex(async () => {
       // the player may have asked something else, or cleared the cargo space, while this waited for the queue
       if (!flow.isNewest() || !flow.canRun()) return null;
+      fetching = true;
       return flow.suggest({
         distances: 'fetch',
         onProgress: (progress) => {
@@ -58,4 +65,7 @@ export async function answerLookup(flow: LookupFlow): Promise<void> {
   } catch (err) {
     if (flow.isNewest()) flow.show.refineFailed(err);
   }
+  // Whatever became of the answer (it may have been dropped, or the fetching may have stopped half way), the distances that
+  // were fetched are in the database now. The owner reads them again; that is a read of the database, outside of the UEX queue.
+  if (fetching) await flow.distancesChanged?.();
 }

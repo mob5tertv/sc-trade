@@ -46,7 +46,7 @@ import { markRefusal } from './vm/run-phase';
 import { sameRun } from './vm/same-run';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
 import { validateSetting } from './vm/settings-validation';
-import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, syncPlan } from './vm/sync-plan';
+import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, reloadsMidSync, syncPlan } from './vm/sync-plan';
 import { stripModel, type StripModel } from './vm/strip';
 import { rowRoiMap, type RowRoi } from './vm/row-roi';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
@@ -301,6 +301,8 @@ class AppState {
   /** What "yes" does for the question on screen. */
   #confirmAction: (() => void | Promise<void>) | null = null;
   #shown = false;
+  /** The first show failed and is waiting for another try (made by the next request to change the window). */
+  #showFailed = false;
   /** The window was shown for the first time: from now on it is fitted to its content. */
   #windowReady = false;
   /** The window is on the screen (not hidden). */
@@ -322,6 +324,8 @@ class AppState {
   #openIds = $derived(parseOpenSections(this.settings.openSections));
   #noticeTimer: ReturnType<typeof setTimeout> | undefined;
   #backgroundStarted = false;
+  /** The reads of the market that belong to a price sync (in the middle of it and at its end) go one after another. */
+  readonly #syncReads = createRequestQueue();
   /** Lookups overlap when the player asks again; only the newest one may show its answer. */
   readonly #latestLookup = createLatestRequest();
 
@@ -430,6 +434,19 @@ class AppState {
     this.pricesSyncedAt = metaSeconds(await getMeta(db, META_PRICES_SYNCED_AT));
   }
 
+  /**
+   * Reads the distances from the database again: the fetching step of a lookup stores the ones UEX answered, and the rate of the
+   * run and the alternatives of "sell here or fly on" count with `distances`. A read of the database, not a request to UEX, so
+   * it needs no place in the UEX queue (and is called after the job of the queue, not inside it). Never throws.
+   */
+  async #reloadDistances(): Promise<void> {
+    try {
+      this.distances = await loadDistances(this.#syncDeps().db);
+    } catch (err) {
+      this.#log.error('ui', 'cannot reload the distances', { err });
+    }
+  }
+
   /** Reloads prices, own observations, distances and the age of the prices; call it after anything wrote them. */
   async reloadMarket(): Promise<void> {
     try {
@@ -480,9 +497,15 @@ class AppState {
     this.priceSync = { ...PRICE_SYNC_IDLE, running: true, unfetched: this.priceSync.unfetched };
     let unfetched = 0;
     try {
-      const result = await this.withUex(() => syncPrices(this.#syncDeps(), ({ done, total }) => {
-        this.priceSync = { running: true, done, total, unfetched: this.priceSync.unfetched };
-      }));
+      const result = await this.withUex(() => {
+        // The first launch: the cache has no price of UEX, and ~70 requests are before the first table. The market is read again
+        // as the sync goes (a read of the database: nothing here asks the UEX queue, whose job this is).
+        const startedEmpty = this.market.uex.size === 0;
+        return syncPrices(this.#syncDeps(), (progress) => {
+          this.priceSync = { running: true, done: progress.done, total: progress.total, unfetched: this.priceSync.unfetched };
+          if (reloadsMidSync(startedEmpty, progress)) void this.#reloadWhileSyncing();
+        });
+      });
       this.pricesOk = result.failed === 0;
       unfetched = result.unfetched;
     } catch (err) {
@@ -490,10 +513,28 @@ class AppState {
       this.#log.warn('ui', 'price sync failed', { err });
     }
     try {
-      await this.reloadMarket();
+      // after the read in the middle of the sync that may still be going: the last read must be the one that lands last
+      await this.#syncReads(() => this.#reloadAndSettle());
     } finally {
       this.priceSync = { ...PRICE_SYNC_IDLE, unfetched };
     }
+  }
+
+  /** The market is read again in the middle of a price sync (not while another such read is waiting or going). Never throws. */
+  async #reloadWhileSyncing(): Promise<void> {
+    if (this.#syncReads.pending() > 0) return;
+    await this.#syncReads(() => this.#reloadAndSettle());
+  }
+
+  /**
+   * Reads the market again; a table of the viewed terminal that said "Нет цен" and has rows now picks its side again (the
+   * market that arrives late: the first sync, which the player does not wait for). A table that had rows keeps the side.
+   */
+  async #reloadAndSettle(): Promise<void> {
+    const sides = sideCounts(this.terminalRows);
+    const wasEmpty = sides.buy === 0 && sides.sell === 0;
+    await this.reloadMarket();
+    if (wasEmpty) this.#settleSide();
   }
 
   /** The click on the indicator of UEX in the header: refreshes the prices now. A click while a sync is going does nothing. */
@@ -571,11 +612,12 @@ class AppState {
   /**
    * Shows the window for the first time, whatever the start came to: the player must always see something
    * (with the mini bar switched off, the window is prepared and stays hidden until it is expanded).
-   * A failure is logged and allows another try.
+   * A failure is logged and allows another try: the next change of the mode makes it (`#changeMode`).
    */
   ensureShown(): void {
     if (this.#shown) return;
     this.#shown = true;
+    this.#showFailed = false;
     void this.#modeQueue(async () => {
       try {
         const visible = this.#wantVisible();
@@ -586,13 +628,21 @@ class AppState {
       } catch {
         // already logged by the window layer
         this.#shown = false;
+        this.#showFailed = true;
       }
     });
   }
 
-  /** Runs one mode change after the previous ones; keeps the window and `mode` consistent. */
-  #changeMode(pick: (current: WindowMode) => WindowMode, reason: string): Promise<void> {
+  /**
+   * Runs one mode change after the previous ones; keeps the window and `mode` consistent. `whenExpanded` runs when this change
+   * is the one that unfolded the window (not when it was unfolded already).
+   */
+  #changeMode(pick: (current: WindowMode) => WindowMode, reason: string, whenExpanded?: () => void): Promise<void> {
     return this.#modeQueue(async () => {
+      // A first show that failed was set back for another try (`ensureShown`), and nothing else would make it: the tray and the
+      // key of the panel come here, so every request to change the window asks for the show again. It runs after this job, when
+      // `mode` is what the request made it. (A show that is still going, or has not started yet, is not repeated.)
+      if (this.#showFailed) this.ensureShown();
       const from = this.mode;
       const next = pick(from);
       if (next === from) return;
@@ -608,6 +658,7 @@ class AppState {
       }
       this.mode = next;
       this.#touch();
+      if (next === 'expanded') whenExpanded?.();
       // before the first show the first show decides what is visible
       if (!this.#windowReady) return;
       try {
@@ -646,10 +697,24 @@ class AppState {
     this.#visible = visible;
   }
 
-  /** The "развернуть" of the mini bar, the tray, a key. */
+  /** Unfolds the window (the start that failed, the scenes of the preview). */
   expand(reason: string): Promise<void> {
     this.#log.info('ui', 'expand', { reason });
     return this.#changeMode(() => 'expanded', reason);
+  }
+
+  /**
+   * The player opens the window by hand: the click on the mini line, the "Показать панель" of the tray. The trigger keys are set
+   * again with it: Windows may have dropped the keyboard hook without a word, and the hook comes back only with `set_trigger_keys`,
+   * which the interface otherwise asks for when a key setting CHANGES. Not when the window is opened by the trigger key itself (the
+   * hook evidently works then: `toggleMode`), and not on a collapse. Nothing waits for it; its failure is `applyTriggers`' own.
+   */
+  expandByHand(reason: string): Promise<void> {
+    this.#log.info('ui', 'expand', { reason });
+    return this.#changeMode(() => 'expanded', reason, () => {
+      this.#log.info('ui', 'apply trigger keys again', { why: reason });
+      void this.applyTriggers().catch(() => undefined);
+    });
   }
 
   /** The "свернуть" button and everything else that puts the window away. */
@@ -820,6 +885,7 @@ class AppState {
       lastActivityAt: this.#lastActivityAt,
       keyboardHeld: this.keyboardHeld,
       busy: this.#busy.size > 0 || this.view === 'settings',
+      startFailed: this.phase === 'failed',
     });
     if (collapse) void this.#changeMode(() => 'mini', `idle ${idleSec} s`);
   }
@@ -870,7 +936,7 @@ class AppState {
     try {
       stops.push(await listen('tray://show-panel', () => {
         this.#log.info('app', 'tray: show panel');
-        void this.expand('tray');
+        void this.expandByHand('tray');
       }));
     } catch (err) {
       this.#log.error('app', 'cannot listen for the tray event', { err });
@@ -946,8 +1012,16 @@ class AppState {
 
   /** "Я здесь": the viewed terminal becomes the current location. */
   async setCurrentTerminal(id: number): Promise<void> {
+    if ((await this.#setLocation(id)) === null) this.#showTerminal(id);
+  }
+
+  /**
+   * The current location is saved (one `ui` line, one setting). It does not touch what the Terminal section shows: "Я здесь" adds
+   * that (`setCurrentTerminal`), a trade does not (`#locateAt`). Returns the sentence of the refusal, `null` when it was saved.
+   */
+  #setLocation(id: number): Promise<string | null> {
     this.#log.info('ui', 'set current terminal', { terminalId: id });
-    if ((await this.updateSetting('currentTerminalId', id)) === null) this.#showTerminal(id);
+    return this.updateSetting('currentTerminalId', id);
   }
 
   /** The Buy / Sell switch of the Terminal section. */
@@ -983,7 +1057,8 @@ class AppState {
   // ---- the Terminal and the Options sections -----------------------------------------------------
 
   /**
-   * Writes a price the player saw (own observation, with the quantity only when typed), reloads the market and
+   * Writes a price the player saw (own observation, with the quantity only when typed), reloads the market (and, in the
+   * background, the statistics: a price is a record of the session) and
    * makes that terminal the VIEWED one (the current location stays where it is). It asks no lookup: prices are
    * entered quietly, one after another, and the "Варианты" on screen are not recounted nor closed (spec 14.8).
    * Returns the sentence to show when the price was not saved, `null` when it was. The market is reloaded in
@@ -1003,6 +1078,9 @@ class AppState {
     this.rowsNow = nowSec();
     if (failure !== null) return failure;
 
+    // a price is a record of the session: its end moves, so the session of the mini line goes on while the player writes prices
+    // (one read of the statistics per price; it never throws and the entry does not wait for it)
+    void stats.reload('price recorded');
     this.#showTerminal(input.terminalId);
     return null;
   }
@@ -1045,6 +1123,7 @@ class AppState {
       withUex: (job) => this.withUex(job),
       isNewest,
       canRun: () => this.settings.scuCapacity > 0,
+      distancesChanged: () => this.#reloadDistances(),
       show: {
         answer: (options, preliminary) => {
           this.lookup = { request, title, options, ...quiet, preliminary, progress: preliminary ? this.lookup.progress : null };
@@ -1121,6 +1200,10 @@ class AppState {
    * Reads the active run again after a trade, and keeps the one the state has when the database says the same (whoever follows
    * `activeRun` by identity, the statistics, is woken only by a change). The market is read again only when something may have
    * been written: a refusal of the service (`TradeError`) wrote nothing, a failure of the database may have written a part.
+   * The run is read after EVERY write of the trade service, a refusal or a failure included (every trade method calls this before
+   * it returns): the service repairs half-written runs before it works, so the run on the screen may be gone or closed by the time
+   * it refuses (`no_active_run`: the player reads «Нет активного рейса», in the form under the row, or as the message of the mini
+   * line and of the notice line for a mark and for a lost cargo), and the screen then stops showing it.
    */
   async #reloadRun(mayHaveWritten: boolean): Promise<void> {
     try {
@@ -1156,9 +1239,20 @@ class AppState {
   }
 
   /**
+   * A trade that was written says where the ship stands: the terminal of the trade becomes the current location, the way
+   * "Я здесь" saves it (spec 14.2: the location is changed by the button and by a trade), with the same line in the log.
+   * Nothing is written or logged when the ship is there already. The terminal that is VIEWED, and its side, are not touched:
+   * the player may have gone to another one while the trade was being written.
+   */
+  async #locateAt(terminalId: number): Promise<void> {
+    if (this.settings.currentTerminalId === terminalId) return;
+    await this.#setLocation(terminalId);
+  }
+
+  /**
    * The player bought. `input.knownScu` is the quantity he saw at the terminal: the diary then keeps "was minus bought".
-   * The first purchase starts the run (and opens its section). Returns the sentence to show at the form when it was not
-   * written, `null` when it was.
+   * The first purchase starts the run (and opens its section). A purchase that was written sets the current location.
+   * Returns the sentence to show at the form when it was not written, `null` when it was.
    */
   buy(input: TradeInput): Promise<string | null> {
     return this.#tradeQueue(async () => {
@@ -1173,14 +1267,19 @@ class AppState {
         mayHaveWritten = !(err instanceof TradeError);
       }
       await this.#reloadRun(mayHaveWritten);
-      if (failure === null && startsRun) void this.openSection(RUN_SECTION);
+      if (failure === null) {
+        await this.#locateAt(input.terminalId);
+        if (startsRun) void this.openSection(RUN_SECTION);
+      }
       return failure;
     });
   }
 
   /**
    * The player sold. `input.knownScu` is what the buyer held before: the diary then keeps "was plus sold". The sale that
-   * empties the hold ends the run, and the target goes with it. Returns the sentence for the form, `null` when it was written.
+   * empties the hold ends the run, and the target goes with it, BEFORE the market is read again: between the end of the run and
+   * the end of the target the window would show a plan with a target of a run that is over. A sale that was written (an income
+   * too) sets the current location. Returns the sentence for the form, `null` when it was written.
    *
    * With `income` the goods were never bought through the application (spec 14.10): the sale is written as a finished run of
    * its own and the run that is going is not touched, so `activeRun` stays the very same object and nothing re-reads the
@@ -1201,9 +1300,10 @@ class AppState {
         failure = this.#tradeFailure(what, err, { ...input });
         mayHaveWritten = !(err instanceof TradeError);
       }
+      if (failure === null && finished) await this.#runEnded('done');
       await this.#reloadRun(mayHaveWritten);
       if (income && mayHaveWritten) void stats.reload('income sale');
-      if (failure === null && finished) await this.#runEnded('done');
+      if (failure === null) await this.#locateAt(input.terminalId);
       return failure;
     });
   }
@@ -1248,13 +1348,13 @@ class AppState {
         mayHaveWritten = !(err instanceof TradeError);
         this.#say(failure, 'error');
       }
+      if (failure === null) await this.#runEnded('lost'); // before the run is read again, as after the last sale
       await this.#reloadRun(mayHaveWritten);
-      if (failure === null) await this.#runEnded('lost');
       return failure;
     });
   }
 
-  /** A run is over (the hold was sold or lost): the target of that run goes. */
+  /** A run is over (the hold was sold or lost): the target of that run goes. Called before the state reads the run that is over. */
   async #runEnded(how: 'done' | 'lost'): Promise<void> {
     this.#log.info('ui', 'run ended, the target is cleared', { how });
     await this.updateSetting('targetTerminalId', null);
@@ -1383,6 +1483,13 @@ class AppState {
     clearTimeout(this.#noticeTimer);
     this.notice = { text, kind };
     this.#noticeTimer = setTimeout(() => this.dismissNotice(), NOTICE_MS);
+  }
+
+  /** The cross of the notice line: the player puts the message away before its time (the timer does it without a line). */
+  closeNotice(): void {
+    if (this.notice === null) return;
+    this.#log.info('ui', 'close notice', { kind: this.notice.kind });
+    this.dismissNotice();
   }
 
   dismissNotice(): void {

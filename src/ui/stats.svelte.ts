@@ -60,8 +60,9 @@ class StatsState {
   /**
    * The latest session while it is going on. Whether it still is depends on the clock, and that is one comparison with
    * `app.now` (no database read): the same object comes back until the pause is over, so nothing downstream moves each second.
-   * The session is as of the last load (a run that changed, the section that was opened): the prices written since do not
-   * extend it here.
+   * The session is as of the last load (a run that changed, a price that was recorded, the section that was opened): the
+   * statistics are read again by each of those, so that a session does not end two hours after its last run while the player
+   * went on writing prices.
    */
   readonly #currentSession = $derived.by(() => currentSession(this.#figures.sessions, app.now));
 

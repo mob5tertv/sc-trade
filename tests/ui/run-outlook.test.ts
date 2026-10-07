@@ -81,12 +81,33 @@ describe('runOutlook, an expected loss', () => {
   });
 });
 
-describe('runOutlook, edges', () => {
+describe('runOutlook, the time of the run', () => {
+  const unknownFlight = { ...ctx, distances: new Map<string, number | null>() };
+
   it('has no rate before any time is known, but still the profit and the ROI', () => {
     const justStarted: RunWithEvents = { run: { ...active.run, startedAt: NOW }, events: active.events };
-    expect(runOutlook(justStarted, market, ref, toTarget2, { ...ctx, distances: new Map() }).expected)
+    expect(runOutlook(justStarted, market, ref, toTarget2, unknownFlight).expected)
       .toEqual({ profit: `≈ ${n('74 880')}`, profitLoss: false, roi: '≈ 13%', rate: '—' });
   });
+  it('has no rate while the flight to the target is not known, however much time has passed since the purchase', () => {
+    // 872 s have passed, and the rate of "74 880 per 872 s" would say the flight is over
+    expect(runOutlook(active, market, ref, toTarget2, unknownFlight).expected)
+      .toEqual({ profit: `≈ ${n('74 880')}`, profitLoss: false, roi: '≈ 13%', rate: '—' });
+  });
+  it('has the rate over the elapsed time once the arrival is marked, whatever is known of the flight', () => {
+    const arrived = withEvents(active, ev({ id: 5, runId: 1, ts: NOW - 600, type: 'depart' }), ev({ id: 6, runId: 1, ts: NOW - 125, type: 'arrive' }));
+    expect(runOutlook(arrived, market, ref, toTarget2, unknownFlight).expected?.rate).toBe('≈ 309k');   // 74 880 per 872 s
+  });
+  it('has the very rate the mini line gives for a run that is partly sold: the whole run counts, not the hold alone', () => {
+    const partly = withEvents(active, sale(5, 40, 6800));
+    const strip = stripModel(partly, market, ref, toTarget2, ctx);
+    if (strip.kind !== 'run') throw new Error('a run was expected');
+    expect(runOutlook(partly, market, ref, toTarget2, ctx).expected?.rate).toBe('≈ 251k');   // 70 880 per 1015 s
+    expect(strip.rate).toBe('≈ 251k/ч');
+  });
+});
+
+describe('runOutlook, edges', () => {
   it('is the result so far for a hold that is empty (nothing to price at a target)', () => {
     const empty = withEvents(active, sale(5, 96, 6900));
     // 96 × 6900 − 587 520 = 74 880, whatever the target is

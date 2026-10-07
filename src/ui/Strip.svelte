@@ -22,7 +22,7 @@
     {model}
     {flash}
     flashKind={app.phase === 'failed' ? 'error' : 'info'}
-    onOpen={() => app.expand('mini click')}
+    onOpen={() => app.expandByHand('mini click')}
     onDepart={next === 'depart' ? () => void app.mark('depart') : undefined}
     onArrive={next === 'arrive' ? () => void app.mark('arrive') : undefined}
   />

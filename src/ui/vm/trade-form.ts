@@ -1,7 +1,6 @@
 import { quantity } from '../../core/routes';
 import { cargoOf } from '../../core/run';
 import type { CargoLine, RunWithEvents, Side } from '../../core/types';
-import { cellEditBase } from './inputs';
 import type { Cell } from './terminal-rows';
 
 // What the trade form under a table row starts with, and what it writes (`tradeMode`: a purchase, a sale of the cargo, or
@@ -48,14 +47,18 @@ export function tradeDefaults(i: DefaultsInput): TradeDefaults {
 }
 
 /**
- * The quantity the player saw at the terminal before the trade, as it goes into the record (`knownScu`): the quantity of
- * my own the row shows, a known zero included, and only while it is still what he read. The estimate of the refill timer
- * (the row remembers the reading it started from, `ownScuBase`) is a calculation, not something he saw: the record then
- * carries no quantity reading. A quantity of UEX is not what the player saw either. The same rule as for what a row of the
- * table saves (`cellEditBase`).
+ * The quantity the trade is counted from, as it goes into the record (`knownScu`): the quantity of my own that the row
+ * shows, a known zero included. When the refill timer has moved it away from the reading (the row remembers the reading it
+ * started from, `ownScuBase`), the row shows the ESTIMATE, and the estimate is what is taken: the diary then keeps "what the
+ * row said less what was bought" (spec 14.3: was 340, bought 300, so 40), and the row goes on from there. A record with
+ * no quantity would leave the old reading in the diary to be grown by the timer again, as if nothing had been bought.
+ * A quantity of UEX is not mine, so it is not taken: the record carries no quantity reading then.
+ *
+ * This is not what a table cell saves when it is edited: an estimate is never written as if the player had typed it
+ * (`cellEditBase`); a trade is a change to a quantity, not a reading of it.
  */
-export function knownScuOf(cell: Pick<Cell, 'own' | 'ownScu' | 'ownScuBase'> | null): number | null {
-  return cell === null ? null : cellEditBase(cell).scu;
+export function knownScuOf(cell: Pick<Cell, 'ownScu'> | null): number | null {
+  return cell === null ? null : cell.ownScu;
 }
 
 /** What the form under a row writes: a purchase, a sale from the hold of the run, or a sale of goods that are not in the hold (an income). */

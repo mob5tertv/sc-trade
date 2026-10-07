@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { RouteOption } from '../../core/routes';
   import type { Settings } from '../../core/settings';
   import RouteList from '../components/RouteList.svelte';
   import Section from '../components/Section.svelte';
@@ -20,6 +21,9 @@
   const open = $derived(app.sectionOpen(SECTION));
   const needsCapacity = $derived(app.settings.scuCapacity <= 0);
   const summary = $derived(optionsSummary({ title: lookup.title, preliminary: lookup.preliminary, progress: lookup.progress }));
+
+  // which option a click opened, for the log: the ids of the trip, no prices
+  const rowContext = (option: RouteOption) => ({ commodityId: option.commodityId, originId: option.originId, destId: option.destId });
 
   const setSort = (sort: Settings['sort']): void => void app.updateSetting('sort', sort);
   const setNearby = (): void => void app.updateSetting('nearby', !app.settings.nearby);
@@ -78,9 +82,10 @@
         emptyText={lookupEmptyText(asked, app.reference)}
         anchorTerminalId={asked.terminalId}
         targetTerminalId={app.settings.targetTerminalId}
-        uexRange={(terminalId, commodityId, side) => uexRangeOf(app.market, terminalId, commodityId, side, app.routeCtx())}
+        uexRange={(terminalId, commodityId, side) => uexRangeOf(app.market, terminalId, commodityId, side, app.routeCtx(undefined, app.rowsNow))}
         onTarget={(option) => void app.setTarget(lookupTarget(option, asked.kind))}
         onClearTarget={() => void app.setTarget(null)}
+        onToggleRow={(option, opened) => app.log.info('ui', opened ? 'options row opened' : 'options row closed', rowContext(option))}
       />
     {/if}
   </Section>

@@ -61,6 +61,17 @@ export function resolveCellEdit(typed: TypedTexts, base: EditBase): CellEdit {
   return { kind: 'save', price: priceToSave, scu: scu?.value ?? null };
 }
 
+/**
+ * Which fields of a refused entry were refused, for the log: their names, never what was typed (a wrong number is the
+ * player's mistake and tells nothing; which field it was is what the line is for).
+ */
+export function rejectedFields(flags: { price: boolean; scu: boolean }): Array<'price' | 'scu'> {
+  const fields: Array<'price' | 'scu'> = [];
+  if (flags.price) fields.push('price');
+  if (flags.scu) fields.push('scu');
+  return fields;
+}
+
 export type TradeInput = { ok: true; scu: number; price: number } | { ok: false; scu: boolean; price: boolean };
 
 /** A trade moves at least one SCU at a price above zero; the flags tell which of the inputs to mark. */

@@ -21,8 +21,10 @@
     error: string | null;
     onConfirm: (trade: { scu: number; price: number }) => void;
     onCancel: () => void;
+    /** The form was confirmed with a number that cannot be a trade (nothing was written): which of the two fields was marked. */
+    onReject?: (fields: { scu: boolean; price: boolean }) => void;
   }
-  let { title, side, defaultScu, defaultPrice, note = null, error, onConfirm, onCancel }: Props = $props();
+  let { title, side, defaultScu, defaultPrice, note = null, error, onConfirm, onCancel, onReject }: Props = $props();
 
   // Seeded from the defaults once, when the form opens: they are plain numbers in the fields, easy to overtype. What the
   // player typed stays when the owner hands in a new `error` (a derived text would start again from the defaults).
@@ -51,8 +53,11 @@
     if (confirmed) return;
     const trade = resolveTrade(scuText, priceText);
     if (!trade.ok) {
+      // the same refusal again (a held Enter) is one refusal: typing clears the marks, so a new one is a new report
+      const again = badScu === trade.scu && badPrice === trade.price;
       badScu = trade.scu;
       badPrice = trade.price;
+      if (!again) onReject?.({ scu: trade.scu, price: trade.price });
       return;
     }
     confirmed = true;

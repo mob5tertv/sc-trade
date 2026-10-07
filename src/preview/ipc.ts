@@ -68,6 +68,18 @@ function physical(value: unknown, fields: [string, string], scale: number): [num
   throw new Error(`expected a Physical or Logical value, got ${JSON.stringify(value)}`);
 }
 
+/**
+ * How many of the next `place_window` calls fail: a scene sets `__previewPlaceWindowFailures` before the application is loaded
+ * (`beforeStart`), to show what the start does with a window that could not be shown the first time.
+ */
+function failsOnPurpose(): boolean {
+  const holder = globalThis as { __previewPlaceWindowFailures?: number };
+  const left = holder.__previewPlaceWindowFailures ?? 0;
+  if (left <= 0) return false;
+  holder.__previewPlaceWindowFailures = left - 1;
+  return true;
+}
+
 export function createIpcHandler(deps: IpcDeps): IpcHandler {
   const { monitor, window: win, sql, log } = deps;
 
@@ -199,6 +211,7 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
         log('info', `[preview] Rust log level set to ${String(args.level)}`);
         return null;
       case 'place_window': {
+        if (failsOnPurpose()) throw new Error('[preview] place_window fails on purpose (a scene asked for it)');
         // src-tauri/src/place.rs: one SetWindowPos for the position and the size, in physical pixels
         const rect = { x: num(args.x, 'x'), y: num(args.y, 'y'), width: num(args.width, 'width'), height: num(args.height, 'height') };
         if (rect.width < 1 || rect.height < 1) throw new Error(`cannot place a window of ${rect.width}x${rect.height}`);
@@ -212,6 +225,7 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
       case 'restore_foreground':
         return win.restoreForeground();
       case 'set_trigger_keys':
+        log('debug', '[preview] set_trigger_keys'); // a scene counts these: how often the application sets the keys again
         return [null, null, null]; // every key is accepted; there is no keyboard hook
       default:
         return UNKNOWN;

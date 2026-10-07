@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { metaSeconds, syncPlan } from '../../src/ui/vm/sync-plan';
+import { metaSeconds, reloadsMidSync, syncPlan } from '../../src/ui/vm/sync-plan';
 
 const NOW = 1_790_000_000;
 const HOUR = 3600;
@@ -28,5 +28,27 @@ describe('syncPlan', () => {
   });
   it('asks for prices again when the migration deleted their mark', () => {
     expect(syncPlan(String(NOW - HOUR), null, NOW)).toEqual({ reference: false, prices: true });
+  });
+});
+
+describe('reloadsMidSync: the first sync shows what has come as it goes', () => {
+  const at = (done: number, total = 70) => ({ done, total });
+
+  it('reads the market again every ten batches of a sync that started with no price of UEX in the cache', () => {
+    const reloads = Array.from({ length: 71 }, (_, done) => done).filter((done) => reloadsMidSync(true, at(done)));
+    expect(reloads).toEqual([10, 20, 30, 40, 50, 60]);
+  });
+
+  it('does not read it at the last batch: the end of the sync reads it anyway', () => {
+    expect(reloadsMidSync(true, at(70))).toBe(false);
+    expect(reloadsMidSync(true, at(20, 20))).toBe(false);
+  });
+
+  it('leaves an ordinary sync as it was: the market is read once, at the end', () => {
+    for (let done = 0; done <= 70; done++) expect(reloadsMidSync(false, at(done))).toBe(false);
+  });
+
+  it('does not read it before the first batch is done', () => {
+    expect(reloadsMidSync(true, at(0))).toBe(false);
   });
 });

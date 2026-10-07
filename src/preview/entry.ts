@@ -179,6 +179,7 @@ async function run(): Promise<void> {
   }
 
   // The real application: main.ts mounts it on import, and `boot()` runs from its root component.
+  scene.beforeStart?.();
   await import('../main');
   const { app } = await import('../ui/state.svelte');
   await waitForStart(app);
