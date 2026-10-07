@@ -6,22 +6,25 @@
 //
 //   npm run preview:sweep [-- --allow-crash "scene a,gallery b"] [--timeout 30]
 //
-// The lists are read from the code, never copied here. ONE dev server and ONE browser serve the whole run (each item is
-// a fresh page load, so each has its own database); both are stopped at the end, with the throw-away profile.
-// It takes no pictures: for those there is `preview:shot`.
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+// The lists are read from the code, never copied here, and through the dev server's own module loader (sweep-lists.mjs),
+// because the scene modules are resolved the way Vite resolves them, not the way plain Node does. ONE dev server and ONE
+// browser serve the whole run (each item is a fresh page load, so each has its own database); both are stopped at the
+// end, with the throw-away profile. Every item has a deadline, so a page that stops answering fails its item and the
+// sweep goes on. It takes no pictures: for those there is `preview:shot`.
 import { parseArgs } from 'node:util';
 import { findBrowser, launchBrowser, pageSocketUrl } from './browser.mjs';
 import { connect } from './cdp.mjs';
-import { projectRoot, startDevServer } from './server.mjs';
-import { exceptionText, findUncaughtErrors, formatItemLine, itemResult, sweepExitCode, sweepItems, sweepSummary } from './uncaught.mjs';
+import { withDeadline } from './deadline.mjs';
+import { startDevServer } from './server.mjs';
+import { loadSweepItems } from './sweep-lists.mjs';
+import { exceptionText, findUncaughtErrors, formatItemLine, itemResult, sweepExitCode, sweepSummary } from './uncaught.mjs';
 
 const HELP = `usage: npm run preview:sweep [-- options]
   --allow-crash <names>  items that show a crash on purpose, as printed ("scene boom") or by the bare name, separated by commas
   --timeout <seconds>    how long an item may take to get ready, default 30`;
 
 const SETTLE_MS = 2000;
+const ITEM_MARGIN_MS = 15_000;
 /** The page of the desktop and the application inside it, as the browser's script sees them. */
 const APP_FRAME = "document.querySelector('#overlay')";
 
@@ -73,6 +76,23 @@ async function clear(/** @type {import('./cdp.mjs').Cdp} */ cdp) {
   }
 }
 
+/**
+ * One item: a blank page, then the item's page; wait until it is ready and settled; judge it by what it threw and logged.
+ * @returns {Promise<import('./uncaught.mjs').ItemResult>}
+ */
+async function visit(
+  /** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {string} */ url, /** @type {import('./uncaught.mjs').SweepItem} */ item,
+  /** @type {number} */ timeout, /** @type {string[]} */ exceptions, /** @type {boolean} */ allowCrash,
+) {
+  await clear(cdp);
+  exceptions.length = 0;
+  await cdp.send('Page.navigate', { url: `${url}/preview.html?${new URLSearchParams({ ...item.params, monitor: item.monitor, zoom: '1' })}` });
+  const { failure } = await waitReady(cdp, timeout);
+  const log = await tryEvaluate(cdp, `${APP_FRAME}.contentWindow.__preview?.log ?? []`);
+  const errors = findUncaughtErrors({ log: log ?? [], exceptions });
+  return itemResult({ name: item.name, errors, allowCrash, failure });
+}
+
 async function main() {
   const { values } = parseArgs({ options: { 'allow-crash': { type: 'string' }, timeout: { type: 'string' }, help: { type: 'boolean' } } });
   if (values.help) {
@@ -82,12 +102,8 @@ async function main() {
   const timeout = Number(values.timeout ?? 30);
   if (!(timeout > 0)) throw new Error(`--timeout must be a number of seconds, not "${values.timeout}"`);
   const allowed = new Set((values['allow-crash'] ?? '').split(',').map((name) => name.trim()).filter((name) => name !== ''));
-
-  // the lists come from the code: Node reads the TypeScript files as they are (they import nothing at run time)
-  const { SCENES } = await import(pathToFileURL(resolve(projectRoot, 'src/preview/scenes.ts')).href);
-  const { GALLERY_PAGES } = await import(pathToFileURL(resolve(projectRoot, 'src/preview/gallery/page-names.ts')).href);
-  const items = sweepItems({ scenes: SCENES.map((/** @type {{ name: string }} */ s) => s.name), pages: [...GALLERY_PAGES] });
-  const width = Math.max(0, ...items.map((item) => item.name.length));
+  // getting ready (`--timeout`), settling, and a margin for the page to go blank and the answers to come back
+  const itemDeadlineMs = timeout * 1000 + SETTLE_MS + ITEM_MARGIN_MS;
 
   /** @type {Array<() => Promise<void>>} */
   const cleanups = [];
@@ -101,6 +117,9 @@ async function main() {
   try {
     const { server, url } = await startDevServer({ quiet: true });
     cleanups.push(() => server.close());
+    // the lists come from the code, through the module loader of this very server (see sweep-lists.mjs)
+    const items = await loadSweepItems(server);
+    const width = Math.max(0, ...items.map((item) => item.name.length));
     const browser = await launchBrowser(findBrowser());
     cleanups.push(() => browser.close());
     const cdp = await connect(await pageSocketUrl(browser.port));
@@ -116,18 +135,15 @@ async function main() {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 
     for (const item of items) {
+      const bare = item.name.slice(item.name.indexOf(' ') + 1); // "scene boom" -> "boom"
+      const allowCrash = allowed.has(item.name) || allowed.has(bare);
       let result;
       try {
-        await clear(cdp);
-        exceptions.length = 0;
-        await cdp.send('Page.navigate', { url: `${url}/preview.html?${new URLSearchParams({ ...item.params, monitor: item.monitor, zoom: '1' })}` });
-        const { failure } = await waitReady(cdp, timeout);
-        const log = await tryEvaluate(cdp, `${APP_FRAME}.contentWindow.__preview?.log ?? []`);
-        const errors = findUncaughtErrors({ log: log ?? [], exceptions });
-        const bare = item.name.slice(item.name.indexOf(' ') + 1); // "scene boom" -> "boom"
-        result = itemResult({ name: item.name, errors, allowCrash: allowed.has(item.name) || allowed.has(bare), failure });
+        // one deadline around the whole item: a page that stops answering must not hang the sweep
+        result = await withDeadline(visit(cdp, url, item, timeout, exceptions, allowCrash), itemDeadlineMs, `item "${item.name}"`);
       } catch (err) {
-        result = itemResult({ name: item.name, errors: [], failure: { exitCode: 1, message: err instanceof Error ? err.message : String(err) } });
+        const errors = findUncaughtErrors({ log: [], exceptions }); // what the page threw before it went quiet still counts
+        result = itemResult({ name: item.name, errors, allowCrash, failure: { exitCode: 1, message: err instanceof Error ? err.message : String(err) } });
       }
       results.push(result);
       console.log(formatItemLine(result, width));
