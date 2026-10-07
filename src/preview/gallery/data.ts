@@ -89,24 +89,30 @@ export interface GalleryDeps { db: Db; log: Logger; uex: UexClient; now: number 
 
 /**
  * A price the player saw at the viewed terminal: how much of the UEX price it is, how long ago, and what quantity went
- * with it. `before` is the reading of the same price he made earlier (without a quantity): the triangle next to the
- * price tells how it moved since.
+ * with it. `before` are the readings of the same price he made earlier (without a quantity unless said): the
+ * triangle next to the price tells how it moved since the latest of them that is not a correction of the price.
  */
 interface PlayerPrice {
   code: string; side: Side; factor: number; ageMin: number; scu: number | null;
-  before?: { factor: number; ageMin: number };
+  before?: Array<{ factor: number; ageMin: number; scu?: number }>;
 }
 
 const PLAYER_PRICES: PlayerPrice[] = [
-  { code: 'PFOO', side: 'buy', factor: 1.02, ageMin: 95, scu: 210, before: { factor: 1.1, ageMin: 260 } }, // warm, with a quantity; bought cheaper than before: the price fell
-  { code: 'HYDR', side: 'buy', factor: 0.98, ageMin: 205, scu: null, before: { factor: 0.98, ageMin: 330 } }, // cooling: UEX range stays next to it; the same price as before
+  { code: 'PFOO', side: 'buy', factor: 1.02, ageMin: 95, scu: 210, before: [{ factor: 1.1, ageMin: 260 }] }, // warm, with a quantity; bought cheaper than before: the price fell
+  { code: 'HYDR', side: 'buy', factor: 0.98, ageMin: 205, scu: null, before: [{ factor: 0.98, ageMin: 330 }] }, // cooling: UEX range stays next to it; the same price as before
   { code: 'ALUM', side: 'buy', factor: 1.04, ageMin: 300, scu: 300 }, // cold: the table falls back to the UEX price and remembers mine
   { code: 'BERY', side: 'buy', factor: 1.0, ageMin: 400, scu: null }, // cold, and UEX has nothing here: the table keeps mine as a hint
-  { code: 'SCRA', side: 'buy', factor: 9, ageMin: 3, scu: null }, // hot, a slip of the finger: far outside the history of UEX
+  // hot, a slip of the finger: far outside the history of UEX. It follows readings of the stock (its refill rate is
+  // learned from them, the estimate counts from the last one), so its line in the expanded row is the longest there is:
+  // a five-digit price that moved, the estimate with its base, the learned rate and the warning
+  {
+    code: 'SCRA', side: 'buy', factor: 9, ageMin: 3, scu: null,
+    before: [{ factor: 1.0, ageMin: 600, scu: 80 }, { factor: 1.0, ageMin: 420, scu: 260 }, { factor: 1.02, ageMin: 200, scu: 150 }],
+  },
   { code: 'GOLD', side: 'buy', factor: 0.85, ageMin: 11, scu: 80 }, // the terminal buys it, but its purchase price was seen too: a row with two sides
-  { code: 'TUNG', side: 'sell', factor: 1.03, ageMin: 14, scu: 640, before: { factor: 0.95, ageMin: 190 } }, // hot, with what the buyer already holds; sells dearer than before: the price rose
-  { code: 'DIAM', side: 'sell', factor: 1.06, ageMin: 130, scu: 0, before: { factor: 1.12, ageMin: 400 } }, // warm, an empty buyer; sells cheaper than before: the price fell
-  { code: 'LARA', side: 'sell', factor: 1.0, ageMin: 40, scu: null, before: { factor: 1.0, ageMin: 200 } }, // hot, the same price as before
+  { code: 'TUNG', side: 'sell', factor: 1.03, ageMin: 14, scu: 640, before: [{ factor: 0.95, ageMin: 190 }] }, // hot, with what the buyer already holds; sells dearer than before: the price rose
+  { code: 'DIAM', side: 'sell', factor: 1.06, ageMin: 130, scu: 0, before: [{ factor: 1.12, ageMin: 400 }] }, // warm, an empty buyer; sells cheaper than before: the price fell
+  { code: 'LARA', side: 'sell', factor: 1.0, ageMin: 40, scu: null, before: [{ factor: 1.0, ageMin: 200 }] }, // hot, the same price as before
 ];
 
 /** What the gallery buys on top of the run of the dataset to make a cargo that does not fit a line. */
@@ -139,7 +145,7 @@ async function writePlayerPrices(deps: GalleryDeps, ref: Reference): Promise<voi
       ts: deps.now - ageMin * 60 - 5, terminalId: VIEWED_TERMINAL, commodityId, side: p.side,
       price: Math.max(1, Math.round((base * factor) / 5) * 5), scu,
     });
-    if (p.before) await write(p.before.factor, p.before.ageMin, null);
+    for (const earlier of p.before ?? []) await write(earlier.factor, earlier.ageMin, earlier.scu ?? null);
     await write(p.factor, p.ageMin, p.scu);
   }
 }

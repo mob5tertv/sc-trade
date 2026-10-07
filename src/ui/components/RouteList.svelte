@@ -87,7 +87,7 @@
             {#if row.bothEnds}<span class="arrow">→</span><span class="end">{row.dest}</span>{/if}
             {#if row.isTarget}<span class="goal" title="Цель рейса">цель</span>{/if}
           </span>
-          <span class="cell sc-num">
+          <span class="cell sc-num" class:hint={!row.priceIsOwn}>
             <TrendMark trend={row.trend} />
             <span class="digits">{row.price.price}</span>
             <TempBadge compact text={row.price.badge.text} kind={row.price.badge.kind} />
@@ -127,8 +127,8 @@
 <style>
   .grid {
     display: grid;
-    /* the price column holds the triangle slot (8 px + 4), the number and its 6 px mark */
-    grid-template-columns: minmax(0, 1fr) 60px 64px 36px 40px;
+    /* the price column holds the number and its 6 px mark (48 px) and the slot of the triangle with the gap before the number */
+    grid-template-columns: minmax(0, 1fr) calc(48px + var(--sc-trend-w) + 4px) 64px 36px 40px;
     column-gap: 4px;
     align-items: center;
     padding: 0 var(--sc-pad-x);
@@ -219,6 +219,11 @@
     justify-content: flex-end;
     gap: 4px;
     min-width: 0;
+  }
+
+  /* a UEX price and my cold one are muted, as in the table; mine is normal text */
+  .cell.hint {
+    color: var(--sc-muted);
   }
 
   .digits,

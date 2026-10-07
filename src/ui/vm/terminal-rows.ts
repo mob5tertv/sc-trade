@@ -57,6 +57,12 @@ export function sideCounts(rows: Array<Pick<TerminalRow, 'buy' | 'sell'>>): { bu
   return { buy: rows.filter(row => row.buy !== null).length, sell: rows.filter(row => row.sell !== null).length };
 }
 
+/**
+ * My own price as the screens show it: a price that is not cold. A cold one gives way to the UEX price, or stays only
+ * as a muted hint when UEX has nothing. The table and the list of trips draw the one in normal text, the other muted.
+ */
+export const isOwnPrice = (e: Estimate): boolean => e.source === 'own' && e.temp !== 'cold';
+
 /** A flat price or one without bounds is no range. */
 const rangeOfUex = (e: Estimate | null): Cell['range'] =>
   e !== null && e.source === 'uex' && e.low > 0 && e.high > e.low ? { low: e.low, high: e.high } : null;
@@ -85,7 +91,7 @@ function cell(m: Market, terminalId: number, commodityId: number, side: Side, ct
     ownScuRate: stock?.rateSource ?? null,
     hintScu: e.scuOrigin === 'uex' ? e.scu : null,
   };
-  if (e.source === 'own' && e.temp !== 'cold') {
+  if (isOwnPrice(e)) {
     const row = m.uex.get(priceKey(terminalId, commodityId));
     return {
       own: e.price, ...quantity, hint: null,

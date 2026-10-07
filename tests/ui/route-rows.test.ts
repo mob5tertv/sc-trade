@@ -78,7 +78,7 @@ describe('routeOptionRow', () => {
       price: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
       roi: '13%', rate: '256k', worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
       origin: 'ARC-L1', dest: 'TDD Area 18', bothEnds: true, isTarget: false, tier: 'ok',
-      invested: nb('587 520'), profit: nb('74 880'), profitLoss: false, trend: null,
+      invested: nb('587 520'), profit: nb('74 880'), profitLoss: false, trend: null, priceIsOwn: false,
       buy: { price: nb('6 120'), range: null, badge: { text: 'моя · 40 мин', kind: 'hot' } },
       sell: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
     });
@@ -127,6 +127,29 @@ describe('routeOptionRow', () => {
       const still = option({ buy: moving.buy, sell: own({ price: 6900, prev: { price: 6900, ageSec: 7200 } }) });
       expect(routeOptionRow(still, ref, 'from', new Map()).trend).toBeNull();
       expect(routeOptionRow(option(), ref, 'to', new Map()).trend).toBeNull(); // my own price, no previous reading
+    });
+  });
+
+  describe('whose price stands in the «Цена» column: mine is normal text, UEX and cold are muted', () => {
+    const own = (partial: Partial<Estimate> = {}) => estimate({ source: 'own', temp: 'hot', ...partial });
+
+    it('is mine while it is hot, warm or cooling', () => {
+      for (const temp of ['hot', 'warm', 'cooling'] as const) {
+        expect(routeOptionRow(option({ sell: own({ temp }) }), ref, 'from', new Map()).priceIsOwn, temp).toBe(true);
+        expect(routeOptionRow(option({ buy: own({ temp }) }), ref, 'to', new Map()).priceIsOwn, temp).toBe(true);
+      }
+    });
+
+    it('is not mine for a UEX price, and not for my cold price kept only because UEX has no row', () => {
+      expect(routeOptionRow(option(), ref, 'from', new Map()).priceIsOwn).toBe(false); // the sale price is UEX
+      expect(routeOptionRow(option({ sell: own({ temp: 'cold' }) }), ref, 'from', new Map()).priceIsOwn).toBe(false);
+      expect(routeOptionRow(option({ buy: own({ temp: 'cold' }) }), ref, 'to', new Map()).priceIsOwn).toBe(false);
+    });
+
+    it('looks at the price of the column: the sale price for trips from here, the purchase price for trips to here', () => {
+      const mixed = option(); // bought at my own hot price, sold at the UEX one
+      expect(routeOptionRow(mixed, ref, 'from', new Map()).priceIsOwn).toBe(false);
+      expect(routeOptionRow(mixed, ref, 'to', new Map()).priceIsOwn).toBe(true);
     });
   });
 

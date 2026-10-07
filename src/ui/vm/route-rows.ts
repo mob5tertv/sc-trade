@@ -8,7 +8,7 @@ import { priceTrend } from './price-trend';
 import type { PriceTrend } from './price-trend';
 import { roiTier } from './roi-tier';
 import type { RoiTier } from './roi-tier';
-import { badgeText } from './terminal-rows';
+import { badgeText, isOwnPrice } from './terminal-rows';
 
 // Display rows of the route suggestions and of the "sell here or fly on" block. Every number is already formatted.
 
@@ -112,6 +112,8 @@ export interface RouteOptionRow {
   price: PriceView;
   /** How that price moved since my previous reading of it (a sale price for trips from here, a purchase price for trips to here); `null` for no triangle. */
   trend: PriceTrend | null;
+  /** That price is mine and not cold: drawn in normal text; a UEX price or a cold one of mine is muted, as in the table. */
+  priceIsOwn: boolean;
   /** `roi` in whole percents (`formatRoi`); `rate` without its unit, the caption of the column says "UEC/ч". */
   roi: string; rate: string;
   /** The profit at the unfavourable end of both price ranges, and whether it is a loss. */
@@ -159,6 +161,7 @@ export function routeOptionRow(
     runs: runCounts.get(pairKey(o.originId, o.destId)) ?? 0,
     price: from ? sellView : buyView,
     trend: from ? priceTrend(o.sell, 'sell') : priceTrend(o.buy, 'buy'),
+    priceIsOwn: isOwnPrice(from ? o.sell : o.buy),
     roi: formatRoi(o.roi), rate: perHourBare(o.uecPerHour),
     worst: formatUec(o.worstProfit), worstLoss: o.worstProfit < 0,
     qty: `${o.qty} SCU`,

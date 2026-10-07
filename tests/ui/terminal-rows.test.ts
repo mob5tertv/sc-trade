@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { badgeText, cellScu, sideCounts, terminalRows, uexRangeOf } from '../../src/ui/vm/terminal-rows';
+import { badgeText, cellScu, isOwnPrice, sideCounts, terminalRows, uexRangeOf } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
 import { obs, px, ref } from '../helpers/factories';
@@ -318,6 +318,17 @@ describe('cellScu', () => {
     const m = buildMarket([px(1, 10, { buy: { avgWeek: 6000 }, dateModified: NOW - 7200 })], []);
     expect(cellScu(buyOf(m), 'buy')).toBeNull();
     expect(cellScu(null, 'sell')).toBeNull();
+  });
+});
+
+describe('isOwnPrice', () => {
+  it('is true for my own price while it is hot, warm or cooling', () => {
+    for (const temp of ['hot', 'warm', 'cooling'] as const) expect(isOwnPrice({ ...est, source: 'own', temp }), temp).toBe(true);
+  });
+
+  it('is false for my cold price and for a UEX price', () => {
+    expect(isOwnPrice({ ...est, source: 'own', temp: 'cold' })).toBe(false);
+    expect(isOwnPrice({ ...est, source: 'uex', temp: null })).toBe(false);
   });
 });
 

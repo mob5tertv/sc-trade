@@ -80,7 +80,9 @@ describe('priceTrend: the hint', () => {
     expect(priceTrend(moved(985, 1_020), 'buy')?.title).toBe(hint('1 020', '2 ч назад', '-35'));
   });
 
-  it('does not say "now ago" for a reading younger than a minute', () => {
+  it('does not say "now ago" for a reading younger than a minute; from a minute on it counts the minutes', () => {
     expect(priceTrend(moved(2350, 2300, 20), 'sell')?.title).toBe(hint('2 300', 'только что', '+50'));
+    expect(priceTrend(moved(2350, 2300, 59), 'sell')?.title).toBe(hint('2 300', 'только что', '+50'));
+    expect(priceTrend(moved(2350, 2300, 60), 'sell')?.title).toBe(hint('2 300', '1 мин назад', '+50'));
   });
 });

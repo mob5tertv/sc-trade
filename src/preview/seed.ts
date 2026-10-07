@@ -282,10 +282,12 @@ const OWN_OBSERVATIONS: OwnObservation[] = [
   { terminal: 11, code: 'STIM', side: 'sell', jitter: 1.05, scu: null, age: ago.h(4) },
   { terminal: 6, code: 'STIM', side: 'sell', jitter: 1.01, scu: null, age: ago.m(33) }, // hot
   { terminal: 6, code: 'STIM', side: 'sell', jitter: 1.01, scu: null, age: ago.h(2) },
-  // and the readings before two purchase prices above, those of the trips to HUR-L1: Diamond at Everus Harbor fell,
-  // Gold at ARC-L1 rose
+  // and the readings before purchase prices of the trips to HUR-L1: Diamond at Everus Harbor (above) fell, Gold at
+  // ARC-L1 (above) rose, Gold at Port Tressler stayed
   { terminal: 9, code: 'DIAM', side: 'buy', jitter: 1.1, scu: null, age: ago.h(7) },
   { terminal: 1, code: 'GOLD', side: 'buy', jitter: 0.94, scu: null, age: ago.h(3) },
+  { terminal: 11, code: 'GOLD', side: 'buy', jitter: 1.0, scu: null, age: ago.m(50) }, // hot
+  { terminal: 11, code: 'GOLD', side: 'buy', jitter: 1.0, scu: null, age: ago.h(3) },
 ];
 
 // ---------------------------------------------------------------------------------------------------

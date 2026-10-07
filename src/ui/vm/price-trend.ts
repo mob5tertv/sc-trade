@@ -14,8 +14,9 @@ export interface PriceTrend {
 /** 'было 2 300 · 2 ч назад (+50)': the previous price, how long ago it was seen and the signed difference. */
 function trendTitle(price: number, prev: { price: number; ageSec: number }): string {
   const diff = price - prev.price;
-  const age = formatAge(prev.ageSec);
-  return `было ${formatUec(prev.price)} · ${age === 'сейчас' ? 'только что' : `${age} назад`} (${diff > 0 ? '+' : ''}${formatUec(diff)})`;
+  // a reading younger than a minute has no age to count (it cannot happen with the real gap rule, 120 s)
+  const ago = prev.ageSec < 60 ? 'только что' : `${formatAge(prev.ageSec)} назад`;
+  return `было ${formatUec(prev.price)} · ${ago} (${diff > 0 ? '+' : ''}${formatUec(diff)})`;
 }
 
 /**
