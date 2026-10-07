@@ -82,9 +82,9 @@ export const INDICATOR_SCENES: readonly Scene[] = [
     },
   },
   {
-    // two batches could not be fetched even terminal by terminal: «UEX недоступен» in the warning colour; the tooltip counts the terminals
+    // two batches could not be fetched even terminal by terminal: «UEX офлайн 12 мин» (the age of the data) in the warning colour; the tooltip counts the terminals
     name: 'indicator-failed',
-    title: 'Шапка после неудачного обновления: «UEX недоступен», подсказка называет число терминалов',
+    title: 'Шапка после неудачного обновления: «UEX офлайн 12 мин», подсказка называет число терминалов',
     dataset: 'default',
     act: async (app) => {
       await app.expand('preview');

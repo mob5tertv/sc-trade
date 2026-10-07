@@ -46,7 +46,7 @@ import { markRefusal } from './vm/run-phase';
 import { sameRun } from './vm/same-run';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
 import { validateSetting } from './vm/settings-validation';
-import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, syncPlan } from './vm/sync-plan';
+import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, reloadsMidSync, syncPlan } from './vm/sync-plan';
 import { stripModel, type StripModel } from './vm/strip';
 import { rowRoiMap, type RowRoi } from './vm/row-roi';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
@@ -324,6 +324,8 @@ class AppState {
   #openIds = $derived(parseOpenSections(this.settings.openSections));
   #noticeTimer: ReturnType<typeof setTimeout> | undefined;
   #backgroundStarted = false;
+  /** The market is being read again in the middle of a price sync. */
+  #reloadingMidSync = false;
   /** Lookups overlap when the player asks again; only the newest one may show its answer. */
   readonly #latestLookup = createLatestRequest();
 
@@ -495,9 +497,15 @@ class AppState {
     this.priceSync = { ...PRICE_SYNC_IDLE, running: true, unfetched: this.priceSync.unfetched };
     let unfetched = 0;
     try {
-      const result = await this.withUex(() => syncPrices(this.#syncDeps(), ({ done, total }) => {
-        this.priceSync = { running: true, done, total, unfetched: this.priceSync.unfetched };
-      }));
+      const result = await this.withUex(() => {
+        // The first launch: the cache has no price of UEX, and ~70 requests are before the first table. The market is read again
+        // as the sync goes (a read of the database: nothing here asks the UEX queue, whose job this is).
+        const startedEmpty = this.market.uex.size === 0;
+        return syncPrices(this.#syncDeps(), (progress) => {
+          this.priceSync = { running: true, done: progress.done, total: progress.total, unfetched: this.priceSync.unfetched };
+          if (reloadsMidSync(startedEmpty, progress)) void this.#reloadWhileSyncing();
+        });
+      });
       this.pricesOk = result.failed === 0;
       unfetched = result.unfetched;
     } catch (err) {
@@ -505,10 +513,32 @@ class AppState {
       this.#log.warn('ui', 'price sync failed', { err });
     }
     try {
-      await this.reloadMarket();
+      await this.#reloadAndSettle();
     } finally {
       this.priceSync = { ...PRICE_SYNC_IDLE, unfetched };
     }
+  }
+
+  /** The market is read again in the middle of a price sync (not when the previous such read is still going). Never throws. */
+  async #reloadWhileSyncing(): Promise<void> {
+    if (this.#reloadingMidSync) return;
+    this.#reloadingMidSync = true;
+    try {
+      await this.#reloadAndSettle();
+    } finally {
+      this.#reloadingMidSync = false;
+    }
+  }
+
+  /**
+   * Reads the market again; a table of the viewed terminal that said "Нет цен" and has rows now picks its side again (the
+   * market that arrives late: the first sync, which the player does not wait for). A table that had rows keeps the side.
+   */
+  async #reloadAndSettle(): Promise<void> {
+    const sides = sideCounts(this.terminalRows);
+    const wasEmpty = sides.buy === 0 && sides.sell === 0;
+    await this.reloadMarket();
+    if (wasEmpty) this.#settleSide();
   }
 
   /** The click on the indicator of UEX in the header: refreshes the prices now. A click while a sync is going does nothing. */
@@ -1004,7 +1034,8 @@ class AppState {
   // ---- the Terminal and the Options sections -----------------------------------------------------
 
   /**
-   * Writes a price the player saw (own observation, with the quantity only when typed), reloads the market and
+   * Writes a price the player saw (own observation, with the quantity only when typed), reloads the market (and, in the
+   * background, the statistics: a price is a record of the session) and
    * makes that terminal the VIEWED one (the current location stays where it is). It asks no lookup: prices are
    * entered quietly, one after another, and the "Варианты" on screen are not recounted nor closed (spec 14.8).
    * Returns the sentence to show when the price was not saved, `null` when it was. The market is reloaded in
@@ -1024,6 +1055,9 @@ class AppState {
     this.rowsNow = nowSec();
     if (failure !== null) return failure;
 
+    // a price is a record of the session: its end moves, so the session of the mini line goes on while the player writes prices
+    // (one read of the statistics per price; it never throws and the entry does not wait for it)
+    void stats.reload('price recorded');
     this.#showTerminal(input.terminalId);
     return null;
   }

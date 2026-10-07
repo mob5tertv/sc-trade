@@ -1,3 +1,5 @@
+import { saveReference } from '../data/repo/uex-cache';
+import { installPriceFake } from './fake-prices';
 import { installHttpFake, type FakeAnswer } from './http-fake';
 import type { Scene, SceneApp } from './scenes';
 
@@ -17,7 +19,56 @@ async function forgetTheFlight(app: SceneApp): Promise<void> {
   await app.loadFromDb();
 }
 
+/** Waits until `done()` is true; a scene that waits for what never comes fails with what it waited for. */
+async function until(what: string, done: () => boolean, timeoutMs = 8000): Promise<void> {
+  const deadline = performance.now() + timeoutMs;
+  while (!done()) {
+    if (performance.now() > deadline) throw new Error(`the scene waited ${timeoutMs / 1000} s for ${what}`);
+    await pause(25);
+  }
+}
+
+/** The terminal the first sync scene looks at: Orbituary, where the player has no price of his own. UEX answers for it with the rows of the side it buys on only. */
+const VIEWED = 16;
+
 export const REPAIR_SCENES: readonly Scene[] = [
+  {
+    // The header at its fullest: another terminal is viewed, so the button «Я здесь» is there beside the field, the freshness of UEX says
+    // «UEX офлайн 12 мин» (the longest of its texts), and the three icons and «Маршрут» stand as always. One line, nothing cut off.
+    name: 'indicator-failed-here',
+    title: 'Шапка с «Я здесь» и «UEX офлайн 12 мин»: одна строка, ничего не обрезано',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      installPriceFake({ rows: () => app.market.uex.values(), failTerminals: new Set([2, 7, 8]) });
+      app.setViewTerminal(12);
+      await app.syncPricesNow();
+      await pause(100);
+    },
+  },
+  {
+    // The first launch: the cache has no price of UEX (the reference is there) and the first sync goes: 34 live terminals, 17 batches of
+    // two; the gate holds the 13th request. The market is read again after the 10th batch, so the table of Orbituary (which UEX answers
+    // for with what it BUYS only) is full already, on «Продать» and not on an empty «Купить», while the header counts «UEX 12/17».
+    name: 'first-sync-fills',
+    title: 'Первый запуск: цены UEX грузятся (12 пакетов из 17), таблица терминала, который только покупает, уже заполнена и стоит на «Продать»',
+    dataset: 'default',
+    act: async (app) => {
+      const { db } = app.suggestDeps();
+      const uex = [...app.market.uex.values()].filter((p) => p.terminalId !== VIEWED || p.buy.last === 0);
+      const own = [...app.reference.terminals.values()];
+      await saveReference(db, { terminals: [...own, ...own.map((t) => ({ ...t, id: t.id + 100 }))] });
+      await db.execute('DELETE FROM uex_price');
+      await db.execute("DELETE FROM uex_meta WHERE key = 'prices_synced_at'");
+      await app.loadFromDb();
+      await app.expand('preview');
+      app.setViewTerminal(VIEWED);
+      const fake = installPriceFake({ rows: () => uex, passes: 12 });
+      void app.syncPricesNow();
+      await until('the 13th price request', () => fake.asked() >= 13);
+      await pause(300);
+    },
+  },
   {
     // The mini line is switched off and the start fails after the settings were read (an empty database, no network): the window
     // is hidden by that setting, and the error would not be seen. It unfolds with the text of the error instead.

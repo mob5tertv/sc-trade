@@ -35,9 +35,17 @@ export const PRICE_SYNC_IDLE: PriceSync = { running: false, done: 0, total: 0, u
 const EMPTY_FIELD_TITLE = 'Выбери локацию: три буквы и Enter';
 const REFRESH_HINT = 'Нажми, чтобы обновить цены сейчас';
 
-/** 'UEX 12 мин': the age alone; the long form with 'назад' or the date of the cached data is the tooltip. */
+/**
+ * 'UEX 12 мин': the age alone; the long form with 'назад' or the date of the cached data is the tooltip. When UEX does not
+ * answer, the same age says which data these are: 'UEX офлайн 3 ч' (spec 10: "UEX недоступен, данные от …"; the full phrase with
+ * the date is the tooltip). Without any data there is no age to say: 'UEX недоступен'.
+ */
 function uexShort(pricesSyncedAt: number | null, uexOk: boolean, now: number): string {
-  if (!uexOk) return 'UEX недоступен';
+  if (!uexOk) {
+    if (pricesSyncedAt === null) return 'UEX недоступен';
+    const age = Math.max(0, now - pricesSyncedAt);
+    return `UEX офлайн ${age < 60 ? '0 мин' : formatAge(age)}`;
+  }
   if (pricesSyncedAt === null) return 'UEX не загружен';
   const age = Math.max(0, now - pricesSyncedAt);
   return age < 60 ? 'UEX сейчас' : `UEX ${formatAge(age)}`;
