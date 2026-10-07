@@ -40,11 +40,16 @@ describe('release names and versions', () => {
       'Cargo.toml': cargoString(cargoPackage, 'version'),
       'tauri.conf.json': tauriConf.version,
     };
+    // equal to one another, whatever the number is: a version bump touches the three files and not this test
     expect(versions).toEqual({
-      'package.json': '0.1.0',
-      'Cargo.toml': '0.1.0',
-      'tauri.conf.json': '0.1.0',
+      'package.json': versions['package.json'],
+      'Cargo.toml': versions['package.json'],
+      'tauri.conf.json': versions['package.json'],
     });
+  });
+
+  it('the version is a semantic version: major.minor.patch, with an optional pre-release', () => {
+    expect(packageJson.version).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);
   });
 
   it('the product is called SC Trade', () => {

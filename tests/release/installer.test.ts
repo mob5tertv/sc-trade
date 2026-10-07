@@ -10,7 +10,7 @@ interface Bundle {
   icon: string[];
   publisher?: string;
   shortDescription?: string;
-  windows?: { nsis?: { installMode?: string } };
+  windows?: { nsis?: { installMode?: string; installerIcon?: string; uninstallerIcon?: string } };
 }
 
 const bundle = (JSON.parse(readFileSync(resolve(tauriDir, 'tauri.conf.json'), 'utf8')) as { bundle: Bundle }).bundle;
@@ -33,6 +33,13 @@ describe('the installer', () => {
   it('lists the icons Windows needs, and every one of them is in the repository', () => {
     expect(bundle.icon).toContain('icons/icon.ico');
     for (const icon of bundle.icon) expect(existsSync(resolve(tauriDir, icon)), icon).toBe(true);
+  });
+
+  it('gives the installer and the uninstaller the application icon, not the stock one of NSIS', () => {
+    const nsis = bundle.windows?.nsis;
+    expect(nsis?.installerIcon).toBe('icons/icon.ico');
+    expect(nsis?.uninstallerIcon).toBe('icons/icon.ico');
+    expect(existsSync(resolve(tauriDir, nsis?.installerIcon ?? 'missing'))).toBe(true);
   });
 
   it('keeps the source of the icon next to the generated set', () => {
