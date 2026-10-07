@@ -48,6 +48,7 @@ import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/s
 import { validateSetting } from './vm/settings-validation';
 import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, syncPlan } from './vm/sync-plan';
 import { stripModel, type StripModel } from './vm/strip';
+import { rowRoiMap, type RowRoi } from './vm/row-roi';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
 import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
@@ -131,6 +132,7 @@ const EMPTY_REFERENCE: Reference = { starSystems: [], terminals: new Map(), comm
 const EMPTY_MARKET: Market = {
   uex: new Map(), own: new Map(), byTerminal: new Map(), byCommodity: new Map(), stock: new Map(), ownScu: new Map(), ownPrev: new Map(),
 };
+const NO_ROW_ROI: ReadonlyMap<number, RowRoi> = new Map();
 const IDLE_LOOKUP: LookupState = { request: null, title: '', options: [], loading: false, error: null, preliminary: false, progress: null };
 
 /** Prices are fetched again every hour (spec 6). */
@@ -208,6 +210,23 @@ class AppState {
     } catch (err) {
       this.#log.error('ui', 'cannot build the terminal rows', { terminalId, err });
       return [];
+    }
+  });
+
+  /**
+   * The best ROI of each commodity of the table that is drawn (the viewed terminal, `terminalSide`), by commodity id: the
+   * search of the options over the market that is in memory, with the settings of the options and without their limit on
+   * the number (`vm/row-roi.ts`). It hangs on the market, the viewed terminal, the side, the settings and the 15 s clock of
+   * the rows (the prices cool), never on the one-second clock; it never throws: a failure is logged and shows no values.
+   */
+  rowRoi = $derived.by((): ReadonlyMap<number, RowRoi> => {
+    const terminalId = this.viewTerminalId;
+    if (terminalId === null) return NO_ROW_ROI;
+    try {
+      return rowRoiMap(this.market, terminalId, this.terminalSide, this.routeCtx(undefined, this.rowsNow));
+    } catch (err) {
+      this.#log.error('ui', 'cannot count the ROI of the rows', { terminalId, err });
+      return NO_ROW_ROI;
     }
   });
 

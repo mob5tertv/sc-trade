@@ -11,6 +11,8 @@ const SORTS: ReadonlyArray<Settings['sort']> = ['uecPerHour', 'roi'];
 // replaced by the first change the player makes.
 const OPACITY_RANGE = { min: 0.5, max: 1 };
 const PANEL_WIDTH_RANGE = { min: 380, max: 640 };
+// Whole percent of ROI; 0 marks every row that pays at all
+const ROI_HIGHLIGHT_RANGE = { min: 0, max: 500 };
 
 const NOT_A_NUMBER = 'Введите число';
 const THRESHOLD_ORDER = 'Пороги должны быть больше нуля и расти: горячая < тёплая < остывает';
@@ -54,6 +56,10 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
 
     case 'topN':
       return isNumber(v) && Number.isInteger(v) && v >= 1 ? null : 'Целое число не меньше 1';
+    case 'roiHighlightPct':
+      return isNumber(v) && Number.isInteger(v) && v >= ROI_HIGHLIGHT_RANGE.min && v <= ROI_HIGHLIGHT_RANGE.max
+        ? null
+        : `Целое число от ${ROI_HIGHLIGHT_RANGE.min} до ${ROI_HIGHLIGHT_RANGE.max}`;
     case 'quantumSpeedKkms':
       return isNumber(v) && v > 0 ? null : 'Число больше нуля';
     case 'overheadMin':

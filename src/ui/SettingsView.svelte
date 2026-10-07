@@ -11,7 +11,7 @@
 
   type NumberKey =
     | 'scuCapacity' | 'budget' | 'hotMin' | 'warmMin' | 'coolingMin' | 'quantumSpeedKkms'
-    | 'overheadMin' | 'overheadEmptyMin' | 'topN' | 'refillFullMin' | 'panelWidth' | 'idleCollapseSec';
+    | 'overheadMin' | 'overheadEmptyMin' | 'topN' | 'refillFullMin' | 'roiHighlightPct' | 'panelWidth' | 'idleCollapseSec';
   type TriggerKey = 'hotkeyPanel' | 'hotkeyDepart' | 'hotkeyArrive';
 
   const TRIGGERS: ReadonlyArray<{ key: TriggerKey; name: TriggerName; label: string }> = [
@@ -88,7 +88,7 @@
   const summaries = $derived({
     ship: headerModel(app.reference, s, app.pricesSyncedAt, app.uexOk, app.now).ship,
     fresh: `${s.hotMin} / ${s.warmMin} / ${s.coolingMin} мин`,
-    routes: `вариантов: ${s.topN}`,
+    routes: `вариантов: ${s.topN} · ROI от ${s.roiHighlightPct}%`,
     keys: [s.hotkeyPanel, s.hotkeyDepart, s.hotkeyArrive].filter((key) => key !== '').join(', ') || 'не назначены',
     window: `${s.panelWidth} px · ${Math.round(s.opacity * 100)}%`,
     data: `журнал: ${s.logLevel}`,
@@ -159,6 +159,9 @@
   {@render numberField('overheadEmptyMin', 'Накладные на пустой перелёт, мин')}
   {@render numberField('topN', 'Число вариантов')}
   {@render numberField('refillFullMin', 'Полное пополнение склада, мин')}
+  {@render numberField('roiHighlightPct', 'Выделять ROI от, %', {
+    title: 'Строка таблицы с таким ROI и выше выделяется цветной полосой. 0 — выделять всё, что в плюсе.',
+  })}
 {/snippet}
 
 {#snippet keys()}

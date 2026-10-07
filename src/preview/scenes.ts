@@ -3,6 +3,7 @@ import type { DatasetName } from './datasets';
 import { ANCHOR_SCENES } from './scenes-anchor';
 import { INCOME_SCENES } from './scenes-income';
 import { INDICATOR_SCENES } from './scenes-indicators';
+import { ROI_SCENES } from './scenes-roi';
 import { RUN_SCENES } from './scenes-run';
 import { STATS_SCENES } from './scenes-stats';
 
@@ -40,6 +41,7 @@ const openRow = (code: string): Promise<void> => click('.table button.line', cod
 
 // To add a scene: one more entry below. To add a dataset: `datasets.ts` and `seed.ts`.
 export const SCENES: readonly Scene[] = [
+  ...ROI_SCENES,
   ...RUN_SCENES,
   { name: 'mini', title: 'Мини-строка, без рейса', dataset: 'default' },
   { name: 'mini-run', title: 'Мини-строка в рейсе', dataset: 'run' },

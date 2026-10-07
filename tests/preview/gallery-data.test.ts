@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import type { Db } from '../../src/data/db';
 import { LADDER_ROI, NO_DATA_TERMINAL, VIEWED_TERMINAL, type GalleryData } from '../../src/preview/gallery/data';
 import { routeOptionRow } from '../../src/ui/vm/route-rows';
 import { roiTier } from '../../src/ui/vm/roi-tier';
@@ -7,11 +8,13 @@ import { galleryWithDiary, priceMoves } from '../helpers/price-trend-fixtures';
 import type { PriceMove } from '../helpers/price-trend-fixtures';
 
 let data: GalleryData;
+let diary: Db;
 /** The prices of mine that have an earlier reading in the diary the gallery data was read from. */
 let moves: PriceMove[];
 beforeAll(async () => {
   const loaded = await galleryWithDiary();
   data = loaded.data;
+  diary = loaded.db;
   moves = await priceMoves(loaded.db);
 });
 
@@ -255,5 +258,46 @@ describe('the gallery run, mini line and history', () => {
     expect(data.history.length).toBeGreaterThanOrEqual(2);
     expect(data.sessions.length).toBeGreaterThanOrEqual(1);
     expect(data.routeStats.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('the gallery tables with the best ROI of their rows', () => {
+  const idOf = (code: string): number => {
+    const found = [...data.reference.commodities.values()].find((c) => c.code === code);
+    if (found === undefined) throw new Error(`no commodity ${code}`);
+    return found.id;
+  };
+  const threshold = (): number => data.settings.roiHighlightPct;
+
+  it('has the ROI of the rows of the viewed terminal on both sides, from the search over the market of the dataset', () => {
+    expect(data.roi.here.buy.size).toBeGreaterThanOrEqual(3);
+    expect(data.roi.here.sell.size).toBeGreaterThanOrEqual(3);
+    for (const best of [...data.roi.here.buy.values(), ...data.roi.here.sell.values()]) expect(best.roi).toBeGreaterThan(0);
+    // every value belongs to a row of the table of its side
+    for (const id of data.roi.here.buy.keys()) expect(data.rows.find((r) => r.commodityId === id)?.buy, `${id} buy`).not.toBeNull();
+    for (const id of data.roi.here.sell.keys()) expect(data.rows.find((r) => r.commodityId === id)?.sell, `${id} sell`).not.toBeNull();
+  });
+
+  it('has the table of Lorville with a row of every tier on the sell side, four rows at or above the threshold and two without a trip', () => {
+    const { rows, sell } = data.roi.lorville;
+    const values = rows.filter((r) => r.sell !== null).map((r) => sell.get(r.commodityId)?.roi);
+    expect(new Set(values.filter((v) => v !== undefined).map((v) => roiTier(v ?? 0)))).toEqual(new Set(['great', 'good', 'ok', 'poor']));
+    expect(values.filter((v) => v !== undefined && v >= threshold() / 100 - 0.005)).toHaveLength(4);
+    expect(values.filter((v) => v === undefined)).toHaveLength(2);
+    expect(sell.has(idOf('QUAR'))).toBe(false);
+    expect(sell.has(idOf('BERY'))).toBe(false);
+  });
+
+  it('has the table of Lorville on the buy side: Gold above the threshold, a lower tier each, Scrap without a trip', () => {
+    const { buy } = data.roi.lorville;
+    expect(buy.get(idOf('GOLD'))?.roi).toBeGreaterThanOrEqual(threshold() / 100);
+    expect(buy.get(idOf('TUNG'))?.roi).toBeLessThan(threshold() / 100);
+    expect(buy.has(idOf('SCRA'))).toBe(false);
+    expect(new Set([...buy.values()].map((b) => roiTier(b.roi)))).toEqual(new Set(['great', 'good', 'ok', 'poor']));
+  });
+
+  it('writes the prices of Lorville at `now`, so that the diary the other states are tested against does not have them', async () => {
+    const found = await diary.select<{ n: number }>('SELECT COUNT(*) AS n FROM observation WHERE terminal_id = ? AND ts >= ?', [data.roi.lorville.terminalId, data.now]);
+    expect(found[0].n).toBe(0);
   });
 });
