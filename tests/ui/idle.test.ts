@@ -10,6 +10,7 @@ const READY: IdleInput = {
   pointerInside: false,
   keyboardHeld: false,
   busy: false,
+  startFailed: false,
 };
 
 const withInput = (change: Partial<IdleInput>): IdleInput => ({ ...READY, ...change });
@@ -52,6 +53,13 @@ describe('shouldCollapse', () => {
   it('does not collapse while something keeps the window busy (a dialog, the settings)', () => {
     expect(shouldCollapse(withInput({ busy: true }))).toBe(false);
     expect(shouldCollapse(withInput({ busy: true, now: 1_000_000 }))).toBe(false);
+  });
+
+  it('does not collapse while the start has failed: the window is the error, and with the mini line off nothing would show it any more', () => {
+    expect(shouldCollapse(withInput({ startFailed: true }))).toBe(false);
+    expect(shouldCollapse(withInput({ startFailed: true, now: 1_000_000 }))).toBe(false);
+    // and the rule is the only thing that holds it: the same window with the start well collapses
+    expect(shouldCollapse(withInput({ startFailed: false, now: 1_000_000 }))).toBe(true);
   });
 
   it('works with a short and with a long limit', () => {

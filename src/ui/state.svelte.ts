@@ -871,6 +871,7 @@ class AppState {
       lastActivityAt: this.#lastActivityAt,
       keyboardHeld: this.keyboardHeld,
       busy: this.#busy.size > 0 || this.view === 'settings',
+      startFailed: this.phase === 'failed',
     });
     if (collapse) void this.#changeMode(() => 'mini', `idle ${idleSec} s`);
   }

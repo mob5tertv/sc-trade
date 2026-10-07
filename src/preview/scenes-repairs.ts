@@ -77,6 +77,18 @@ export const REPAIR_SCENES: readonly Scene[] = [
     dataset: 'empty-no-strip',
   },
   {
+    // The start failed with the mini line off and the window unfolded by itself; the player looks away. It folds after 2 seconds
+    // without activity unless the failed start holds it: `--do "hover:.sc-root;leave;wait:4500"` must find it still expanded, with the
+    // error (the minus button still folds it: `--do "click:button[aria-label='Свернуть']"`).
+    name: 'boot-failed-idle',
+    title: 'Запуск не удался, мини-строка выключена, курсор ушёл, idle 2 с: окно с ошибкой не сворачивается',
+    dataset: 'empty-no-strip',
+    act: async (app) => {
+      await app.updateSetting('idleCollapseSec', 2);
+      app.pointer(true);
+    },
+  },
+  {
     // The first show of the window fails (`place_window` is refused once). The window stays hidden; the tray's «Показать панель»
     // (`expand('tray')`, the same call) shows it again, and this time it works.
     name: 'show-fails-once',
