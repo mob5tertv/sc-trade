@@ -73,6 +73,11 @@ import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 //  - UEX health is tracked per sync (`referenceOk`, `pricesOk`); `uexOk` is both together. A price sync, the background
 //    one and the one the player starts by a click on the indicator of the header (`refreshPrices`), is one thing at a
 //    time and shows how far it is in `priceSync`;
+//  - the smaller queues, each one job at a time: `#sectionQueue` (the open sections are written to the settings one by one),
+//    `#triggerQueue` (the trigger keys are bound one change at a time) and `#syncReads` (the reads of the market that belong to
+//    a price sync, one in the middle of a first sync and one at the end of each, in the order they were asked, so that the last
+//    read is the one that lands last). The read in the middle is started from the job of the UEX queue that runs the sync, so a
+//    job of `#syncReads` only reads the database and never asks the UEX queue;
 //  - the Terminal section: `terminalRows` (the table of the viewed terminal, on a 15 s clock), `terminalSide` (the
 //    side of it that is drawn), `recordPrice` (writes what the player saw, and nothing else: it asks no lookup), and
 //    the lookup (`lookup`, `runLookup`, `rerunLookup`, `newRoute`, `closeLookup`): where to buy / where to sell, in
@@ -716,15 +721,17 @@ class AppState {
 
   /**
    * The player opens the window by hand: the click on the mini line, the "Показать панель" of the tray. The trigger keys are set
-   * again with it: Windows may have dropped the keyboard hook without a word, and the hook comes back only with `set_trigger_keys`,
-   * which the interface otherwise asks for when a key setting CHANGES. Not when the window is opened by the trigger key itself (the
-   * hook evidently works then: `toggleMode`), and not on a collapse. Nothing waits for it; its failure is `applyTriggers`' own.
+   * again with it, when at least one is assigned: Windows removes a keyboard hook whose thread answered too late, without a word,
+   * and only a new `set_trigger_keys` brings it back. The Rust side does that at EVERY call that leaves a key assigned, the keys
+   * being the same or not: it takes the hook out and installs a new one (`refresh_hook` in `input_hook.rs`). The interface otherwise
+   * asks for it at the start and when a key setting CHANGES. With no key assigned there is no hook, and nothing is asked. Not when
+   * the window is opened by the trigger key itself (the hook evidently works then: `toggleMode`), and not on a collapse. Nothing
+   * waits for it; its failure is `applyTriggers`' own.
    */
   expandByHand(reason: string): Promise<void> {
     this.#log.info('ui', 'expand', { reason });
     return this.#changeMode(() => 'expanded', reason, () => {
-      // With no key assigned there is no hook to bring back (the Rust side holds one only while a key is assigned): that is by far
-      // the usual case, and not worth a line in the log and a call into Rust at every click on the mini line.
+      // no key assigned (by far the usual case): no hook to bring back, and no line in the log and call into Rust at every click
       const s = this.settings;
       if ([s.hotkeyPanel, s.hotkeyDepart, s.hotkeyArrive].every((key) => key.trim() === '')) return;
       this.#log.info('ui', 'apply trigger keys again', { why: reason });
@@ -1217,10 +1224,13 @@ class AppState {
    * Reads the active run again after a trade, and keeps the one the state has when the database says the same (whoever follows
    * `activeRun` by identity, the statistics, is woken only by a change). The market is read again only when something may have
    * been written: a refusal of the service (`TradeError`) wrote nothing, a failure of the database may have written a part.
-   * The run is read after EVERY write of the trade service, a refusal or a failure included (every trade method calls this before
-   * it returns): the service repairs half-written runs before it works, so the run on the screen may be gone or closed by the time
-   * it refuses (`no_active_run`: the player reads «Нет активного рейса», in the form under the row, or as the message of the mini
-   * line and of the notice line for a mark and for a lost cargo), and the screen then stops showing it.
+   * The run is read after EVERY call of the trade service, a refusal or a failure included (every trade method calls this after
+   * the service answered, before it returns): the service repairs half-written runs before it works, so the run on the screen may
+   * be gone or closed by the time it refuses (`no_active_run`: the player reads «Нет активного рейса», in the form under the row,
+   * or as the message of the mini line and of the notice line for a mark and for a lost cargo), and the screen then stops showing it.
+   * The one way out without it is a mark that `markRefusal` turns down by the run the state holds (no run there, or the mark
+   * repeats the last one: «Взлёт уже отмечен»): the service was not asked, nothing was written, and `mark` returns the refusal
+   * at once, without reading the run again.
    */
   async #reloadRun(mayHaveWritten: boolean): Promise<void> {
     try {
