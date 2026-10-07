@@ -161,11 +161,35 @@ async function syncPriceBatch(d: SyncDeps, batch: number[], syncedAt: number): P
 }
 
 /**
- * Refreshes the prices of every live terminal, two terminals per request. Never throws because of UEX;
- * `failed` counts the batches with a terminal that could not be fetched even alone, and only a run
- * without such a batch marks the prices fresh.
+ * How far one `syncPrices` run is, counted in price batches (two terminals each): a batch counts as done when it is
+ * finished, fetched or not (its retry terminal by terminal belongs to it).
  */
-export async function syncPrices(d: SyncDeps): Promise<{ batches: number; failed: number }> {
+export interface PriceProgress {
+  /** Batches finished. */
+  done: number;
+  /** All the batches of this run; it does not change. */
+  total: number;
+}
+
+/** What one `syncPrices` run did: `failed` is counted in batches, `unfetched` in terminals. */
+export interface PriceSyncResult {
+  batches: number;
+  /** Batches with at least one terminal that could not be fetched even alone. */
+  failed: number;
+  /** Terminals that could not be fetched even alone: their stored rows stay as they were. */
+  unfetched: number;
+}
+
+/**
+ * Refreshes the prices of every live terminal, two terminals per request. Never throws because of UEX;
+ * `failed` counts the batches with a terminal that could not be fetched even alone (`unfetched` counts those
+ * terminals), and only a run without such a batch marks the prices fresh.
+ *
+ * `onProgress` is called before the first request (`done: 0`) and after every batch; the last call is complete
+ * (`done === total`). With no live terminal there is nothing to report and it is never called. A callback that
+ * throws is logged and ignored, so the prices already fetched are never lost.
+ */
+export async function syncPrices(d: SyncDeps, onProgress?: (progress: PriceProgress) => void): Promise<PriceSyncResult> {
   const { db, log } = d;
   const syncedAt = d.now();
   const terminalIds = (await db.select<{ id: number }>('SELECT id FROM uex_terminal WHERE is_available_live = 1 ORDER BY id'))
@@ -175,28 +199,41 @@ export async function syncPrices(d: SyncDeps): Promise<{ batches: number; failed
   // Nothing was fetched, so there is nothing to call fresh.
   if (terminalIds.length === 0) {
     log.warn('sync', 'prices sync skipped: no live terminals in the cache');
-    return { batches: 0, failed: 0 };
+    return { batches: 0, failed: 0, unfetched: 0 };
   }
+
+  const total = Math.ceil(terminalIds.length / PRICE_BATCH_SIZE);
+  const report = (done: number): void => {
+    try {
+      onProgress?.({ done, total });
+    } catch (err) {
+      log.warn('sync', 'progress callback failed', { reason: reason(err) });
+    }
+  };
+  report(0);
 
   let batches = 0;
   let failed = 0;
+  let unfetched = 0;
   for (let i = 0; i < terminalIds.length; i += PRICE_BATCH_SIZE) {
     const batch = terminalIds.slice(i, i + PRICE_BATCH_SIZE);
     const unresolved = await syncPriceBatch(d, batch, syncedAt);
     batches++;
     if (unresolved.length > 0) {
       failed++;
+      unfetched += unresolved.length;
       log.warn('sync', 'price batch incomplete, old rows kept', { batch: batches, terminalIds: batch, unresolved });
     } else {
       log.info('sync', 'price batch done', { batch: batches, terminalIds: batch });
     }
+    report(batches);
   }
 
   if (failed === 0) await setMeta(db, META_PRICES, String(syncedAt));
-  const end = { batches, failed, terminals: terminalIds.length };
+  const end = { batches, failed, unfetched, terminals: terminalIds.length };
   if (failed === 0) log.info('sync', 'prices sync finished', end);
   else log.warn('sync', 'prices sync finished with failures', end);
-  return { batches, failed };
+  return { batches, failed, unfetched };
 }
 
 // ---------------------------------------------------------------------------
