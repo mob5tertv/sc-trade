@@ -6,13 +6,16 @@
 //! really shows the system cursor in its "cursor mode" (and not a cursor of its own while the system one
 //! stays hidden). This watcher only measures that; it changes nothing about the window.
 //!
-//! Every 100 ms a thread reads three flags: the system cursor is visible (`GetCursorInfo`), the cursor
-//! is over our window (the top-level window under it belongs to our process), and our window is the
-//! active one. A line goes to the log only when the three flags change.
+//! Every 100 ms a thread reads four flags: the system cursor is visible (`GetCursorInfo`: the display
+//! counter of `ShowCursor`), the cursor has a shape (its handle is not null: `SetCursor(NULL)` hides a
+//! cursor without touching the counter), the cursor is over our window (the top-level window under it
+//! belongs to our process), and our window is the active one. A line goes to the log only when one of
+//! the four changes.
 //!
-//! PRIVACY — the log gets the three flags and a duration in milliseconds, nothing else: no cursor
-//! position, no window title or class, no name or id of any other process. The position and the window
-//! handles are used inside one poll and dropped; the process ids are only compared with ours.
+//! PRIVACY — the log gets the four flags and a duration in milliseconds, nothing else: no cursor
+//! position, no cursor handle (only whether it is null), no window title or class, no name or id of any
+//! other process. The position and the window handles are used inside one poll and dropped; the process
+//! ids are only compared with ours.
 //!
 //! The decision "what goes to the log" (`Tracker`) is plain data in, text out, with the time as a
 //! parameter, so it is tested without Windows. The Windows calls are in `sys`.
@@ -28,14 +31,17 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// The span over which changes are counted, and the length of one summary.
 const RATE_WINDOW_MS: u64 = 1_000;
 
-/// More changes than this within `RATE_WINDOW_MS` are flicker: single lines give way to a summary.
-const MAX_CHANGES_PER_WINDOW: usize = 10;
+/// More changes than this within `RATE_WINDOW_MS` are flicker: single lines give way to a summary. The poll
+/// sees at most one change per `POLL_INTERVAL`, so 10 a second can never be exceeded; 5 can.
+const MAX_CHANGES_PER_WINDOW: usize = 5;
 
 /// What one poll found out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CursorState {
     /// The system cursor is visible (`CURSOR_SHOWING`).
     pub visible: bool,
+    /// The cursor has a shape: its handle is not null.
+    pub shape: bool,
     /// The window under the cursor belongs to our process.
     pub over_overlay: bool,
     /// The active (foreground) window belongs to our process.
@@ -46,8 +52,8 @@ impl fmt::Display for CursorState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "visible={} over_overlay={} overlay_active={}",
-            self.visible, self.over_overlay, self.overlay_active
+            "visible={} shape={} over_overlay={} overlay_active={}",
+            self.visible, self.shape, self.over_overlay, self.overlay_active
         )
     }
 }
@@ -194,6 +200,7 @@ mod sys {
 
         Ok(CursorState {
             visible: info.flags.0 & CURSOR_SHOWING.0 != 0,
+            shape: !info.hCursor.0.is_null(),
             over_overlay: window_process_id(top_under_cursor) == own_pid,
             overlay_active: window_process_id(foreground) == own_pid,
         })
@@ -252,17 +259,26 @@ pub fn start() {
 mod tests {
     use super::*;
 
-    const fn state(visible: bool, over_overlay: bool, overlay_active: bool) -> CursorState {
+    const fn state(
+        visible: bool,
+        shape: bool,
+        over_overlay: bool,
+        overlay_active: bool,
+    ) -> CursorState {
         CursorState {
             visible,
+            shape,
             over_overlay,
             overlay_active,
         }
     }
 
-    /// The game hides the cursor; our window is neither under it nor active.
-    const HIDDEN: CursorState = state(false, false, false);
-    const SHOWN: CursorState = state(true, false, false);
+    /// The game hides the cursor with the display counter (`ShowCursor(FALSE)`): the flag is cleared and
+    /// the cursor keeps its shape. Our window is neither under the cursor nor active.
+    const HIDDEN: CursorState = state(false, true, false, false);
+    const SHOWN: CursorState = state(true, true, false, false);
+    /// Everything off: the base for "each flag alone".
+    const ALL_OFF: CursorState = state(false, false, false, false);
 
     /// The state after the `i`-th change when the changes alternate and the start is `HIDDEN`.
     fn flip(i: u64) -> CursorState {
@@ -279,7 +295,7 @@ mod tests {
         let mut t = Tracker::default();
         assert_eq!(
             t.observe(HIDDEN, 40),
-            ["[cursor] visible=false over_overlay=false overlay_active=false"]
+            ["[cursor] visible=false shape=true over_overlay=false overlay_active=false"]
         );
     }
 
@@ -298,7 +314,9 @@ mod tests {
         t.observe(SHOWN, 1_000);
         assert_eq!(
             t.observe(HIDDEN, 3_450),
-            ["[cursor] visible=false over_overlay=false overlay_active=false prev_ms=2450"]
+            [
+                "[cursor] visible=false shape=true over_overlay=false overlay_active=false prev_ms=2450"
+            ]
         );
     }
 
@@ -310,36 +328,62 @@ mod tests {
         t.observe(HIDDEN, 5_100);
         assert_eq!(
             t.observe(SHOWN, 5_700),
-            ["[cursor] visible=true over_overlay=false overlay_active=false prev_ms=700"]
+            [
+                "[cursor] visible=true shape=true over_overlay=false overlay_active=false prev_ms=700"
+            ]
         );
     }
 
     #[test]
     fn each_flag_alone_makes_a_change() {
         for changed in [
-            state(true, false, false),
-            state(false, true, false),
-            state(false, false, true),
+            state(true, false, false, false),
+            state(false, true, false, false),
+            state(false, false, true, false),
+            state(false, false, false, true),
         ] {
             let mut t = Tracker::default();
-            t.observe(HIDDEN, 0);
+            t.observe(ALL_OFF, 0);
             let lines = t.observe(changed, 100);
             assert_eq!(lines, [format!("[cursor] {changed} prev_ms=100")]);
         }
     }
 
     #[test]
-    fn the_line_has_the_three_flags_and_a_duration_and_nothing_else() {
+    fn a_game_that_hides_the_cursor_by_dropping_its_shape_is_told_apart_from_one_that_clears_the_flag()
+     {
+        // `ShowCursor(FALSE)`: the visible flag goes, the shape stays.
+        let mut by_counter = Tracker::default();
+        by_counter.observe(SHOWN, 0);
+        assert_eq!(
+            by_counter.observe(HIDDEN, 100),
+            [
+                "[cursor] visible=false shape=true over_overlay=false overlay_active=false prev_ms=100"
+            ]
+        );
+        // `SetCursor(NULL)`: the shape goes, the visible flag stays.
+        let mut by_shape = Tracker::default();
+        by_shape.observe(SHOWN, 0);
+        assert_eq!(
+            by_shape.observe(state(true, false, false, false), 100),
+            [
+                "[cursor] visible=true shape=false over_overlay=false overlay_active=false prev_ms=100"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_line_has_the_four_flags_and_a_duration_and_nothing_else() {
         let mut t = Tracker::default();
         let mut lines = t.observe(HIDDEN, 0);
-        lines.extend(t.observe(state(true, true, true), 1_234));
+        lines.extend(t.observe(state(true, true, true, true), 1_234));
         assert_eq!(lines.len(), 2);
         for line in lines {
             let body = line.strip_prefix("[cursor] ").expect("the module prefix");
             for part in body.split(' ') {
                 let (key, value) = part.split_once('=').expect("only key=value parts");
                 let allowed = match key {
-                    "visible" | "over_overlay" | "overlay_active" => {
+                    "visible" | "shape" | "over_overlay" | "overlay_active" => {
                         value == "true" || value == "false"
                     }
                     "prev_ms" => value.chars().all(|c| c.is_ascii_digit()),
@@ -351,48 +395,61 @@ mod tests {
     }
 
     #[test]
-    fn ten_changes_in_a_second_are_still_single_lines() {
+    fn five_changes_in_a_second_are_still_single_lines() {
         let mut t = Tracker::default();
         t.observe(HIDDEN, 0);
-        for i in 1..=10 {
-            let lines = t.observe(flip(i), i * 100);
+        for i in 1..=5 {
+            let lines = t.observe(flip(i), i * 10);
             assert_eq!(lines.len(), 1, "change {i}: {lines:?}");
-            assert!(lines[0].ends_with("prev_ms=100"));
+            assert!(lines[0].ends_with("prev_ms=10"));
         }
     }
 
     #[test]
-    fn more_than_ten_changes_in_a_second_are_summed_up_instead_of_written_one_by_one() {
+    fn more_than_five_changes_in_a_second_are_summed_up_instead_of_written_one_by_one() {
         let mut t = Tracker::default();
         t.observe(HIDDEN, 0);
-        // Ten changes 50 ms apart are single lines; the eleventh starts the flicker and is not written.
-        for i in 1..=10 {
+        // Five changes 50 ms apart are single lines; the sixth starts the flicker and is not written.
+        for i in 1..=5 {
             assert_eq!(t.observe(flip(i), i * 50).len(), 1, "change {i}");
         }
-        assert!(t.observe(flip(11), 550).is_empty());
+        assert!(t.observe(flip(6), 300).is_empty());
         // The flicker goes on for the rest of the second, with no line for any change.
-        for i in 12..=30 {
-            assert!(
-                t.observe(flip(i), 500 + (i - 10) * 50).is_empty(),
-                "change {i}"
-            );
+        for i in 7..=25 {
+            assert!(t.observe(flip(i), i * 50).is_empty(), "change {i}");
         }
-        // 1500 ms: the summary window (opened at 550) has run out. 20 changes were held back (11..=30)
-        // and the state is that of change 30, which is HIDDEN.
-        assert_eq!(t.observe(flip(31), 1_550), [summary(20, HIDDEN)]);
+        // 1300 ms: the summary window (opened at 300) has run out. 20 changes were held back (6..=25)
+        // and the state is that of change 25.
+        assert_eq!(t.observe(flip(26), 1_300), [summary(20, flip(25))]);
+    }
+
+    #[test]
+    fn a_cursor_that_flips_on_every_poll_is_flicker() {
+        let mut t = Tracker::default();
+        t.observe(HIDDEN, 0);
+        // The fastest change the 100 ms poll can see: one per poll.
+        for i in 1..=5 {
+            assert_eq!(t.observe(flip(i), i * 100).len(), 1, "change {i}");
+        }
+        assert!(t.observe(flip(6), 600).is_empty());
+        for i in 7..=15 {
+            assert!(t.observe(flip(i), i * 100).is_empty(), "change {i}");
+        }
+        // Changes 6..=15 were held back.
+        assert_eq!(t.observe(flip(16), 1_600), [summary(10, flip(15))]);
     }
 
     #[test]
     fn the_summary_is_written_by_a_poll_that_sees_no_change() {
         let mut t = Tracker::default();
         t.observe(HIDDEN, 0);
-        for i in 1..=11 {
+        for i in 1..=6 {
             t.observe(flip(i), i * 10);
         }
-        // 11 changes, the last one (held back) at 110 ms and in state SHOWN; the window opened then.
-        assert!(t.observe(SHOWN, 1_000).is_empty());
-        assert!(t.observe(SHOWN, 1_109).is_empty());
-        assert_eq!(t.observe(SHOWN, 1_110), [summary(1, SHOWN)]);
+        // 6 changes, the last one (held back) at 60 ms and in state HIDDEN; the window opened then.
+        assert!(t.observe(HIDDEN, 1_000).is_empty());
+        assert!(t.observe(HIDDEN, 1_059).is_empty());
+        assert_eq!(t.observe(HIDDEN, 1_060), [summary(1, HIDDEN)]);
     }
 
     #[test]
@@ -408,9 +465,9 @@ mod tests {
                 }
             }
         }
-        // The flicker starts at the eleventh change (550 ms); a summary follows each second.
+        // The flicker starts at the sixth change (300 ms); a summary follows each second.
         let times: Vec<u64> = summaries.iter().map(|(at, _)| *at).collect();
-        assert_eq!(times, [1_550, 2_550, 3_550, 4_550]);
+        assert_eq!(times, [1_300, 2_300, 3_300, 4_300]);
         // 20 changes per second, each window counted from its own start.
         assert!(
             summaries
@@ -424,18 +481,20 @@ mod tests {
     fn single_lines_return_when_the_flicker_stops() {
         let mut t = Tracker::default();
         t.observe(HIDDEN, 0);
-        for i in 1..=30 {
-            t.observe(flip(i), i * 50); // flicker from 550 ms; the last change, 30, is at 1500 ms: HIDDEN
+        for i in 1..=25 {
+            t.observe(flip(i), i * 50); // flicker from 300 ms; the last change, 25, is at 1250 ms: SHOWN
         }
-        // Nothing changes any more. The window that opened at 550 ms is over at 1550 ms: 20 changes, so the
+        // Nothing changes any more. The window that opened at 300 ms is over at 1300 ms: 20 changes, so the
         // flicker is not over yet and a new window opens.
-        assert_eq!(t.observe(HIDDEN, 1_600).len(), 1);
+        assert_eq!(t.observe(SHOWN, 1_300), [summary(20, SHOWN)]);
         // The next window had no change at all: nothing is written, and the flicker is over.
-        assert!(t.observe(HIDDEN, 2_600).is_empty());
-        // A change now is a single line again, and its duration runs from change 30.
+        assert!(t.observe(SHOWN, 2_300).is_empty());
+        // A change now is a single line again, and its duration runs from change 25.
         assert_eq!(
-            t.observe(SHOWN, 3_000),
-            ["[cursor] visible=true over_overlay=false overlay_active=false prev_ms=1500"]
+            t.observe(HIDDEN, 3_000),
+            [
+                "[cursor] visible=false shape=true over_overlay=false overlay_active=false prev_ms=1750"
+            ]
         );
     }
 
@@ -443,14 +502,14 @@ mod tests {
     fn a_last_window_with_few_changes_is_still_summed_up_and_ends_the_flicker() {
         let mut t = Tracker::default();
         t.observe(HIDDEN, 0);
-        for i in 1..=12 {
-            t.observe(flip(i), i * 50); // flicker from 550 ms (the 11th change); the 12th is at 600 ms: HIDDEN
+        for i in 1..=7 {
+            t.observe(flip(i), i * 50); // flicker from 300 ms (the 6th change); the 7th is at 350 ms: SHOWN
         }
-        // The window of 550 ms holds 2 changes (11th and 12th), which is not flicker any more: it is
-        // summed up and the flicker ends.
-        assert_eq!(t.observe(HIDDEN, 1_550), [summary(2, HIDDEN)]);
+        // The window of 300 ms holds 2 changes (6th and 7th), which is not flicker any more: it is summed
+        // up and the flicker ends.
+        assert_eq!(t.observe(SHOWN, 1_300), [summary(2, SHOWN)]);
         // Single lines again.
-        assert_eq!(t.observe(SHOWN, 1_650).len(), 1);
+        assert_eq!(t.observe(HIDDEN, 1_400).len(), 1);
     }
 
     #[test]
@@ -458,22 +517,22 @@ mod tests {
      {
         let mut t = Tracker::default();
         t.observe(HIDDEN, 0);
-        for i in 1..=12 {
+        for i in 1..=7 {
             t.observe(flip(i), i * 50);
         }
-        let lines = t.observe(SHOWN, 1_550);
+        let lines = t.observe(HIDDEN, 1_300);
         assert_eq!(lines.len(), 2, "{lines:?}");
-        assert_eq!(lines[0], summary(2, HIDDEN));
+        assert_eq!(lines[0], summary(2, SHOWN));
         assert!(lines[1].ends_with("prev_ms=950"), "{lines:?}");
     }
 
     #[test]
-    fn slow_changes_never_count_as_flicker() {
+    fn five_changes_a_second_for_a_minute_never_count_as_flicker() {
         let mut t = Tracker::default();
         t.observe(HIDDEN, 0);
-        // One change every 150 ms for a minute is under ten a second.
-        for i in 1..=400 {
-            let lines = t.observe(flip(i), i * 150);
+        // One change every 200 ms is exactly five in any second.
+        for i in 1..=300 {
+            let lines = t.observe(flip(i), i * 200);
             assert_eq!(lines.len(), 1, "change {i}: {lines:?}");
             assert!(!lines[0].contains("flicker"));
         }
@@ -485,7 +544,7 @@ mod tests {
         t.observe(HIDDEN, 5_000);
         assert_eq!(
             t.observe(SHOWN, 4_000),
-            ["[cursor] visible=true over_overlay=false overlay_active=false prev_ms=0"]
+            ["[cursor] visible=true shape=true over_overlay=false overlay_active=false prev_ms=0"]
         );
     }
 
@@ -509,7 +568,9 @@ mod tests {
         // Nothing was lost: the duration still runs from the last good change.
         assert_eq!(
             t.observe(HIDDEN, 900),
-            ["[cursor] visible=false over_overlay=false overlay_active=false prev_ms=900"]
+            [
+                "[cursor] visible=false shape=true over_overlay=false overlay_active=false prev_ms=900"
+            ]
         );
     }
 
