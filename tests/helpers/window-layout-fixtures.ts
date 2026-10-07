@@ -1,10 +1,49 @@
 import type { RouteOption } from '../../src/core/routes';
-import type { Suggestion, SuggestProgress, SuggestRun } from '../../src/data/suggest';
+import type { Settings } from '../../src/core/settings';
+import type { Reference } from '../../src/core/types';
+import type { Db } from '../../src/data/db';
+import { createLogger, memorySink } from '../../src/data/logger';
+import { loadSettings } from '../../src/data/repo/settings';
+import { loadReference } from '../../src/data/repo/uex-cache';
+import { loadMarket, type SuggestDeps, type Suggestion, type SuggestProgress, type SuggestRun } from '../../src/data/suggest';
+import { createUexClient } from '../../src/data/uex-client';
+import { prepareAnyDataset } from '../../src/preview/prepare';
 import type { LookupFlow } from '../../src/ui/vm/lookup-flow';
 import type { Cell } from '../../src/ui/vm/terminal-rows';
+import { terminalRows } from '../../src/ui/vm/terminal-rows';
 import type { SideRow } from '../../src/ui/vm/terminal-side';
+import { testDb } from './test-db';
 
 // Fixtures of the window layout tasks (the one-line header, the sections, the two-step lookup).
+
+/** The moment the preview data of the window layout is made and read. */
+export const WINDOW_NOW = 1_800_000_000;
+
+export interface WindowData { db: Db; reference: Reference; settings: Settings; deps: SuggestDeps }
+
+/**
+ * The `window` dataset of the preview in Node: a real SQLite database filled by the real seed, with the loaders and the
+ * suggestion services behind it and a UEX client that is offline (the dataset holds every distance, so a suggestion
+ * must not reach for the network).
+ */
+export async function windowData(now: number = WINDOW_NOW): Promise<WindowData> {
+  const db = testDb();
+  await prepareAnyDataset(db, 'window', now);
+  const log = createLogger(memorySink());
+  const reference = await loadReference(db);
+  const settings = await loadSettings(db, log);
+  const uex = createUexClient(async () => { throw new Error('offline'); }, log);
+  return { db, reference, settings, deps: { db, uex, log, now: () => now, reference, settings, ownMedian: new Map() } };
+}
+
+/** The rows of the table of a terminal, as the window draws them. */
+export async function rowsOf(data: WindowData, terminalId: number, now: number = WINDOW_NOW) {
+  const { settings } = data;
+  return terminalRows(await loadMarket(data.db), data.reference, terminalId, {
+    now, thresholds: { hotMin: settings.hotMin, warmMin: settings.warmMin, coolingMin: settings.coolingMin },
+    serverChangedAt: settings.serverChangedAt, refillFullMin: settings.refillFullMin,
+  });
+}
 
 /** A row of the terminal table as far as the layout cares: which sides it has. The cells are not looked into. */
 export function sideRow(commodityId: number, sides: { buy?: boolean; sell?: boolean }): SideRow {

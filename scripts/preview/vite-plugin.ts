@@ -48,8 +48,8 @@ export function previewPlugin(): Plugin {
             open: () => new Database(':memory:'),
             // the dataset is written by the module of the project, loaded through Vite: the same code the tests run
             prepare: async (db, dataset, now) => {
-              const seed = (await server.ssrLoadModule('/src/preview/seed.ts')) as typeof import('../../src/preview/seed.ts');
-              await seed.prepareDataset(db, dataset, now);
+              const seed = (await server.ssrLoadModule('/src/preview/prepare.ts')) as typeof import('../../src/preview/prepare.ts');
+              await seed.prepareAnyDataset(db, dataset, now);
             },
             now: () => Math.floor(Date.now() / 1000),
           });

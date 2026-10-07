@@ -1,131 +1,108 @@
 <script lang="ts">
+  import { boot } from './boot';
+  import Icon from './components/Icon.svelte';
   import Header from './Header.svelte';
-  import { app, type Tab } from './state.svelte';
-  import SettingsTab from './tabs/SettingsTab.svelte';
-  import TerminalTab from './tabs/TerminalTab.svelte';
+  import OptionsSection from './sections/OptionsSection.svelte';
+  import TerminalSection from './sections/TerminalSection.svelte';
+  import SettingsView from './SettingsView.svelte';
+  import { app } from './state.svelte';
   import WindowGrip from './WindowGrip.svelte';
-
-  const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
-    { id: 'terminal', label: 'Терминал' },
-    { id: 'run', label: 'Рейс' },
-    { id: 'routes', label: 'Маршруты' },
-  ];
 </script>
 
-<main>
-  {#if app.view === 'settings'}
-    <div class="settings-head">
-      <WindowGrip />
-      <button class="sc-btn" type="button" onclick={() => app.closeSettings()}>← Назад</button>
-      <strong>Настройки</strong>
-      <button class="sc-btn sc-btn--ghost sc-btn--icon close" type="button" aria-label="Свернуть" title="Свернуть" onclick={() => app.collapse('close button')}>
-        ×
-      </button>
+<!--
+  The expanded window: the header and a column of sections, as tall as its content, up to what the root allows; then
+  only the long sections shrink and scroll. The glass and the frame are the root's. While the application starts, or
+  when the start failed, the window says so in the same frame instead.
+-->
+{#if app.phase !== 'ready'}
+  <header class="bar">
+    <WindowGrip />
+    <strong class="title sc-label">SC Trade</strong>
+    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Свернуть" title="Свернуть" onclick={() => app.collapse('close button')}>
+      <Icon name="minus" />
+    </button>
+  </header>
+  {#if app.phase === 'failed'}
+    <div class="boot">
+      <p class="message error" role="alert">{app.bootError}</p>
+      <button class="sc-btn sc-btn--primary" type="button" onclick={() => { app.log.info('ui', 'retry start'); void boot(); }}>Повторить</button>
     </div>
   {:else}
-    <Header onClose={() => app.collapse('close button')} />
-
-    <div class="tabs" role="tablist" aria-label="Вкладки">
-      {#each TABS as tab (tab.id)}
-        <button
-          class="tab"
-          class:selected={app.tab === tab.id}
-          type="button"
-          role="tab"
-          id="tab-{tab.id}"
-          aria-selected={app.tab === tab.id}
-          aria-controls="tabpanel"
-          onclick={() => app.setTab(tab.id)}
-        >
-          {tab.label}
-        </button>
-      {/each}
+    <div class="boot">
+      <p class="message status" role="status">{app.bootStatus}</p>
     </div>
   {/if}
-
+{:else if app.view === 'settings'}
+  <SettingsView />
+{:else}
+  <Header />
   {#if app.notice !== null}
     <div class="notice" class:error={app.notice.kind === 'error'} role="status">
       <span>{app.notice.text}</span>
-      <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Скрыть сообщение" onclick={() => app.dismissNotice()}>
-        ×
+      <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Скрыть сообщение" title="Скрыть" onclick={() => app.dismissNotice()}>
+        <Icon name="cross" size={12} />
       </button>
     </div>
   {/if}
-
-  <!-- the header stands still; when the content is taller than the window allows, this area scrolls -->
-  <div class="content" id="tabpanel" role={app.view === 'settings' ? undefined : 'tabpanel'} aria-labelledby={app.view === 'settings' ? undefined : `tab-${app.tab}`}>
-    {#if app.view === 'settings'}
-      <SettingsTab />
-    {:else if app.tab === 'terminal'}
-      <TerminalTab />
-    {:else if app.tab === 'run'}
-      <p class="placeholder">Содержимое вкладки «Рейс» подключается отдельной задачей.</p>
-    {:else}
-      <p class="placeholder">Содержимое вкладки «Маршруты» подключается отдельной задачей.</p>
-    {/if}
+  <div class="sections">
+    <TerminalSection />
+    {#if app.lookup.request !== null}<OptionsSection />{/if}
   </div>
-</main>
+{/if}
 
 <style>
-  /* As tall as its content, but never taller than the root allows: then only `.content` shrinks and scrolls. */
-  main {
+  .bar {
     display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    min-height: 0;
-    background: var(--sc-bg);
-    border-left: 1px solid var(--sc-border);
-    border-right: 1px solid var(--sc-border);
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    height: var(--sc-bar-h);
+    padding-right: 3px;
+    border-bottom: 1px solid var(--sc-border);
   }
 
-  .settings-head {
+  .bar .sc-btn {
+    color: var(--sc-label);
+  }
+
+  .bar .sc-btn:hover {
+    color: var(--sc-accent);
+  }
+
+  .title {
+    flex: 1;
+  }
+
+  .boot {
     display: flex;
     flex: none;
     align-items: center;
     gap: var(--sc-gap);
-    padding: var(--sc-gap) calc(var(--sc-gap) * 1.5);
-    border-bottom: 1px solid var(--sc-border);
+    padding: 4px var(--sc-pad-x);
   }
 
-  .settings-head .close {
-    margin-left: auto;
+  .message {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
   }
 
-  .tabs {
-    display: flex;
-    flex: none;
-    gap: 2px;
-    padding: 0 var(--sc-gap);
-    border-bottom: 1px solid var(--sc-border);
+  .error {
+    color: var(--sc-bad);
   }
 
-  .tab {
-    height: 32px;
-    padding: 0 12px;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    background: transparent;
+  .status {
     color: var(--sc-muted);
-    font: inherit;
-    cursor: pointer;
   }
 
-  .tab:hover {
-    color: var(--sc-text);
-  }
-
-  .tab.selected {
-    border-bottom-color: var(--sc-accent);
-    color: var(--sc-text);
-  }
-
+  /* the line exists only while there is a message */
   .notice {
     display: flex;
     flex: none;
     align-items: center;
     justify-content: space-between;
     gap: var(--sc-gap);
-    padding: 4px 4px 4px calc(var(--sc-gap) * 1.5);
+    padding: 0 0 0 var(--sc-pad-x);
     border-bottom: 1px solid var(--sc-border);
     background: var(--sc-surface);
   }
@@ -134,17 +111,16 @@
     color: var(--sc-bad);
   }
 
-  /* the content scrolls vertically inside the window, never sideways */
-  .content {
-    flex: 0 1 auto;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
+  .notice .sc-btn {
+    flex: none;
+    color: var(--sc-label);
   }
 
-  .placeholder {
-    margin: 0;
-    padding: calc(var(--sc-gap) * 1.5);
-    color: var(--sc-muted);
+  /* the sections share the height that is left; the long ones shrink and scroll inside themselves */
+  .sections {
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
+    min-height: 0;
   }
 </style>

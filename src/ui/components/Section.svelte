@@ -12,11 +12,16 @@
     onClose?: () => void;
     /** Small buttons at the right of the header; a click on them does not toggle the section. */
     actions?: Snippet;
+    /**
+     * A line that stands under the header and does not scroll with the content (the row of the quick entry); drawn
+     * only while the section is open. It is not clipped by the scrolling content, so a list may open from it.
+     */
+    lead?: Snippet;
     children: Snippet;
     /** The content may shrink and scroll when the window has no height to spare; the header stays. */
     scroll?: boolean;
   }
-  let { title, summary, open, onToggle, onClose, actions, children, scroll = false }: Props = $props();
+  let { title, summary, open, onToggle, onClose, actions, lead, children, scroll = false }: Props = $props();
 
   const uid = $props.id();
   const bodyId = `${uid}-body`;
@@ -37,6 +42,7 @@
     {/if}
   </div>
   {#if open}
+    {#if lead}<div class="lead sc-reveal">{@render lead()}</div>{/if}
     <div id={bodyId} class="body sc-reveal">{@render children()}</div>
   {/if}
 </section>
@@ -134,7 +140,15 @@
   }
 
   .close svg {
-    stroke: var(--sc-label);
+    stroke: var(--sc-text);
+  }
+
+  .close:hover svg {
+    stroke: var(--sc-accent);
+  }
+
+  .lead {
+    flex: none;
   }
 
   .body {

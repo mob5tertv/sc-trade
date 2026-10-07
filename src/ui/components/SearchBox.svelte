@@ -32,10 +32,29 @@
   let open = $state(false);
   let active = $state(0);
   let input: HTMLInputElement | undefined = $state();
+  let list: HTMLElement | undefined = $state();
 
   const shown = $derived(editing || value === undefined ? query : value);
   const results = $derived(search(items, query, boostIds, MAX_RESULTS));
   const visible = $derived(open && results.length > 0);
+
+  // The window is as big as its content, so a list that sticks out of the root of the window is cut off by the edge of
+  // the window. While the list is open the root of the window (the nearest element marked `data-float-host`) gets a
+  // minimum height that reaches the bottom of the list, and the list reaches the right edge of the window: it lies
+  // over what is under it, moves nothing, and leaves no empty strip beside it. Outside such a root (the gallery)
+  // nothing happens and the list is as wide as the CSS below says.
+  $effect(() => {
+    const element = list;
+    if (element === undefined) return;
+    void results.length; // the list changes its height with the results
+    const host = element.closest<HTMLElement>('[data-float-host]');
+    if (host === null) return;
+    const frame = host.getBoundingClientRect();
+    element.style.maxWidth = 'none';
+    element.style.width = `${Math.floor(frame.right - 1 - element.getBoundingClientRect().left)}px`; // 1 px is the frame
+    host.style.setProperty('--sc-float-min-h', `${Math.ceil(element.getBoundingClientRect().bottom - frame.top)}px`);
+    return () => host.style.removeProperty('--sc-float-min-h');
+  });
 
   /** Puts the cursor into the box. */
   export function focus(): void {
@@ -61,7 +80,12 @@
     active = 0;
   }
 
-  function onKeydown(event: KeyboardEvent): void {
+  function onKeydown(event: KeyboardEvent & { currentTarget: HTMLInputElement }): void {
+    // Typing replaces what the field shows. The whole value is selected by the click, but the window may take the
+    // focus after the click and the selection can go with that, so the first character does not rely on it.
+    if (!editing && value !== undefined && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.currentTarget.value = '';
+    }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       if (results.length === 0) return;
       event.preventDefault();
@@ -121,7 +145,7 @@
     onblur={onBlur}
   />
   {#if visible}
-    <ul id={listId} class="list" role="listbox">
+    <ul id={listId} class="list" role="listbox" bind:this={list}>
       {#each results as item, i (item.id)}
         <!-- Picked on mousedown, which must not take the focus from the input: the keyboard drives the list through the input. -->
         <li
@@ -159,7 +183,10 @@
     z-index: 10;
     top: calc(100% + 1px);
     left: 0;
-    right: 0;
+    /* as wide as the field, and wider when the names need it: a short field must not cut every name */
+    width: max-content;
+    min-width: 100%;
+    max-width: 300px;
     margin: 0;
     padding: 0;
     list-style: none;

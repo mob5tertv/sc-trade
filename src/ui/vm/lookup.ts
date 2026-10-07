@@ -20,6 +20,11 @@ export interface LookupRequest {
   price: number | null;
 }
 
+/** Whether two requests ask the same thing (the one on screen asked again keeps its answer until the new one comes). */
+export function sameRequest(a: LookupRequest | null, b: LookupRequest): boolean {
+  return a !== null && a.kind === b.kind && a.terminalId === b.terminalId && a.commodityId === b.commodityId && a.price === b.price;
+}
+
 /** A buy price asks where to sell it on (trips from the terminal); a sell price asks where to buy (trips to the terminal). */
 export function kindForSide(side: Side): LookupKind {
   return side === 'buy' ? 'from' : 'to';

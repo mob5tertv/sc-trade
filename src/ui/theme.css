@@ -48,6 +48,8 @@
   --sc-bar-h: 28px; /* the header of the window */
   --sc-mini-h: 26px; /* the mini line */
   --sc-ctl-h: 22px; /* a field or a button inside a row */
+  --sc-icon-w: 24px; /* an icon button of a header */
+  --sc-field-w: 132px; /* the field of a line of the settings ("label · field") */
 
   --sc-font: 12.5px;
   --sc-font-sm: 11px;
@@ -185,7 +187,10 @@ body {
 }
 
 .sc-btn--icon {
-  width: var(--sc-bar-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--sc-icon-w);
   padding: 0;
   font-size: 16px;
   line-height: 1;
