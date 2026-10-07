@@ -36,15 +36,24 @@
       : 'Локация не выбрана',
   );
 
+  // The rows that flash now (see `enteringPrice`): commodity ids, so they belong to the table that was drawn when they crossed the threshold
+  const PULSE_MS = 1300;
+  const NO_PULSE: ReadonlySet<number> = new Set();
+  let pulse = $state.raw<ReadonlySet<number>>(NO_PULSE);
+  let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+
   // The open row belongs to the terminal and the side it was opened on: with a change of either it is gone.
   let pick = $state<RowPick | null>(null);
   const selectedCommodityId = $derived(selectedCommodity(pick, viewedId, side, rows));
-  // ...and it is forgotten for good, not only hidden: coming back to the side or the terminal shows no open row
+  // ...and it is forgotten for good, not only hidden: coming back to the side or the terminal shows no open row. The flash goes
+  // the same way: a row of the NEW table with the commodity of a row that was flashing must not flash in its place.
   $effect(() => {
     void side;
     void viewedId;
     untrack(() => {
       pick = null;
+      clearTimeout(pulseTimer);
+      pulse = NO_PULSE;
     });
   });
 
@@ -97,10 +106,6 @@
   // A row that crosses the threshold because a price was entered flashes once. "Because a price was entered" is known
   // here and nowhere else: the entry is run between two looks at the ROI of the table, and the rows that were below the
   // threshold before and are at or above it now are the ones to flash. A table that was opened or switched flashes nothing.
-  const PULSE_MS = 1300;
-  const NO_PULSE: ReadonlySet<number> = new Set();
-  let pulse = $state.raw<ReadonlySet<number>>(NO_PULSE);
-  let pulseTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => () => clearTimeout(pulseTimer));
 
   const roiSnapshot = (): RoiSnapshot => ({ terminalId: viewedId, side, roi: app.rowRoi });
@@ -263,6 +268,7 @@
       {tradeForm}
       roi={roiByRow}
       {pulse}
+      noCapacity={app.settings.scuCapacity <= 0}
     />
   {/if}
 </Section>

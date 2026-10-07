@@ -1,5 +1,6 @@
 import { buildMarket } from '../../src/core/market';
 import type { RouteCtx, RouteSettings } from '../../src/core/routes';
+import { distKey } from '../../src/core/types';
 import type { Market, Observation } from '../../src/core/types';
 import { obs, px, ref } from './factories';
 
@@ -50,6 +51,14 @@ export const ctx: RouteCtx = {
 
 export const withSettings = (part: Partial<RouteSettings>, base: RouteCtx = ctx): RouteCtx => ({ ...base, settings: { ...base.settings, ...part } });
 export const withFreeScu = (freeScu: number, base: RouteCtx = ctx): RouteCtx => ({ ...base, freeScu });
+
+/** Two origins of Gold at different distances from HERE, in Gm: terminal 3 is a short flight away, terminal 2 a very long one. */
+export const NEAR = 3;
+export const FAR = 2;
+export const withDistances = (base: RouteCtx = ctx): RouteCtx => ({
+  ...base,
+  distances: new Map([[distKey(HERE, NEAR), 1], [distKey(HERE, FAR), 500]]),
+});
 
 /**
  * Gold is sold at 2 (6000), 3 (6400) and 5 (7000) and bought here at 8000: from 2 the trip pays 33,3 %.

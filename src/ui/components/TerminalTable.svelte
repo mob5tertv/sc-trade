@@ -12,6 +12,7 @@
 
   const NO_ROI: ReadonlyMap<number, RoiCell> = new Map();
   const NO_PULSE: ReadonlySet<number> = new Set();
+  const NO_CAPACITY_HINT = 'Укажи корабль в настройках — без вместимости ROI не считается';
 
   interface Props {
     rows: TerminalRow[];
@@ -46,10 +47,12 @@
     roi?: ReadonlyMap<number, RoiCell>;
     /** The commodities whose rows flash once now (they crossed the threshold after a price was entered). */
     pulse?: ReadonlySet<number>;
+    /** The cargo space is not set: no ROI is counted, and the tooltip of the column says why. */
+    noCapacity?: boolean;
   }
   let {
     rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onLookup, onTrade, tradeFor = null, tradeForm,
-    roi = NO_ROI, pulse = NO_PULSE,
+    roi = NO_ROI, pulse = NO_PULSE, noCapacity = false,
   }: Props = $props();
 
   /**
@@ -241,7 +244,7 @@
       <span role="columnheader" class="r price-head">Цена</span>
       <span role="columnheader" class="r">Мин–макс</span>
       <span role="columnheader" class="r">SCU</span>
-      <span role="columnheader" class="r" title="Лучший ROI для этого товара">ROI</span>
+      <span role="columnheader" class="r" title={noCapacity ? NO_CAPACITY_HINT : 'Лучший ROI для этого товара'}>ROI</span>
     </div>
     {#each shown as row (row.commodityId)}
       {@const cell = row[side]}
@@ -380,7 +383,7 @@
   }
 
   /* a row at or above the threshold stands out with a bar at its left edge, in the colour of its tier; the bar lies over
-     the padding of the row, so the texts do not move when a row gets one */
+     the padding of the row, so the texts do not move when a row gets one, and takes no clicks, so that the whole row opens */
   .row.hot .top::before {
     position: absolute;
     top: 0;
@@ -389,6 +392,7 @@
     width: 3px;
     background: var(--tier);
     content: '';
+    pointer-events: none;
   }
 
   /* One soft flash of a row that has just crossed the threshold, drawn over the row so that an open row shows it too.

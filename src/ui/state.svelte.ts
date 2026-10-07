@@ -133,7 +133,7 @@ const EMPTY_MARKET: Market = {
   uex: new Map(), own: new Map(), byTerminal: new Map(), byCommodity: new Map(), stock: new Map(), ownScu: new Map(), ownPrev: new Map(),
 };
 const NO_ROW_ROI: ReadonlyMap<number, RowRoi> = new Map();
-const IDLE_LOOKUP: LookupState ={ request: null, title: '', options: [], loading: false, error: null, preliminary: false, progress: null };
+const IDLE_LOOKUP: LookupState = { request: null, title: '', options: [], loading: false, error: null, preliminary: false, progress: null };
 
 /** Prices are fetched again every hour (spec 6). */
 const PRICE_SYNC_INTERVAL_MS = 60 * 60 * 1000;

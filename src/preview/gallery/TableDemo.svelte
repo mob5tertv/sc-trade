@@ -5,8 +5,15 @@
   import type { TerminalRow } from '../../ui/vm/terminal-rows';
 
   // The table the way its owner drives it: one row is selected at a time, a click on it again takes it back.
-  interface Props { rows: TerminalRow[]; side: Side; selected?: number | null; roi?: ReadonlyMap<number, RoiCell>; pulse?: ReadonlySet<number> }
-  let { rows, side, selected = null, roi, pulse }: Props = $props();
+  interface Props {
+    rows: TerminalRow[];
+    side: Side;
+    selected?: number | null;
+    roi?: ReadonlyMap<number, RoiCell>;
+    pulse?: ReadonlySet<number>;
+    noCapacity?: boolean;
+  }
+  let { rows, side, selected = null, roi, pulse, noCapacity }: Props = $props();
 
   let current = $derived(selected);
 </script>
@@ -22,4 +29,5 @@
   onTrade={(e) => console.info('[gallery] trade', JSON.stringify(e))}
   {roi}
   {pulse}
+  {noCapacity}
 />

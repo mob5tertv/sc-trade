@@ -98,6 +98,9 @@
 <Frame name="roi-buy" caption="Lorville, buy · the best trip from here: GOLD above the bar, a row of every other tier, SCRA is dearer here than anyone pays (empty cell)">
   <TableDemo rows={lorville.rows} side="buy" roi={lorvilleBuy} />
 </Frame>
+<Frame name="roi-no-ship" caption="Lorville, sell · no ship is set (cargo space 0): no trip can be carried, so no row has a ROI; the tooltip of the head «ROI» says why: «Укажи корабль в настройках — без вместимости ROI не считается»">
+  <TableDemo rows={lorville.rows} side="sell" noCapacity />
+</Frame>
 <Frame name="roi-long" caption="the widest things made up: the longest names of commodities, a seven-digit price, a ROI of thousands of percent written 999+ (the real number is in the tooltip), a five-digit one-price range">
   <TableDemo rows={longRows} side="buy" roi={longCells} />
 </Frame>

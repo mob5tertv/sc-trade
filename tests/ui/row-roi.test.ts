@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { routesFrom, routesTo } from '../../src/core/routes';
 import { roiTier } from '../../src/ui/vm/roi-tier';
 import { crossedRows, isHot, roiCell, roiCells, rowRoiMap } from '../../src/ui/vm/row-roi';
 import type { RowRoi, RoiSnapshot } from '../../src/ui/vm/row-roi';
 import { ref } from '../helpers/factories';
 import {
-  ctx, GOLD, HERE, marketOf, ownPrice, quotes, TITA, TUNG, withFreeScu, withSettings,
+  ctx, FAR, GOLD, HERE, marketOf, NEAR, ownPrice, quotes, TITA, TUNG, withDistances, withFreeScu, withSettings,
 } from '../helpers/row-roi-fixtures';
 
 const nb = (text: string): string => text.replace(/(\d) (\d)/g, '$1 $2');
@@ -115,6 +116,66 @@ describe('rowRoiMap: what the table shows next to a commodity', () => {
   it('a terminal that is not in the reference gives nothing and does not throw', () => {
     expect(rowRoiMap(market, 999, 'sell', ctx).size).toBe(0);
     expect(rowRoiMap(market, 999, 'buy', ctx).size).toBe(0);
+  });
+});
+
+describe('rowRoiMap: the best ROI of a commodity, whatever the options are ranked by', () => {
+  it('sell here: the options are ranked by UEC per hour, the nearer origin first, and the row still has the higher ROI of the farther one', () => {
+    const market = marketOf(quotes);
+    const ranked = withDistances(withSettings({ sort: 'uecPerHour' }));
+    // the premise: by UEC per hour the near origin (ROI 25 %) comes before the far one (ROI 33 %), so "the first option" would be wrong
+    expect(routesTo(market, HERE, ranked, GOLD).options.map((o) => o.originId)).toEqual([NEAR]);
+    const best = rowRoiMap(market, HERE, 'sell', ranked).get(GOLD);
+    expect(best).toMatchObject({ otherId: FAR, buyPrice: 6000, sellPrice: 8000 });
+    expect(best?.roi).toBeCloseTo(8000 / 6000 - 1, 10);
+  });
+
+  it('buy here: the near buyer (ROI 17 %) is ranked before the far one (ROI 25 %) by UEC per hour, and the row still has the far one', () => {
+    const market = marketOf(quotes);
+    const ranked = withDistances(withSettings({ sort: 'uecPerHour' }));
+    expect(routesFrom(market, [HERE], HERE, ranked, GOLD).options.map((o) => o.destId)).toEqual([NEAR]);
+    const best = rowRoiMap(market, HERE, 'buy', ranked).get(GOLD);
+    expect(best).toMatchObject({ otherId: FAR, buyPrice: 6000, sellPrice: 7500 });
+    expect(best?.roi).toBeCloseTo(0.25, 10);
+  });
+
+  it('the same row whichever way the options are ranked', () => {
+    const market = marketOf(quotes);
+    const byRate = rowRoiMap(market, HERE, 'sell', withDistances(withSettings({ sort: 'uecPerHour' })));
+    const byRoi = rowRoiMap(market, HERE, 'sell', withDistances(withSettings({ sort: 'roi' })));
+    expect(byRate).toEqual(byRoi);
+  });
+
+  describe('a tie', () => {
+    // Gold is bought at 2 and at 3 for the same 6000 and sold here at 8000: the same ROI; the stock decides how much is carried
+    const from = (stock2: number, stock3: number) => marketOf([
+      { terminalId: HERE, commodityId: GOLD, sell: 8000 },
+      { terminalId: 2, commodityId: GOLD, buy: 6000, scuBuy: stock2 },
+      { terminalId: 3, commodityId: GOLD, buy: 6000, scuBuy: stock3 },
+    ]);
+
+    it('with the same ROI the trip that earns more wins: the one that has more to carry, though its terminal has the higher id', () => {
+      const market = from(20, 50);
+      expect(routesTo(market, HERE, ctx, GOLD).options).toHaveLength(1); // topN 1: the search keeps one, the row must not depend on which
+      expect(rowRoiMap(market, HERE, 'sell', ctx).get(GOLD)).toMatchObject({ otherId: 3, buyPrice: 6000 });
+      expect(rowRoiMap(from(50, 20), HERE, 'sell', ctx).get(GOLD)).toMatchObject({ otherId: 2 });
+    });
+
+    it('with the same ROI and the same profit the lower terminal id wins, every time', () => {
+      const market = from(50, 50);
+      const one = rowRoiMap(market, HERE, 'sell', ctx).get(GOLD);
+      expect(one).toMatchObject({ otherId: 2 });
+      expect(rowRoiMap(market, HERE, 'sell', withSettings({ sort: 'roi' })).get(GOLD)).toEqual(one);
+    });
+
+    it('buy here: two buyers that pay the same: the lower terminal id wins', () => {
+      const market = marketOf([
+        { terminalId: HERE, commodityId: GOLD, buy: 6000, scuBuy: 500 },
+        { terminalId: 2, commodityId: GOLD, sell: 7500 },
+        { terminalId: 3, commodityId: GOLD, sell: 7500 },
+      ]);
+      expect(rowRoiMap(market, HERE, 'buy', ctx).get(GOLD)).toMatchObject({ otherId: 2, sellPrice: 7500 });
+    });
   });
 });
 

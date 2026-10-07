@@ -33,6 +33,24 @@ const perHour = (uec: number | null): string => (uec === null ? NONE : `${format
 /** '518k' for the column of a list whose caption says "UEC/ч"; the dash when there is no rate. */
 export const perHourBare = (uec: number | null): string => (uec === null ? NONE : formatCompact(uec));
 
+const TEN_MILLIONS = 10_000_000;
+
+/**
+ * The rate in the 34 px column of the list of options. Below 10M it is the compact format as it is ('9,27M'); from 10M on
+ * it has one decimal ('12,5M', not the six characters of '12,53M' that the column cuts), and from 100M none ('123M'); the
+ * minus of a loss stays ('-12,5M' is 33,5 px, as wide as the '-1,25M' that fits today). The other lists keep `perHourBare`,
+ * their columns are wider and the two decimals are information there.
+ */
+export function perHourNarrow(uec: number | null): string {
+  if (uec === null) return NONE;
+  const abs = Math.abs(uec);
+  if (abs < TEN_MILLIONS) return formatCompact(uec);
+  const sign = uec < 0 ? '-' : '';
+  const tenths = Math.round(abs / 100_000);
+  if (tenths >= 1000) return `${sign}${Math.round(abs / 1_000_000)}M`;
+  return `${sign}${String(tenths / 10).replace('.', ',')}M`;
+}
+
 /**
  * The ROI of an option as the player reads it, in percents: whole, but with one decimal below 10% when the decimal is
  * not zero (2,5 and 9, not 9,04). The rounding to ten (9,96 is 10) is made before the decision, so '10,0%' never shows.
@@ -161,7 +179,7 @@ export function routeOptionRow(
     price: from ? sellView : buyView,
     trend: from ? priceTrend(o.sell, 'sell') : priceTrend(o.buy, 'buy'),
     priceIsOwn: isOwnPrice(from ? o.sell : o.buy),
-    roi: formatRoi(o.roi), rate: perHourBare(o.uecPerHour),
+    roi: formatRoi(o.roi), rate: perHourNarrow(o.uecPerHour),
     worst: formatUec(o.worstProfit), worstLoss: o.worstProfit < 0,
     qty: `${o.qty} SCU`,
     invested: formatUec(o.qty * o.buy.price), profit: formatUec(o.profit), profitLoss: o.profit < 0,
