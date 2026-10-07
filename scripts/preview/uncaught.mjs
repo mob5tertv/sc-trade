@@ -131,12 +131,18 @@ export const formatItemLine = (result, width) => `${result.name.padEnd(width)} e
  */
 export const sweepExitCode = (results) => (results.length > 0 && results.every((r) => r.exitCode === 0) ? 0 : 1);
 
+/** The summary names this many failed items; the lines above it say each of them. */
+const MAX_NAMED_FAILURES = 8;
+
 /** @param {ItemResult[]} results */
 export function sweepSummary(results) {
   if (results.length === 0) return 'nothing was swept: the lists of scenes and gallery pages are empty';
   const failed = results.filter((r) => r.exitCode !== 0);
   const count = `${results.length} item${results.length === 1 ? '' : 's'}`;
-  return failed.length === 0 ? `${count}, all passed` : `${count}, ${failed.length} failed: ${failed.map((r) => r.name).join(', ')}`;
+  if (failed.length === 0) return `${count}, all passed`;
+  const shown = failed.slice(0, MAX_NAMED_FAILURES).map((r) => r.name).join(', ');
+  const rest = failed.length - MAX_NAMED_FAILURES;
+  return `${count}, ${failed.length} failed: ${shown}${rest > 0 ? ` and ${rest} more` : ''}`;
 }
 
 /**
@@ -146,13 +152,14 @@ export function sweepSummary(results) {
 
 /**
  * What a sweep visits: every scene, then every page of the gallery (all its states stacked). The lists come from the
- * code (`src/preview/scenes.ts`, `src/preview/gallery/page-names.ts`), `sweep.mjs` reads them.
- * @param {{ scenes: string[], pages: string[] }} lists
+ * code (`src/preview/scenes.ts`, `src/preview/gallery/page-names.ts`), `sweep-lists.mjs` reads them. A scene may name the
+ * monitor it needs (`Scene.monitor`, say a tall window on a small screen).
+ * @param {{ scenes: Array<{ name: string, monitor?: string }>, pages: string[] }} lists
  * @returns {SweepItem[]}
  */
 export function sweepItems({ scenes, pages }) {
   return [
-    ...scenes.map((scene) => ({ name: `scene ${scene}`, params: { scene }, monitor: '1920x1080@1' })),
+    ...scenes.map(({ name, monitor }) => ({ name: `scene ${name}`, params: { scene: name }, monitor: monitor ?? '1920x1080@1' })),
     // a page is taller than a monitor of 1080: the states are stacked
     ...pages.map((page) => ({ name: `gallery ${page}`, params: { scene: `gallery-${page}`, gallery: page }, monitor: '1920x3200@1' })),
   ];

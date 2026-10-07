@@ -3,8 +3,6 @@ import {
   crashLines, describeUncaught, exceptionText, findUncaughtErrors, formatItemLine, itemResult, sweepExitCode, sweepItems, sweepSummary,
   uncaughtVerdict,
 } from '../../scripts/preview/uncaught.mjs';
-import { SCENES } from '../../src/preview/scenes';
-import { GALLERY_PAGES } from '../../src/preview/gallery/page-names';
 
 // Lines as `window.__preview.log` holds them: `<ms>ms [<level>] <what the application logged>`, and what the
 // application logs is `[module] message {json}`.
@@ -227,25 +225,32 @@ describe('the lines and the verdict of a sweep', () => {
     expect(sweepSummary([ok, bad])).toBe('2 items, 1 failed: gallery search-box');
     expect(sweepSummary([])).toBe('nothing was swept: the lists of scenes and gallery pages are empty');
   });
+
+  it('names the first failed items only when many failed: the lines above already say each of them', () => {
+    const many = Array.from({ length: 12 }, (_, i) => itemResult({ name: `scene s${i}`, errors: [], failure: { exitCode: 1, message: 'x' } }));
+    const summary = sweepSummary(many);
+    expect(summary).toBe('12 items, 12 failed: scene s0, scene s1, scene s2, scene s3, scene s4, scene s5, scene s6, scene s7 and 4 more');
+  });
 });
 
 describe('sweepItems', () => {
   it('lists the scenes, then the gallery pages, each with the address parameters shot.mjs would give it', () => {
-    const items = sweepItems({ scenes: ['mini', 'expanded'], pages: ['badge'] });
+    const items = sweepItems({ scenes: [{ name: 'mini' }, { name: 'expanded' }], pages: ['badge'] });
     expect(items.map((i) => i.name)).toEqual(['scene mini', 'scene expanded', 'gallery badge']);
     expect(items[0].params).toEqual({ scene: 'mini' });
     expect(items[2].params).toEqual({ scene: 'gallery-badge', gallery: 'badge' });
   });
 
   it('gives the gallery a monitor tall enough for a page of stacked states', () => {
-    const [scene, page] = sweepItems({ scenes: ['mini'], pages: ['badge'] });
+    const [scene, page] = sweepItems({ scenes: [{ name: 'mini' }], pages: ['badge'] });
     expect(scene.monitor).toBe('1920x1080@1');
     expect(page.monitor).toBe('1920x3200@1');
   });
 
-  it('covers every scene of src/preview/scenes.ts and every page of the gallery, because the script reads them from there', () => {
-    const items = sweepItems({ scenes: SCENES.map((s) => s.name), pages: [...GALLERY_PAGES] });
-    expect(items).toHaveLength(SCENES.length + GALLERY_PAGES.length);
-    expect(new Set(items.map((i) => i.name)).size).toBe(items.length);
+  it('gives a scene the monitor it declares', () => {
+    const [plain, tall] = sweepItems({ scenes: [{ name: 'a' }, { name: 'b', monitor: '1366x768@1' }], pages: [] });
+    expect(plain.monitor).toBe('1920x1080@1');
+    expect(tall.monitor).toBe('1366x768@1');
   });
 });
+// (that the lists really hold every scene and every page of the code: tests/preview/sweep-lists.test.ts)
