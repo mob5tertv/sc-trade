@@ -13,6 +13,7 @@ const nb = (s: string) => s.replace(/ /g, String.fromCharCode(0xa0));
 /** The three things the «Мин–макс» cell can hold. */
 const SPREAD = { kind: 'spread', low: 5900, high: 6200 } as const;
 const NONE = { kind: 'none' } as const;
+const NO_BOUNDS = { kind: 'no-bounds' } as const;
 
 describe('terminalRows', () => {
   it('shows own values with a temperature badge and UEX values as hints', () => {
@@ -37,9 +38,9 @@ describe('terminalRows', () => {
     expect(cold).toMatchObject({ own: null, hint: 6000, range: SPREAD });
   });
 
-  it('has no range when UEX has no price for the side: no bounds, or no UEX row at all', () => {
+  it('has no range when UEX has no price for the side, or has one without bounds', () => {
     const noStats = buildMarket([px(1, 10, { buy: { avgWeek: 6500 } })], []); // the week has an average but no bounds
-    expect(terminalRows(noStats, ref, 1, ctx)[0].buy?.range).toEqual(NONE);
+    expect(terminalRows(noStats, ref, 1, ctx)[0].buy?.range).toEqual(NO_BOUNDS);
     const ownOnly = buildMarket([], [obs({ ts: NOW - 60, terminalId: 1, commodityId: 10, side: 'buy', price: 6100 })]);
     expect(terminalRows(ownOnly, ref, 1, ctx)[0].buy?.range).toEqual(NONE);
   });
@@ -204,7 +205,7 @@ describe('terminalRows', () => {
     expect(row.buy).toMatchObject({ own: 6100, ownScu: 200 });
     expect(row.sell).toEqual({
       own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 6500, hintScu: 90, badge: { text: 'UEX · 2 ч', kind: 'uex' },
-      uexRange: null, range: NONE, ownLast: null, trend: null, warn: false,
+      uexRange: null, range: NO_BOUNDS, ownLast: null, trend: null, warn: false,
     });
   });
 
@@ -241,6 +242,11 @@ describe('terminalRows', () => {
 });
 
 describe('uexRangeOf', () => {
+  it('is no-bounds when UEX has a price for the side and no usable bounds for it, beside my own price too', () => {
+    const m = buildMarket([px(1, 10, { buy: { avgWeek: 6500 } })], [obs({ ts: NOW - 60, terminalId: 1, commodityId: 10, side: 'buy', price: 6100 })]);
+    expect(uexRangeOf(m, 1, 10, 'buy', ctx)).toEqual(NO_BOUNDS);
+  });
+
   it('is the range UEX knows for a side of a terminal, whatever my diary says there', () => {
     expect(uexRangeOf(market, 1, 10, 'buy', ctx)).toEqual(SPREAD); // Gold: my own hot price, UEX week 5900–6200
     expect(uexRangeOf(withOwnBuy(market, 1, 10, 6120, NOW - 5 * 3600), 1, 10, 'buy', ctx)).toEqual(SPREAD);
@@ -289,23 +295,23 @@ describe('the «Мин–макс» cell: a spread, one price, or nothing', () =
     expect(terminalRows(own, ref, 1, ctx).find((r) => r.commodityId === 20)?.buy).toMatchObject({ own: 31_500, range: { kind: 'flat', price: 31_000 } });
   });
 
-  it('does not take a price without usable bounds for one price', () => {
+  it('does not take a price without usable bounds for one price: UEX gives a price and no bounds for it', () => {
     const rangeOf = (buy: Partial<UexSideStats>) => terminalRows(buildMarket([px(1, 10, { buy })], []), ref, 1, ctx)[0].buy?.range;
-    expect(rangeOf({ avgWeek: 6500 })).toEqual(NONE); // an average and no bounds
-    expect(rangeOf({ avgWeek: 6500, minWeek: 0, maxWeek: 6900 })).toEqual(NONE); // one bound missing
-    expect(rangeOf({ avgWeek: 6500, minWeek: 7000, maxWeek: 6900 })).toEqual(NONE); // upside down
+    expect(rangeOf({ avgWeek: 6500 })).toEqual(NO_BOUNDS); // an average and no bounds
+    expect(rangeOf({ avgWeek: 6500, minWeek: 0, maxWeek: 6900 })).toEqual(NO_BOUNDS); // one bound missing
+    expect(rangeOf({ avgWeek: 6500, minWeek: 7000, maxWeek: 6900 })).toEqual(NO_BOUNDS); // upside down
   });
 });
 
 describe('rangeOfEstimate', () => {
   const uexEstimate = (low: number, high: number) => ({ ...est, source: 'uex' as const, temp: null, price: 6000, low, high });
 
-  it('is a spread when the bounds differ, one price when they are the same, none otherwise', () => {
+  it('is a spread when the bounds differ, one price when they are the same, no bounds when they are unusable, none without a UEX price', () => {
     expect(rangeOfEstimate(uexEstimate(5900, 6200))).toEqual(SPREAD);
     expect(rangeOfEstimate(uexEstimate(5500, 5500))).toEqual({ kind: 'flat', price: 5500 });
-    expect(rangeOfEstimate(uexEstimate(0, 0))).toEqual(NONE);
-    expect(rangeOfEstimate(uexEstimate(0, 6200))).toEqual(NONE);
-    expect(rangeOfEstimate(uexEstimate(Number.NaN, Number.NaN))).toEqual(NONE);
+    expect(rangeOfEstimate(uexEstimate(0, 0))).toEqual(NO_BOUNDS);
+    expect(rangeOfEstimate(uexEstimate(0, 6200))).toEqual(NO_BOUNDS);
+    expect(rangeOfEstimate(uexEstimate(Number.NaN, Number.NaN))).toEqual(NO_BOUNDS);
     expect(rangeOfEstimate(null)).toEqual(NONE);
   });
 
@@ -325,6 +331,10 @@ describe('rangeView', () => {
 
   it('writes a dash and says that UEX does not know the price when there is nothing', () => {
     expect(rangeView(NONE)).toEqual({ kind: 'none', text: '—', title: 'UEX не знает цену' });
+  });
+
+  it('writes the same dash but another tooltip when UEX has a price and gives no bounds for it', () => {
+    expect(rangeView(NO_BOUNDS)).toEqual({ kind: 'no-bounds', text: '—', title: 'UEX не даёт границ цены' });
   });
 
   it('keeps a seven-digit price whole', () => {

@@ -117,7 +117,11 @@ describe('the gallery «Мин–макс» states: a spread, one price, nothing
   it('has a table with a row of each kind, from a terminal that is none of the other states', () => {
     expect(data.ranges.terminalId).not.toBe(VIEWED_TERMINAL);
     const kinds = new Set(tableRows().map((r) => r.buy?.range.kind));
-    expect([...kinds].sort()).toEqual(['flat', 'none', 'spread']);
+    expect([...kinds].sort()).toEqual(['flat', 'no-bounds', 'none', 'spread']);
+  });
+
+  it('has a UEX price without bounds: a price in the «Цена» column and a dash that does not say UEX knows no price', () => {
+    expect(buyOf('QUAR')).toMatchObject({ own: null, hint: 1450, badge: { kind: 'uex' }, range: { kind: 'no-bounds' } });
   });
 
   it('has the one price UEX gives as the same minimum and maximum, the week deciding over the month', () => {
@@ -143,7 +147,7 @@ describe('the gallery «Мин–макс» states: a spread, one price, nothing
 
   it('has trips for the list that show the three kinds in the «Мин–макс» column, one of them seven digits', () => {
     const rows = tripsAt('from');
-    expect(new Set(rows.map((r) => r.price.range.kind))).toEqual(new Set(['spread', 'flat', 'none']));
+    expect(new Set(rows.map((r) => r.price.range.kind))).toEqual(new Set(['spread', 'flat', 'no-bounds', 'none']));
     expect(rows.map((r) => r.price.range.text)).toContain(`= ${nb('1 300 000')}`);
     expect(rows.map((r) => r.price.range.text)).toContain(`= ${nb('5 500')}`);
   });

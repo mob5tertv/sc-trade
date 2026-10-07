@@ -163,6 +163,8 @@ async function writePlayerPrices(deps: GalleryDeps, ref: Reference): Promise<voi
 type RangeShape =
   | { kind: 'flat'; price: number }
   | { kind: 'spread'; avg: number; low: number; high: number }
+  /** UEX has a price and no bounds for it (the average only): the cell is a dash, and the price column still shows a UEX price. */
+  | { kind: 'average'; price: number }
   /** The week has one price, the month moved: the estimate takes the week (src/core/estimate.ts), so the cell says one price. */
   | { kind: 'week-flat'; price: number; monthLow: number; monthHigh: number };
 
@@ -172,6 +174,7 @@ const RANGE_ROWS: Array<{ code: string; uex: RangeShape | null; own?: { price: n
   { code: 'GOLD', uex: { kind: 'week-flat', price: 31_000, monthLow: 30_000, monthHigh: 31_000 } },
   { code: 'TUNG', uex: { kind: 'spread', avg: 3650, low: 3480, high: 3820 } },
   { code: 'TITA', uex: { kind: 'flat', price: 1_300_000 } }, // seven digits: must fit the column whole
+  { code: 'QUAR', uex: { kind: 'average', price: 1450 } }, // a UEX price with no bounds: a dash, but UEX does know the price
   { code: 'AGRI', uex: { kind: 'flat', price: 2650 }, own: { price: 2700, ageMin: 20 } }, // mine, and one price of UEX beside it
   { code: 'DIAM', uex: { kind: 'spread', avg: 7050, low: 6800, high: 7300 }, own: { price: 7100, ageMin: 25 } }, // mine, and a spread beside it
   { code: 'STIM', uex: null, own: { price: 3100, ageMin: 15 } }, // mine, and UEX knows nothing there
@@ -188,6 +191,8 @@ function rangeStats(shape: RangeShape): UexSideStats {
       return sideStats(shape.price, shape.price, shape.price);
     case 'spread':
       return sideStats(shape.avg, shape.low, shape.high);
+    case 'average':
+      return sideStats(shape.price, 0, 0);
     case 'week-flat':
       return {
         ...sideStats(shape.price, shape.price, shape.price),

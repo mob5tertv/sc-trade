@@ -60,7 +60,7 @@
     <span class="sc-label">{label}</span>
     <span class="inline">
       <span class="sc-num">{view.price}</span>
-      {#if view.range.kind !== 'none'}<span class="muted sc-num" title={view.range.title}>{view.range.text}</span>{/if}
+      {#if view.range.kind === 'spread' || view.range.kind === 'flat'}<span class="muted sc-num" title={view.range.title}>{view.range.text}</span>{/if}
       <TempBadge text={view.badge.text} kind={view.badge.kind} />
     </span>
   </div>

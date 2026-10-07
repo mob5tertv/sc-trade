@@ -50,7 +50,7 @@
 }}>
   <RouteList options={routes.ladder} {reference} {runCounts} mode="from" showCommodity={true} emptyText="" anchorTerminalId={viewedId} {uexRange} targetTerminalId={routes.ladder[0].destId} onTarget={log} />
 </Frame>
-<Frame name="ranges" caption="«Мин–макс» of the sale price: one price «= price» (MEDS, GOLD; TITA: seven digits), a spread (TUNG), beside my price: one price (AGRI), a spread (DIAM), nothing «—» (STIM)">
+<Frame name="ranges" caption="«Мин–макс» of the sale price: one price «= price» (MEDS, GOLD; TITA: seven digits), a spread (TUNG), beside my price: one price (AGRI), a spread (DIAM), nothing «—» (STIM; QUAR: UEX has the price, no bounds)">
   <RouteList options={data.ranges.trips} {reference} {runCounts} mode="from" showCommodity={true} emptyText="" anchorTerminalId={viewedId} uexRange={data.ranges.uexRange} targetTerminalId={null} onTarget={log} />
 </Frame>
 <Frame name="ranges-expanded" caption="the trip of AGRI expanded: both prices, the sale price of mine with the one price of UEX beside it" act={openAgri}>

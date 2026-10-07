@@ -14,6 +14,7 @@ const nb = (s: string) => s.replace(/ /g, String.fromCharCode(0xa0));
 const SPREAD = { kind: 'spread', text: `${nb('6 400')}–${nb('7 100')}`, title: 'Диапазон цен по данным UEX' } as const;
 const ONE_PRICE = (price: string) => ({ kind: 'flat', text: `= ${nb(price)}`, title: 'UEX: одна цена за период, разброса нет' }) as const;
 const NO_PRICE = { kind: 'none', text: '—', title: 'UEX не знает цену' } as const;
+const NO_BOUNDS = { kind: 'no-bounds', text: '—', title: 'UEX не даёт границ цены' } as const;
 
 const estimate = (partial: Partial<Estimate> = {}): Estimate => ({
   price: 6900, low: 6400, high: 7100, source: 'uex', temp: null, ageSec: 2 * 86_400, ageKnown: true,
@@ -245,9 +246,14 @@ describe('routeOptionRow: one price instead of a dash', () => {
     expect(row.price).toEqual({ price: nb('6 120'), range: ONE_PRICE('5 500'), badge: { text: 'моя · 40 мин', kind: 'hot' } });
   });
 
-  it('still tells a dash from one price: a UEX price with no bounds is no flat price', () => {
+  it('still tells a dash from one price: a UEX price with no bounds is no flat price, and the tooltip does not say UEX knows no price', () => {
     const noBounds = estimate({ price: 6900, low: 0, high: 0 });
-    expect(routeOptionRow(option({ sell: noBounds }), ref, 'from', new Map()).price.range).toEqual(NO_PRICE);
+    expect(routeOptionRow(option({ sell: noBounds }), ref, 'from', new Map()).price.range).toEqual(NO_BOUNDS);
+  });
+
+  it('writes the dash of the place UEX gives a price without bounds for, beside my own price as well', () => {
+    const row = routeOptionRow(option(), ref, 'to', new Map(), { uexRange: () => ({ kind: 'no-bounds' }) });
+    expect(row.price.range).toEqual(NO_BOUNDS);
   });
 
   it('shows the alternatives of «продать или лететь дальше» the same way', () => {

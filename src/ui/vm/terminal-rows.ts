@@ -9,16 +9,19 @@ import type { PriceTrend } from './price-trend';
 
 /**
  * What UEX says about how far the price of one side of a terminal moved: it moved between two numbers (`spread`), it did
- * not move and UEX knows one price (`flat`: the same number as minimum and maximum), or there is nothing to say
- * (`none`: no UEX price for the side, or no usable bounds for it). `flat` is not `none`: a column of dashes reads as
- * "nothing was loaded".
+ * not move and UEX knows one price (`flat`: the same number as minimum and maximum), or there is nothing to draw. Of
+ * the two kinds of nothing, `no-bounds` is a UEX price without usable bounds (an average, and minimum and maximum
+ * zero) and `none` is no UEX price for the side at all; both are a dash, but the tooltip must not say that UEX knows no
+ * price while the price column shows one. `flat` is not `none`: a column of dashes reads as "nothing was loaded".
  */
 export type UexRange =
   | { kind: 'spread'; low: number; high: number }
   | { kind: 'flat'; price: number }
+  | { kind: 'no-bounds' }
   | { kind: 'none' };
 
 export const NO_RANGE: UexRange = { kind: 'none' };
+const NO_BOUNDS: UexRange = { kind: 'no-bounds' };
 
 export interface Cell {
   own: number | null; ownScu: number | null;      // my price, shown only while it is not cold; ownScu is only ever MY quantity (0 is a known zero) and has its own clock (spec 14.6), so it may stand next to a UEX price: buy side, the stock estimated for now; sell side, the buyer's inventory as recorded
@@ -79,10 +82,12 @@ export const isOwnPrice = (e: Estimate): boolean => e.source === 'own' && e.temp
 /**
  * The range of a UEX estimate: the bounds of the period it was taken from (src/core/estimate.ts: the week, else the
  * month, else all time, else the last report). Different bounds are a spread, the same number is one price. Bounds
- * that are missing (zero), upside down or not numbers say nothing, and a price of mine has no bounds of its own.
+ * that are missing (zero), upside down or not numbers are `no-bounds`: UEX has a price, but nothing to say about its
+ * spread. Without a UEX estimate (none, or a price of mine, which has no bounds of its own) it is `none`.
  */
 export function rangeOfEstimate(e: Estimate | null): UexRange {
-  if (e === null || e.source !== 'uex' || !(e.low > 0) || !(e.high >= e.low)) return NO_RANGE;
+  if (e === null || e.source !== 'uex') return NO_RANGE;
+  if (!(e.low > 0) || !(e.high >= e.low)) return NO_BOUNDS;
   return e.high > e.low ? { kind: 'spread', low: e.low, high: e.high } : { kind: 'flat', price: e.low };
 }
 
@@ -95,7 +100,7 @@ export function uexRangeOf(m: Market, terminalId: number, commodityId: number, s
   return rangeOfEstimate(estimate({ ...m, own: new Map() }, terminalId, commodityId, side, ctx));
 }
 
-/** The «Мин–макс» cell as it is read: `3 900–4 300`, `= 5 500` or `—`, and what the tooltip says about it. */
+/** The «Мин–макс» cell as it is read: `3 900–4 300`, `= 5 500` or `—` (two kinds of it), and what the tooltip says about it. */
 export interface RangeView { kind: UexRange['kind']; text: string; title: string }
 
 export function rangeView(range: UexRange): RangeView {
@@ -104,6 +109,8 @@ export function rangeView(range: UexRange): RangeView {
       return { kind: 'spread', text: `${formatUec(range.low)}–${formatUec(range.high)}`, title: 'Диапазон цен по данным UEX' };
     case 'flat':
       return { kind: 'flat', text: `= ${formatUec(range.price)}`, title: 'UEX: одна цена за период, разброса нет' };
+    case 'no-bounds':
+      return { kind: 'no-bounds', text: '—', title: 'UEX не даёт границ цены' };
     case 'none':
       return { kind: 'none', text: '—', title: 'UEX не знает цену' };
   }
