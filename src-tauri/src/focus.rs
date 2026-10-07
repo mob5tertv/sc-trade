@@ -99,13 +99,14 @@ fn remember(state: &ForegroundState, candidate: isize, candidate_pid: u32, own_p
 pub fn remember_foreground(state: State<'_, ForegroundState>) {
     let hwnd = sys::foreground_window();
     let pid = sys::window_process_id(hwnd);
-    if remember(&state, hwnd, pid, std::process::id()) {
-        log::info!("[focus] remembered foreground window {hwnd:#x}");
+    let before = state.0.load(Ordering::SeqCst);
+    if !remember(&state, hwnd, pid, std::process::id()) {
+        log::debug!("[focus] foreground window {hwnd:#x} not remembered, keeping {before:#x}");
+    } else if hwnd == before {
+        // asked each time the pointer comes over a text field: only a change is worth a line of its own
+        log::debug!("[focus] foreground window {hwnd:#x} is the remembered one already");
     } else {
-        log::debug!(
-            "[focus] foreground window {hwnd:#x} not remembered, keeping {:#x}",
-            state.0.load(Ordering::SeqCst)
-        );
+        log::info!("[focus] remembered foreground window {hwnd:#x}");
     }
 }
 
