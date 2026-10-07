@@ -7,6 +7,11 @@
     items: SearchItem[];
     /** Ids that come first among equally good matches (what the current terminal trades, say). */
     boostIds?: Set<number>;
+    /**
+     * How the items are searched: the type-ahead search of the core by default. The list of terminals gives its own
+     * (`searchTerminals`: names before the star system); the commodity search and the quick entry keep the default.
+     */
+    find?: (items: SearchItem[], query: string, boostIds: Set<number> | undefined, limit: number) => SearchItem[];
     placeholder?: string;
     /**
      * The text that stands in the field until the player edits it (the name of the viewed location, say). A click
@@ -23,7 +28,7 @@
     title?: string;
   }
 
-  let { items, boostIds, placeholder = 'Поиск…', value, onPick, label = placeholder, invalid = false, title }: Props = $props();
+  let { items, boostIds, find = search, placeholder = 'Поиск…', value, onPick, label = placeholder, invalid = false, title }: Props = $props();
 
   const MAX_RESULTS = 8;
   const listId = `search-${Math.random().toString(36).slice(2, 8)}`;
@@ -38,7 +43,7 @@
   let list: HTMLElement | null | undefined = $state();
 
   const shown = $derived(editing || value === undefined ? query : value);
-  const results = $derived(search(items, query, boostIds, MAX_RESULTS));
+  const results = $derived(find(items, query, boostIds, MAX_RESULTS));
   const visible = $derived(open && results.length > 0);
 
   // The window is as big as its content, so a list that sticks out of the root of the window is cut off by the edge of

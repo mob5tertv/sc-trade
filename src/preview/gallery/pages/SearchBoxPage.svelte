@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import type { Terminal } from '../../../core/types';
   import SearchBox from '../../../ui/components/SearchBox.svelte';
-  import { terminalSearchItems } from '../../../ui/vm/header';
+  import { searchTerminals, terminalSearchItems } from '../../../ui/vm/header';
   import { find, press, typeInto } from '../acts';
   import { useGallery } from '../context';
   import Frame from '../Frame.svelte';
@@ -12,7 +12,7 @@
 
   // Terminals of every star system, with the places they say: the real ones of the dataset and a few made up to show what the
   // list does with names it has seen too little of: three of one name in different systems (UEX has many "Stanton Gateway"),
-  // one whose name is longer than the list is wide and one whose place is.
+  // one whose name is longer than the list is wide and one whose place is longer than what is left beside a short name.
   const some = [...data.reference.terminals.values()][0];
   const systemId = (name: string): number => {
     const found = data.reference.starSystems.find((s) => s.name === name);
@@ -31,7 +31,7 @@
   ];
   const longs: Terminal[] = [
     madeUp(9004, 'Stanton', { displayname: 'Orbital Logistics Hub Extension Platform Alpha Commercial Freight Annex', moonName: 'Wala' }),
-    madeUp(9005, 'Stanton', { displayname: 'Orbital Depot', moonName: 'Wala Research and Development Subsidiary' }),
+    madeUp(9005, 'Stanton', { displayname: 'Orbital Depot', moonName: 'Wala Research and Development Subsidiary of the Hurston Dynamics Orbital Directorate' }),
   ];
   const placeItems = terminalSearchItems(
     { ...data.reference, terminals: new Map([...data.reference.terminals, ...[...gateways, ...longs].map((t): [number, Terminal] => [t.id, t])]) },
@@ -40,13 +40,13 @@
 </script>
 
 <Frame name="value" caption="value: the viewed location stands in the field">
-  <div class="pad"><SearchBox items={data.terminalItems} value={data.viewedName} placeholder="Локация" onPick={pick} /></div>
+  <div class="pad"><SearchBox items={data.terminalItems} find={searchTerminals} value={data.viewedName} placeholder="Локация" onPick={pick} /></div>
 </Frame>
 <Frame name="selected" caption="a click (here: focus) selects the whole value, the next key replaces it" act={(frame) => find<HTMLInputElement>(frame, 'input').focus()}>
-  <div class="pad"><SearchBox items={data.terminalItems} value={data.viewedName} placeholder="Локация" onPick={pick} /></div>
+  <div class="pad"><SearchBox items={data.terminalItems} find={searchTerminals} value={data.viewedName} placeholder="Локация" onPick={pick} /></div>
 </Frame>
 <Frame name="empty" caption="no value: the placeholder">
-  <div class="pad"><SearchBox items={data.terminalItems} placeholder="Сменить локацию" onPick={pick} /></div>
+  <div class="pad"><SearchBox items={data.terminalItems} find={searchTerminals} placeholder="Сменить локацию" onPick={pick} /></div>
 </Frame>
 <!-- the list goes away (a pick, the field left): the element of the list is gone and the effect of the box runs once more; it must not throw -->
 <Frame
@@ -58,7 +58,7 @@
     await press(input, 'Enter');
   }}
 >
-  <div class="pad"><SearchBox items={data.terminalItems} value={data.viewedName} boostIds={data.boostIds} placeholder="Локация" onPick={pick} /></div>
+  <div class="pad"><SearchBox items={data.terminalItems} find={searchTerminals} value={data.viewedName} boostIds={data.boostIds} placeholder="Локация" onPick={pick} /></div>
 </Frame>
 <Frame
   name="left"
@@ -70,7 +70,7 @@
     await tick();
   }}
 >
-  <div class="pad"><SearchBox items={data.terminalItems} value={data.viewedName} boostIds={data.boostIds} placeholder="Локация" onPick={pick} /></div>
+  <div class="pad"><SearchBox items={data.terminalItems} find={searchTerminals} value={data.viewedName} boostIds={data.boostIds} placeholder="Локация" onPick={pick} /></div>
 </Frame>
 <Frame
   name="places"
@@ -78,15 +78,23 @@
   minHeight={120}
   act={(frame) => typeInto(find<HTMLInputElement>(frame, 'input'), 'stanton g')}
 >
-  <div class="pad"><SearchBox items={placeItems} value={data.viewedName} placeholder="Локация" onPick={pick} /></div>
+  <div class="pad"><SearchBox items={placeItems} find={searchTerminals} value={data.viewedName} placeholder="Локация" onPick={pick} /></div>
+</Frame>
+<Frame
+  name="places-system"
+  caption="«stanton» typed: the terminals named so come first, then the ones that only stand in the star system (found by its name)"
+  minHeight={240}
+  act={(frame) => typeInto(find<HTMLInputElement>(frame, 'input'), 'stanton')}
+>
+  <div class="pad"><SearchBox items={placeItems} find={searchTerminals} value={data.viewedName} placeholder="Локация" onPick={pick} /></div>
 </Frame>
 <Frame
   name="places-long"
-  caption="«orbital» typed: a name longer than the list is cut with an ellipsis and the place beside it stays whole; a place longer than half the row is cut too (the full text is in the tooltip of the row)"
+  caption="«orbital» typed: when name and place do not fit together the name is cut with an ellipsis and the place stays whole; only a place that does not fit even then is cut too (the full text is in the tooltip of the row)"
   minHeight={100}
   act={(frame) => typeInto(find<HTMLInputElement>(frame, 'input'), 'orbital')}
 >
-  <div class="pad"><SearchBox items={placeItems} value={data.viewedName} placeholder="Локация" onPick={pick} /></div>
+  <div class="pad"><SearchBox items={placeItems} find={searchTerminals} value={data.viewedName} placeholder="Локация" onPick={pick} /></div>
 </Frame>
 <Frame
   name="commodities"
@@ -98,7 +106,7 @@
 </Frame>
 <!-- last: the focus of the page stays with the state whose act ran last -->
 <Frame name="typing" caption="«hur» typed over the value: the list of the matches" minHeight={160} act={(frame) => typeInto(find<HTMLInputElement>(frame, 'input'), 'hur')}>
-  <div class="pad"><SearchBox items={data.terminalItems} value={data.viewedName} boostIds={data.boostIds} placeholder="Локация" onPick={pick} /></div>
+  <div class="pad"><SearchBox items={data.terminalItems} find={searchTerminals} value={data.viewedName} boostIds={data.boostIds} placeholder="Локация" onPick={pick} /></div>
 </Frame>
 
 <style>
