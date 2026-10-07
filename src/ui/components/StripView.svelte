@@ -55,13 +55,13 @@
 </div>
 
 <style>
-  /* one line, as wide as what it says, and never wider than 520 px: a long cargo is cut; the glass and the frame
+  /* one line, as wide as what it says, and never wider than 600 px (the name of the phase takes room the cargo had): a long cargo is cut; the glass and the frame
      belong to the window around it (`.sc-frame`), so that the glass is painted once */
   .strip {
     display: flex;
     align-items: stretch;
     width: max-content;
-    max-width: 520px;
+    max-width: 600px;
     height: var(--sc-mini-h);
     overflow: hidden;
     color: var(--sc-text);

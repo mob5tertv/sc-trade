@@ -38,7 +38,7 @@ import { resetHeldKeys } from './keyboard';
 import { shouldCollapse } from './vm/idle';
 import { createKeyboardHolds, type KeyboardHolds } from './vm/keyboard-holds';
 import { createLatestRequest } from './vm/latest-request';
-import { affectsLookup, lookupTitle, sameRequest, terminalLabel, type LookupRequest } from './vm/lookup';
+import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './vm/lookup';
 import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
 import { markRefusal } from './vm/run-phase';

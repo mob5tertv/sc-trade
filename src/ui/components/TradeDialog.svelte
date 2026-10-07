@@ -29,11 +29,13 @@
   let badScu = $state(false);
   let badPrice = $state(false);
 
-  // A double click on the button or a held Enter must not write the trade twice while the owner is still writing it.
+  // A double click on the button or a held Enter must not write the trade twice while the owner is still writing it. The
+  // form takes a new confirmation when the owner says the write failed (`error` is a text again: after the `null` the owner
+  // sets when the write starts, so that the same text twice in a row is a change too) or when a field is edited. The `null`
+  // itself is the write starting: it must NOT open the form again for a second press while the write is in flight.
   let confirmed = false;
   $effect(() => {
-    void error;
-    confirmed = false;
+    if (error !== null) confirmed = false;
   });
 
   // What the two fields say now, in UEC: a check of the typing before it is written.

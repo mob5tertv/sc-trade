@@ -62,6 +62,18 @@ export const RUN_SCENES: readonly Scene[] = [
     },
   },
   {
+    // the form is open and the window folds after 2 seconds without activity: `--do "leave;wait:4500"` must find it expanded
+    name: 'trade-busy',
+    title: 'Форма сделки открыта, окно сворачивается через 2 с без движения мыши: пока форма открыта, не сворачивается',
+    dataset: 'default',
+    act: async (app) => {
+      await app.updateSetting('idleCollapseSec', 2);
+      await app.expand('preview');
+      await openTradeForm('MEDS', 'Купил');
+      app.pointer(true);
+    },
+  },
+  {
     // MEDS is already sold through the form; the form of the last commodity is open: Enter in its field ends the run
     // (`--do "click:form.trade input;press:Enter"`)
     name: 'trade-sell-last',
