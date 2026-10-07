@@ -8,6 +8,7 @@ import type { Logger } from '../data/logger';
 import { migrate } from '../data/migrations';
 import { loadSettings } from '../data/repo/settings';
 import { createUexClient } from '../data/uex-client';
+import { appPacing } from '../data/uex-pacing';
 import { openTauriDb } from '../platform/tauri-db';
 import { tauriFetchJson } from '../platform/tauri-http';
 import { applyLogLevel } from '../platform/tauri-logger';
@@ -89,7 +90,7 @@ async function prepare(log: Logger): Promise<void> {
   const settings = await loadSettings(db, log);
   await applyLogLevel(log, settings.logLevel);
 
-  app.attach({ db, uex: createUexClient(tauriFetchJson, log), now: nowSec });
+  app.attach({ db, uex: createUexClient(tauriFetchJson, log, Date.now, appPacing()), now: nowSec });
   app.setSettings(settings);
   // The start line comes first: the window logs its own lines as soon as it is shown.
   await logStart(log, schema);

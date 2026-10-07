@@ -3,6 +3,7 @@ import { clearMocks, mockIPC, mockWindows } from '@tauri-apps/api/mocks';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createLogger, memorySink } from '../../src/data/logger';
 import { createUexClient, UexError } from '../../src/data/uex-client';
+import { appPacing } from '../../src/data/uex-pacing';
 import { tauriFetchJson } from '../../src/platform/tauri-http';
 import { installPriceFake, priceRow, terminalsOfPriceRequest, type PriceFake } from '../../src/preview/fake-prices';
 import { currentHttpFake, installHttpFake } from '../../src/preview/http-fake';
@@ -42,6 +43,11 @@ const URL_A = 'https://api.uexcorp.uk/2.0/star_systems';
 const settle = (ms = 20): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('the network of the preview', () => {
+  it('takes the gap between requests away from the application: the preview must not wait half a second for every request', () => {
+    // the real application keeps UEX_MIN_GAP_MS; loading the fake (as the preview does, before the application starts) sets it to 0
+    expect(appPacing().minGapMs).toBe(0);
+  });
+
   it('is still none by default: UEX is unreachable at once', async () => {
     await expect(tauriFetchJson(URL_A)).rejects.toThrow(/star_systems/);
   });

@@ -11,6 +11,25 @@ export const networkStall = (): UexError => new UexError('network', 'request fai
 /** What a server that answers badly looks like to the client: it did answer, so the network works. */
 export const serverRefusal = (): UexError => new UexError('http', 'HTTP 503');
 
+/** What UEX answers when too many requests came: HTTP 429. */
+export const rateLimit = (): UexError => new UexError('http', 'HTTP 429: UEX request limit reached', { httpStatus: 429 });
+
+/** Turns the failures of `uex.distancesFrom` that are scripted (`failRoutes`) into the error `make` returns. */
+export function failRoutesAs(uex: FakeUex, make: () => UexError): void {
+  const scripted = uex.distancesFrom.bind(uex);
+  uex.distancesFrom = (terminalId) => scripted(terminalId).catch((err: unknown) => {
+    throw err instanceof UexError ? make() : err;
+  });
+}
+
+/** Turns the failures of `uex.distance` that are scripted (`failDistances`) into the error `make` returns. */
+export function failDistancesAs(uex: FakeUex, make: () => UexError): void {
+  const scripted = uex.distance.bind(uex);
+  uex.distance = (a, b) => scripted(a, b).catch((err: unknown) => {
+    throw err instanceof UexError ? make() : err;
+  });
+}
+
 /** Turns the failures of `uex.prices` that are scripted (`failPrices`) into the error `make` returns for the terminals of the request. */
 export function failPricesAs(uex: FakeUex, make: (terminalIds: number[]) => UexError): void {
   const scripted = uex.prices.bind(uex);

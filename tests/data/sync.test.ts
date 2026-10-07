@@ -12,7 +12,9 @@ import { px, seedTerminals, term, veh } from '../helpers/factories';
 import { FakeUex } from '../helpers/fake-uex';
 import { countingDb } from '../helpers/suggest-progress-fixtures';
 import { migratedDb } from '../helpers/test-db';
-import { failPricesAs, failVehiclesAs, networkStall, serverRefusal } from '../helpers/uex-failure-fixtures';
+import {
+  failDistancesAs, failPricesAs, failRoutesAs, failVehiclesAs, networkStall, rateLimit, serverRefusal,
+} from '../helpers/uex-failure-fixtures';
 
 const NOW = 1_800_000_000;
 
@@ -309,6 +311,105 @@ describe('syncPrices on a network that does not answer', () => {
     expect(await syncPrices(deps)).toEqual({ batches: 3, failed: 3, unfetched: 6 });
     expect(uex.priceCalls).toHaveLength(3);
     expect(syncWarnings()).toHaveLength(1);
+  });
+});
+
+describe('syncPrices when UEX says that the limit of requests is reached (HTTP 429)', () => {
+  it('stops at once: the batch is not repeated, not split, and no later batch is asked', async () => {
+    await seedTerminals(db, 10);
+    await upsertPrices(db, [1], [px(1, 10, { sell: { last: 1 } })], 50);
+    uex.failPrices = (ids) => ids.includes(3);
+    failPricesAs(uex, rateLimit);
+
+    expect(await syncPrices(deps)).toEqual({ batches: 5, failed: 4, unfetched: 8 });
+
+    expect(uex.priceCalls).toEqual([[1, 2], [3, 4]]);
+    expect(await getMeta(db, 'prices_synced_at')).toBeNull();
+    expect((await priceKeys()).sort()).toEqual(['1:10', '2:10']);
+  });
+
+  it('writes one line that says it was the limit', async () => {
+    await seedTerminals(db, 10);
+    uex.failPrices = (ids) => ids.includes(3);
+    failPricesAs(uex, rateLimit);
+    await syncPrices(deps);
+
+    const lines = warnings().map((l) => l.line);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('limit');
+    expect(lines[0]).toContain('429');
+    expect(lines[0]).toContain('"unfetched":8');
+  });
+
+  it('says so also when it is the last batch that was refused', async () => {
+    await seedTerminals(db, 4);
+    uex.failPrices = (ids) => ids.includes(3);
+    failPricesAs(uex, rateLimit);
+    expect(await syncPrices(deps)).toEqual({ batches: 2, failed: 1, unfetched: 2 });
+    expect(warnings().map((l) => l.line).join('\n')).toContain('429');
+  });
+
+  it('stops the repeat terminal by terminal when it is a single request that meets the limit', async () => {
+    await seedTerminals(db, 6);
+    uex.failPrices = (ids) => ids.includes(3) || ids.includes(4);
+    failPricesAs(uex, (ids) => (ids.length === 2 ? serverRefusal() : rateLimit()));
+
+    // [3,4] is refused by the server and repeated; the request for 3 alone meets the limit: 4 is not asked, [5,6] neither
+    expect(await syncPrices(deps)).toEqual({ batches: 3, failed: 2, unfetched: 4 });
+    expect(uex.priceCalls).toEqual([[1, 2], [3, 4], [3]]);
+  });
+
+  it('ends with a complete progress report', async () => {
+    await seedTerminals(db, 10);
+    uex.failPrices = (ids) => ids.includes(3);
+    failPricesAs(uex, rateLimit);
+    const seen: PriceProgress[] = [];
+    await syncPrices(deps, (p) => { seen.push({ ...p }); });
+    expect(seen).toEqual([{ done: 0, total: 5 }, { done: 1, total: 5 }, { done: 2, total: 5 }, { done: 5, total: 5 }]);
+  });
+});
+
+describe('the limit of requests (HTTP 429) in the other series', () => {
+  it('stops the vehicles: the manufacturers after it are not asked, the reference is saved', async () => {
+    await saveReference(db, { vehicles: [veh(9)] });
+    uex.manufacturerIds = [195, 196, 197, 198];
+    uex.failVehiclesOf = new Set([196]);
+    failVehiclesAs(uex, rateLimit);
+
+    await syncReference(deps);
+
+    expect(uex.vehicleCalls).toEqual([195, 196]);
+    const ref = await loadReference(db);
+    expect(ref.commodities.size).toBe(2);
+    expect(ref.vehicles.map((v) => v.id)).toEqual([1, 2, 9]); // what arrived is added, nothing is deleted
+    expect(warnings().some((l) => l.line.includes('vehicles sync stopped') && l.line.includes('limit') && l.line.includes('429'))).toBe(true);
+  });
+
+  it('does not ask the pairs when the route list meets the limit, and still remembers the attempt', async () => {
+    uex.failRoutes = true;
+    failRoutesAs(uex, rateLimit);
+    const points: DistanceProgress[] = [];
+
+    const d = await ensureDistances(deps, 85, [[85, 1], [85, 2]], (p) => { points.push({ ...p }); });
+
+    expect(uex.routeCalls).toEqual([85]);
+    expect(uex.distanceCalls).toEqual([]);
+    expect(d.size).toBe(0);
+    expect(points.at(-1)).toEqual({ done: 1, total: 1 });
+    expect(warnings().some((l) => l.line.includes('distance requests stopped') && l.line.includes('429'))).toBe(true);
+    await ensureDistances(deps, 85, [[85, 1]]);
+    expect(uex.routeCalls).toEqual([85]); // not asked again within a day
+  });
+
+  it('says that it was the limit when a pair request stops the series', async () => {
+    uex.routes = [];
+    uex.failDistances = (_a, b) => b === 2;
+    failDistancesAs(uex, rateLimit);
+
+    await ensureDistances(deps, 1, [[1, 2], [1, 3]]);
+
+    expect(uex.distanceCalls).toEqual([[1, 2]]);
+    expect(warnings().some((l) => l.line.includes('distance requests stopped') && l.line.includes('limit') && l.line.includes('429'))).toBe(true);
   });
 });
 

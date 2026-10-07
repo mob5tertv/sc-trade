@@ -3,6 +3,13 @@
 // every request of the application goes through it, the way the commands of `tauri-plugin-http` go through Rust.
 // Nothing here is part of the production build: only the preview loads it.
 
+import { setAppMinGapMs } from '../data/uex-pacing';
+
+// The network of the preview is a fake that answers at once, and there is no UEX to be kind to: the application's UEX client
+// keeps no gap between its requests here (in the real application it keeps half a second), or every scene that refreshes the
+// prices would wait for it. The preview loads this file before the application starts, so the client is created without a gap.
+setAppMinGapMs(0);
+
 /** What UEX answers: the HTTP status and the JSON body (the envelope `{ status, data }` is the scene's to write). */
 export interface FakeAnswer {
   status: number;
