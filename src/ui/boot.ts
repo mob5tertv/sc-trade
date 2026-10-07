@@ -12,6 +12,7 @@ import { openTauriDb } from '../platform/tauri-db';
 import { tauriFetchJson } from '../platform/tauri-http';
 import { applyLogLevel } from '../platform/tauri-logger';
 import { app } from './state.svelte';
+import { startDatabase } from './vm/startup-order';
 
 export type BootResult = { ok: true } | { ok: false; reason: string };
 
@@ -28,14 +29,26 @@ const nowSec = (): number => Math.floor(Date.now() / 1000);
 
 const referenceIsEmpty = (ref: Reference): boolean => ref.terminals.size === 0 || ref.starSystems.length === 0;
 
-/** The database is backed up BEFORE it is opened. A failed backup is logged and never stops the start. */
+/**
+ * Merges the write-ahead journal (`sctrade.db-wal`) into the database file, so that the backup, a copy of that one
+ * file, is the whole database. The line of the log is what SQLite answered: `busy` 1 when another connection kept it
+ * from finishing (the backup may then miss the newest pages), `log` the pages still in the journal and `checkpointed`
+ * how many of them are in the file. A complete merge empties the journal and answers 0 / 0; -1 / -1 is a database
+ * that keeps no such journal.
+ */
+async function mergeJournal(opened: Db, log: Logger): Promise<void> {
+  const rows = await opened.select<{ busy: number; log: number; checkpointed: number }>('PRAGMA wal_checkpoint(TRUNCATE)');
+  const answer = rows[0] ?? null;
+  if (answer === null || answer.busy !== 0) {
+    log.warn('db', 'the journal was not merged into the database file completely, the backup may miss the newest pages', { answer });
+  } else if (answer.log < 0) log.info('db', 'the database keeps no write-ahead journal, nothing to merge', { answer });
+  else log.info('db', 'journal merged into the database file', { answer });
+}
+
+/** The backup of the start: a copy of the database file, taken after the journal was merged into it and before the migrations. */
 async function backup(log: Logger): Promise<void> {
-  try {
-    const created = await invoke<string | null>('backup_db');
-    log.info('app', 'database backup', { created });
-  } catch (err) {
-    log.error('app', 'database backup failed', { err });
-  }
+  const created = await invoke<string | null>('backup_db');
+  log.info('app', 'database backup', { created });
 }
 
 async function appVersion(): Promise<string> {
@@ -78,14 +91,25 @@ async function logStart(log: Logger, schema: number): Promise<void> {
   });
 }
 
-/** Backup, database, migrations, settings, log level, the first window and the trigger keys. */
+/**
+ * Database (opened, its journal merged, backed up, migrated: `vm/startup-order.ts`), settings, log level, the first
+ * window and the trigger keys.
+ */
 async function prepare(log: Logger): Promise<void> {
   if (prepared) return;
-  if (db === null) {
-    await backup(log);
-    db = await openTauriDb(log);
-  }
-  const schema = await migrate(db, log);
+  const started = await startDatabase(db, {
+    open: () => openTauriDb(log),
+    opened: (opened) => {
+      db = opened;
+    },
+    mergeJournal: (opened) => mergeJournal(opened, log),
+    backup: () => backup(log),
+    migrate: (opened) => migrate(opened, log),
+    // neither stops the start
+    failed: (step, err) => log.error('app', step === 'backup' ? 'database backup failed' : 'cannot merge the journal into the database file', { err }),
+  });
+  db = started.db;
+  const schema = started.schema;
   const settings = await loadSettings(db, log);
   await applyLogLevel(log, settings.logLevel);
 
