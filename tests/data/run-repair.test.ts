@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/data/db';
 import { addRunEvent, getActiveRun, listRuns, startRun } from '../../src/data/repo/runs';
-import { loseCargo, recordBuy, recordMark, recordSell, repairRuns } from '../../src/data/trade';
+import { loseCargo, recordBuy, recordIncome, recordMark, recordSell, repairRuns } from '../../src/data/trade';
 import type { TradeDeps } from '../../src/data/trade';
+import { incomeIn } from '../helpers/income-fixtures';
 import { buyIn, NOW, sellIn, tradeFixture } from '../helpers/trade-fixtures';
 import type { Clock, TradeFixture } from '../helpers/trade-fixtures';
 
 // The two states of a run that a trade cut off half-way leaves (the plugin has no transactions): an active run without a
 // single event (the run was started, its first purchase was never written) and an active run whose last sale was written
-// but which was never closed. They are repaired when the application starts, and by the first call of the trade service.
+// but which was never closed. They are repaired when the application starts, and before EVERY call of the trade service (a
+// write can be cut off in the middle of a session as well).
 
 let db: Db;
 let sink: TradeFixture['sink'];
@@ -96,8 +98,8 @@ describe('repairRuns: an active run that is sold out but was never closed', () =
     await recordSell(deps, sellIn(100, 7000));
     clock.advance(30);
     await expect(recordSell({ ...deps, db: failingOn(db, 'UPDATE run') }, sellIn(200, 7000))).rejects.toThrow('disk full');
-    clock.advance(100);
-    await recordMark(deps, 'arrive');
+    // a mark that is later than the last sale (written some other way: the service itself repairs the run before it records one)
+    await addRunEvent(db, { runId: (await getActiveRun(db))!.run.id, ts: NOW + 160, type: 'arrive', terminalId: null, commodityId: null, scu: null, price: null });
     await repairRuns(deps);
     expect((await listRuns(db))[0].run).toMatchObject({ status: 'done', endedAt: NOW + 60 });
   });
@@ -199,13 +201,102 @@ describe('the repair at the first call of the trade service', () => {
     expect(await listRuns(db)).toEqual([]);
   });
 
-  it('is not repeated at every trade: a half-written run of this session is left for the next start', async () => {
-    await recordBuy(deps, buyIn(10));
+  it('is repeated at every call, not only at the first: a run broken in the middle of the session is repaired by the next call, whatever it is', async () => {
+    await recordBuy(deps, buyIn(10));                                          // the first call is over, the sweep has been made
     await db.execute("UPDATE run SET status = 'lost', ended_at = 1");
-    await emptyActiveRun();
-    await recordMark(deps, 'depart');
-    expect((await getActiveRun(db))!.events).toHaveLength(1);
-    expect(repairLines()).toEqual([]);
+    const id = await emptyActiveRun();
+    await expect(recordMark(deps, 'depart')).rejects.toMatchObject({ code: 'no_active_run' });
+    expect((await listRuns(db)).map(r => r.run.id).includes(id)).toBe(false);
+    expect(repairLines()).toEqual([`[run] repaired a run without events: removed it {"runId":${id},"startedAt":${NOW}}`]);
+  });
+
+  it('writes nothing and reads little when there is nothing to repair', async () => {
+    await recordBuy(deps, buyIn(10));
+    const statements = { selects: 0, executes: 0 };
+    const counted: Db = {
+      select: (sql, params) => { statements.selects++; return db.select(sql, params); },
+      execute: (sql, params) => { statements.executes++; return db.execute(sql, params); },
+    };
+    await repairRuns({ ...deps, db: counted });
+    await repairRuns({ ...deps, db: counted });
+    // the first call on `counted` is the sweep of the leftovers of an income (one write); the second is the repair alone
+    statements.selects = 0; statements.executes = 0;
+    await repairRuns({ ...deps, db: counted });
+    expect(statements.executes).toBe(0);
+    expect(statements.selects).toBeLessThanOrEqual(3);                         // the empty runs, the active run and its events
+  });
+});
+
+describe('a half-written run in the middle of a session', () => {
+  /** One session: one `Db` object whose statements that start with `prefix` fail until `heal()`. */
+  function flaky(prefix: string) {
+    let broken = true;
+    const session: Db = {
+      select: <T>(sql: string, params?: unknown[]) => db.select<T>(sql, params),
+      execute: (sql, params) => (broken && sql.startsWith(prefix) ? Promise.reject(new Error('disk full')) : db.execute(sql, params)),
+    };
+    return { deps: { ...deps, db: session }, heal: () => { broken = false; } };
+  }
+
+  /** A sale whose close failed: bought 300 at NOW, sold at NOW + 60, the run still active; the failure is over. */
+  async function closeFailed() {
+    const s = flaky('UPDATE run');
+    await recordBuy(s.deps, buyIn(300));
+    clock.advance(60);
+    await expect(recordSell(s.deps, sellIn(300, 7000))).rejects.toThrow('disk full');
+    s.heal();
+    const stuck = (await getActiveRun(db))!;
+    expect(stuck.events.map(e => e.type)).toEqual(['buy', 'sell']);            // what the player was left with
+    return { ...s, id: stuck.run.id };
+  }
+
+  it('is an empty run (the first event failed): the next purchase starts its own run, at its own time', async () => {
+    const s = flaky('INSERT INTO run_event');
+    await expect(recordBuy(s.deps, buyIn(300))).rejects.toThrow('disk full');
+    s.heal();
+    clock.advance(30);
+    const r = await recordBuy(s.deps, buyIn(100));
+    expect(r.run.startedAt).toBe(NOW + 30);
+    expect(r.events).toHaveLength(1);
+    expect(await listRuns(db)).toHaveLength(1);
+  });
+
+  it('is a sold-out run (the close failed): the next purchase starts a new run, and the old one is closed as done at its last sale', async () => {
+    const { deps: s, id } = await closeFailed();
+    clock.advance(10);
+    const r = await recordBuy(s, buyIn(100));
+    expect(r.run.id).not.toBe(id);
+    expect(r.run).toMatchObject({ status: 'active', startedAt: NOW + 70 });
+    expect(r.events.map(e => e.type)).toEqual(['buy']);                        // not merged into the old run
+    const runs = await listRuns(db);
+    expect(runs.map(x => x.run.status)).toEqual(['active', 'done']);
+    expect(runs[1].run).toMatchObject({ id, endedAt: NOW + 60 });
+    expect(runs[1].events.map(e => e.type)).toEqual(['buy', 'sell']);
+    expect(repairLines()).toEqual([`[run] repaired a run that was sold out: closed it as done {"runId":${id},"endedAt":${NOW + 60}}`]);
+  });
+
+  it('is a sold-out run: a sale right after it is refused as "no active run", not as an oversell of 0 SCU', async () => {
+    const { deps: s } = await closeFailed();
+    await expect(recordSell(s, sellIn(1, 7000))).rejects.toMatchObject({ code: 'no_active_run', message: 'Нет активного рейса' });
+  });
+
+  it('is a sold-out run: a mark right after it is refused, and the run is not marked', async () => {
+    const { deps: s, id } = await closeFailed();
+    await expect(recordMark(s, 'depart')).rejects.toMatchObject({ code: 'no_active_run' });
+    expect((await listRuns(db))[0].events.map(e => e.type)).toEqual(['buy', 'sell']);
+    expect((await listRuns(db))[0].run.id).toBe(id);
+  });
+
+  it('is a sold-out run: "cargo lost" right after it does not file a sold-out run as lost, it has already been closed as done', async () => {
+    const { deps: s, id } = await closeFailed();
+    await expect(loseCargo(s)).rejects.toMatchObject({ code: 'no_active_run' });
+    expect((await listRuns(db))[0].run).toMatchObject({ id, status: 'done', endedAt: NOW + 60 });
+  });
+
+  it('is a sold-out run: an income right after it is written, and the run that was sold out is closed', async () => {
+    const { deps: s, id } = await closeFailed();
+    await recordIncome(s, incomeIn(10, 100));
+    expect((await listRuns(db)).map(r => [r.run.id === id, r.run.status])).toEqual([[false, 'done'], [true, 'done']]);
   });
 });
 
@@ -226,9 +317,10 @@ describe('a repair that cannot be made', () => {
     expect((await getActiveRun(db))!.run.status).toBe('active');
   });
 
-  it('does not keep the other repair from being made', async () => {
+  it('closing a sold-out run does not depend on the DELETE that removes an empty one: it is an UPDATE of its own', async () => {
     await soldOutButOpen();
     await repairRuns({ ...deps, db: failingOn(db, 'DELETE FROM run') });
-    expect(await getActiveRun(db)).toBeNull(); // the close does not use DELETE
+    expect(await getActiveRun(db)).toBeNull();
+    expect((await listRuns(db))[0].run.status).toBe('done');
   });
 });

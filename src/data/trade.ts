@@ -20,11 +20,11 @@ import {
 //    right after it leaves only a harmless extra observation, and a failure of the observation itself
 //    leaves nothing at all;
 //  - then the run (first purchase only), then the event, which is the record the money and the hold are
-//    computed from. A failure at the event leaves an empty active run: the next purchase joins it (within the session; the next
-//    start removes it, see `repairRuns`);
+//    computed from. A failure at the event leaves an empty active run: the next call of the service removes it, so the next
+//    purchase starts its own run (with its own start time);
 //  - the run is closed last, once its final sale is recorded. A failure there leaves the sale recorded
-//    and the run active with an empty hold: nothing is lost, and the next start closes the run at the time of that sale
-//    (`repairRuns`).
+//    and the run active with an empty hold: nothing is lost, and the next call of the service closes the run at the time of
+//    that sale, before it looks at the run (`repairHalfWrittenRuns`, also called at the start: `repairRuns`).
 //  - an income sale (spec 14.10) is a run of its own, written already finished (so it never takes the slot of the run that is
 //    going, and the schema needs nothing new), with one sale event. A failure at that event removes the empty run again; a
 //    crash between the two inserts leaves it, and the first call of the service in the next session removes it (`sweepLeftovers`).
@@ -75,7 +75,9 @@ const lastSaleAt = (events: RunEvent[]): number | null => events.reduce<number |
  *    player would see a loading run with an empty hold, and the next purchase would join it with the old start time;
  *  - an active run that has a sale and an empty hold (the last sale was written, the run was never closed): it is closed as
  *    done at the time of its last sale, as `recordSell` would have closed it.
- * Everything else is left as it is. Not queued: it is for the places that already hold a turn. A failure is logged only.
+ * Everything else is left as it is. Not queued: it is for the places that already hold a turn (`serialized` repairs before
+ * EVERY job, so a write that is cut off in the middle of a session is repaired by the next call, not at the next start).
+ * It reads twice and writes only when something is broken. A failure is logged only.
  */
 async function repairHalfWrittenRuns(d: RepairDeps): Promise<void> {
   try {
@@ -95,10 +97,12 @@ async function repairHalfWrittenRuns(d: RepairDeps): Promise<void> {
 }
 
 /**
- * The first call of the service on a database clears away what a trade that was cut off left behind: the finished runs
- * of an income without a sale (a crash between the insert of the run and the insert of its sale would show them as a row of
- * nothing in the history for ever) and the half-written runs of `repairHalfWrittenRuns`. Runs inside the queue, so it never
- * meets a trade that is being written; a failure is logged and never stops the call.
+ * The first call of the service on a database clears away what an income that was cut off left behind: a finished run without
+ * a sale (a crash between the insert of the run and the insert of its sale would show it as a row of nothing in the history for
+ * ever). Once per session, not at every call: `recordIncome` takes such a run back itself when its sale fails, so only a crash
+ * (a new session) leaves one, and the one thing that can survive a session, a removal that failed as well, leaves a row in the
+ * history and touches no trade. Runs inside the queue, so it never meets an income that is being written; a failure is
+ * logged and never stops the call.
  */
 async function sweepLeftovers(d: RepairDeps): Promise<void> {
   if (swept.has(d.db)) return;
@@ -109,22 +113,28 @@ async function sweepLeftovers(d: RepairDeps): Promise<void> {
   } catch (err) {
     d.log.warn(LOG, 'cannot remove the empty runs of an income that was cut off', { err });
   }
-  await repairHalfWrittenRuns(d);
 }
 
 /**
  * Repairs the runs that a write cut off half-way (see `repairHalfWrittenRuns`) now, inside the queue of the trade service. The
- * application calls it at the start, BEFORE it reads the active run, so the player is never shown a half-written run; the first
- * call of the service on a database does the same by itself, so a database nobody asked for is repaired as well. A call after
- * that repairs again, so it may be made at any time. Never rejects: a start must not fail because of it.
+ * application calls it at the start, BEFORE it reads the active run, so the player is never shown a half-written run. Every
+ * other call of the service does the same before its own work, so this is the same as a call that does nothing. Never rejects:
+ * a start must not fail because of it.
  */
 export function repairRuns(d: RepairDeps): Promise<void> {
-  return serialized(d, () => repairHalfWrittenRuns(d));
+  return serialized(d, async () => undefined);
 }
 
+/**
+ * Runs `job` in the queue of its database, after the previous job has ended whether it succeeded or not. Before the job: the
+ * leftovers of an income once per session, and the repair of the half-written runs EVERY time. A write that is cut off in the
+ * middle of a session (a failed event after the run was started, a failed close after the last sale) leaves a state that the
+ * next purchase would join, and that a sale would call an oversell; it is repaired here, before any call sees it.
+ */
 function serialized<T>(d: RepairDeps, job: () => Promise<T>): Promise<T> {
   const turn = (queues.get(d.db) ?? Promise.resolve()).then(async () => {
     await sweepLeftovers(d);
+    await repairHalfWrittenRuns(d);
     return job();
   });
   queues.set(d.db, turn.then(() => undefined, () => undefined));

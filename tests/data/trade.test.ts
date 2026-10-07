@@ -562,8 +562,8 @@ describe('overlapping calls', () => {
 });
 
 describe('a write that fails half-way', () => {
-  it('leaves only a truthful observation and an empty active run when the event cannot be written, and the next buy joins that run', async () => {
-    // one session: the same `Db` object throughout (the next START removes such a run, see run-repair.test.ts)
+  it('leaves only a truthful observation and an empty active run when the event cannot be written, and the next buy starts its own run', async () => {
+    // one session: the same `Db` object throughout; the next call of the service repairs the run before it looks at it
     let failing = true;
     const session = {
       ...deps,
@@ -577,8 +577,9 @@ describe('a write that fails half-way', () => {
     failing = false;
     clock.advance(30);
     const r = await recordBuy(session, buyIn(300));
-    expect(r.run.id).toBe(left.run.id);
+    expect(r.run.startedAt).toBe(NOW + 30);    // not the old start: the empty run is gone and this one is new
     expect(r.events).toHaveLength(1);
+    expect(await rowCounts()).toEqual({ runs: 1, events: 1, observations: 2 });
   });
 
   it('writes nothing at all when the observation cannot be written', async () => {
