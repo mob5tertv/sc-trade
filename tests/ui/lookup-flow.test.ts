@@ -1,0 +1,141 @@
+import { describe, expect, it } from 'vitest';
+import { answerLookup } from '../../src/ui/vm/lookup-flow';
+import { CACHED_ANSWER, FINAL_ANSWER, flowHarness } from '../helpers/window-layout-fixtures';
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('answerLookup: the two steps', () => {
+  it('answers from the cache first, then fetches once inside the UEX queue and replaces the answer', async () => {
+    const h = flowHarness();
+    await answerLookup(h.flow);
+    expect(h.events).toEqual([
+      'suggest:cached', 'answer:12:preliminary',
+      'queue:wait', 'queue:run', 'suggest:fetch', 'answer:213:final',
+    ]);
+    expect(h.runs).toEqual(['cached', 'fetch']);
+  });
+
+  it('makes no second step when the cache already holds every distance', async () => {
+    const h = flowHarness();
+    h.state.firstAnswer = { ...CACHED_ANSWER, missing: 0 };
+    await answerLookup(h.flow);
+    expect(h.events).toEqual(['suggest:cached', 'answer:12:final']);
+    expect(h.runs).toEqual(['cached']);
+  });
+
+  it('never asks the UEX queue for the first step: it answers while the queue is busy', async () => {
+    const h = flowHarness();
+    let free!: () => void;
+    h.state.queueBusy = new Promise<void>((resolve) => (free = resolve));
+    const done = answerLookup(h.flow);
+    await tick();
+    // the cached answer is on the screen although a sync is holding the queue
+    expect(h.events).toEqual(['suggest:cached', 'answer:12:preliminary', 'queue:wait']);
+    free();
+    await done;
+    expect(h.events.at(-1)).toBe('answer:213:final');
+  });
+
+  it('fetches ONCE even when distances are still missing afterwards', async () => {
+    const h = flowHarness();
+    h.state.secondAnswer = { ...FINAL_ANSWER, missing: 4 };
+    await answerLookup(h.flow);
+    expect(h.runs).toEqual(['cached', 'fetch']);
+    expect(h.events.at(-1)).toBe('answer:213:final');
+  });
+
+  it('passes the progress of the fetching on', async () => {
+    const h = flowHarness();
+    h.state.progress = [{ done: 0, total: 15 }, { done: 7, total: 15 }, { done: 15, total: 15 }];
+    await answerLookup(h.flow);
+    expect(h.events.filter((e) => e.startsWith('progress:'))).toEqual(['progress:0/15', 'progress:7/15', 'progress:15/15']);
+    // the points come after the preliminary answer and before the final one
+    const at = (event: string) => h.events.indexOf(event);
+    expect(at('answer:12:preliminary')).toBeLessThan(at('progress:0/15'));
+    expect(at('progress:15/15')).toBeLessThan(at('answer:213:final'));
+  });
+});
+
+describe('answerLookup: a newer request wins', () => {
+  it('shows nothing and does not go on when it is superseded during the first step', async () => {
+    const h = flowHarness();
+    let go!: () => void;
+    h.hold.first = new Promise<void>((resolve) => (go = resolve));
+    const done = answerLookup(h.flow);
+    await tick();
+    h.state.newest = false;
+    go();
+    await done;
+    expect(h.events).toEqual(['suggest:cached']);
+  });
+
+  it('does not fetch when it is superseded while it waits in the UEX queue', async () => {
+    const h = flowHarness();
+    let free!: () => void;
+    h.state.queueBusy = new Promise<void>((resolve) => (free = resolve));
+    const done = answerLookup(h.flow);
+    await tick();
+    h.state.newest = false;
+    free();
+    await done;
+    expect(h.runs).toEqual(['cached']);
+    expect(h.events).toEqual(['suggest:cached', 'answer:12:preliminary', 'queue:wait', 'queue:run']);
+  });
+
+  it('does not show the final answer, nor the progress, when it is superseded during the fetching', async () => {
+    const h = flowHarness();
+    h.state.progress = [{ done: 1, total: 2 }];
+    let go!: () => void;
+    h.hold.second = new Promise<void>((resolve) => (go = resolve));
+    const done = answerLookup(h.flow);
+    await tick();
+    h.state.newest = false;
+    go();
+    await done;
+    expect(h.events.some((e) => e.startsWith('answer:213'))).toBe(false);
+  });
+
+  it('does not fetch when the cargo space was cleared while it waited', async () => {
+    const h = flowHarness();
+    let free!: () => void;
+    h.state.queueBusy = new Promise<void>((resolve) => (free = resolve));
+    const done = answerLookup(h.flow);
+    await tick();
+    h.state.capacity = false;
+    free();
+    await done;
+    expect(h.runs).toEqual(['cached']);
+  });
+});
+
+describe('answerLookup: failures', () => {
+  it('reports a failed first step and goes no further', async () => {
+    const h = flowHarness();
+    h.state.firstAnswer = new Error('the database is gone');
+    await answerLookup(h.flow);
+    expect(h.events).toEqual(['suggest:cached', 'failed']);
+  });
+
+  it('keeps the preliminary answer when the fetching fails, and says so', async () => {
+    const h = flowHarness();
+    h.state.secondAnswer = new Error('no network');
+    await answerLookup(h.flow);
+    expect(h.events).toEqual([
+      'suggest:cached', 'answer:12:preliminary',
+      'queue:wait', 'queue:run', 'suggest:fetch', 'refine-failed',
+    ]);
+  });
+
+  it('is silent about a failure of a request that was superseded', async () => {
+    const h = flowHarness();
+    h.state.firstAnswer = new Error('boom');
+    let go!: () => void;
+    h.hold.first = new Promise<void>((resolve) => (go = resolve));
+    const done = answerLookup(h.flow);
+    await tick();
+    h.state.newest = false;
+    go();
+    await done;
+    expect(h.events).toEqual(['suggest:cached']);
+  });
+});

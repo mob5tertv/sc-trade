@@ -1,73 +1,35 @@
 <script lang="ts">
+  import StripView from './components/StripView.svelte';
   import { app } from './state.svelte';
-  import { stripModel } from './vm/strip';
+  import { stripModel, type StripModel } from './vm/strip';
   import WindowGrip from './WindowGrip.svelte';
 
-  // While the application starts, or when the start failed, the bar says so instead of the location.
-  const text = $derived.by(() => {
-    if (app.phase === 'booting') return app.bootStatus;
-    if (app.phase === 'failed') return 'Ошибка запуска, нажмите';
-    const model = stripModel(app.activeRun, app.market, app.reference, app.settings, app.routeCtx());
-    // The content of a run on the bar comes with the run screens; until then only the essentials.
-    return model.kind === 'idle' ? model.location : [model.timer, model.cargo].filter((part) => part !== '').join(' · ');
-  });
+  const NOTHING_YET: StripModel = { kind: 'idle', location: '' };
+
+  // While the application starts, or when the start failed, the line says so instead of the location.
+  const flash = $derived(app.phase === 'booting' ? app.bootStatus : app.phase === 'failed' ? 'Ошибка запуска' : null);
+  const model = $derived(
+    app.phase === 'ready' ? stripModel(app.activeRun, app.market, app.reference, app.settings, app.routeCtx()) : NOTHING_YET,
+  );
 </script>
 
-<!-- the grip is next to the button, not inside it: pressing it moves the window and does not expand it -->
+<!--
+  The glass and the frame are the root's (`.sc-frame`). The grip is next to the line, not inside it: pressing it moves
+  the window and does not expand it, and a click on the rest of the line expands. The buttons of the marks of a run
+  come with the run screens.
+-->
 <div class="mini">
-  <WindowGrip />
-  <button class="strip" type="button" title={text} onclick={() => app.expand('mini click')}>
-    <span class="brand">SC</span>
-    <span class="text">{text}</span>
-  </button>
+  <WindowGrip divider />
+  <StripView {model} {flash} flashKind={app.phase === 'failed' ? 'error' : 'info'} onOpen={() => app.expand('mini click')} />
 </div>
 
 <style>
-  /* One line, as wide as its text (the root limits it to the monitor). Clicking the text expands the window; the
-     window is not focusable, so the click does not take the keyboard from the game. */
+  /* One line, as wide as its content (the root limits it to the monitor). The window is not focusable, so the click
+     does not take the keyboard from the game. */
   .mini {
     display: flex;
     flex: 1 1 auto;
-    align-items: center;
+    align-items: stretch;
     min-width: 0;
-    height: 26px;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    background: var(--sc-bg);
-  }
-
-  .strip {
-    display: flex;
-    flex: 1 1 auto;
-    align-items: center;
-    gap: var(--sc-gap);
-    min-width: 0;
-    height: 100%;
-    margin: 0;
-    padding: 0 12px 0 2px;
-    border: 0;
-    background: transparent;
-    color: var(--sc-text);
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .mini:hover {
-    background: color-mix(in srgb, var(--sc-bg), white 8%);
-  }
-
-  .brand {
-    flex: none;
-    color: var(--sc-accent);
-    font-weight: 700;
-  }
-
-  .text {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 </style>

@@ -22,8 +22,8 @@ async function dataset(name: Parameters<typeof prepareDataset>[1]) {
 }
 
 describe('datasets', () => {
-  it('are default, run and empty', () => {
-    expect([...DATASET_NAMES]).toEqual(['default', 'run', 'empty']);
+  it('are default, run, empty and window (the data of the window layout, in seed-window.ts)', () => {
+    expect([...DATASET_NAMES]).toEqual(['default', 'run', 'empty', 'window']);
     expect(isDatasetName('run')).toBe(true);
     expect(isDatasetName('other')).toBe(false);
   });

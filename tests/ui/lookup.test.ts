@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { formatUec } from '../../src/core/format';
 import { DEFAULT_SETTINGS } from '../../src/core/settings';
 import type { Reference } from '../../src/core/types';
-import { affectsLookup, kindForSide, lookupEmptyText, lookupPrice, lookupTarget, lookupTitle, terminalLabel } from '../../src/ui/vm/lookup';
+import { affectsLookup, kindForSide, lookupEmptyText, lookupPrice, lookupTarget, lookupTitle, sameRequest, terminalLabel } from '../../src/ui/vm/lookup';
 import type { LookupRequest } from '../../src/ui/vm/lookup';
 import { terminalRows } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
@@ -17,6 +17,20 @@ describe('kindForSide', () => {
   it('looks for a buyer of what I buy and for a seller of what I sell', () => {
     expect(kindForSide('buy')).toBe('from');   // a buy price → "Где продать" → trips from this terminal
     expect(kindForSide('sell')).toBe('to');    // a sell price → "Где купить" → trips to this terminal
+  });
+});
+
+describe('sameRequest', () => {
+  it('is true for a request that asks the same thing', () => {
+    expect(sameRequest(request({ commodityId: 10, price: 5088 }), request({ commodityId: 10, price: 5088 }))).toBe(true);
+  });
+
+  it('is false when the kind, the terminal, the commodity or the price differ, and when nothing was asked before', () => {
+    expect(sameRequest(request(), request({ kind: 'to' }))).toBe(false);
+    expect(sameRequest(request(), request({ terminalId: 2 }))).toBe(false);
+    expect(sameRequest(request(), request({ commodityId: 10 }))).toBe(false);
+    expect(sameRequest(request({ price: 1 }), request({ price: 2 }))).toBe(false);
+    expect(sameRequest(null, request())).toBe(false);
   });
 });
 

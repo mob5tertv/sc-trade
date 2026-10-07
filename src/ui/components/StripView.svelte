@@ -5,12 +5,14 @@
     model: StripModel;
     /** A short message that replaces the content for a moment; the owner decides when it goes away. */
     flash: string | null;
+    /** `error`: the message is red (the start failed). */
+    flashKind?: 'info' | 'error';
     onOpen: () => void;
     /** The two marks of a run; the buttons are drawn only while a run is on and the callback is given. */
     onDepart?: () => void;
     onArrive?: () => void;
   }
-  let { model, flash, onOpen, onDepart, onArrive }: Props = $props();
+  let { model, flash, flashKind = 'info', onOpen, onDepart, onArrive }: Props = $props();
 
   const showMarks = $derived(flash === null && model.kind === 'run' && (onDepart !== undefined || onArrive !== undefined));
 
@@ -29,7 +31,7 @@
 <div class="strip">
   <button type="button" class="open" title={full} onclick={() => onOpen()}>
     {#if flash !== null}
-      <span class="part flash" aria-live="polite">{flash}</span>
+      <span class="part flash" class:error={flashKind === 'error'} aria-live="polite">{flash}</span>
     {:else if model.kind === 'idle'}
       <span class="part mark">SC</span>
       <span class="part location">{model.location}</span>
@@ -130,6 +132,10 @@
   .flash {
     color: var(--sc-accent);
     font-weight: 600;
+  }
+
+  .flash.error {
+    color: var(--sc-bad);
   }
 
   .marks {

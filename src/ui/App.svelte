@@ -6,7 +6,6 @@
   import Panel from './Panel.svelte';
   import { app } from './state.svelte';
   import Strip from './Strip.svelte';
-  import WindowGrip from './WindowGrip.svelte';
 
   let root = $state<HTMLDivElement>();
 
@@ -75,39 +74,23 @@
 
 <!--
   The root is the whole interface and the window is as big as it: nothing here depends on the size of the
-  screen or of the window. The mini bar is as wide as its content; the expanded view is `panelWidth` wide
+  screen or of the window. It carries the glass and the frame with the cut corners (`.sc-frame`): nothing inside
+  paints a background of its own. The mini line is as wide as its content; the expanded view is `panelWidth` wide
   and as tall as its content, up to `--sc-max-h` (the window layer sets both limits from the monitor).
+  `data-float-host`: the lists that open from a field (`SearchBox`) ask this root to be tall enough to hold them.
 -->
 <div
-  class="sc-root"
+  class="sc-root sc-frame"
   bind:this={root}
+  data-float-host
   data-mode={app.mode}
   data-corner={app.settings.stripCorner}
   style:--sc-panel-w="{app.settings.panelWidth}px"
 >
   {#if app.mode === 'mini'}
     <Strip />
-  {:else if app.phase === 'ready'}
-    <Panel />
   {:else}
-    <!-- the expanded view while the application starts or when the start failed -->
-    <main>
-      <header>
-        <WindowGrip />
-        <strong class="title">SC Trade</strong>
-        <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Свернуть" title="Свернуть" onclick={() => app.collapse('close button')}>
-          ×
-        </button>
-      </header>
-      {#if app.phase === 'failed'}
-        <p class="error" role="alert">{app.bootError}</p>
-        <p>
-          <button class="sc-btn" type="button" onclick={() => { app.log.info('ui', 'retry start'); void boot(); }}>Повторить</button>
-        </p>
-      {:else}
-        <p class="status" role="status">{app.bootStatus}</p>
-      {/if}
-    </main>
+    <Panel />
   {/if}
 </div>
 
@@ -120,6 +103,7 @@
     flex-direction: column;
     max-width: var(--sc-max-w, none);
     max-height: var(--sc-max-h, none);
+    min-height: var(--sc-float-min-h, 0);
   }
 
   .sc-root[data-corner^='top'] {
@@ -144,32 +128,5 @@
 
   .sc-root[data-mode='expanded'] {
     width: var(--sc-panel-w);
-  }
-
-  main {
-    flex: 1 1 auto;
-    min-height: 0;
-    padding: var(--sc-gap) calc(var(--sc-gap) * 1.5);
-    background: var(--sc-bg);
-    border-left: 1px solid var(--sc-border);
-    border-right: 1px solid var(--sc-border);
-  }
-
-  header {
-    display: flex;
-    align-items: center;
-    gap: var(--sc-gap);
-  }
-
-  .title {
-    flex: 1;
-  }
-
-  .error {
-    color: var(--sc-bad);
-  }
-
-  .status {
-    color: var(--sc-muted);
   }
 </style>

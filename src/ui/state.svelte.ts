@@ -13,7 +13,9 @@ import { addObservation } from '../data/repo/diary';
 import { getActiveRun } from '../data/repo/runs';
 import { saveSetting } from '../data/repo/settings';
 import { getMeta, loadDistances, loadReference } from '../data/repo/uex-cache';
-import { loadMarket, suggestFrom, suggestTo, type SuggestDeps } from '../data/suggest';
+import {
+  loadMarket, suggestFromDetailed, suggestToDetailed, type SuggestDeps, type SuggestProgress, type SuggestRun,
+} from '../data/suggest';
 import { syncPrices, syncReference, type SyncDeps } from '../data/sync';
 import { UexError, type UexClient } from '../data/uex-client';
 import { applyLogLevel } from '../platform/tauri-logger';
@@ -35,12 +37,14 @@ import { resetHeldKeys } from './keyboard';
 import { shouldCollapse } from './vm/idle';
 import { createKeyboardHolds, type KeyboardHolds } from './vm/keyboard-holds';
 import { createLatestRequest } from './vm/latest-request';
-import { affectsLookup, kindForSide, lookupTitle, terminalLabel, type LookupRequest } from './vm/lookup';
+import { affectsLookup, lookupTitle, sameRequest, terminalLabel, type LookupRequest } from './vm/lookup';
+import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
 import { validateSetting } from './vm/settings-validation';
 import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, syncPlan } from './vm/sync-plan';
-import { terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
+import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
+import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
 import { uexErrorText } from './vm/uex-error';
 
@@ -51,15 +55,20 @@ import { uexErrorText } from './vm/uex-error';
 //    data services take them through `#syncDeps()` (a private view of that place), `suggestDeps()`, and
 //    the trade deps a later task adds next to it. The raw UEX client is never handed out;
 //  - `withUex(job)` is THE entry point for everything that can touch UEX: the syncs, and every suggestion
-//    call that may fetch distances (`suggestFrom`, `suggestTo`, `ensureDistances`). Requests to UEX are
-//    strictly sequential project-wide, so none of them may run outside of it. A job must never call
-//    `withUex` itself, nor a method that does (`syncReferenceNow`, `syncPricesNow`, `refreshReference`):
-//    the inner call would wait for the queue slot the outer job holds, and the queue would deadlock;
+//    call that may fetch distances (`suggestFromDetailed`/`suggestToDetailed` in the 'fetch' mode, `ensureDistances`).
+//    Requests to UEX are strictly sequential project-wide, so none of them may run outside of it. A job must
+//    never call `withUex` itself, nor a method that does (`syncReferenceNow`, `syncPricesNow`, `refreshReference`):
+//    the inner call would wait for the queue slot the outer job holds, and the queue would deadlock.
+//    The ONE thing that is deliberately outside of it: the first step of a lookup, which answers from the cache
+//    ('cached' mode) and makes no UEX request, so it must not wait behind a running sync. The second step, the one
+//    that fetches the missing distances, goes through `withUex` (see `runLookup`);
 //  - `reloadMarket()` refreshes the market after anything wrote prices;
 //  - UEX health is tracked per sync (`referenceOk`, `pricesOk`); `uexOk` is both together;
-//  - the Terminal tab: `terminalRows` (the table of the viewed terminal, on a 15 s clock), `recordPrice`
-//    (writes what the player saw), and the lookup (`lookup`, `runLookup`, `rerunLookup`, `newRoute`): where to
-//    buy / where to sell, one answer at a time, the newest request wins;
+//  - the Terminal section: `terminalRows` (the table of the viewed terminal, on a 15 s clock), `terminalSide` (the
+//    side of it that is drawn), `recordPrice` (writes what the player saw, and nothing else: it asks no lookup), and
+//    the lookup (`lookup`, `runLookup`, `rerunLookup`, `newRoute`, `closeLookup`): where to buy / where to sell, in
+//    two steps (the cached answer at once, the fetching of missing distances after it), one answer at a time, the
+//    newest request wins;
 //  - the window: it is the mini bar (`mini`) or the expanded view (`expanded`), as big as its content and
 //    anchored to a corner. It never takes the keyboard from the game by itself: the keyboard is taken only
 //    through `keyboard.hold(...)` (a text field is edited) and handed back by `release`. The expanded view
@@ -74,22 +83,26 @@ import { uexErrorText } from './vm/uex-error';
 //    of a queue that may be waiting for it: a mode job awaits the keyboard and fit queues, and neither of those
 //    ever awaits the mode queue. A drag (`dragBegin` .. `dragEnd`) is the one thing that stops `#refit`.
 
-export type Tab = 'terminal' | 'run' | 'routes';
 /** What the expanded window shows: the main screen or the settings, which take the whole window. */
 export type View = 'main' | 'settings';
 export type Phase = 'booting' | 'ready' | 'failed';
 export interface Notice { text: string; kind: 'info' | 'error' }
 
-/** What the lookup block of the Terminal tab shows (spec 14.2). */
+/** What the "Варианты" section shows (spec 14.2, 14.8). */
 export interface LookupState {
-  /** What was asked; `null` before anything was. */
+  /** What was asked; `null` before anything was: the section is on screen only while there is a request. */
   request: LookupRequest | null;
   /** What the options are, in a sentence: 'Где купить Gold для HUR-L1 · продажа 5 088'. */
   title: string;
   options: RouteOption[];
+  /** Nothing to show yet: the first answer has not come. */
   loading: boolean;
   /** A short Russian sentence when the lookup failed; never the raw text of an error. */
   error: string | null;
+  /** The answer is by the distances that were already known; the missing ones are being fetched (or could not be). */
+  preliminary: boolean;
+  /** How many of the missing distances are fetched, while they are. */
+  progress: SuggestProgress | null;
 }
 
 /** What a price the player saw is: the observation's fields without a time (now is the time). */
@@ -102,7 +115,7 @@ const EMPTY_REFERENCE: Reference = { starSystems: [], terminals: new Map(), comm
 const EMPTY_MARKET: Market = {
   uex: new Map(), own: new Map(), byTerminal: new Map(), byCommodity: new Map(), stock: new Map(), ownScu: new Map(), ownPrev: new Map(),
 };
-const IDLE_LOOKUP: LookupState = { request: null, title: '', options: [], loading: false, error: null };
+const IDLE_LOOKUP: LookupState = { request: null, title: '', options: [], loading: false, error: null, preliminary: false, progress: null };
 
 /** Prices are fetched again every hour (spec 6). */
 const PRICE_SYNC_INTERVAL_MS = 60 * 60 * 1000;
@@ -118,6 +131,11 @@ const FOCUS_SETTLE_MS = 500;
 
 const RECORD_FAILED = 'Не удалось записать цену. Подробности в логе.';
 const LOOKUP_FAILED = 'Не удалось подобрать маршруты. Подробности в логе.';
+const REFINE_FAILED = 'Не удалось уточнить расстояния. Показан предварительный ответ.';
+/** The `reason` of the lookup that repeats the one on screen after a setting changed (it must not reopen a section the player closed). */
+const LOOKUP_REPEAT = 'settings changed';
+/** The id of the "Варианты" section among the open sections. */
+const OPTIONS_SECTION = 'options';
 const NO_CURRENT_LOCATION = 'Сначала укажи, где ты находишься: найди локацию в поиске и нажми «Я здесь».';
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
@@ -128,7 +146,7 @@ class AppState {
   reference = $state.raw<Reference>(EMPTY_REFERENCE);
   market = $state.raw<Market>(EMPTY_MARKET);
   distances = $state.raw<Map<string, number | null>>(new Map());
-  /** The active run; nothing writes runs yet, the strip and the run tab read it. */
+  /** The active run; nothing writes runs yet, the mini line reads it. */
   activeRun = $state.raw<RunWithEvents | null>(null);
   pricesSyncedAt = $state<number | null>(null);
   /** The last reference sync worked (true until one fails; true again after the next good one). */
@@ -137,9 +155,9 @@ class AppState {
   pricesOk = $state(true);
   /** Unix seconds, updated once a second. */
   now = $state(nowSec());
-  /** Unix seconds, updated every 15 seconds: the moment the table of the Terminal tab is counted at. */
+  /** Unix seconds, updated every 15 seconds: the moment the table of the Terminal section is counted at. */
   rowsNow = $state(nowSec());
-  /** The Terminal tab's lookup block. */
+  /** The "Варианты" section: what was asked and the answer to it. */
   lookup = $state.raw<LookupState>(IDLE_LOOKUP);
 
   /**
@@ -167,7 +185,11 @@ class AppState {
   mode = $state<WindowMode>('mini');
   /** The main screen or the settings (the settings keep the window open: they count as busy). */
   view = $state<View>('main');
-  tab = $state<Tab>('terminal');
+  /**
+   * The side of the viewed terminal that the table draws: what can be bought here or what can be sold here. It starts
+   * as "buy"; the player switches it, and a terminal that has no rows on it brings the other side (`#settleSide`).
+   */
+  terminalSide = $state<Side>('buy');
   /** The keyboard is with the window: the player is typing. */
   keyboardHeld = $state(false);
   /**
@@ -186,7 +208,10 @@ class AppState {
     { settleMs: FOCUS_SETTLE_MS },
   );
   triggerErrors = $state<Record<TriggerName, string | null>>({ panel: null, depart: null, arrive: null });
-  /** What the Terminal tab shows (spec 14.2); not persisted. The current location is `settings.currentTerminalId`. */
+  /**
+   * What the Terminal section shows (spec 14.2); not persisted. The current location is `settings.currentTerminalId`.
+   * Change it through `#showTerminal`, which also settles the side of the table.
+   */
   viewTerminalId = $state<number | null>(null);
   phase = $state<Phase>('booting');
   /** One line for the strip while the application starts. */
@@ -293,7 +318,7 @@ class AppState {
   /** Applies the loaded settings; the viewed terminal starts at the current location. */
   setSettings(settings: Settings): void {
     this.settings = settings;
-    this.viewTerminalId = settings.currentTerminalId;
+    this.#showTerminal(settings.currentTerminalId);
   }
 
   /** The numbers the route services need, from the settings and the loaded data. */
@@ -324,6 +349,8 @@ class AppState {
     this.reference = await loadReference(db);
     await this.#loadMarketData();
     this.activeRun = await getActiveRun(db);
+    // the rows of the viewed terminal are known only now: a terminal that has nothing on the "buy" side opens on "sell"
+    this.#settleSide();
   }
 
   async #loadMarketData(): Promise<void> {
@@ -778,6 +805,15 @@ class AppState {
     });
   }
 
+  /** Opens the section when it is closed (the answer of a lookup is shown open); an open one stays as it is. */
+  openSection(id: string): Promise<void> {
+    return this.#sectionQueue(async () => {
+      if (this.#openIds.has(id.trim())) return;
+      this.#log.info('ui', 'open section', { id });
+      await this.updateSetting('openSections', serializeOpenSections(new Set([...this.#openIds, id])));
+    });
+  }
+
   // ---- triggers ---------------------------------------------------------------------------------
 
   /**
@@ -813,22 +849,37 @@ class AppState {
 
   // ---- actions of the player ----------------------------------------------------------------------
 
-  setTab(tab: Tab): void {
-    if (tab === this.tab) return;
-    this.#log.info('ui', 'tab', { from: this.tab, to: tab });
-    this.tab = tab;
-  }
-
-  /** The location search of the header: only changes what the Terminal tab shows. */
+  /** The location search of the header: only changes what the Terminal section shows. */
   setViewTerminal(id: number): void {
     this.#log.info('ui', 'view terminal', { terminalId: id });
-    this.viewTerminalId = id;
+    this.#showTerminal(id);
   }
 
   /** "Я здесь": the viewed terminal becomes the current location. */
   async setCurrentTerminal(id: number): Promise<void> {
     this.#log.info('ui', 'set current terminal', { terminalId: id });
-    if ((await this.updateSetting('currentTerminalId', id)) === null) this.viewTerminalId = id;
+    if ((await this.updateSetting('currentTerminalId', id)) === null) this.#showTerminal(id);
+  }
+
+  /** The Buy / Sell switch of the Terminal section. */
+  setTerminalSide(side: Side): void {
+    if (side === this.terminalSide) return;
+    this.#log.info('ui', 'terminal side', { from: this.terminalSide, to: side });
+    this.terminalSide = side;
+  }
+
+  /**
+   * Makes `id` the viewed terminal. The side of the table follows the rows of the new terminal: the side the player
+   * had chosen stays while the new terminal has rows on it, otherwise the other side (when that has some) takes its place.
+   */
+  #showTerminal(id: number | null): void {
+    this.viewTerminalId = id;
+    this.#settleSide();
+  }
+
+  /** The drawn side is one that has rows, when the viewed terminal has rows on either. */
+  #settleSide(): void {
+    this.terminalSide = resolveTerminalSide(this.terminalSide, sideCounts(this.terminalRows));
   }
 
   /** "Сменил сервер": own prices older than now are cold from this moment on. */
@@ -840,14 +891,14 @@ class AppState {
     }
   }
 
-  // ---- the Terminal tab ---------------------------------------------------------------------------
+  // ---- the Terminal and the Options sections -----------------------------------------------------
 
   /**
-   * Writes a price the player saw (own observation, with the quantity only when typed), reloads the market,
-   * makes that terminal the VIEWED one (the current location stays where it is) and runs the lookup the price
-   * asks for: a sell price, "where to buy" for that terminal; a buy price, "where to sell". Returns the sentence
-   * to show when the price was not saved, `null` when it was. The market is reloaded in either case, so the table
-   * shows what is stored. The lookup runs on its own: the caller does not wait for UEX.
+   * Writes a price the player saw (own observation, with the quantity only when typed), reloads the market and
+   * makes that terminal the VIEWED one (the current location stays where it is). It asks no lookup: prices are
+   * entered quietly, one after another, and the "Варианты" on screen are not recounted nor closed (spec 14.8).
+   * Returns the sentence to show when the price was not saved, `null` when it was. The market is reloaded in
+   * either case, so the table shows what is stored.
    */
   async recordPrice(input: PriceInput): Promise<string | null> {
     this.#log.info('ui', 'record price', input);
@@ -863,56 +914,84 @@ class AppState {
     this.rowsNow = nowSec();
     if (failure !== null) return failure;
 
-    this.viewTerminalId = input.terminalId;
-    void this.runLookup({ kind: kindForSide(input.side), terminalId: input.terminalId, commodityId: input.commodityId, price: input.price });
+    this.#showTerminal(input.terminalId);
     return null;
   }
 
   /**
    * Asks where to sell (`from`) or where to buy (`to`) for the terminal of the request, for one commodity or all
-   * of them, with the whole cargo space of the ship. Never throws; the answer lands in `lookup`. A newer request
-   * replaces an older one: the answer of the older one is dropped, and one still waiting in the queue is not run.
-   * Nothing is run while the cargo space is not set (the block says so).
+   * of them, with the whole cargo space of the ship. Never throws; the answer lands in `lookup`, in two steps
+   * (`answerLookup`): at once from the distances that are already known (marked preliminary while some are
+   * missing), then, when some are missing, ONE fetching of them inside the UEX queue. A newer request replaces an
+   * older one: the answer of the older one is dropped, and a step that has not started yet is not started.
+   * Nothing is run while the cargo space is not set (the section says so). A request of the player opens the
+   * section; the repeat after a setting changed (`reason`) leaves it as the player has it.
    */
   async runLookup(request: LookupRequest, reason = 'player'): Promise<void> {
     const isNewest = this.#latestLookup.begin();
     const title = lookupTitle(request, this.reference, this.settings.nearby);
     this.#log.info('ui', 'lookup', { ...request, reason });
+    if (reason !== LOOKUP_REPEAT) void this.openSection(OPTIONS_SECTION);
 
+    const quiet = { loading: false, error: null, preliminary: false, progress: null };
     if (this.settings.scuCapacity <= 0) {
       this.#log.info('ui', 'lookup not run, the cargo space is not set', { ...request });
-      this.lookup = { request, title, options: [], loading: false, error: null };
+      this.lookup = { request, title, options: [], ...quiet };
       return;
     }
-    this.lookup = { request, title, options: [], loading: true, error: null };
+    // the same request asked again keeps its answer on screen until the new one comes
+    const same = sameRequest(this.lookup.request, request);
+    this.lookup = { request, title, options: same ? this.lookup.options : [], ...quiet, loading: true, preliminary: same && this.lookup.preliminary };
 
-    try {
-      const options = await this.withUex(async () => {
-        const freeScu = this.settings.scuCapacity;
-        if (!isNewest() || freeScu <= 0) return [];
-        const deps = this.suggestDeps();
-        const commodityId = request.commodityId ?? undefined;
-        return request.kind === 'from'
-          ? suggestFrom(deps, request.terminalId, freeScu, commodityId)
-          : suggestTo(deps, request.terminalId, freeScu, commodityId);
-      });
-      if (!isNewest()) return;
-      this.lookup = { request, title, options, loading: false, error: null };
-    } catch (err) {
-      this.#log.error('ui', 'lookup failed', { ...request, err });
-      if (!isNewest()) return;
-      this.lookup = { request, title, options: [], loading: false, error: err instanceof UexError ? uexErrorText(err) : LOOKUP_FAILED };
-    }
+    const suggest = (run: SuggestRun) => {
+      const freeScu = this.settings.scuCapacity;
+      const deps = this.suggestDeps();
+      const commodityId = request.commodityId ?? undefined;
+      return request.kind === 'from'
+        ? suggestFromDetailed(deps, request.terminalId, freeScu, commodityId, run)
+        : suggestToDetailed(deps, request.terminalId, freeScu, commodityId, run);
+    };
+    await answerLookup({
+      suggest,
+      withUex: (job) => this.withUex(job),
+      isNewest,
+      canRun: () => this.settings.scuCapacity > 0,
+      show: {
+        answer: (options, preliminary) => {
+          this.lookup = { request, title, options, ...quiet, preliminary, progress: preliminary ? this.lookup.progress : null };
+        },
+        progress: (progress) => {
+          this.lookup = { ...this.lookup, progress };
+        },
+        failed: (err) => {
+          this.#log.error('ui', 'lookup failed', { ...request, err });
+          this.lookup = { request, title, options: [], ...quiet, error: err instanceof UexError ? uexErrorText(err) : LOOKUP_FAILED };
+        },
+        refineFailed: (err) => {
+          this.#log.error('ui', 'lookup: the distances could not be fetched, the preliminary answer stays', { ...request, err });
+          this.lookup = { ...this.lookup, progress: null };
+          this.notify(err instanceof UexError ? uexErrorText(err) : REFINE_FAILED, 'error');
+        },
+      },
+    });
   }
 
   /** The same lookup again, after a setting that shapes its answer changed. Nothing to do before the first one. */
   async rerunLookup(): Promise<void> {
     const { request } = this.lookup;
-    if (request !== null) await this.runLookup(request, 'settings changed');
+    if (request !== null) await this.runLookup(request, LOOKUP_REPEAT);
+  }
+
+  /** The cross of the "Варианты" section: the answer goes away, and so does the section; the table stays. */
+  closeLookup(): void {
+    if (this.lookup.request === null) return;
+    this.#log.info('ui', 'close lookup');
+    this.#latestLookup.begin(); // an answer that is still on its way has nowhere to land
+    this.lookup = IDLE_LOOKUP;
   }
 
   /**
-   * "Новый маршрут": where to take cargo from the CURRENT location, whatever the table shows. The location
+   * "Маршрут": where to take cargo from the CURRENT location, whatever the table shows. The location
    * becomes the viewed terminal. Without a current location the player is asked to pick one.
    */
   async newRoute(): Promise<void> {
@@ -922,7 +1001,7 @@ class AppState {
       this.notify(NO_CURRENT_LOCATION, 'info');
       return;
     }
-    this.viewTerminalId = terminalId;
+    this.#showTerminal(terminalId);
     await this.runLookup({ kind: 'from', terminalId, commodityId: null, price: null }, 'new route');
   }
 
@@ -1017,7 +1096,7 @@ class AppState {
 
   // ---- messages ---------------------------------------------------------------------------------
 
-  /** A short Russian message over the tabs; it goes away by itself. */
+  /** A short Russian message under the header (the line exists only while there is one); it goes away by itself. */
   notify(text: string, kind: Notice['kind']): void {
     clearTimeout(this.#noticeTimer);
     this.notice = { text, kind };

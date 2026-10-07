@@ -7,7 +7,9 @@ const CORNERS: ReadonlyArray<Settings['stripCorner']> = ['top-left', 'top-right'
 const LOG_LEVELS: ReadonlyArray<Settings['logLevel']> = ['debug', 'info', 'warn', 'error'];
 const SORTS: ReadonlyArray<Settings['sort']> = ['uecPerHour', 'roi'];
 
-const OPACITY_RANGE = { min: 0.3, max: 1 };
+// Below 0.5 the text cannot be read over a bright scene. A value saved earlier below it is read as it is and is
+// replaced by the first change the player makes.
+const OPACITY_RANGE = { min: 0.5, max: 1 };
 const PANEL_WIDTH_RANGE = { min: 380, max: 640 };
 
 const NOT_A_NUMBER = 'Введите число';
@@ -60,7 +62,7 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
     case 'refillFullMin':
       return isNumber(v) && v > 0 ? null : 'Число минут больше нуля';
     case 'opacity':
-      return isNumber(v) && v >= OPACITY_RANGE.min && v <= OPACITY_RANGE.max ? null : 'От 0,3 до 1';
+      return isNumber(v) && v >= OPACITY_RANGE.min && v <= OPACITY_RANGE.max ? null : 'От 0,5 до 1';
     case 'panelWidth':
       return isNumber(v) && v >= PANEL_WIDTH_RANGE.min && v <= PANEL_WIDTH_RANGE.max
         ? null
