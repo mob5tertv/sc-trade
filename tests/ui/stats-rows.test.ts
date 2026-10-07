@@ -3,6 +3,7 @@ import { formatCompact } from '../../src/core/format';
 import { historyRows, liveRows, routeRows, sessionRows } from '../../src/ui/vm/stats-rows';
 import { routeStats } from '../../src/core/stats';
 import { ev, ref, run } from '../helpers/factories';
+import { incomeRun } from '../helpers/income-fixtures';
 import { R1, R2, R4, R5, R6, withMarks } from '../helpers/stats-fixtures';
 import { NOW, stat } from '../helpers/stats-rows-fixtures';
 
@@ -87,6 +88,37 @@ describe('historyRows', () => {
       ],
     };
     expect(historyRows([half], ref, NOW)[0].title).toBe('GOLD: рейс без продаж');
+  });
+
+  describe('a sale without a purchase (income, task 32)', () => {
+    const income = incomeRun(21, 5000, 120, 3700);
+
+    it('is called by its code and "продажа без закупки", not a mixed run, with the revenue as the profit and dashes for ROI and rate', () => {
+      expect(historyRows([income], ref, NOW)[0]).toEqual({
+        runId: 21, when: expect.stringMatching(/^\d\d\.\d\d \d\d:\d\d$/), title: 'TITA: продажа без закупки', status: 'done',
+        profit: nb('444 000'), roi: '—', duration: '0:00', rate: '—',
+      });
+    });
+
+    it('names every commodity when one run sold several without buying', () => {
+      const several = { run: income.run, events: [...income.events, ev({ id: 212, runId: 21, ts: 5000, type: 'sell', terminalId: 2, commodityId: 10, scu: 5, price: 7000 })] };
+      expect(historyRows([several], ref, NOW)[0].title).toBe('TITA, GOLD: продажа без закупки');
+    });
+
+    it('leaves the titles of the runs that bought alone: a purchase makes it a run again', () => {
+      expect(historyRows([R4], ref, NOW)[0].title).toBe('GOLD: рейс без продаж');
+      expect(historyRows([R5], ref, NOW)[0].title).toBe('GOLD: смешанный рейс');
+      expect(historyRows([R1], ref, NOW)[0].title).toBe('GOLD: ARC-L1 → TDD Area 18');
+    });
+
+    it('prints no NaN and no infinite percent anywhere in the row', () => {
+      expect(Object.values(historyRows([income], ref, NOW)[0]).join('|')).not.toMatch(/NaN|Infinity|∞/);
+    });
+
+    it('stands in the list next to a run that is going, which keeps its dashes', () => {
+      const rows = historyRows([income, R6], ref, R6.run.startedAt + 600);
+      expect(rows.map(r => [r.status, r.profit])).toEqual([['done', nb('444 000')], ['active', '—']]);
+    });
   });
 
   it('carries the run id and keeps the given order', () => {

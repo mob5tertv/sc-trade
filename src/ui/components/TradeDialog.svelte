@@ -11,6 +11,8 @@
     /** The quantity and the price the form starts with; `null` leaves the field empty. */
     defaultScu: number | null;
     defaultPrice: number | null;
+    /** One muted line under the fields: what the trade is (an income says that the goods are not in the hold); `null` for none. */
+    note?: string | null;
     /**
      * Why the trade could not be written, shown under the fields. The form confirms once and then waits: it takes a new
      * confirmation after `error` changes (the owner sets it back to `null` when it starts a write, so that the same
@@ -20,7 +22,7 @@
     onConfirm: (trade: { scu: number; price: number }) => void;
     onCancel: () => void;
   }
-  let { title, side, defaultScu, defaultPrice, error, onConfirm, onCancel }: Props = $props();
+  let { title, side, defaultScu, defaultPrice, note = null, error, onConfirm, onCancel }: Props = $props();
 
   // Seeded from the defaults once, when the form opens: they are plain numbers in the fields, easy to overtype. What the
   // player typed stays when the owner hands in a new `error` (a derived text would start again from the defaults).
@@ -102,6 +104,9 @@
     <button type="submit" class="sc-btn sc-btn--primary" title="Записать сделку (Enter)">{side === 'buy' ? 'Купил' : 'Продал'}</button>
     <button type="button" class="sc-btn" title="Не записывать (Esc)" onclick={() => onCancel()}>Отмена</button>
   </div>
+  {#if note}
+    <p class="hint note">{note}</p>
+  {/if}
   {#if badScu || badPrice}
     <p class="hint bad">Нужны целые числа: количество от 1, цена больше нуля.</p>
   {/if}
@@ -154,6 +159,10 @@
   .hint {
     margin: 4px 0 0;
     font-size: var(--sc-font-sm);
+  }
+
+  .note {
+    color: var(--sc-muted);
   }
 
   .bad {

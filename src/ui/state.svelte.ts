@@ -17,7 +17,7 @@ import {
   loadMarket, suggestFromDetailed, suggestToDetailed, type SuggestDeps, type SuggestProgress, type SuggestRun,
 } from '../data/suggest';
 import { syncPrices, syncReference, type SyncDeps } from '../data/sync';
-import { loseCargo as closeAsLost, recordBuy, recordMark, recordSell, TradeError, type TradeDeps, type TradeInput } from '../data/trade';
+import { loseCargo as closeAsLost, recordBuy, recordIncome, recordMark, recordSell, TradeError, type TradeDeps, type TradeInput } from '../data/trade';
 import { UexError, type UexClient } from '../data/uex-client';
 import { applyLogLevel } from '../platform/tauri-logger';
 import { bindTriggers, type TriggerName } from '../platform/triggers';
@@ -1140,20 +1140,27 @@ class AppState {
   /**
    * The player sold. `input.knownScu` is what the buyer held before: the diary then keeps "was plus sold". The sale that
    * empties the hold ends the run, and the target goes with it. Returns the sentence for the form, `null` when it was written.
+   *
+   * With `income` the goods were never bought through the application (spec 14.10): the sale is written as a finished run of
+   * its own and the run that is going is not touched, so `activeRun` stays the very same object and nothing re-reads the
+   * statistics by itself. They are told to here, once, because the history, the sessions and the profit of the session have
+   * changed. A refusal of the service wrote nothing and re-reads nothing.
    */
-  sell(input: TradeInput): Promise<string | null> {
+  sell(input: TradeInput, income = false): Promise<string | null> {
     return this.#tradeQueue(async () => {
-      this.#log.info('ui', 'sell', { ...input });
+      this.#log.info('ui', income ? 'sell without purchase' : 'sell', { ...input });
       let failure: string | null = null;
       let finished = false;
       let mayHaveWritten = true;
       try {
-        finished = (await recordSell(this.#tradeDeps(), input)).finished;
+        if (income) await recordIncome(this.#tradeDeps(), input);
+        else finished = (await recordSell(this.#tradeDeps(), input)).finished;
       } catch (err) {
-        failure = this.#tradeFailure('sell', err, { ...input });
+        failure = this.#tradeFailure(income ? 'sell without purchase' : 'sell', err, { ...input });
         mayHaveWritten = !(err instanceof TradeError);
       }
       await this.#reloadRun(mayHaveWritten);
+      if (income && mayHaveWritten) void stats.reload('income sale');
       if (failure === null && finished) await this.#runEnded('done');
       return failure;
     });

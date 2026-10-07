@@ -106,19 +106,6 @@ export const RUN_SCENES: readonly Scene[] = [
       await pause(400);
     },
   },
-  {
-    // nothing of it on board: no form, a sentence under the header
-    name: 'trade-sell-nothing',
-    title: '«Продал» товара, которого нет в трюме: фраза вместо формы',
-    dataset: 'run',
-    act: async (app) => {
-      await app.expand('preview');
-      app.setViewTerminal(MIC_L1);
-      app.setTerminalSide('sell');
-      await pause(60);
-      await openTradeForm('GOLD', 'Продал');
-    },
-  },
 
   // ---- the section «Рейс» ----
   { name: 'run-section-closed', title: '«Рейс» свёрнут: таймер фазы, груз, цель и кнопка отметки в заголовке', dataset: 'run', act: (app) => app.expand('preview') },

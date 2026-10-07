@@ -69,15 +69,18 @@ function tradedCommodityIds(events: RunEvent[]): number[] {
 
 /**
  * 'GOLD: ARC-L1 → TDD Area 18' for a simple run; 'GOLD, TITA: рейс без продаж' for one that only bought (nothing sold
- * yet, or the cargo was lost), 'GOLD, TITA: смешанный рейс' for one that sold but is not a single route; the dash for
- * a run without trades.
+ * yet, or the cargo was lost), 'GOLD, TITA: смешанный рейс' for one that sold but is not a single route, 'GOLD: продажа
+ * без закупки' for one that only sold (goods the application never saw bought, spec 14.10); the dash for a run without trades.
  */
 function runTitle(events: RunEvent[], ref: Reference): string {
   const ids = tradedCommodityIds(events);
   if (ids.length === 0) return NONE;
   const route = simpleRoute(events);
   const sold = events.some(e => e.type === 'sell' && isTrade(e));
-  const where = route !== null ? routeName(ref, route.originId, route.destId) : sold ? 'смешанный рейс' : 'рейс без продаж';
+  const bought = events.some(e => e.type === 'buy' && isTrade(e));
+  const where = route !== null ? routeName(ref, route.originId, route.destId)
+    : !sold ? 'рейс без продаж'
+      : bought ? 'смешанный рейс' : 'продажа без закупки';
   return `${ids.map(id => commodityName(ref, id)).join(', ')}: ${where}`;
 }
 
