@@ -38,7 +38,7 @@ export const perHourBare = (uec: number | null): string => (uec === null ? NONE 
  * not zero (2,5 and 9, not 9,04). The rounding to ten (9,96 is 10) is made before the decision, so '10,0%' never shows.
  * `null` when the ratio is not a number. The colour of the row is taken from this number, not from the raw ratio.
  */
-function shownPercent(ratio: number): number | null {
+export function shownPercent(ratio: number): number | null {
   if (!Number.isFinite(ratio)) return null;
   const percent = ratio * 100;
   const tenth = Math.round(percent * 10) / 10;
@@ -53,7 +53,7 @@ export function formatRoi(ratio: number): string {
 }
 
 /** The tier of the ROI that is shown (29,96% reads 30% and is coloured as 30%); a dash is the quiet tier. */
-function shownTier(ratio: number): RoiTier {
+export function shownTier(ratio: number): RoiTier {
   const percent = shownPercent(ratio);
   return percent === null ? 'poor' : roiTier(percent / 100);
 }

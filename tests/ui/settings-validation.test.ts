@@ -96,6 +96,25 @@ describe('validateSetting: numbers', () => {
     expect(validateSetting('scuCapacity', 696, S)).toBeNull();
   });
 
+  it('wants the ROI threshold of the table rows to be a whole number of percent from 0 to 500, 0 for every row that pays', () => {
+    expect(validateSetting('roiHighlightPct', 0, S)).toBeNull();
+    expect(validateSetting('roiHighlightPct', 50, S)).toBeNull();
+    expect(validateSetting('roiHighlightPct', 500, S)).toBeNull();
+    expect(validateSetting('roiHighlightPct', -1, S)).not.toBeNull();
+    expect(validateSetting('roiHighlightPct', 501, S)).not.toBeNull();
+    expect(validateSetting('roiHighlightPct', 12.5, S)).not.toBeNull();
+    expect(validateSetting('roiHighlightPct', NaN, S)).not.toBeNull();
+    expect(validateSetting('roiHighlightPct', Infinity, S)).not.toBeNull();
+  });
+
+  it('names both bounds of the ROI threshold in the sentence for the field', () => {
+    expect(validateSetting('roiHighlightPct', 600, S)).toBe('Целое число от 0 до 500');
+  });
+
+  it('starts at 50 percent', () => {
+    expect(S.roiHighlightPct).toBe(50);
+  });
+
   it('lets the budget be empty but not zero or negative', () => {
     expect(validateSetting('budget', null, S)).toBeNull();
     expect(validateSetting('budget', 1_000_000, S)).toBeNull();
