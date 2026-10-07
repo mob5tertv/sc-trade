@@ -16,8 +16,13 @@
 //! `REPEAT_WINDOW_MS`.
 //!
 //! The hook lives only while at least one key is assigned. It runs on its own thread with a
-//! message loop. The procedure does nothing slow: what it found out (a fired trigger, a
-//! discarded repeat) is handed to another thread that logs it and emits the event to the webview.
+//! message loop, at a raised priority. The procedure does nothing slow: what it found out (a fired
+//! trigger, a discarded repeat) is handed to another thread that logs it and emits the event to the
+//! webview.
+//!
+//! Windows silently removes a low-level hook whose thread answered too late. So every
+//! `set_trigger_keys` that leaves a key assigned installs the hook afresh (`refresh_hook`): saving
+//! the key in the settings repairs a hook that was dropped.
 
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError, mpsc};
 use std::thread;
@@ -215,7 +220,9 @@ mod sys {
 
     use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::System::Threading::{
+        GetCurrentThread, GetCurrentThreadId, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL,
+    };
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, VK_CONTROL, VK_MENU, VK_SHIFT,
     };
@@ -321,7 +328,21 @@ mod sys {
         unsafe { CallNextHookEx(None, code, wparam, lparam) }
     }
 
+    /// Raises the priority of the CALLING thread, and of no other. Windows drops a low-level hook whose
+    /// thread does not answer within its time limit, without telling the application; next to a game that
+    /// keeps every core busy a thread of normal priority can be late. This thread does next to nothing
+    /// (it sleeps in `GetMessageW` and runs the procedure for a key), so the priority costs nothing.
+    pub fn raise_own_priority() -> Result<(), String> {
+        // SAFETY: `GetCurrentThread` is a pseudo handle for the calling thread (nothing to close).
+        unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL) }
+            .map_err(|err| format!("SetThreadPriority failed: {err}"))
+    }
+
     fn run(ready: mpsc::SyncSender<Result<u32, String>>) {
+        if let Err(err) = raise_own_priority() {
+            // Not fatal: the hook works at the normal priority, only more easily dropped.
+            log::warn!("[hook] cannot raise the priority of the hook thread: {err}");
+        }
         // SAFETY: plain Win32 calls; `keyboard_proc` lives for the whole process.
         let hook = unsafe {
             let module = match GetModuleHandleW(PCWSTR::null()) {
@@ -524,37 +545,52 @@ fn apply(
         .unwrap_or_else(PoisonError::into_inner);
     tracker().assign(combos);
 
-    // A hook thread that ended on its own must not count as an installed hook.
+    // Said in the log, though `refresh_hook` takes the thread out in any case.
     if hook.as_ref().is_some_and(sys::HookThread::is_finished) {
         log::warn!("[hook] the hook thread had ended on its own");
-        remove_hook(&mut hook);
     }
 
     let wanted = tracker().any_assigned();
-    match (wanted, hook.is_some()) {
-        (true, false) => {
-            let started = ensure_event_thread(app).and_then(|()| sys::HookThread::start());
-            match started {
-                Ok(thread) => {
-                    *hook = Some(thread);
-                    log::info!("[hook] keyboard hook installed");
-                }
-                Err(reason) => {
-                    log::error!("[hook] cannot install the keyboard hook: {reason}");
-                    tracker().assign([None; TRIGGER_COUNT]);
-                    return Err(reason);
-                }
-            }
-        }
-        (false, true) => remove_hook(&mut hook),
-        _ => {}
+    let installed = refresh_hook(&mut hook, wanted, || {
+        ensure_event_thread(app).and_then(|()| sys::HookThread::start())
+    });
+    if let Err(reason) = installed {
+        log::error!("[hook] cannot install the keyboard hook: {reason}");
+        tracker().assign([None; TRIGGER_COUNT]);
+        return Err(reason);
     }
     Ok(outcome)
 }
 
+/// Brings the hook in `slot` in line with what is wanted: nothing, when no key is assigned, otherwise a
+/// NEW hook, installed by `install`.
+///
+/// A hook that is already in the slot is taken out first, even when it looks fine. Windows removes a
+/// low-level hook whose thread answered too late, without telling the application; the thread lives on
+/// and nothing in the slot shows the hook is gone. Leaving "the installed hook" alone would leave the
+/// keys dead until the program restarts; taking it out and installing a new one is the repair. The
+/// whole change is made under the controller's lock (the caller holds `slot`), so removing and
+/// installing never overlap with another change.
+///
+/// If `install` fails, the slot is empty afterwards and the reason is returned.
+fn refresh_hook(
+    slot: &mut Option<sys::HookThread>,
+    wanted: bool,
+    install: impl FnOnce() -> Result<sys::HookThread, String>,
+) -> Result<(), String> {
+    remove_hook(slot);
+    if !wanted {
+        return Ok(());
+    }
+    *slot = Some(install()?);
+    log::info!("[hook] keyboard hook installed");
+    Ok(())
+}
+
 /// Assigns the trigger keys and installs or removes the keyboard hook to match. An empty string
 /// means "not assigned". Returns, for panel / depart / arrive, `None` or the reason the text
-/// could not be used. Safe to call again with the same keys (a reloaded webview does).
+/// could not be used. Safe to call again with the same keys (a reloaded webview does): the hook is
+/// then installed afresh.
 #[tauri::command]
 pub fn set_trigger_keys(
     app: AppHandle,
@@ -1077,6 +1113,125 @@ mod tests {
         remove_hook(&mut slot);
         assert!(slot.is_none());
         drop(release);
+    }
+
+    // The hook that is in the slot can be one that Windows has removed without telling anyone (its
+    // thread answered too late), and nothing in the slot shows it. So whenever keys are applied, a hook
+    // is taken out and a new one put in, never "there is one, leave it".
+
+    #[cfg(windows)]
+    #[test]
+    fn keys_applied_with_no_hook_in_place_install_one() {
+        let mut slot = None;
+        let installs = Cell::new(0);
+        refresh_hook(&mut slot, true, || {
+            installs.set(installs.get() + 1);
+            sys::HookThread::start()
+        })
+        .expect("the hook should install");
+        assert_eq!(installs.get(), 1);
+        assert!(slot.is_some());
+        remove_hook(&mut slot);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn keys_applied_with_a_hook_in_place_install_a_new_one() {
+        let mut slot = Some(sys::HookThread::start().expect("the hook should install"));
+        for round in 1..=3 {
+            let installs = Cell::new(0);
+            refresh_hook(&mut slot, true, || {
+                installs.set(installs.get() + 1);
+                sys::HookThread::start()
+            })
+            .expect("the hook should install");
+            assert_eq!(installs.get(), 1, "round {round}");
+            assert!(slot.as_ref().is_some_and(|hook| !hook.is_finished()));
+        }
+        remove_hook(&mut slot);
+        assert!(slot.is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn keys_applied_over_a_hook_thread_that_ended_install_a_new_one() {
+        let hook = sys::HookThread::start().expect("the hook should install");
+        hook.request_stop()
+            .expect("WM_QUIT should reach the hook thread");
+        wait_until_finished(&hook);
+        let mut slot = Some(hook);
+        refresh_hook(&mut slot, true, sys::HookThread::start).expect("the hook should install");
+        assert!(slot.as_ref().is_some_and(|hook| !hook.is_finished()));
+        remove_hook(&mut slot);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn keys_applied_over_a_hook_thread_that_cannot_be_stopped_still_install_a_new_one() {
+        let (release, parked) = mpsc::channel::<()>();
+        let join = std::thread::spawn(move || {
+            let _ = parked.recv();
+        });
+        let mut slot = Some(sys::HookThread::unreachable(join));
+        refresh_hook(&mut slot, true, sys::HookThread::start).expect("the hook should install");
+        assert!(slot.as_ref().is_some_and(|hook| !hook.is_finished()));
+        remove_hook(&mut slot);
+        drop(release);
+    }
+
+    #[test]
+    fn no_keys_applied_leave_no_hook_and_install_nothing() {
+        let mut slot = None;
+        refresh_hook(&mut slot, false, || -> Result<sys::HookThread, String> {
+            panic!("nothing is wanted, nothing may be installed")
+        })
+        .expect("nothing to do");
+        assert!(slot.is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn no_keys_applied_remove_the_hook_that_is_in_place() {
+        let mut slot = Some(sys::HookThread::start().expect("the hook should install"));
+        refresh_hook(&mut slot, false, || -> Result<sys::HookThread, String> {
+            panic!("nothing is wanted, nothing may be installed")
+        })
+        .expect("nothing to do");
+        assert!(slot.is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_hook_that_cannot_be_installed_is_reported_and_leaves_the_slot_empty() {
+        let mut slot = Some(sys::HookThread::start().expect("the hook should install"));
+        let result = refresh_hook(&mut slot, true, || Err("no hook for you".to_string()));
+        assert_eq!(result, Err("no hook for you".to_string()));
+        assert!(slot.is_none());
+    }
+
+    // The hook thread raises its own priority (and no other thread's): a late answer makes Windows
+    // drop a low-level hook, and next to a game that keeps every core busy a thread of normal priority
+    // can be late.
+    #[cfg(windows)]
+    #[test]
+    fn the_hook_thread_raises_its_own_priority_only() {
+        use windows::Win32::System::Threading::{
+            GetCurrentThread, GetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL,
+        };
+        fn own() -> i32 {
+            // SAFETY: plain query on the calling thread's pseudo handle.
+            unsafe { GetThreadPriority(GetCurrentThread()) }
+        }
+        let before = own();
+        let raised = std::thread::spawn(|| {
+            sys::raise_own_priority().expect("the priority should be raised");
+            own()
+        })
+        .join()
+        .unwrap();
+        assert_eq!(raised, THREAD_PRIORITY_TIME_CRITICAL.0);
+        assert_ne!(before, THREAD_PRIORITY_TIME_CRITICAL.0);
+        assert_eq!(own(), before);
     }
 
     #[test]
