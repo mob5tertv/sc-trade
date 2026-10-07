@@ -27,6 +27,23 @@ enum PortableLog {
     Unavailable { file: PathBuf, reason: String },
 }
 
+/// The folder of the running exe, where the flag files are looked for.
+fn exe_dir() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+}
+
+/// Is `name` a file (not a folder) in `dir`? How every flag file next to the exe is recognised.
+fn flag_in(dir: &Path, name: &str) -> bool {
+    dir.join(name).is_file()
+}
+
+/// Is the flag file `name` next to the running exe? (`portable.flag` is read through `flag_in`, too.)
+pub fn flag_next_to_exe(name: &str) -> bool {
+    exe_dir().is_some_and(|dir| flag_in(&dir, name))
+}
+
 /// The portable log file in `dir`: the name the plugin gives it (`<name>.log`).
 fn portable_log_file(dir: &Path) -> PathBuf {
     dir.join(format!("{PORTABLE_LOG_NAME}.log"))
@@ -35,7 +52,7 @@ fn portable_log_file(dir: &Path) -> PathBuf {
 /// Decides the portable log for the folder `exe_dir`: the flag must be a file there, and the log
 /// file is opened the way the plugin opens it (created if missing, appended to) to see that it can be.
 fn portable_log(exe_dir: &Path) -> PortableLog {
-    if !exe_dir.join(PORTABLE_FLAG).is_file() {
+    if !flag_in(exe_dir, PORTABLE_FLAG) {
         return PortableLog::Off;
     }
     let file = portable_log_file(exe_dir);
@@ -53,9 +70,8 @@ fn portable_log(exe_dir: &Path) -> PortableLog {
 fn running_portable_log() -> &'static PortableLog {
     static DECISION: OnceLock<PortableLog> = OnceLock::new();
     DECISION.get_or_init(|| {
-        std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(portable_log))
+        exe_dir()
+            .map(|dir| portable_log(&dir))
             .unwrap_or(PortableLog::Off)
     })
 }
@@ -345,6 +361,26 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn a_flag_is_a_file_with_that_name_in_the_folder() {
+        let dir = TempDir::new("flag-helper");
+        assert!(!flag_in(&dir.0, "some.flag"));
+        std::fs::write(dir.0.join("some.flag"), "").unwrap();
+        assert!(flag_in(&dir.0, "some.flag"));
+        // Another flag of the same folder does not count, nor does a folder of that name.
+        assert!(!flag_in(&dir.0, "other.flag"));
+        std::fs::create_dir(dir.0.join("folder.flag")).unwrap();
+        assert!(!flag_in(&dir.0, "folder.flag"));
+    }
+
+    #[test]
+    fn the_flag_next_to_the_exe_is_looked_for_in_the_exes_folder() {
+        let exe = std::env::current_exe().unwrap();
+        assert_eq!(exe_dir().as_deref(), exe.parent());
+        // The test exe's folder holds no such file.
+        assert!(!flag_next_to_exe("no-such-flag-for-the-test-exe.flag"));
     }
 
     #[test]

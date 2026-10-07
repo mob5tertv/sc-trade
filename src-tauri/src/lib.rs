@@ -36,6 +36,7 @@ pub fn run() {
                 log::error!("[tray] cannot create the tray icon: {err}");
             }
             // Diagnostics only: logs when the game hides or shows the system cursor. Changes nothing.
+            // Starts only when `cursor-watch.flag` lies next to the exe.
             cursor_watch::start();
             Ok(())
         })
