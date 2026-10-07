@@ -1,5 +1,5 @@
 import { formatDuration, formatUec } from '../../core/format';
-import { runTotals, simpleRoute } from '../../core/run';
+import { isIncomeRun, runTotals, simpleRoute } from '../../core/run';
 import type { RouteStat, Session } from '../../core/stats';
 import { pairKey } from '../../core/types';
 import type { Reference, RunEvent, RunWithEvents } from '../../core/types';
@@ -80,19 +80,21 @@ function runTitle(events: RunEvent[], ref: Reference): string {
 
 /** The part of a run's title after the commodities: the route, or what kind of run it is when it is not one route. */
 function runKind(events: RunEvent[], ref: Reference): string {
+  if (isIncomeRun(events)) return 'продажа без закупки';
   const route = simpleRoute(events);
   if (route !== null) return routeName(ref, route.originId, route.destId);
-  if (!events.some(e => e.type === 'sell' && isTrade(e))) return 'рейс без продаж';
-  return events.some(e => e.type === 'buy' && isTrade(e)) ? 'смешанный рейс' : 'продажа без закупки';
+  return events.some(e => e.type === 'sell' && isTrade(e)) ? 'смешанный рейс' : 'рейс без продаж';
 }
 
 /**
  * The row of one run. An active run lasts until `now`; its profit, ROI and rate are dashes: it has not finished, so the
  * money in the hold is not a loss (the profit the run has so far is only what the cargo card shows). A lost run keeps its loss.
+ * A sale of goods that were never bought (`isIncomeRun`) is not a flight: it has no time and no rate, only its profit.
  */
 function historyRow({ run, events }: RunWithEvents, ref: Reference, now: number): HistoryRow {
   const totals = runTotals(run, events, now);
   const going = run.status === 'active';
+  const income = isIncomeRun(events);
   return {
     runId: run.id,
     when: formatStamp(run.startedAt),
@@ -100,8 +102,8 @@ function historyRow({ run, events }: RunWithEvents, ref: Reference, now: number)
     status: run.status,
     profit: going ? NONE : formatUec(totals.profit),
     roi: going || totals.roi === null ? NONE : formatRoi(totals.roi),
-    duration: formatDuration(totals.durationSec),
-    rate: going ? NONE : perHourBare(totals.uecPerHour),
+    duration: income ? NONE : formatDuration(totals.durationSec),
+    rate: going || income ? NONE : perHourBare(totals.uecPerHour),
   };
 }
 
@@ -127,7 +129,7 @@ export function sessionRows(list: Session[]): SessionRow[] {
   return list.map(s => ({
     when: formatStamp(s.startTs),
     duration: formatDuration(s.endTs - s.startTs),
-    runs: s.runIds.length,
+    runs: s.runCount,                                  // the runs of the session; its incomes are in the profit only
     profit: formatUec(s.profit),
     rate: perHourBare(s.uecPerHour),
   }));

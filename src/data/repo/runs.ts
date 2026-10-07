@@ -114,12 +114,19 @@ export async function addFinishedRun(db: Db, r: { vehicleId: number | null; scuC
   return result.lastInsertId;
 }
 
-/** Removes the run `id` when it is over and has no events (what a write that failed half-way leaves). A run with events, and the active run, stay. */
+// What `addFinishedRun` can leave behind when its sale is never written: a finished run without a single event. An active run
+// without events is another thing (a failed first purchase leaves one, and the next purchase joins it), a lost run is the
+// player's own act, and a run with events is a record: none of those is ever matched.
+const EMPTY_FINISHED_RUN = "status = 'done' AND NOT EXISTS (SELECT 1 FROM run_event WHERE run_event.run_id = run.id)";
+
+/** Removes the run `id` when it is a finished run without events (what a write that failed half-way leaves). Any other run stays. */
 export async function removeEmptyRun(db: Db, id: number): Promise<void> {
-  await db.execute(
-    "DELETE FROM run WHERE id = ? AND status <> 'active' AND NOT EXISTS (SELECT 1 FROM run_event WHERE run_id = ?)",
-    [id, id],
-  );
+  await db.execute(`DELETE FROM run WHERE id = ? AND ${EMPTY_FINISHED_RUN}`, [id]);
+}
+
+/** Removes every finished run without events (the leftovers of a write that was cut off); returns how many there were. */
+export async function removeEmptyFinishedRuns(db: Db): Promise<number> {
+  return (await db.execute(`DELETE FROM run WHERE ${EMPTY_FINISHED_RUN}`)).rowsAffected;
 }
 
 /** Appends an event to a run; returns its id. */

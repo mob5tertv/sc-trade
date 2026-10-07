@@ -3,7 +3,7 @@ import type { CargoLine } from '../../src/core/types';
 import type { Cell } from '../../src/ui/vm/terminal-rows';
 import { getActiveRun, listRuns } from '../../src/data/repo/runs';
 import { recordBuy, recordSell } from '../../src/data/trade';
-import { INCOME_NOTE, knownScuOf, tradeDefaults, tradeMode } from '../../src/ui/vm/trade-form';
+import { goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, tradeDefaults, tradeMode } from '../../src/ui/vm/trade-form';
 import { bought, GOLD, runOf, sold, TITA } from '../helpers/run-wiring-fixtures';
 import { buyIn as goldBought, sellIn as goldSold, tradeFixture } from '../helpers/trade-fixtures';
 
@@ -109,6 +109,23 @@ describe('tradeMode', () => {
   });
   it('says in one muted line what an income is', () => {
     expect(INCOME_NOTE).toBe('Нет в трюме — запишется как доход без закупки');
+  });
+});
+
+describe('goodsCameAboard', () => {
+  it('is true for a form opened as an income when the goods are in the hold by the time it is confirmed', () => {
+    expect(goodsCameAboard('income', runOf(bought(0)), GOLD)).toBe(true);                     // a purchase of the same goods in the meantime
+    expect(goodsCameAboard('income', runOf(bought(0), bought(30, TITA, 10)), TITA)).toBe(true);
+  });
+  it('is false while the goods are still not aboard, and for the forms that promised nothing about it', () => {
+    expect(goodsCameAboard('income', null, GOLD)).toBe(false);
+    expect(goodsCameAboard('income', runOf(bought(0)), TITA)).toBe(false);
+    expect(goodsCameAboard('sell', runOf(bought(0)), GOLD)).toBe(false);
+    expect(goodsCameAboard('sell', null, GOLD)).toBe(false);                                   // the hold was sold out: another refusal, not this one
+    expect(goodsCameAboard('buy', runOf(bought(0)), GOLD)).toBe(false);
+  });
+  it('has its own sentence for the notice line, which tells the player what to do', () => {
+    expect(GOODS_ABOARD_NOTICE).toBe('Этот товар уже в трюме — нажми «Продал» ещё раз');
   });
 });
 

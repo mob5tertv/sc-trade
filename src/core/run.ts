@@ -65,6 +65,16 @@ export function runTotals(run: Run, events: RunEvent[], now: number): RunTotals 
 }
 
 /**
+ * A run of goods the application never saw bought (spec 14.10): at least one sale and no purchase at all. It is the one
+ * rule that tells such a run from a flight: it has no cargo, no route and no phases, and it is not counted as a run. Like every
+ * number of a run it looks only at the trades that name a commodity, a quantity and a price: a half-filled row is neither a sale nor a purchase.
+ */
+export function isIncomeRun(events: RunEvent[]): boolean {
+  const trades = tradesOf(events);
+  return trades.some(t => t.type === 'sell') && !trades.some(t => t.type === 'buy');
+}
+
+/**
  * The route of a simple run: one commodity bought at one terminal and sold at another one.
  * `null` for anything else: no sale yet, several commodities or terminals, a trade whose terminal
  * is unknown, or a purchase and a sale at the same terminal.

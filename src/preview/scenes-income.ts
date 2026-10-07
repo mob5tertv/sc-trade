@@ -26,9 +26,11 @@ async function typeInto(selector: string, text: string): Promise<void> {
 const QUANTITY = 'form.trade input[aria-label="Количество, SCU"]';
 const submit = (): void => document.querySelector<HTMLFormElement>('form.trade')?.requestSubmit();
 
-// ids of the preview data: terminals MIC-L1 4, ARC-L1 1
+// ids of the preview data: terminals MIC-L1 4, ARC-L1 1, HUR-L1 3; Gold is commodity 2
 const MIC_L1 = 4;
 const ARC_L1 = 1;
+const HUR_L1 = 3;
+const GOLD = 2;
 
 /** The window expanded on the side "Продать" of a terminal. */
 async function atSellSide(app: SceneApp, terminalId: number): Promise<void> {
@@ -120,6 +122,35 @@ export const INCOME_SCENES: readonly Scene[] = [
       await sellThroughForm('MEDS', 120);
       await sellThroughForm('STIM', 80);
       await pause(200);
+    },
+  },
+  {
+    // the form was opened as an income, then the same goods were bought into the run: the form closes and the notice line says what to do
+    name: 'income-form-stale',
+    title: 'Форма дохода открыта, товар успели купить в рейс: форма закрылась, под шапкой «Этот товар уже в трюме — нажми «Продал» ещё раз»',
+    dataset: 'run',
+    act: async (app) => {
+      await atSellSide(app, MIC_L1);
+      await openSellForm('GOLD');
+      await typeInto(QUANTITY, '50');
+      await app.buy({ terminalId: HUR_L1, commodityId: GOLD, scu: 20, price: 6100 });
+      submit();
+      await pause(500);
+    },
+  },
+  {
+    // ...and the next press of "Продал" opens the ordinary sale of what is in the hold now (20 SCU)
+    name: 'income-form-stale-reopen',
+    title: 'После этого «Продал» открывает обычную продажу: в форме 20 SCU из трюма, строки про доход нет',
+    dataset: 'run',
+    act: async (app) => {
+      await atSellSide(app, MIC_L1);
+      await openSellForm('GOLD');
+      await typeInto(QUANTITY, '50');
+      await app.buy({ terminalId: HUR_L1, commodityId: GOLD, scu: 20, price: 6100 });
+      submit();
+      await pause(500);
+      await click('.expand button', 'Продал');
     },
   },
   {

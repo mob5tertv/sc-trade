@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cargoOf, phases, runTotals, simpleRoute } from '../../src/core/run';
+import { cargoOf, isIncomeRun, phases, runTotals, simpleRoute } from '../../src/core/run';
 import { ev, run } from '../helpers/factories';
 import { incomeRun } from '../helpers/income-fixtures';
 
@@ -126,5 +126,32 @@ describe('a run of one sale and no purchase (income, task 32)', () => {
     expect(cargoOf(income.events)).toEqual([]);
     expect(simpleRoute(income.events)).toBeNull();
     expect(phases(income.events)).toBeNull();
+  });
+});
+
+describe('isIncomeRun', () => {
+  it('is a run with at least one sale and no purchase at all', () => {
+    expect(isIncomeRun(incomeRun(1, 5000, 120, 3700).events)).toBe(true);
+    expect(isIncomeRun([sell(5000, 10, 3700), sell(5001, 5, 3800, 3, 11)])).toBe(true);                // several sales, still no purchase
+    expect(isIncomeRun([sell(5000, 10, 3700), ev({ ts: 5001, type: 'depart' })])).toBe(true);           // marks are no trades
+  });
+
+  it('is not a run that bought, whatever it sold', () => {
+    expect(isIncomeRun(E)).toBe(false);                                                                   // bought and sold
+    expect(isIncomeRun(E.slice(0, 2))).toBe(false);                                                       // only bought: cargo still aboard or lost
+    expect(isIncomeRun([buy(1000, 10, 100), sell(2000, 10, 120)])).toBe(false);
+    expect(isIncomeRun([sell(1500, 10, 120), buy(1000, 10, 100)])).toBe(false);                           // the order of the list does not matter
+  });
+
+  it('is not a run without a sale', () => {
+    expect(isIncomeRun([])).toBe(false);
+    expect(isIncomeRun([ev({ ts: 1, type: 'depart' }), ev({ ts: 2, type: 'arrive' })])).toBe(false);
+  });
+
+  it('counts only trades with a commodity, a quantity and a price, as every number of the run does', () => {
+    const noPrice = ev({ ts: 5, type: 'sell', terminalId: 2, commodityId: 10, scu: 10, price: null });
+    const noQuantity = ev({ ts: 5, type: 'buy', terminalId: 1, commodityId: 10, scu: null, price: 100 });
+    expect(isIncomeRun([noPrice])).toBe(false);                                                           // not a sale
+    expect(isIncomeRun([noQuantity, sell(6, 10, 100)])).toBe(true);                                       // not a purchase
   });
 });

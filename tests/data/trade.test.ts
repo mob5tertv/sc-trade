@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/data/db';
 import { latestObservations } from '../../src/data/repo/diary';
-import { allRecordTimestamps, getActiveRun, listRuns } from '../../src/data/repo/runs';
+import {
+  addFinishedRun, addRunEvent, allRecordTimestamps, closeRun, getActiveRun, getRun, listRuns, removeEmptyFinishedRuns, removeEmptyRun, startRun,
+} from '../../src/data/repo/runs';
 import { loseCargo, recordBuy, recordIncome, recordMark, recordSell, TradeError } from '../../src/data/trade';
 import type { TradeDeps } from '../../src/data/trade';
-import { incomeIn, TITA } from '../helpers/income-fixtures';
+import { incomeIn } from '../helpers/income-fixtures';
+import { TITA } from '../helpers/strip-fixtures';
 import { buyIn, NOW, sellIn, tradeFixture } from '../helpers/trade-fixtures';
 import type { Clock, TradeFixture } from '../helpers/trade-fixtures';
 
@@ -322,13 +325,128 @@ describe('recordIncome', () => {
     const broken = { ...deps, db: failingOn(failingOn(db, 'INSERT INTO run_event'), 'DELETE FROM run') };
     await expect(recordIncome(broken, incomeIn(120, 3700))).rejects.toThrow('disk full');
     expect(await rowCounts()).toEqual({ runs: 1, events: 0, observations: 1 });
-    expect(sink.lines.some(l => l.line.startsWith('[run] cannot remove the empty run'))).toBe(true);
+    expect(sink.lines.some(l => l.line.startsWith('[run] cannot remove the empty run {'))).toBe(true);        // the run of this sale (the sweep of leftovers has its own line)
   });
 
   it('writes nothing at all when the observation cannot be written', async () => {
     const broken = { ...deps, db: failingOn(db, 'INSERT INTO observation') };
     await expect(recordIncome(broken, incomeIn(120, 3700))).rejects.toThrow('disk full');
     expect(await rowCounts()).toEqual({ runs: 0, events: 0, observations: 0 });
+  });
+});
+
+describe('addFinishedRun and removeEmptyRun', () => {
+  const finishedRun = (at = NOW) => addFinishedRun(db, { vehicleId: 7, scuCapacity: 696, startedAt: at, endedAt: at });
+  const activeRun = () => startRun(db, { vehicleId: 7, scuCapacity: 696, startedAt: NOW });
+  const addSale = (runId: number) => addRunEvent(db, { runId, ts: NOW, type: 'sell', terminalId: 2, commodityId: TITA, scu: 10, price: 100 });
+  const statusOf = async (id: number) => (await getRun(db, id))?.run.status ?? null;
+
+  it('writes a run that is done, with the end it was given, and never an active one', async () => {
+    const id = await finishedRun(NOW + 5);
+    expect((await getRun(db, id))!.run).toEqual({ id, vehicleId: 7, scuCapacity: 696, startedAt: NOW + 5, endedAt: NOW + 5, status: 'done' });
+    expect(await getActiveRun(db)).toBeNull();
+  });
+
+  it('can be written while a run is going: the slot of the active run is not touched, and a second one fits as well', async () => {
+    const active = await activeRun();
+    await finishedRun(); await finishedRun();
+    expect((await db.select<{ n: number }>("SELECT COUNT(*) AS n FROM run WHERE status = 'active'"))[0].n).toBe(1);
+    expect((await getActiveRun(db))!.run.id).toBe(active);
+    expect((await listRuns(db)).map(r => r.run.status).sort()).toEqual(['active', 'done', 'done']);
+  });
+
+  it('removes an empty finished run', async () => {
+    const id = await finishedRun();
+    await removeEmptyRun(db, id);
+    expect(await statusOf(id)).toBeNull();
+  });
+
+  it('does not remove an empty ACTIVE run: a failed first purchase leaves one, and the next purchase joins it', async () => {
+    const id = await activeRun();
+    await removeEmptyRun(db, id);
+    expect(await statusOf(id)).toBe('active');
+  });
+
+  it('does not remove a finished run that has an event', async () => {
+    const id = await finishedRun();
+    await addSale(id);
+    await removeEmptyRun(db, id);
+    expect(await statusOf(id)).toBe('done');
+    expect((await getRun(db, id))!.events).toHaveLength(1);
+  });
+
+  it('does not remove a lost run, and removes only the run it was asked to', async () => {
+    const lost = await activeRun();
+    await closeRun(db, lost, 'lost', NOW + 1);
+    const empty = await finishedRun(); const other = await finishedRun();
+    await removeEmptyRun(db, lost); await removeEmptyRun(db, empty);
+    expect([await statusOf(lost), await statusOf(empty), await statusOf(other)]).toEqual(['lost', null, 'done']);
+    await removeEmptyRun(db, 999);                                             // an id that is not there changes nothing
+    expect(await statusOf(other)).toBe('done');
+  });
+});
+
+describe('removeEmptyFinishedRuns', () => {
+  it('removes every empty finished run and says how many; the active, the lost and the ones with events stay', async () => {
+    const runAt = (status: string, at: number) => db.execute('INSERT INTO run (vehicle_id, scu_capacity, started_at, ended_at, status) VALUES (7, 696, ?, ?, ?)', [at, status === 'active' ? null : at, status]);
+    await runAt('done', 10); await runAt('done', 20);                          // ids 1 and 2: leftovers
+    await runAt('lost', 30);                                                   // 3
+    await runAt('done', 40);                                                   // 4: has an event
+    await db.execute("INSERT INTO run_event (run_id, ts, type, terminal_id, commodity_id, scu, price) VALUES (4, 40, 'sell', 2, 20, 10, 100)");
+    await runAt('active', 50);                                                 // 5
+    expect(await removeEmptyFinishedRuns(db)).toBe(2);
+    expect((await listRuns(db)).map(r => [r.run.id, r.run.status])).toEqual([[5, 'active'], [4, 'done'], [3, 'lost']]);
+    expect(await removeEmptyFinishedRuns(db)).toBe(0);
+  });
+});
+
+describe('the leftovers of an income that was cut off', () => {
+  /** What a crash between the insert of the run and the insert of its sale leaves: a finished run of nothing. */
+  const leftover = (at: number) => db.execute("INSERT INTO run (vehicle_id, scu_capacity, started_at, ended_at, status) VALUES (7, 696, ?, ?, 'done')", [at, at]);
+  const emptyDoneRuns = async () => (await db.select<{ n: number }>("SELECT COUNT(*) AS n FROM run WHERE status = 'done' AND NOT EXISTS (SELECT 1 FROM run_event WHERE run_id = run.id)"))[0].n;
+
+  it('are removed when the trade service first touches the database, whatever the first call is, and logged once', async () => {
+    await leftover(10); await leftover(20);
+    await recordBuy(deps, buyIn(10));
+    expect(await emptyDoneRuns()).toBe(0);
+    expect(sink.lines.filter(l => l.line.startsWith('[run] removed')).map(l => l.line)).toEqual(['[run] removed the empty runs of an income that was cut off {"count":2}']);
+  });
+
+  it('are removed by a call that is refused as well: it is the first touch that counts', async () => {
+    await leftover(10);
+    await expect(recordSell(deps, sellIn(1, 7000))).rejects.toBeInstanceOf(TradeError);
+    expect(await emptyDoneRuns()).toBe(0);
+  });
+
+  it('are looked for once per session of the application (one database), not at every trade', async () => {
+    await recordBuy(deps, buyIn(10));
+    await leftover(30);
+    await recordBuy(deps, buyIn(10));
+    expect(await emptyDoneRuns()).toBe(1);                                      // the second call did not look
+    expect(sink.lines.some(l => l.line.startsWith('[run] removed'))).toBe(false);
+  });
+
+  it('are looked for again when the database is opened again (a new session)', async () => {
+    await recordBuy(deps, buyIn(10));
+    await leftover(30);
+    await recordMark({ ...deps, db: failingOn(db, 'nothing starts with this') }, 'depart');   // another `Db` object over the same file: a new session
+    expect(await emptyDoneRuns()).toBe(0);
+  });
+
+  it('keep an income that is complete, a run that is going and the sales of the runs that are over', async () => {
+    await recordIncome(deps, incomeIn(10, 100));
+    await leftover(30);
+    await recordBuy({ ...deps, db: failingOn(db, 'nothing starts with this') }, buyIn(10));
+    expect((await listRuns(db)).map(r => r.run.status)).toEqual(['active', 'done']);
+    expect((await listRuns(db))[1].events).toHaveLength(1);
+  });
+
+  it('do not stop the trade when they cannot be removed: the failure is logged and the trade is written', async () => {
+    await leftover(10);
+    const broken = { ...deps, db: failingOn(db, 'DELETE FROM run') };
+    expect((await recordBuy(broken, buyIn(10))).run.status).toBe('active');
+    expect(sink.lines.some(l => l.line.startsWith('[run] cannot remove the empty runs of an income that was cut off'))).toBe(true);
+    expect(await emptyDoneRuns()).toBe(1);
   });
 });
 

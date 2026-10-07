@@ -1,13 +1,12 @@
 import type { RunWithEvents } from '../../src/core/types';
 import type { TradeInput } from '../../src/data/trade';
 import { ev, run } from './factories';
+import { TITA } from './strip-fixtures';
 
 // ---------------------------------------------------------------------------
 // Task 32: a sale of goods that were never bought through the application. Terminal 2 is the buyer; the goods are
-// Titanium (20), a commodity the Gold runs of `trade-fixtures` never carry.
+// Titanium (`TITA`, 20 in `strip-fixtures`), a commodity the Gold runs of `trade-fixtures` never carry.
 // ---------------------------------------------------------------------------
-
-export const TITA = 20;
 
 /** A sale of Titanium at terminal 2 that no purchase stands behind. */
 export const incomeIn = (scu: number, price: number, over: Partial<TradeInput> = {}): TradeInput => (

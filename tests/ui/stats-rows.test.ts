@@ -93,11 +93,17 @@ describe('historyRows', () => {
   describe('a sale without a purchase (income, task 32)', () => {
     const income = incomeRun(21, 5000, 120, 3700);
 
-    it('is called by its code and "продажа без закупки", not a mixed run, with the revenue as the profit and dashes for ROI and rate', () => {
+    it('is called by its code and "продажа без закупки", not a mixed run, with the revenue as the profit and dashes for ROI, time and rate', () => {
       expect(historyRows([income], ref, NOW)[0]).toEqual({
         runId: 21, when: expect.stringMatching(/^\d\d\.\d\d \d\d:\d\d$/), title: 'TITA: продажа без закупки', status: 'done',
-        profit: nb('444 000'), roi: '—', duration: '0:00', rate: '—',
+        profit: nb('444 000'), roi: '—', duration: '—', rate: '—',
       });
+    });
+
+    it('has no duration even when the sale is written a moment after the start, and keeps the duration of every run that bought', () => {
+      const slow = { run: { ...income.run, endedAt: 5300 }, events: income.events };                  // not what the service writes, but still no flight
+      expect(historyRows([slow], ref, NOW)[0]).toMatchObject({ title: 'TITA: продажа без закупки', duration: '—', rate: '—' });
+      expect(historyRows([R1, R4], ref, NOW).map(r => r.duration)).toEqual(['40:00', '8:20']);
     });
 
     it('names every commodity when one run sold several without buying', () => {
@@ -213,17 +219,26 @@ describe('historyRows', () => {
 
 describe('sessionRows', () => {
   it('formats sessions and empty rates', () => {
-    expect(sessionRows([{ startTs: 30000, endTs: 30000, runIds: [], profit: 0, uecPerHour: null }])[0]).toMatchObject({ runs: 0, duration: '0:00', rate: '—' });
+    expect(sessionRows([{ startTs: 30000, endTs: 30000, runIds: [], runCount: 0, profit: 0, uecPerHour: null }])[0]).toMatchObject({ runs: 0, duration: '0:00', rate: '—' });
   });
 
   it('formats a session with runs, in the given order', () => {
     const start = new Date(2026, 9, 6, 14, 5).getTime() / 1000;
     const rows = sessionRows([
-      { startTs: start, endTs: start + 5400, runIds: [3, 4], profit: 345_000, uecPerHour: 230_000 },
-      { startTs: 1000, endTs: 2000, runIds: [1], profit: -100_000, uecPerHour: -360_000 },
+      { startTs: start, endTs: start + 5400, runIds: [3, 4], runCount: 2, profit: 345_000, uecPerHour: 230_000 },
+      { startTs: 1000, endTs: 2000, runIds: [1], runCount: 1, profit: -100_000, uecPerHour: -360_000 },
     ]);
     expect(rows[0]).toEqual({ when: '06.10 14:05', duration: '1:30:00', runs: 2, profit: nb('345 000'), rate: '230k' });
     expect(rows[1]).toMatchObject({ runs: 1, profit: nb('-100 000'), rate: '-360k' });
+  });
+
+  it('shows the runs of a session, not its incomes: a session of incomes only has no run and still has its profit', () => {
+    const rows = sessionRows([
+      { startTs: 1000, endTs: 2000, runIds: [5, 6, 7], runCount: 2, profit: 800_000, uecPerHour: 2_880_000 },   // two runs and an income
+      { startTs: 5000, endTs: 5000, runIds: [9], runCount: 0, profit: 444_000, uecPerHour: null },               // one income
+    ]);
+    expect(rows[0]).toMatchObject({ runs: 2, profit: nb('800 000') });
+    expect(rows[1]).toMatchObject({ runs: 0, profit: nb('444 000'), rate: '—' });
   });
 
   it('is empty without sessions', () => {

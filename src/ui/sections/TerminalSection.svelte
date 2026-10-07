@@ -13,7 +13,9 @@
   import { defaultSide } from '../vm/quick-entry';
   import { sideCounts, type TerminalRow } from '../vm/terminal-rows';
   import { selectedCommodity, type RowPick } from '../vm/terminal-side';
-  import { INCOME_NOTE, knownScuOf, tradeDefaults, tradeMode, type TradeDefaults, type TradeMode } from '../vm/trade-form';
+  import {
+    goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, tradeDefaults, tradeMode, type TradeDefaults, type TradeMode,
+  } from '../vm/trade-form';
 
   const SECTION = 'terminal';
   const ENTRY = 'entry';
@@ -138,7 +140,12 @@
     const failure = await (form.side === 'buy' ? app.buy(input) : app.sell(input, form.mode === 'income'));
     // the answer belongs to the form the write was started from: the player may have gone to another row meanwhile
     if (failure === null) closeTrade('written', form.id);
-    else if (tradeState !== null && tradeState.id === form.id) tradeState = { ...tradeState, error: failure };
+    else if (goodsCameAboard(form.mode, app.activeRun, form.commodityId)) {
+      // an income form whose goods were bought meanwhile: its line "нет в трюме" would contradict the refusal, so it goes
+      // and the notice line says what to do (the next "Продал" opens the ordinary sale)
+      closeTrade('the goods are in the hold now', form.id);
+      app.notify(GOODS_ABOARD_NOTICE, 'info');
+    } else if (tradeState !== null && tradeState.id === form.id) tradeState = { ...tradeState, error: failure };
   }
 </script>
 

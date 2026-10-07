@@ -108,4 +108,21 @@ describe('a sale without a purchase (income, task 32)', () => {
     const alone = sessions([2000], [income]);
     expect(alone[0]).toMatchObject({ runIds: [7], profit: 444_000, uecPerHour: null });       // one moment: no span to divide by
   });
+
+  it('is not a run of its session: runCount counts the runs, runIds and the profit keep every finished run', () => {
+    const s = sessions([1000, 2000, 3400], [R1, income]);
+    expect(s[0]).toMatchObject({ runIds: [1, 7], runCount: 1, profit: 789_000 });
+    expect(sessions([2000], [income])[0]).toMatchObject({ runIds: [7], runCount: 0, profit: 444_000 });   // a session of incomes only: no run, but a profit
+  });
+
+  it('counts the done and the lost runs and no income, wherever the incomes stand among them', () => {
+    const later = incomeRun(8, 12_200, 10, 100);                   // after the lost R4 (12000-12500)
+    const s = sessions([1000, 2000, 3400, 10000, 11800, 12000, 12200, 12500], [R1, R2, R4, later, income]);
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ runIds: [1, 7, 2, 4, 8], runCount: 3, profit: 345_000 + 444_000 + 200_000 - 100_000 + 1000 });
+  });
+
+  it('has a run count of zero for a session without runs', () => {
+    expect(sessions([30_000], [])[0]).toMatchObject({ runIds: [], runCount: 0, profit: 0 });
+  });
 });
