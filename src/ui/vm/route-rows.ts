@@ -27,6 +27,20 @@ const commodityLabel = (ref: Reference, id: number): string => ref.commodities.g
 /** '518k/ч'; the dash when there is no rate. */
 const perHour = (uec: number | null): string => (uec === null ? NONE : `${formatCompact(uec)}/ч`);
 
+/** '518k' for the column of a list whose caption says "UEC/ч"; the dash when there is no rate. */
+const perHourBare = (uec: number | null): string => (uec === null ? NONE : formatCompact(uec));
+
+/**
+ * The ROI of an option in whole percents: '42%', '-4%'. One decimal only below 10% and only when it is not zero:
+ * '2,5%', but '9%' for 9,04. The rounding to ten (9,96 is '10%') is made before the decision, so '10,0%' never shows.
+ */
+export function formatRoi(ratio: number): string {
+  const percent = ratio * 100;
+  const tenth = Math.round(percent * 10) / 10;
+  if (Math.abs(tenth) < 10 && !Number.isInteger(tenth)) return `${String(tenth).replace('.', ',')}%`;
+  return `${Math.round(percent) || 0}%`;
+}
+
 /** '59 Гм', '59,4 Гм', '0,12 Гм' (one decimal from one gigametre up, two below); the dash when unknown. */
 export function formatDistance(gm: number | null): string {
   if (gm === null) return NONE;
@@ -73,6 +87,7 @@ export interface RouteOptionRow {
   runs: number;
   /** The price at the other end: the sale price at the destination for trips from here, the purchase price at the origin for trips to here. */
   price: PriceView;
+  /** `roi` in whole percents (`formatRoi`); `rate` without its unit, the caption of the column says "UEC/ч". */
   roi: string; rate: string;
   /** The profit at the unfavourable end of both price ranges, and whether it is a loss. */
   worst: string; worstLoss: boolean;
@@ -113,7 +128,7 @@ export function routeOptionRow(
     timeTitle: timeTitle(o),
     runs: runCounts.get(pairKey(o.originId, o.destId)) ?? 0,
     price: priceView(from ? o.sell : o.buy),
-    roi: formatPct(o.roi), rate: perHour(o.uecPerHour),
+    roi: formatRoi(o.roi), rate: perHourBare(o.uecPerHour),
     worst: formatUec(o.worstProfit), worstLoss: o.worstProfit < 0,
     qty: `${o.qty} SCU`,
     invested: formatUec(o.qty * o.buy.price), profit: formatUec(o.profit), profitLoss: o.profit < 0,

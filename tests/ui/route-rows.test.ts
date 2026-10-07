@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDistance, routeOptionRow, sellAlternativeRow, sellHereRow } from '../../src/ui/vm/route-rows';
+import { formatDistance, formatRoi, routeOptionRow, sellAlternativeRow, sellHereRow } from '../../src/ui/vm/route-rows';
 import type { RouteOption } from '../../src/core/routes';
 import type { SellAlternative, SellHere } from '../../src/core/sell';
 import type { Estimate } from '../../src/core/types';
@@ -36,6 +36,33 @@ describe('formatDistance', () => {
   });
 });
 
+describe('formatRoi', () => {
+  it('rounds to whole percents', () => {
+    expect([0.42, 0.22, 0.1275, 0.5, 1.234].map(formatRoi)).toEqual(['42%', '22%', '13%', '50%', '123%']);
+    expect(formatRoi(-0.04)).toBe('-4%');
+  });
+
+  it('keeps one decimal only below 10% and only when the decimal is not zero', () => {
+    expect(formatRoi(0.025)).toBe('2,5%');
+    expect(formatRoi(0.0951)).toBe('9,5%');
+    expect(formatRoi(-0.025)).toBe('-2,5%');
+    expect(formatRoi(0.09)).toBe('9%');
+    expect(formatRoi(0.0904)).toBe('9%'); // the decimal rounds to zero
+    expect(formatRoi(0.0996)).toBe('10%'); // rounds up to ten: whole from there on
+    expect(formatRoi(0.1)).toBe('10%');
+    expect(formatRoi(0.105)).toBe('11%');
+  });
+
+  it('writes zero as 0%, never as a negative zero', () => {
+    expect(formatRoi(0)).toBe('0%');
+    expect(formatRoi(-0.0003)).toBe('0%');
+  });
+
+  it('uses the comma of Russian numbers', () => {
+    expect(formatRoi(0.031)).toBe('3,1%');
+  });
+});
+
 describe('routeOptionRow', () => {
   it('names the destination and shows its sale price when the trips start here', () => {
     expect(routeOptionRow(option(), ref, 'from', new Map())).toEqual({
@@ -43,7 +70,7 @@ describe('routeOptionRow', () => {
       distance: '59 Гм', time: '17:35', timeTitle: 'оценка по расстоянию',
       runs: 0,
       price: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
-      roi: '12,8%', rate: '256k/ч', worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
+      roi: '13%', rate: '256k', worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
       origin: 'ARC-L1', dest: 'TDD Area 18', bothEnds: false, isTarget: false, tier: 'ok',
       invested: nb('587 520'), profit: nb('74 880'), profitLoss: false,
       buy: { price: nb('6 120'), range: null, badge: { text: 'моя · 40 мин', kind: 'hot' } },

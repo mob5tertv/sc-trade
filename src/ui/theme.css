@@ -85,6 +85,11 @@ body {
   height: 100%;
 }
 
+::selection {
+  background: var(--sc-frame);
+  color: var(--sc-text);
+}
+
 :focus-visible {
   outline: 1px solid var(--sc-accent);
   outline-offset: -1px;
