@@ -2141,3 +2141,44 @@ it('labels a UEX price of unknown age without an age', () => {
 - [ ] **Step 3: Реализовать** в порядке: типы → `market.ts` → `estimate.ts` → `diary.latestQuantities` → `suggest.loadMarket` → `terminal-rows.ts`, `route-rows.ts`; поправить все места, где создаются `Estimate` / `Market` или вызывается `badgeText`.
 - [ ] **Step 4: Запустить** — `npm test && npm run check` — Expected: PASS, 0 errors.
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "fix: quantity readings are independent of price readings; UEX age may be unknown"`
+
+### Task 24: Окно в духе PolitBuro — мини-строка, развёрнутый вид без пустот, хай-тек
+
+Реализует раздел 14.7 спеки. Делится на четыре части; у каждой свой исполнитель и своя проверка.
+
+**24a. Режим просмотра в браузере.** Настоящий интерфейс открывается в обычном браузере: вызовы Tauri
+подменяются на границе `invoke` (`@tauri-apps/api/mocks`), база — настоящий SQLite в памяти на стороне
+dev-сервера со схемой из `migrate` и тестовыми данными, окно оверлея рисуется на «рабочем столе» поверх снимка
+игры. `npm run preview:shot -- --scene <имя> [--do "<шаги>"] [--state]` снимает сцену в PNG без человека
+(установленный Edge без окна, протокол DevTools) и умеет перед снимком кликать, печатать и нажимать клавиши.
+- Files: `preview.html`, `preview-app.html`, `src/preview/**`, `scripts/preview/**`, `vite.config.ts`, `package.json`, `tests/preview/**`
+- Не меняет: `src/ui`, `src/platform`, `src/data`, `src/core`, `src/main.ts`, `src-tauri`. В боевую сборку не попадает.
+
+**24b. Поведение окна.** Окно не берёт фокус; клавиатура — только через набор «держателей» на время ввода, с
+возвратом фокуса игре; состояния `mini` и `expanded`; окно по размеру содержимого, прижатое к углу, ставится
+одной командой `place_window`; само сворачивается после простоя; состояние секций хранится в настройках.
+- Files: `src/core/layout.ts`, `src/core/settings.ts`, `src/ui/vm/{keyboard-holds,idle,sections,settings-validation}.ts`,
+  `src/platform/window.ts`, `src/ui/keyboard.ts`, `src/ui/state.svelte.ts`, `src/ui/{App,Panel,Strip,Header}.svelte`,
+  `src/ui/tabs/SettingsTab.svelte`, `src-tauri/src/place.rs`, `src-tauri/src/lib.rs`, `src-tauri/tauri.conf.json`,
+  `src/preview/{ipc,scenes}.ts`, тесты
+- Produces: `WindowMode = 'mini' | 'expanded'`; `app.expand / collapse / toggleMode / fit / pointer / holdBusy /
+  releaseBusy / sectionOpen / toggleSection / openSettings / closeSettings`, `app.keyboard`, `app.view`;
+  `anchoredRect`, `maxContentSize`; настройки `idleCollapseSec`, `openSections`.
+
+**24c. Тема и плотные компоненты.** Новые значения и новые переменные темы (стекло, циан, срезанные углы,
+Bahnschrift, строка 22 px); компонент секции; однострочные строки таблиц с выдвигаемой строкой действий;
+метка свежести вместо плашки; оба конца рейса и отметка цели в списке вариантов; быстрый ввод в одну строку;
+мини-строка в одну строку; галерея компонентов в режиме просмотра.
+- Files: `src/ui/theme.css`, `src/ui/components/*.svelte` (+ `Section.svelte`), `src/ui/vm/{route-rows,terminal-rows}.ts`,
+  `src/preview/gallery/**`, тесты
+- Идёт параллельно с 24b: файлы не пересекаются.
+
+**24d. Сборка окна.** Из результатов 24b и 24c: шапка в одну строку (локация-поиск, свежесть UEX, «Новый
+маршрут», настройки, свернуть), столбик секций «Рейс» / «Терминал» (быстрый ввод выдвигается кнопкой в
+заголовке) / «Варианты» (ниже таблицы, закрывается крестиком) / «Мои маршруты», настройки на всё окно с
+группами-секциями, мини-строка. Вкладки удаляются. Каждый экран проверяется на снимках.
+- Files: `src/ui/{App,Panel,Header,Strip}.svelte`, `src/ui/sections/**` (вместо `src/ui/tabs/**`), `src/ui/state.svelte.ts`
+  (только то, что нужно раскладке), `src/preview/scenes.ts`
+
+Порядок: 24a → (24b ∥ 24c) → 24d → просмотр снимков контролёром → показ пользователю → задачи 15–17
+подключаются уже в новой раскладке.
