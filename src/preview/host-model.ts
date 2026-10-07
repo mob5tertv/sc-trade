@@ -33,7 +33,7 @@ export function windowStatus(window: WindowSnapshot): string {
     window.focusable ? 'может взять фокус' : 'не берёт фокус',
     window.ignoreCursorEvents ? 'клики проходят в игру' : 'принимает клики',
     `клавиатура: ${window.keyboard === 'game' ? 'игра' : 'оверлей'}`,
-    `фокус возвращён игре: ${window.restored}`,
+    `фокус возвращён игре: ${window.focusReturnedToGame}`,
   ];
   return parts.join(' · ');
 }

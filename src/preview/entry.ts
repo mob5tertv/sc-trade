@@ -23,6 +23,11 @@ const startedAt = performance.now();
 const ring = createRingLog();
 const unknown = new Set<string>();
 let lastActivity = performance.now();
+/** Commands of the application that have not been answered yet (a statement that waits for the dev server). */
+let inFlight = 0;
+
+/** How long nothing has crossed the mocked boundary; zero while a command is still being answered. */
+const idleMs = (): number => (inFlight > 0 ? 0 : performance.now() - lastActivity);
 
 const preview: PreviewGlobal = {
   ready: false,
@@ -35,6 +40,7 @@ const preview: PreviewGlobal = {
     throw new Error('the preview is not set up yet');
   },
   clickGame: () => {},
+  idleMs,
 };
 window.__preview = preview;
 
@@ -90,7 +96,7 @@ async function waitForStart(app: { phase: string }): Promise<void> {
 /** Waits until nothing has crossed the boundary for `QUIET_MS`: the window has been placed, the logs are written. */
 async function waitForQuiet(): Promise<void> {
   const deadline = performance.now() + QUIET_TIMEOUT_MS;
-  while (performance.now() - lastActivity < QUIET_MS) {
+  while (idleMs() < QUIET_MS) {
     if (performance.now() > deadline) throw new Error(`the application is still busy after ${QUIET_TIMEOUT_MS / 1000} s`);
     await sleep(50);
   }
@@ -111,13 +117,16 @@ async function run(): Promise<void> {
     onFocus: (focused) => setTimeout(() => void emit(focused ? 'tauri://focus' : 'tauri://blur', focused), 0),
   });
   preview.clickGame = () => win.clickGame();
+  // a mouse press inside the overlay gives it the keyboard when it can take the focus (the strip never does)
+  document.addEventListener('mousedown', () => win.pressInside(), true);
   preview.state = (): PreviewState => {
     const w = win.snapshot();
     return {
       scene: scene.name, dataset: scene.dataset, monitor: formatMonitor(monitor),
       visible: w.visible, closed: w.closed, size: w.size, position: w.position,
       focusable: w.focusable, ignoreCursorEvents: w.ignoreCursorEvents, skipTaskbar: w.skipTaskbar,
-      focused: w.keyboard === 'overlay', keyboard: w.keyboard, remembered: w.remembered, restored: w.restored,
+      focused: w.keyboard === 'overlay', keyboard: w.keyboard,
+      gameRemembered: w.gameRemembered, focusReturnedToGame: w.focusReturnedToGame,
       unknownCommands: [...unknown],
     };
   };
@@ -137,8 +146,12 @@ async function run(): Promise<void> {
   mockWindows('main');
   mockIPC(
     (command, payload) => {
+      inFlight++;
       lastActivity = performance.now();
-      return handler(command, payload as Record<string, unknown> | undefined);
+      return handler(command, payload as Record<string, unknown> | undefined).finally(() => {
+        inFlight--;
+        lastActivity = performance.now();
+      });
     },
     { shouldMockEvents: true },
   );

@@ -153,14 +153,14 @@ describe('the keyboard focus', () => {
   it('goes to the panel when it opens and back to the game when the strip returns', async () => {
     const { win, focusEvents } = start();
     await setMode('strip', layout, logger()); // startup: nothing remembered yet, nothing to give back
-    expect(win.snapshot()).toMatchObject({ keyboard: 'game', remembered: 0, restored: 0 });
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', gameRemembered: 0, focusReturnedToGame: 0 });
 
     await setMode('panel', layout, logger());
-    expect(win.snapshot()).toMatchObject({ keyboard: 'overlay', remembered: 1 });
+    expect(win.snapshot()).toMatchObject({ keyboard: 'overlay', gameRemembered: 1 });
     expect(await invoke('plugin:window|is_focused', { label: 'main' })).toBe(true);
 
     await setMode('strip', layout, logger());
-    expect(win.snapshot()).toMatchObject({ keyboard: 'game', restored: 1 });
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusReturnedToGame: 1 });
     expect(focusEvents).toEqual([true, false]);
   });
 
