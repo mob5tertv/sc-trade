@@ -1,5 +1,6 @@
 import { recordBuy, recordSell } from '../data/trade';
-import { installPriceFake, type PriceFake, type PriceFakeOptions } from './fake-prices';
+import { installPriceFake, priceRow, terminalsOfPriceRequest, type PriceFake, type PriceFakeOptions } from './fake-prices';
+import { installHttpFake, type FakeAnswer } from './http-fake';
 import type { Scene, SceneApp } from './scenes';
 
 // The scenes of two indicators: the freshness of UEX in the header (a button that refreshes the prices and shows how far
@@ -30,6 +31,43 @@ async function until(what: string, done: () => boolean, timeoutMs = 5000): Promi
 /** The price requests of UEX, answered with the prices the application has now (see `fake-prices.ts`). */
 const fakePrices = (app: SceneApp, options: Omit<PriceFakeOptions, 'rows'> = {}): PriceFake =>
   installPriceFake({ rows: () => app.market.uex.values(), ...options });
+
+/**
+ * The whole of UEX that a sync asks for, answered with what the application has now: the reference (the reverse of the mappers
+ * of `data/uex-client.ts`; no vehicle manufacturers, so the stored vehicles stay) and the prices. The list holds the URLs asked, in order.
+ */
+function fakeUex(app: SceneApp): string[] {
+  const asked: string[] = [];
+  const ok = (data: unknown): FakeAnswer => ({ status: 200, body: { status: 'ok', data } });
+  const flag = (value: boolean): number => (value ? 1 : 0);
+  installHttpFake((url) => {
+    asked.push(url);
+    const priceIds = terminalsOfPriceRequest(url);
+    if (priceIds !== null) return ok([...app.market.uex.values()].filter((p) => priceIds.includes(p.terminalId)).map(priceRow));
+    if (url.endsWith('/star_systems')) {
+      return ok(app.reference.starSystems.map((s) => ({ id: s.id, name: s.name, code: s.code, is_available_live: flag(s.isAvailableLive) })));
+    }
+    const system = /\/terminals\?type=commodity&id_star_system=(\d+)$/.exec(url);
+    if (system !== null) {
+      return ok([...app.reference.terminals.values()].filter((t) => t.starSystemId === Number(system[1])).map((t) => ({
+        id: t.id, id_star_system: t.starSystemId, id_planet: t.planetId, id_orbit: t.orbitId, name: t.name, nickname: t.nickname,
+        displayname: t.displayname, code: t.code, star_system_name: t.starSystemName, planet_name: t.planetName, orbit_name: t.orbitName,
+        moon_name: t.moonName, space_station_name: t.spaceStationName, outpost_name: t.outpostName, city_name: t.cityName,
+        has_freight_elevator: flag(t.hasFreightElevator), has_loading_dock: flag(t.hasLoadingDock), is_auto_load: flag(t.isAutoLoad),
+        is_available_live: flag(t.isAvailableLive),
+      })));
+    }
+    if (url.endsWith('/commodities')) {
+      return ok([...app.reference.commodities.values()].map((c) => ({
+        id: c.id, name: c.name, code: c.code, is_illegal: flag(c.isIllegal), is_buyable: flag(c.isBuyable), is_sellable: flag(c.isSellable),
+        is_available_live: flag(c.isAvailableLive),
+      })));
+    }
+    if (url.endsWith('/companies?is_vehicle_manufacturer=1')) return ok([]);
+    throw new Error(`preview: no network for ${url}`);
+  });
+  return asked;
+}
 
 /** The click on the indicator of UEX in the header, which is what the player does. */
 const clickIndicator = (): Promise<void> => click('header button.uex');
@@ -103,6 +141,36 @@ export const INDICATOR_SCENES: readonly Scene[] = [
       fakePrices(app);
       await clickIndicator();
       await until('the refresh to end', () => !app.priceSync.running);
+      await pause(100);
+    },
+  },
+  {
+    // The reference sync of the start failed (the preview has no network at that moment) and stays the last one: the indicator is in the
+    // warning colour, and its tooltip says that the reference did not update. UEX answers again from here on (`window.__uexAsked` lists
+    // the requests it gets). `--do "click:header button.uex;wait:800"`: the click repeats the reference first, then the prices, and the
+    // indicator turns quiet («UEX сейчас»); `eval:window.__uexAsked` shows star_systems .. commodities, then the price requests. A click
+    // with `--do "click:header button.uex;wait:800;click:header button.uex;wait:800"` asks for the reference once only: the second round is prices alone.
+    name: 'indicator-reference-failed',
+    title: 'Справочник не загрузился при запуске: шапка «UEX офлайн», клик по ней повторяет справочник и обновляет цены',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      await app.syncReferenceNow(); // no network yet: it fails and leaves the reference marked as failed
+      (window as unknown as { __uexAsked: string[] }).__uexAsked = fakeUex(app);
+      await pause(100);
+    },
+  },
+  {
+    // The same, but UEX answers the price requests only: the repeated reference sync fails again, and the prices are refreshed all the same;
+    // the indicator stays in the warning colour (`--do "click:header button.uex;wait:800"`: the log has a second `reference sync failed`
+    // and a `prices sync finished`).
+    name: 'indicator-reference-failed-again',
+    title: 'Справочник не загрузился ни при запуске, ни по клику: цены всё равно обновляются, шапка остаётся «UEX офлайн»',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      await app.syncReferenceNow();
+      fakePrices(app); // the price requests are answered, every other one fails
       await pause(100);
     },
   },

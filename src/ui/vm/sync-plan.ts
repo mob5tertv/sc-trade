@@ -38,3 +38,13 @@ export function syncPlan(referenceSyncedAt: string | null, pricesSyncedAt: strin
     prices: pricesAreStale(metaSeconds(pricesSyncedAt), now),
   };
 }
+
+/**
+ * What the price sync of the hourly timer and of the click on the indicator of the header does: the prices always, and the
+ * reference first when its last sync failed. Nothing else repeats a reference sync (the start makes one, the button of the
+ * settings makes one by hand), and without this a reference that failed once would keep the indicator in the colour of the
+ * warning for ever, however well the prices came.
+ */
+export function refreshPlan(referenceOk: boolean): SyncPlan {
+  return { reference: !referenceOk, prices: true };
+}

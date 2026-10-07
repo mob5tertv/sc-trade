@@ -34,6 +34,9 @@ export const PRICE_SYNC_IDLE: PriceSync = { running: false, done: 0, total: 0, u
 
 const EMPTY_FIELD_TITLE = 'Выбери локацию: три буквы и Enter';
 const REFRESH_HINT = 'Нажми, чтобы обновить цены сейчас';
+/** The click also repeats the reference sync that failed (`refreshPlan` in `sync-plan.ts`): the tooltip says so. */
+const REFERENCE_FAILED = 'Справочник UEX не обновился';
+const REFRESH_REFERENCE_HINT = 'Нажми, чтобы обновить справочник и цены сейчас';
 
 /**
  * 'UEX 12 мин': the age alone; the long form with 'назад' or the date of the cached data is the tooltip. When UEX does not
@@ -65,17 +68,19 @@ function uexProgress(sync: PriceSync): WindowHeader['uex'] {
 /**
  * The header of the expanded window: the viewed terminal as the location, the button "Я здесь" when the ship stands
  * elsewhere, and the indicator of UEX (the age of the prices, or the progress of a refresh). The ship and the system
- * are not here (they are in the settings).
+ * are not here (they are in the settings). `referenceOk` is false after a reference sync that failed: the click on the
+ * indicator repeats it with the prices, and the tooltip says so.
  */
 export function windowHeader(
   ref: Reference, s: Settings, viewTerminalId: number | null, pricesSyncedAt: number | null, uexOk: boolean, now: number,
-  sync: PriceSync = PRICE_SYNC_IDLE,
+  sync: PriceSync = PRICE_SYNC_IDLE, referenceOk = true,
 ): WindowHeader {
   const view = locationModel(ref, s, viewTerminalId, pricesSyncedAt, uexOk, now);
   const terminal = viewTerminalId === null ? undefined : ref.terminals.get(viewTerminalId);
   const title = terminal === undefined
     ? EMPTY_FIELD_TITLE
     : view.currentLocation === null ? view.header.location : `${view.header.location}\nСейчас: ${view.currentLocation}`;
+  const referenceFailed = referenceOk ? [] : [REFERENCE_FAILED];
   const unfetched = sync.unfetched > 0 ? [`Не обновилось терминалов: ${sync.unfetched}`] : [];
   return {
     // the nickname is what players know a terminal by; UEX leaves it empty on rare rows
@@ -86,7 +91,9 @@ export function windowHeader(
       ? uexProgress(sync)
       : {
         text: uexShort(pricesSyncedAt, uexOk, now),
-        title: [headerModel(ref, s, pricesSyncedAt, uexOk, now).uex, ...unfetched, REFRESH_HINT].join('\n'),
+        title: [
+          headerModel(ref, s, pricesSyncedAt, uexOk, now).uex, ...referenceFailed, ...unfetched, referenceOk ? REFRESH_HINT : REFRESH_REFERENCE_HINT,
+        ].join('\n'),
         stale: !uexOk,
         busy: false,
       },

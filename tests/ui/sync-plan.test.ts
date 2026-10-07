@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { metaSeconds, reloadsMidSync, syncPlan } from '../../src/ui/vm/sync-plan';
+import { metaSeconds, refreshPlan, reloadsMidSync, syncPlan } from '../../src/ui/vm/sync-plan';
 
 const NOW = 1_790_000_000;
 const HOUR = 3600;
@@ -28,6 +28,15 @@ describe('syncPlan', () => {
   });
   it('asks for prices again when the migration deleted their mark', () => {
     expect(syncPlan(String(NOW - HOUR), null, NOW)).toEqual({ reference: false, prices: true });
+  });
+});
+
+describe('refreshPlan: the price sync of the hourly timer and of the click on the indicator', () => {
+  it('only refreshes the prices while the last reference sync worked', () => {
+    expect(refreshPlan(true)).toEqual({ reference: false, prices: true });
+  });
+  it('repeats the reference first when the last reference sync failed, and refreshes the prices after it in any case', () => {
+    expect(refreshPlan(false)).toEqual({ reference: true, prices: true });
   });
 });
 

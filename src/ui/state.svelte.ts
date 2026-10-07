@@ -46,7 +46,7 @@ import { markRefusal } from './vm/run-phase';
 import { sameRun } from './vm/same-run';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
 import { validateSetting } from './vm/settings-validation';
-import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, reloadsMidSync, syncPlan } from './vm/sync-plan';
+import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, refreshPlan, reloadsMidSync, syncPlan } from './vm/sync-plan';
 import { stripModel, type StripModel } from './vm/strip';
 import { rowRoiMap, type RowRoi } from './vm/row-roi';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
@@ -488,13 +488,21 @@ class AppState {
    * Downloads the prices and reloads the market. Never throws; a failure marks the price sync as failed (`pricesOk`).
    * One at a time: a call while a sync is going does nothing. `priceSync` says how far it is, from the moment of the
    * call (the sync may first wait for its turn in the queue of UEX) until the market is reloaded.
+   *
+   * `retryReference` is for the syncs the player or the clock ask for (the click on the indicator, the hourly timer): when the last
+   * reference sync failed (`refreshPlan`), it is repeated first, the way the start does the two, as a job of the UEX queue of its own
+   * before the job of the prices (never inside it). A reference that fails again does not hold the prices back.
    */
-  async syncPricesNow(): Promise<void> {
+  async syncPricesNow(retryReference = false): Promise<void> {
     if (this.priceSync.running) {
       this.#log.debug('ui', 'price sync already running, skipped');
       return;
     }
     this.priceSync = { ...PRICE_SYNC_IDLE, running: true, unfetched: this.priceSync.unfetched };
+    if (retryReference && refreshPlan(this.referenceOk).reference) {
+      this.#log.info('ui', 'repeating the reference sync that failed, before the prices');
+      await this.syncReferenceNow(); // never throws; its failure is logged there
+    }
     let unfetched = 0;
     try {
       const result = await this.withUex(() => {
@@ -537,22 +545,25 @@ class AppState {
     if (wasEmpty) this.#settleSide();
   }
 
-  /** The click on the indicator of UEX in the header: refreshes the prices now. A click while a sync is going does nothing. */
+  /**
+   * The click on the indicator of UEX in the header: refreshes the prices now (the reference first, when its last sync failed).
+   * A click while a sync is going does nothing.
+   */
   async refreshPrices(): Promise<void> {
     const running = this.priceSync.running;
     this.#log.info('ui', 'refresh prices', { running });
-    if (!running) await this.syncPricesNow();
+    if (!running) await this.syncPricesNow(true);
   }
 
   /**
    * The syncs that run in the background after the start: the reference when it is a day old, the prices
-   * when they are an hour old, then the prices every hour. Failures never surface; the header shows
-   * the age of the data.
+   * when they are an hour old, then the prices every hour (and the reference with them while its last sync is a failure).
+   * Failures never surface; the header shows the age of the data.
    */
   async startBackgroundSync(): Promise<void> {
     if (this.#backgroundStarted) return;
     this.#backgroundStarted = true;
-    setInterval(() => void this.syncPricesNow(), PRICE_SYNC_INTERVAL_MS);
+    setInterval(() => void this.syncPricesNow(true), PRICE_SYNC_INTERVAL_MS);
 
     const { db, now } = this.#syncDeps();
     let plan = { reference: false, prices: false };
