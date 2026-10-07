@@ -1,4 +1,5 @@
 mod backup;
+mod cursor_watch;
 mod focus;
 mod input_hook;
 mod keys;
@@ -26,6 +27,8 @@ pub fn run() {
             if let Err(err) = tray::setup(app.handle()) {
                 log::error!("[tray] cannot create the tray icon: {err}");
             }
+            // Diagnostics only: logs when the game hides or shows the system cursor. Changes nothing.
+            cursor_watch::start();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
