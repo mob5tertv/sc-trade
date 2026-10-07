@@ -1,10 +1,17 @@
 <script lang="ts">
-  import { search, type Searchable } from '../../core/search';
+  import { search } from '../../core/search';
+  import type { SearchItem } from '../vm/header';
 
   interface Props {
-    items: Searchable[];
+    /** What is found; an item may say `place` (muted, after the name) and `title` (the tooltip of its row). */
+    items: SearchItem[];
     /** Ids that come first among equally good matches (what the current terminal trades, say). */
     boostIds?: Set<number>;
+    /**
+     * How the items are searched: the type-ahead search of the core by default. The list of terminals gives its own
+     * (`searchTerminals`: names before the star system); the commodity search and the quick entry keep the default.
+     */
+    find?: (items: SearchItem[], query: string, boostIds: Set<number> | undefined, limit: number) => SearchItem[];
     placeholder?: string;
     /**
      * The text that stands in the field until the player edits it (the name of the viewed location, say). A click
@@ -21,7 +28,7 @@
     title?: string;
   }
 
-  let { items, boostIds, placeholder = 'Поиск…', value, onPick, label = placeholder, invalid = false, title }: Props = $props();
+  let { items, boostIds, find = search, placeholder = 'Поиск…', value, onPick, label = placeholder, invalid = false, title }: Props = $props();
 
   const MAX_RESULTS = 8;
   const listId = `search-${Math.random().toString(36).slice(2, 8)}`;
@@ -36,7 +43,7 @@
   let list: HTMLElement | null | undefined = $state();
 
   const shown = $derived(editing || value === undefined ? query : value);
-  const results = $derived(search(items, query, boostIds, MAX_RESULTS));
+  const results = $derived(find(items, query, boostIds, MAX_RESULTS));
   const visible = $derived(open && results.length > 0);
 
   // The window is as big as its content, so a list that sticks out of the root of the window is cut off by the edge of
@@ -160,7 +167,9 @@
             pick(item.id);
           }}
         >
-          <span class="name" title={item.name}>{item.name}</span>
+          <span class="name" class:with-place={Boolean(item.place)} title={item.title ?? item.name}>{item.name}</span>
+          <!-- where it is: when both do not fit the name is cut with an ellipsis before the place is; the whole text is in the tooltip -->
+          {#if item.place}<span class="place" title={item.title ?? item.place}>{item.place}</span>{/if}
           {#if item.code}<span class="code">{item.code}</span>{/if}
         </li>
       {/each}
@@ -219,6 +228,26 @@
   .name {
     min-width: 0;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* A row with a place: when the name and the place do not fit together the NAME gives way first (its share of the shrinking is
+     so much larger that the place keeps its whole width, to the pixel, until the name is down to its floor), then the place does.
+     While they fit nothing is cut, whatever the lengths, so a short name does not cost a long place its room. */
+  .name.with-place {
+    flex: 0 1000000 auto;
+    min-width: 12ch;
+  }
+
+  /* where a terminal is, beside the code */
+  .place {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
+    color: var(--sc-muted);
+    font-size: var(--sc-font-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
   }

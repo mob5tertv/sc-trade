@@ -1,7 +1,9 @@
 import { formatAge } from '../../core/format';
+import { search } from '../../core/search';
 import type { Searchable } from '../../core/search';
 import type { Settings } from '../../core/settings';
 import type { Reference, Terminal } from '../../core/types';
+import { terminalFullPlace, terminalPlace, terminalSystem } from './terminal-place';
 
 export interface HeaderModel { location: string; ship: string; system: string; uex: string; uexStale: boolean }
 
@@ -47,19 +49,55 @@ export function headerModel(ref: Reference, s: Settings, pricesSyncedAt: number 
   };
 }
 
-/** Terminals of one star system (all when null); found by display name, nickname, name or planet. */
-export function terminalSearchItems(ref: Reference, starSystemId: number | null): Searchable[] {
-  const items: Searchable[] = [];
+/**
+ * An item of the list of a search box. `Searchable` (src/core/search.ts) is what the search needs; the box also draws, when
+ * they are set, `place` (muted, after the name: where a terminal is) and `title` (the tooltip of the row: the whole name and
+ * the whole place). A commodity has neither. `system` is the name of the star system a terminal stands in: a way to find it,
+ * but a weaker one than its own names, so it is not among the `aliases` and `searchTerminals` looks at it second.
+ */
+export interface SearchItem extends Searchable { place?: string; title?: string; system?: string }
+
+/** Terminals of one star system (all when null); found by display name, nickname, name or planet (and by star system, see `searchTerminals`), and told apart by where they are. */
+export function terminalSearchItems(ref: Reference, starSystemId: number | null): SearchItem[] {
+  const items: SearchItem[] = [];
   for (const t of ref.terminals.values()) {
     if (starSystemId !== null && t.starSystemId !== starSystemId) continue;
+    const name = terminalLabel(t);
+    const place = terminalPlace(t, ref.starSystems);
+    const whole = terminalFullPlace(t, ref.starSystems);
+    const system = terminalSystem(t, ref.starSystems);
     items.push({
       id: t.id,
       code: t.code,
-      name: terminalLabel(t),
+      name,
       aliases: [t.nickname, t.name, t.planetName ?? ''].filter(a => a !== ''),
+      ...(system === '' ? {} : { system }),
+      ...(place === '' ? {} : { place }),
+      title: whole === '' ? name : `${name}\n${whole}`,
     });
   }
   return items;
+}
+
+/**
+ * The search of the list of terminals: the type-ahead search of the core (`search`, which stays as it is) over the names of
+ * the terminals first, then over the same items with the name of their star system added, so that typing "stanton" shows the
+ * terminals NAMED "Stanton Gateway" before the first few of the many terminals that merely stand in Stanton. The result is
+ * the matches by name, then the matches by the system alone, each group ranked by the core search, cut to `limit`; no
+ * terminal is there twice. Items without a `system` (a list of commodities) give exactly what `search` gives.
+ */
+export function searchTerminals(items: SearchItem[], query: string, boostIds: Set<number> | undefined, limit: number): SearchItem[] {
+  const byName = search(items, query, boostIds, limit);
+  if (byName.length >= limit) return byName;
+  const withSystem = items.filter(item => item.system !== undefined);
+  const known = new Set(byName.map(item => item.id));
+  const bySystem = search(
+    withSystem.map(item => ({ ...item, aliases: [...(item.aliases ?? []), item.system ?? ''] })),
+    query, boostIds, withSystem.length,
+  ).filter(item => !known.has(item.id));
+  // the copies carry the system as an alias for the search only: what comes back are the items themselves
+  const original = new Map(items.map(item => [item.id, item]));
+  return [...byName, ...bySystem.map(item => original.get(item.id) ?? item)].slice(0, limit);
 }
 
 export function commoditySearchItems(ref: Reference): Searchable[] {

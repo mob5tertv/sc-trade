@@ -3,7 +3,7 @@
   import { formatUec } from '../../core/format';
   import type { Side } from '../../core/types';
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
-  import type { EditBase } from '../vm/inputs';
+  import type { CellFinish, EditBase } from '../vm/inputs';
   import type { RoiCell } from '../vm/row-roi';
   import { cellScu, rangeView } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
@@ -94,24 +94,29 @@
     });
   });
 
+  const emptyDraft = (): Draft => ({
+    shown: { price: null, scu: null }, typed: { price: false, scu: false }, bad: { price: false, scu: false }, sent: null,
+  });
+
   function type(key: string, field: 'price' | 'scu', text: string): void {
-    const draft: Draft = drafts[key] ?? {
-      shown: { price: null, scu: null }, typed: { price: false, scu: false }, bad: { price: false, scu: false }, sent: null,
-    };
+    const draft: Draft = drafts[key] ?? emptyDraft();
     draft.shown[field] = text;
     draft.typed[field] = true;
     draft.bad[field] = false;
     drafts[key] = draft;
   }
 
-  // What the cell holds is read now, when the cell is left, not when the typing began.
-  function commit(commodityId: number, side: Side, cell: Cell): void {
+  // What the cell holds is read now, when the cell is left, not when the typing began. Enter ("I see this now") writes what
+  // stands in the fields even when nothing was typed, so it has a draft to keep the numbers it sent (and to mark a refusal) at once.
+  function commit(commodityId: number, side: Side, cell: Cell, finish: CellFinish): void {
     const key = keyOf(commodityId, side);
+    if (finish === 'enter' && !drafts[key]) drafts[key] = emptyDraft();
     const draft = drafts[key];
     if (!draft) return;
     const edit = resolveCellEdit(
       { price: draft.typed.price ? draft.shown.price : null, scu: draft.typed.scu ? draft.shown.scu : null },
       draft.sent ?? cellEditBase(cell),
+      finish,
     );
     if (edit.kind === 'unchanged') {
       if (draft.sent === null) delete drafts[key];
@@ -131,7 +136,8 @@
       },
       typed: { price: false, scu: false },
       bad: { price: false, scu: false },
-      sent: { price: edit.price, scu: edit.scu },
+      // what was sent is mine from now on, so leaving the cell after Enter compares with it and writes nothing a second time
+      sent: { price: edit.price, scu: edit.scu, priceIsOwn: true },
     };
     onSavePrice({ commodityId, side, price: edit.price, scu: edit.scu });
   }
@@ -140,7 +146,8 @@
     const key = keyOf(commodityId, side);
     if (e.key === 'Enter') {
       e.preventDefault();
-      commit(commodityId, side, cell);
+      // a key held down repeats Enter: one press is one "I see this now", not a stream of readings
+      if (!e.repeat) commit(commodityId, side, cell, 'enter');
     } else if (e.key === 'Escape' && drafts[key]) {
       // takes back what was typed; with nothing typed Esc goes on and closes the panel
       e.stopPropagation();
@@ -152,7 +159,7 @@
   function onBlur(e: FocusEvent, commodityId: number, side: Side, cell: Cell): void {
     const next = e.relatedTarget;
     if (next instanceof HTMLElement && next.dataset.cell === keyOf(commodityId, side)) return;
-    commit(commodityId, side, cell);
+    commit(commodityId, side, cell, 'leave');
   }
 
   // One row is expanded at a time; the click on it again takes it back.
@@ -167,12 +174,16 @@
 {#snippet expanded(row: TerminalRow, cell: Cell)}
   {@const key = keyOf(row.commodityId, side)}
   {@const draft = drafts[key]}
-  {@const texts = baseTexts(cellEditBase(cell))}
+  {@const base = cellEditBase(cell)}
+  {@const texts = baseTexts(base)}
+  <!-- the price of UEX (or my cold one) stands in the field, muted, until the player touches it or sends it: then it is his -->
+  {@const foreign = !base.priceIsOwn && !draft?.typed.price && !draft?.sent}
   {@const estimated = cell.ownScu !== null && cell.ownScuBase !== null}
   <div class="expand sc-reveal">
     <div class="edit">
       <input
         class="sc-input sc-num in-price"
+        class:foreign
         type="text"
         inputmode="numeric"
         autocomplete="off"
@@ -504,6 +515,11 @@
   .in-price {
     flex: none;
     width: 66px;
+  }
+
+  /* a price that is not mine (UEX, or mine gone cold) reads as what the row says: muted, like the price of the row itself */
+  .in-price.foreign {
+    color: var(--sc-muted);
   }
 
   .in-scu {

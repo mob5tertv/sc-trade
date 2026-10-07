@@ -90,7 +90,7 @@ describe('the no-runs dataset', () => {
     expect(await db.select('SELECT id FROM run')).toEqual([]);
     expect(await db.select('SELECT id FROM run_event')).toEqual([]);
     expect(figuresOf(await loadHistory(db)).stats).toEqual([]);
-    expect(reference.terminals.size).toBe(17);
+    expect(reference.terminals.size).toBe(19); // the window dataset has the 17 of the default one and two gateways
     expect(settings.scuCapacity).toBe(696);
   });
 });
@@ -104,7 +104,7 @@ describe('the no-records dataset', () => {
     expect(history).toEqual({ runs: [], recordTs: [] });
     expect(figuresOf(history).sessions).toEqual([]);
     expect(await db.select('SELECT terminal_id FROM uex_price LIMIT 1')).toHaveLength(1);
-    expect(reference.terminals.size).toBe(17);
+    expect(reference.terminals.size).toBe(19); // the window dataset has the 17 of the default one and two gateways
     expect(settings.scuCapacity).toBe(696);
   });
 });

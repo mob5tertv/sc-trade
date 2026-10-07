@@ -1,6 +1,7 @@
 import { quantity } from '../../core/routes';
 import { cargoOf } from '../../core/run';
 import type { CargoLine, RunWithEvents, Side } from '../../core/types';
+import { shownPrice } from './terminal-rows';
 import type { Cell } from './terminal-rows';
 
 // What the trade form under a table row starts with, and what it writes (`tradeMode`: a purchase, a sale of the cargo, or
@@ -25,13 +26,13 @@ interface DefaultsInput {
 }
 
 /**
- * The numbers the form starts with. The price is the price of the row (mine, else the hint of UEX). A purchase offers
+ * The numbers the form starts with. The price is the whole price the row shows (`shownPrice`: mine, else the hint of UEX). A purchase offers
  * what the core would carry (`quantity`: the smallest of the free space, the stock at the seller and what the budget
  * buys; only an unknown stock, an unset budget and an unset ship do not limit it), a sale offers the whole cargo of
  * the commodity: what the buyer already holds limits nothing (spec 14.5).
  */
 export function tradeDefaults(i: DefaultsInput): TradeDefaults {
-  const price = i.cell.own ?? i.cell.hint;
+  const price = shownPrice(i.cell);
   if (i.side === 'sell') {
     const onBoard = i.cargo.find((line) => line.commodityId === i.commodityId)?.scu ?? 0;
     return { scu: onBoard > 0 ? onBoard : null, price };

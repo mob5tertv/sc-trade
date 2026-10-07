@@ -68,6 +68,19 @@ export function cellScu(cell: Cell | null, side: Side): CellScu | null {
   };
 }
 
+/**
+ * The price a cell offers to be corrected or confirmed: the whole number the row writes (`formatUec` rounds with `Math.round`;
+ * UEX averages are REAL), mine else the hint. It must be what the row shows and what the typed path (`parsePrice`: whole
+ * numbers above zero) would take, so a price that rounds to zero is no price: `null`. The fields of an expanded row and the form
+ * of a trade both start from it.
+ */
+export function shownPrice(cell: Pick<Cell, 'own' | 'hint'>): number | null {
+  const shown = cell.own ?? cell.hint;
+  if (shown === null) return null;
+  const whole = Math.round(shown);
+  return whole > 0 ? whole : null;
+}
+
 /** How many rows have each side: what can be bought here (the terminal sells it) and what can be sold here (it buys it). */
 export function sideCounts(rows: Array<Pick<TerminalRow, 'buy' | 'sell'>>): { buy: number; sell: number } {
   return { buy: rows.filter(row => row.buy !== null).length, sell: rows.filter(row => row.sell !== null).length };

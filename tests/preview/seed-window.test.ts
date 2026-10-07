@@ -22,8 +22,18 @@ describe('the window dataset', () => {
     const data = await windowData();
     expect(data.settings.scuCapacity).toBe(696);
     expect(data.settings.currentTerminalId).toBe(HUR_L1);
-    expect(data.reference.terminals.size).toBe(17);
+    expect(data.reference.terminals.size).toBe(19); // the 17 of the default dataset and the two gateways below
     expect(data.reference.commodities.size).toBeGreaterThan(15);
+  });
+
+  it('has two terminals of one name in different star systems, so that the location search has to tell them apart', async () => {
+    const data = await windowData();
+    const gateways = [...data.reference.terminals.values()].filter((t) => t.displayname === 'Stanton Gateway');
+    expect(gateways).toHaveLength(2);
+    expect(new Set(gateways.map((t) => t.starSystemId)).size).toBe(2);
+    expect(gateways.every((t) => t.starSystemName !== null && data.reference.starSystems.some((s) => s.id === t.starSystemId))).toBe(true);
+    // nothing is known about their prices, and neither the player's system nor the trips are touched
+    for (const gateway of gateways) expect(await rowsOf(data, gateway.id)).toEqual([]);
   });
 
   it('is prepared by the same call as the others, and an unknown name is not its business', async () => {

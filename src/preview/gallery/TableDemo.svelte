@@ -16,6 +16,13 @@
   let { rows, side, selected = null, roi, pulse, noCapacity }: Props = $props();
 
   let current = $derived(selected);
+
+  // What the table told its owner, for the console and for `--do "eval:window.__tableEvents"`: a save is one line, a refusal another.
+  const events = ((window as unknown as { __tableEvents?: string[] }).__tableEvents ??= []);
+  function say(what: string, e: unknown): void {
+    events.push(`${what} ${JSON.stringify(e)}`);
+    console.info('[gallery]', what, JSON.stringify(e));
+  }
 </script>
 
 <TerminalTable
@@ -24,7 +31,8 @@
   selectedCommodityId={current}
   scope="gallery"
   onSelect={(id) => (current = id)}
-  onSavePrice={(e) => console.info('[gallery] save price', JSON.stringify(e))}
+  onSavePrice={(e) => say('save price', e)}
+  onReject={(e) => say('reject price', e)}
   onLookup={(e) => console.info('[gallery] lookup', JSON.stringify(e))}
   onTrade={(e) => console.info('[gallery] trade', JSON.stringify(e))}
   {roi}

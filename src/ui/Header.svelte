@@ -2,7 +2,7 @@
   import Icon from './components/Icon.svelte';
   import SearchBox from './components/SearchBox.svelte';
   import { app } from './state.svelte';
-  import { terminalSearchItems } from './vm/header';
+  import { searchTerminals, terminalSearchItems } from './vm/header';
   import { windowHeader } from './vm/window-header';
   import WindowGrip from './WindowGrip.svelte';
 
@@ -23,6 +23,7 @@
   <div class="location">
     <SearchBox
       {items}
+      find={searchTerminals}
       value={header.location ?? undefined}
       title={header.locationTitle}
       placeholder="Локация…"

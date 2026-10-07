@@ -6,6 +6,8 @@
     title: string;
     /** A one-line summary in the header, cut with an ellipsis. */
     summary?: string;
+    /** The tooltip of the header when it has more to say than the title and the summary (where the terminal is, say). */
+    summaryTitle?: string;
     open: boolean;
     onToggle: () => void;
     /** A cross at the end of the header (the "Варианты" section closes for good). */
@@ -28,7 +30,7 @@
      */
     shrink?: number;
   }
-  let { title, summary, open, onToggle, onClose, closeTitle = 'Закрыть', actions, lead, children, scroll = false, shrink = 1 }: Props = $props();
+  let { title, summary, summaryTitle, open, onToggle, onClose, closeTitle = 'Закрыть', actions, lead, children, scroll = false, shrink = 1 }: Props = $props();
 
   const uid = $props.id();
   const bodyId = `${uid}-body`;
@@ -36,7 +38,7 @@
 
 <section class="section" class:open class:scroll style:--shrink={shrink}>
   <div class="head">
-    <button type="button" class="toggle" aria-expanded={open} aria-controls={open ? bodyId : undefined} title={summary ? `${title}: ${summary}` : title} onclick={() => onToggle()}>
+    <button type="button" class="toggle" aria-expanded={open} aria-controls={open ? bodyId : undefined} title={summaryTitle ?? (summary ? `${title}: ${summary}` : title)} onclick={() => onToggle()}>
       <svg class="chevron" class:open viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M3 1.5 7 5 3 8.5" /></svg>
       <span class="sc-label title">{title}</span>
       {#if summary}<span class="summary">{summary}</span>{/if}
