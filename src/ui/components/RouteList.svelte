@@ -17,6 +17,8 @@
     emptyText: string;
     /** Set: the expanded row has a "Цель" button that calls it. */
     onTarget?: (option: RouteOption) => void;
+    /** Set: in the expanded row of the option that IS the target, the button says "Снять цель" and calls it. */
+    onClearTarget?: () => void;
     /**
      * The viewed terminal. A trip whose own end is another terminal (bought elsewhere on the planet) shows both its
      * ends; without it every row shows both.
@@ -31,7 +33,7 @@
     uexRange?: UexRangeOf;
   }
   let {
-    options, reference, runCounts, mode, showCommodity, emptyText, onTarget, anchorTerminalId = null, targetTerminalId = null, uexRange,
+    options, reference, runCounts, mode, showCommodity, emptyText, onTarget, onClearTarget, anchorTerminalId = null, targetTerminalId = null, uexRange,
   }: Props = $props();
 
   const rows = $derived(
@@ -113,7 +115,9 @@
               <span class="inline" title="Сколько раз ты уже возил это"><span class="sc-label">Рейсов</span><span class="sc-num">{row.runs}</span></span>
               <span class="inline" title="Расстояние"><span class="sc-label">Путь</span><span class="sc-num">{row.distance}</span></span>
               <span class="spacer"></span>
-              {#if onTarget}
+              {#if row.isTarget && onClearTarget}
+                <button type="button" class="sc-btn sc-btn--act" title="Это цель рейса: убрать её" onclick={() => onClearTarget?.()}>Снять цель</button>
+              {:else if onTarget}
                 <button type="button" class="sc-btn sc-btn--act" disabled={row.isTarget} title={row.isTarget ? 'Уже цель рейса' : 'Сделать целью рейса'} onclick={() => onTarget?.(option)}>Цель</button>
               {/if}
             </div>

@@ -10,6 +10,10 @@
   const items = $derived(terminalSearchItems(app.reference, app.settings.starSystemId));
   const locked = $derived(app.windowLocked);
   const lockTitle = $derived(locked ? 'Открепить окно' : 'Закрепить окно');
+
+  // One misclick would make every price of mine cold: only a "yes" under the header writes it.
+  const askServerChanged = (): void =>
+    app.ask({ text: 'Сервер сменился? Свои цены до этой минуты станут холодными.', yes: 'Да, сменился' }, () => app.serverChanged());
 </script>
 
 <!-- One line: grip, the location (a search field that shows the viewed terminal), what the freshness of UEX is, the
@@ -39,7 +43,7 @@
     Маршрут
   </button>
   <div class="icons">
-    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Сменил сервер" title="Сменил сервер: свои цены до этого момента считаются холодными" onclick={() => app.serverChanged()}>
+    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Сменил сервер" title="Сменил сервер: свои цены до этого момента считаются холодными" onclick={askServerChanged}>
       <Icon name="swap" />
     </button>
     <button

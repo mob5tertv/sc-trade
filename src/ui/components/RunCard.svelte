@@ -1,63 +1,43 @@
 <script lang="ts">
   import { formatCompact, formatPct, formatUec } from '../../core/format';
   import type { RunTotals } from '../../core/run';
+  import type { PhaseLine } from '../vm/run-phase';
 
   interface Props {
     cargo: Array<{ code: string; scu: number; avgBuyPrice: number }>;
-    timer: string;
+    /** The three phases of the current leg and the whole time, for the line at the top. */
+    phases: PhaseLine;
     totals: RunTotals;
     onDepart: () => void;
     onArrive: () => void;
-    /** Called only after the player has confirmed inside the card. */
+    /** Called when the player pressed "Груз потерян". The owner asks the question (a line under the header of the window). */
     onLost: () => void;
   }
-  let { cargo, timer, totals, onDepart, onArrive, onLost }: Props = $props();
+  let { cargo, phases, totals, onDepart, onArrive, onLost }: Props = $props();
 
   const NONE = '—';
-
-  let confirming = $state(false);
-  let cancelButton: HTMLButtonElement | undefined = $state();
-
-  // The safe answer gets the focus: a stray Enter must not lose the cargo.
-  $effect(() => {
-    if (confirming) cancelButton?.focus();
-  });
-
-  function confirmLost(): void {
-    confirming = false;
-    onLost();
-  }
-
-  // Esc takes the question back; with no question asked it goes on and closes the panel.
-  function onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape' && confirming) {
-      e.stopPropagation();
-      confirming = false;
-    }
-  }
 
   const roi = $derived(totals.roi === null ? NONE : formatPct(totals.roi));
   const rate = $derived(totals.uecPerHour === null ? NONE : `${formatCompact(totals.uecPerHour)}/ч`);
 </script>
 
 <section class="card" aria-label="Текущий рейс">
-  {#if confirming}
-    <div class="confirm" role="alertdialog" aria-label="Груз потерян?" tabindex="-1" onkeydown={onKeydown}>
-      <p class="ask">Рейс будет закрыт как потерянный, груз спишется. Продолжить?</p>
-      <div class="buttons">
-        <button type="button" class="sc-btn sc-btn--act danger" onclick={confirmLost}>Да, груз потерян</button>
-        <button type="button" class="sc-btn sc-btn--act" bind:this={cancelButton} onclick={() => (confirming = false)}>Отмена</button>
-      </div>
-    </div>
-  {:else}
-    <div class="top">
-      <span class="timer" title="Время с начала рейса">{timer}</span>
-      <span class="spacer"></span>
-      <button type="button" class="sc-btn sc-btn--act" onclick={() => onDepart()}>Взлетел</button>
-      <button type="button" class="sc-btn sc-btn--act" onclick={() => onArrive()}>Прилетел</button>
-      <button type="button" class="sc-btn sc-btn--act danger" onclick={() => (confirming = true)}>Груз потерян</button>
-    </div>
-  {/if}
+  <div class="phases" role="group" aria-label="Фазы рейса">
+    {#each phases.items as item (item.phase)}
+      <span class="phase" class:running={item.state === 'running'} class:future={item.state === 'future'}>
+        <span class="name">{item.name}</span> <span class="sc-num">{item.text}</span>
+      </span>
+    {/each}
+    <span class="spacer"></span>
+    <span class="total" title="Время с первой покупки">всего <span class="sc-num">{phases.total}</span></span>
+  </div>
+
+  <div class="top">
+    <button type="button" class="sc-btn sc-btn--act" onclick={() => onDepart()}>Взлетел</button>
+    <button type="button" class="sc-btn sc-btn--act" onclick={() => onArrive()}>Прилетел</button>
+    <span class="spacer"></span>
+    <button type="button" class="sc-btn sc-btn--act danger" onclick={() => onLost()}>Груз потерян</button>
+  </div>
 
   {#if cargo.length === 0}
     <p class="empty">В трюме пусто</p>
@@ -90,17 +70,47 @@
     padding: 0 var(--sc-pad-x);
   }
 
+  /* the phases of the leg on one line: the finished ones fixed, the running one in the accent, the ones to come as a dash */
+  .phases {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: var(--sc-row-h);
+    white-space: nowrap;
+  }
+
+  .phase {
+    color: var(--sc-text);
+  }
+
+  .phase .name {
+    color: var(--sc-label);
+  }
+
+  .phase.running,
+  .phase.running .name {
+    color: var(--sc-accent);
+    font-weight: 600;
+  }
+
+  .phase.future,
+  .phase.future .name {
+    color: var(--sc-muted);
+  }
+
+  .total {
+    color: var(--sc-muted);
+  }
+
+  .total .sc-num {
+    color: var(--sc-text);
+  }
+
   .top {
     display: flex;
     align-items: center;
     gap: 4px;
     height: calc(var(--sc-ctl-h) + 6px);
-  }
-
-  .timer {
-    color: var(--sc-accent);
-    font-size: 15px;
-    font-weight: 600;
   }
 
   .spacer {
@@ -182,18 +192,5 @@
   .danger {
     border-color: var(--sc-bad);
     color: var(--sc-bad);
-  }
-
-  .confirm {
-    padding: 6px 0;
-  }
-
-  .ask {
-    margin: 0 0 6px;
-  }
-
-  .buttons {
-    display: flex;
-    gap: 4px;
   }
 </style>

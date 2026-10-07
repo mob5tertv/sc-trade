@@ -1,17 +1,19 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { formatUec } from '../../core/format';
   import type { Side } from '../../core/types';
   import { resolveTrade } from '../vm/inputs';
 
   interface Props {
+    /** What is being written, for the screen reader and the tooltip: 'Купил MEDS'. */
     title: string;
     side: Side;
-    defaultScu: number;
-    defaultPrice: number;
+    /** The quantity and the price the form starts with; `null` leaves the field empty. */
+    defaultScu: number | null;
+    defaultPrice: number | null;
     /**
-     * Why the trade could not be written, shown under the inputs. The dialog confirms once and then waits: it
-     * takes a new confirmation after `error` changes (the owner sets it back to `null` when it starts a write)
-     * or after an input is edited. On success the owner closes the dialog.
+     * Why the trade could not be written, shown under the fields. The form confirms once and then waits: it takes a new
+     * confirmation after `error` changes (the owner sets it back to `null` when it starts a write, so that the same
+     * text twice in a row still counts as a change) or after a field is edited. On success the owner closes the form.
      */
     error: string | null;
     onConfirm: (trade: { scu: number; price: number }) => void;
@@ -19,12 +21,11 @@
   }
   let { title, side, defaultScu, defaultPrice, error, onConfirm, onCancel }: Props = $props();
 
-  // Seeded from the defaults; they are plain numbers in the inputs, easy to overtype.
-  let scuText = $derived(String(defaultScu));
-  let priceText = $derived(String(defaultPrice));
+  // Seeded from the defaults; they are plain numbers in the fields, easy to overtype.
+  let scuText = $derived(defaultScu === null ? '' : String(defaultScu));
+  let priceText = $derived(defaultPrice === null ? '' : String(defaultPrice));
   let badScu = $state(false);
   let badPrice = $state(false);
-  let scuInput: HTMLInputElement | undefined = $state();
 
   // A double click on the button or a held Enter must not write the trade twice while the owner is still writing it.
   let confirmed = false;
@@ -33,9 +34,10 @@
     confirmed = false;
   });
 
-  onMount(() => {
-    scuInput?.focus();
-    scuInput?.select();
+  // What the two fields say now, in UEC: a check of the typing before it is written.
+  const total = $derived.by(() => {
+    const trade = resolveTrade(scuText, priceText);
+    return trade.ok ? formatUec(trade.scu * trade.price) : null;
   });
 
   function submit(e: Event): void {
@@ -51,106 +53,98 @@
     onConfirm({ scu: trade.scu, price: trade.price });
   }
 
-  // Esc only closes the dialog: it must not go on and close the panel behind it.
+  // Esc takes the form back and is left to go on: the window hands the keyboard back to the game (it never closes by Esc).
   function onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      onCancel();
-    }
+    if (e.key === 'Escape') onCancel();
   }
 </script>
 
-<div class="overlay">
-  <button type="button" class="backdrop" tabindex="-1" aria-label="Отмена" onclick={() => onCancel()}></button>
-  <div class="dialog" role="dialog" aria-label={title} tabindex="-1" onkeydown={onKeydown}>
-    <form onsubmit={submit} novalidate>
-      <h3 class="title" {title}>{title}</h3>
-
-      <label class="field">
-        <span class="sc-label">Количество, SCU</span>
-        <input
-          bind:this={scuInput}
-          class="sc-input sc-num"
-          type="text"
-          inputmode="numeric"
-          autocomplete="off"
-          aria-invalid={badScu ? 'true' : undefined}
-          value={scuText}
-          oninput={e => { scuText = e.currentTarget.value; badScu = false; confirmed = false; }}
-        />
-      </label>
-
-      <label class="field">
-        <span class="sc-label">Цена за SCU, UEC</span>
-        <input
-          class="sc-input sc-num"
-          type="text"
-          inputmode="numeric"
-          autocomplete="off"
-          aria-invalid={badPrice ? 'true' : undefined}
-          value={priceText}
-          oninput={e => { priceText = e.currentTarget.value; badPrice = false; confirmed = false; }}
-        />
-      </label>
-
-      {#if badScu || badPrice}
-        <p class="hint bad">Нужны целые числа: количество от 1, цена больше нуля.</p>
-      {/if}
-      {#if error}
-        <p class="hint bad" role="alert">{error}</p>
-      {/if}
-
-      <div class="buttons">
-        <button type="submit" class="sc-btn sc-btn--primary" title="Enter">{side === 'buy' ? 'Купил' : 'Продал'}</button>
-        <button type="button" class="sc-btn" title="Esc" onclick={() => onCancel()}>Отмена</button>
-      </div>
-    </form>
+<!--
+  The form of a trade under the row it belongs to: in the flow of the window, never over it (the window is as big as its
+  content, whatever sticks out is cut). The fields take the keyboard when they are clicked, like every field of the window;
+  the button writes the trade, Enter in a field does the same.
+-->
+<form class="trade sc-reveal" aria-label={title} novalidate onsubmit={submit}>
+  <div class="line">
+    <input
+      class="sc-input sc-num in-scu"
+      type="text"
+      inputmode="numeric"
+      autocomplete="off"
+      aria-label="Количество, SCU"
+      title="Количество, SCU"
+      placeholder="SCU"
+      aria-invalid={badScu ? 'true' : undefined}
+      value={scuText}
+      oninput={(e) => { scuText = e.currentTarget.value; badScu = false; confirmed = false; }}
+      onkeydown={onKeydown}
+    />
+    <span class="unit">SCU ×</span>
+    <input
+      class="sc-input sc-num in-price"
+      type="text"
+      inputmode="numeric"
+      autocomplete="off"
+      aria-label="Цена за SCU, UEC"
+      title="Цена за SCU, UEC"
+      placeholder="UEC"
+      aria-invalid={badPrice ? 'true' : undefined}
+      value={priceText}
+      oninput={(e) => { priceText = e.currentTarget.value; badPrice = false; confirmed = false; }}
+      onkeydown={onKeydown}
+    />
+    <span class="unit">UEC</span>
+    <span class="total sc-num" title="Сумма сделки, UEC">{total === null ? '' : `= ${total}`}</span>
+    <button type="submit" class="sc-btn sc-btn--primary" title="Записать сделку (Enter)">{side === 'buy' ? 'Купил' : 'Продал'}</button>
+    <button type="button" class="sc-btn" title="Не записывать (Esc)" onclick={() => onCancel()}>Отмена</button>
   </div>
-</div>
+  {#if badScu || badPrice}
+    <p class="hint bad">Нужны целые числа: количество от 1, цена больше нуля.</p>
+  {/if}
+  {#if error}
+    <p class="hint bad" role="alert">{error}</p>
+  {/if}
+</form>
 
 <style>
-  .overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 10;
+  .trade {
+    padding: 4px var(--sc-pad-x);
+    border-top: 1px solid var(--sc-border);
+    background: var(--sc-surface);
+  }
+
+  .line {
     display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 16px;
+    gap: 4px;
+    height: var(--sc-ctl-h);
   }
 
-  .backdrop {
-    position: absolute;
-    inset: 0;
-    border: 0;
-    background: color-mix(in srgb, var(--sc-bg-solid) 70%, transparent);
-    cursor: default;
+  .in-scu {
+    flex: none;
+    width: 48px;
   }
 
-  .dialog {
-    position: relative;
-    width: min(340px, 100%);
-    padding: 6px var(--sc-pad-x) var(--sc-pad-x);
-    border: 1px solid var(--sc-frame);
-    background: var(--sc-surface);
-    color: var(--sc-text);
+  .in-price {
+    flex: none;
+    width: 58px;
   }
 
-  .title {
-    margin: 0 0 4px;
-    overflow: hidden;
-    font-size: var(--sc-font);
-    font-weight: 600;
-    text-overflow: ellipsis;
+  .unit {
+    flex: none;
+    color: var(--sc-muted);
+    font-size: var(--sc-font-sm);
     white-space: nowrap;
   }
 
-  .field {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 110px;
-    align-items: center;
-    gap: var(--sc-gap);
-    height: 26px;
+  .total {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--sc-label);
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .hint {
@@ -160,11 +154,5 @@
 
   .bad {
     color: var(--sc-bad);
-  }
-
-  .buttons {
-    display: flex;
-    gap: var(--sc-gap);
-    margin-top: var(--sc-gap);
   }
 </style>

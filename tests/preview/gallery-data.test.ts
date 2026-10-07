@@ -186,7 +186,7 @@ describe('the gallery route lists', () => {
 
 describe('the gallery run, mini line and history', () => {
   it('has the idle line, the line of a run and the line of a run with a cargo that cannot fit', () => {
-    expect(data.strip.idle).toEqual({ kind: 'idle', location: 'HUR-L1' });
+    expect(data.strip.idle).toEqual({ kind: 'idle', location: 'HUR-L1', target: 'ARC-L1' });
     expect(data.strip.run).toMatchObject({ kind: 'run', target: 'ARC-L1', cargo: 'MEDS 120 SCU, STIM 80 SCU' });
     if (data.strip.run.kind !== 'run' || data.strip.long.kind !== 'run') throw new Error('expected runs');
     expect(data.strip.run.expect).not.toBeNull();

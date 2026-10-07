@@ -5,11 +5,23 @@ import { cargoOf } from '../../core/run';
 import { flightSec } from '../../core/sell';
 import type { Settings } from '../../core/settings';
 import type { CargoLine, Estimate, Market, Reference, RunWithEvents, Terminal } from '../../core/types';
+import { nextMarkOf, phaseCaps, runPhases, type RunPhase } from './run-phase';
 
 export type StripModel =
-  | { kind: 'idle'; location: string }
   | {
-    kind: 'run'; timer: string; cargo: string; target: string | null;
+    kind: 'idle'; location: string;
+    /** The target that is set before anything is bought: the line reads 'HUR-L1 → ARC-L1'. */
+    target: string | null;
+  }
+  | {
+    kind: 'run';
+    /** The whole run, 'm:ss': it is in the tooltip of the phase. */
+    timer: string;
+    /** What the run is doing, and for how long (the first segment of the line): 'ПОГРУЗКА' '3:12'. */
+    phase: RunPhase; phaseLabel: string; phaseTimer: string;
+    /** The mark the one button of the line gives; `null` when none (unloading). */
+    next: 'depart' | 'arrive' | null;
+    cargo: string; target: string | null;
     /** 'ждём 6 900 (6 400–7 100)': with the range, for a tooltip. */
     expect: string | null;
     /** 'ждём 6 900': the same without the range, for the one-line strip. */
@@ -59,28 +71,34 @@ function rateText(priced: PricedLine[], elapsedSec: number, routeSec: number | n
 }
 
 /**
- * What the small strip shows: the current location without a run; during a run its timer, the cargo,
- * the target terminal, what the first commodity is expected to sell for there and the expected UEC per
- * hour. A target that is unset or missing from the reference leaves the last three out.
+ * What the small strip shows: the current location (and the target, when one is set) without a run; during a run the
+ * phase with its own timer, the cargo, the target terminal, what the first commodity is expected to sell for there and
+ * the expected UEC per hour. A target that is unset or missing from the reference leaves the last three out.
  */
 export function stripModel(active: RunWithEvents | null, m: Market, ref: Reference, s: Settings, ctx: RouteCtx): StripModel {
-  if (active === null) return { kind: 'idle', location: locationOf(ref, s.currentTerminalId) };
+  const target = s.targetTerminalId === null ? undefined : ref.terminals.get(s.targetTerminalId);
+  if (active === null) return { kind: 'idle', location: locationOf(ref, s.currentTerminalId), target: target ? terminalLabel(target) : null };
 
   const { run, events } = active;
   const elapsedSec = Math.max(0, ctx.now - run.startedAt);
   const cargo = cargoOf(events);
-  const timer = formatDuration(elapsedSec);
-  const cargoLine = cargoText(ref, cargo);
+  const phases = runPhases(run, events, ctx.now);
+  const head = {
+    kind: 'run' as const,
+    timer: formatDuration(elapsedSec),
+    phase: phases.phase, phaseLabel: phaseCaps(phases.phase), phaseTimer: formatDuration(phases.sinceSec),
+    next: nextMarkOf(active, ctx.now),
+    cargo: cargoText(ref, cargo),
+  };
 
-  const target = s.targetTerminalId === null ? undefined : ref.terminals.get(s.targetTerminalId);
-  if (!target) return { kind: 'run', timer, cargo: cargoLine, target: null, expect: null, expectShort: null, rate: null };
+  if (!target) return { ...head, target: null, expect: null, expectShort: null, rate: null };
 
   const priced = cargo.map((line): PricedLine => ({ line, sell: estimate(m, target.id, line.commodityId, 'sell', ctx) }));
   const firstSell = priced[0]?.sell ?? null;
   const originId = events.find(e => e.type === 'buy')?.terminalId ?? null;
   const expect = firstSell ? expectTexts(firstSell) : null;
   return {
-    kind: 'run', timer, cargo: cargoLine,
+    ...head,
     target: terminalLabel(target),
     expect: expect?.full ?? null, expectShort: expect?.short ?? null,
     rate: rateText(priced, elapsedSec, originId === null ? null : flightSec(ctx, originId, target.id)),

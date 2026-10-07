@@ -1,0 +1,123 @@
+import { describe, expect, it } from 'vitest';
+import { distKey } from '../../src/core/types';
+import { cargoRows, planSummary, runHeader, runSectionKind, sellDecisionKey, sellDecisions, sellLogContext } from '../../src/ui/vm/run-section';
+import { stripModel } from '../../src/ui/vm/strip';
+import { buildMarket } from '../../src/core/market';
+import { ev, obs, ref } from '../helpers/factories';
+import { active, ctx, GOLD, market, mixedRun, NOW, s, TITA, withOwnSell } from '../helpers/strip-fixtures';
+
+const model = (a: typeof active | null, settings = s, c = ctx) => stripModel(a, market, ref, settings, c);
+
+describe('runSectionKind', () => {
+  it('is the run while one goes on, whatever the target is', () => {
+    expect(runSectionKind(model(active))).toBe('run');
+    expect(runSectionKind(model(active, { ...s, targetTerminalId: 2 }))).toBe('run');
+  });
+  it('is the plan with a target and no run', () => {
+    expect(runSectionKind(model(null, { ...s, targetTerminalId: 2 }))).toBe('plan');
+  });
+  it('is not there without a run and a target, or with a target the reference does not know', () => {
+    expect(runSectionKind(model(null))).toBeNull();
+    expect(runSectionKind(model(null, { ...s, targetTerminalId: 777 }))).toBeNull();
+  });
+});
+
+describe('runHeader', () => {
+  const header = (a: typeof active, settings = s) => {
+    const m = model(a, settings);
+    if (m.kind !== 'run') throw new Error('a run was expected');
+    return runHeader(m);
+  };
+
+  it('starts with the phase and its own timer, then the cargo; the target stands apart, and is always there', () => {
+    expect(header(active, { ...s, targetTerminalId: 2 })).toMatchObject({
+      summary: 'Погрузка 14:32 · GOLD 96 SCU', target: '→ TDD Area 18',
+    });
+    expect(header(active)).toMatchObject({ summary: 'Погрузка 14:32 · GOLD 96 SCU', target: 'цель не выбрана' });
+  });
+  it('names the phase that is running, with the whole run in the tooltip', () => {
+    // the first purchase was 872 s ago, the take-off 300 s ago
+    const inFlight = { run: active.run, events: [...active.events, ev({ id: 9, runId: 1, ts: NOW - 300, type: 'depart' })] };
+    expect(header(inFlight)).toMatchObject({ summary: 'Полёт 5:00 · GOLD 96 SCU' });
+    expect(header(inFlight).title).toBe('Полёт 5:00 · GOLD 96 SCU · цель не выбрана · всего 14:32');
+  });
+  it('words the plan: the target and nothing else', () => {
+    expect(planSummary('ARC-L1')).toBe('цель: ARC-L1');
+  });
+});
+
+describe('cargoRows', () => {
+  it('lists the hold by code with what is left and the average price', () => {
+    expect(cargoRows(mixedRun.events, ref)).toEqual([
+      { code: 'GOLD', scu: 96, avgBuyPrice: 6120 }, { code: 'TITA', scu: 40, avgBuyPrice: 2500 },
+    ]);
+  });
+  it('is empty for an empty hold, and names a commodity that left the reference by its number', () => {
+    expect(cargoRows([], ref)).toEqual([]);
+    const odd = [ev({ id: 3, runId: 1, ts: NOW - 800, type: 'buy', terminalId: 1, commodityId: 99, scu: 5, price: 100 })];
+    expect(cargoRows(odd, ref)).toEqual([{ code: '#99', scu: 5, avgBuyPrice: 100 }]);
+  });
+});
+
+describe('sellDecisions', () => {
+  /** Distances: 1–2 as in the fixtures, and 3–2 so that the flight from terminal 3 is known. */
+  const here = { ...ctx, distances: new Map<string, number | null>([[distKey(1, 2), 59], [distKey(3, 2), 10]]) };
+  const atThree = withOwnSell(market, 3, GOLD, 6840, NOW - 60);
+
+  it('offers the choice where I have a fresh sale price of my own for a commodity of the hold', () => {
+    const [d] = sellDecisions(active, atThree, ref, 3, here);
+    expect(d).toMatchObject({ commodityId: GOLD, code: 'GOLD', terminalId: 3, actualPrice: 6840 });
+    expect(d.here).toMatchObject({ qty: 96, profit: 96 * (6840 - 6120) });
+    expect(d.alternatives.map((a) => a.destId)).toEqual([2]);
+    expect(d.alternatives[0].extraSec).toBe(12 * 60 + 50);
+  });
+  it('counts the rate of "here" over the time since the run began', () => {
+    const [d] = sellDecisions(active, atThree, ref, 3, here);
+    expect(d.here.uecPerHour).toBeCloseTo((96 * 720 * 3600) / 872, 5);
+  });
+  it('has nothing where the price is only UEX', () => {
+    expect(sellDecisions(active, market, ref, 2, here)).toEqual([]);
+  });
+  it('has nothing where my price is cold', () => {
+    expect(sellDecisions(active, withOwnSell(market, 3, GOLD, 6840, NOW - 5 * 3600), ref, 3, here)).toEqual([]);
+  });
+  it('has nothing for a commodity that is not on board, and only the sale side counts', () => {
+    expect(sellDecisions(active, withOwnSell(market, 3, TITA, 3000, NOW - 60), ref, 3, here)).toEqual([]);
+    const ownBuy = buildMarket([], [obs({ id: 1, ts: NOW - 60, terminalId: 3, commodityId: GOLD, side: 'buy', price: 6840 })]);
+    expect(sellDecisions(active, ownBuy, ref, 3, here)).toEqual([]);
+  });
+  it('has nothing without a run or a viewed terminal', () => {
+    expect(sellDecisions(null, atThree, ref, 3, here)).toEqual([]);
+    expect(sellDecisions(active, atThree, ref, null, here)).toEqual([]);
+  });
+  it('gives one decision per commodity of the hold, in the order of the hold', () => {
+    const both = withOwnSell(atThree, 3, TITA, 3000, NOW - 60);
+    expect(sellDecisions(mixedRun, both, ref, 3, here).map((d) => d.code)).toEqual(['GOLD', 'TITA']);
+  });
+  it('does not let the inventory recorded at the place limit the sale', () => {
+    const [empty] = sellDecisions(active, withOwnSell(market, 3, GOLD, 6840, NOW - 60, 0), ref, 3, here);
+    expect(empty.here.qty).toBe(96);
+  });
+});
+
+describe('sellLogContext and sellDecisionKey', () => {
+  const here = { ...ctx, distances: new Map<string, number | null>([[distKey(3, 2), 10]]) };
+  const [d] = sellDecisions(active, withOwnSell(market, 3, GOLD, 6840, NOW - 60), ref, 3, here);
+
+  it('lists every compared option with its price, source, time and rate', () => {
+    const log = sellLogContext(d);
+    expect(log).toMatchObject({ terminalId: 3, commodityId: GOLD, scu: 96, avgBuyPrice: 6120, price: 6840, elapsedSec: 872 });
+    expect(log.here).toMatchObject({ profit: 69_120, roi: 720 / 6120 });
+    expect(log.alternatives).toEqual([{
+      terminalId: 2, price: 6900, low: 6400, high: 7100, source: 'uex', extraSec: 770,
+      profit: 74_880, uecPerHour: d.alternatives[0].expectedUecPerHour, worstUecPerHour: d.alternatives[0].worstUecPerHour,
+    }]);
+  });
+  it('is the same key while the same thing is decided, and another one when the price or the cargo changes', () => {
+    const again = sellDecisions(active, withOwnSell(market, 3, GOLD, 6840, NOW - 60), ref, 3, { ...here, now: NOW + 5 });
+    expect(sellDecisionKey(again)).toBe(sellDecisionKey([d]));
+    const cheaper = sellDecisions(active, withOwnSell(market, 3, GOLD, 6800, NOW - 60), ref, 3, here);
+    expect(sellDecisionKey(cheaper)).not.toBe(sellDecisionKey([d]));
+    expect(sellDecisionKey([])).toBe('');
+  });
+});

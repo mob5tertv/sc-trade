@@ -15,17 +15,25 @@ const withEvents = (r: RunWithEvents, ...extra: RunEvent[]): RunWithEvents => ({
 
 describe('stripModel', () => {
   it('is idle without a run', () => {
-    expect(stripModel(null, market, ref, { ...s, currentTerminalId: 1 }, ctx)).toEqual({ kind: 'idle', location: 'ARC-L1' });
+    expect(stripModel(null, market, ref, { ...s, currentTerminalId: 1 }, ctx)).toEqual({ kind: 'idle', location: 'ARC-L1', target: null });
   });
   it('words an unset or unknown location', () => {
-    expect(stripModel(null, market, ref, { ...s, currentTerminalId: null }, ctx)).toEqual({ kind: 'idle', location: 'Локация не выбрана' });
-    expect(stripModel(null, market, ref, { ...s, currentTerminalId: 777 }, ctx)).toEqual({ kind: 'idle', location: 'Локация не выбрана' });
+    expect(stripModel(null, market, ref, { ...s, currentTerminalId: null }, ctx)).toEqual({ kind: 'idle', location: 'Локация не выбрана', target: null });
+    expect(stripModel(null, market, ref, { ...s, currentTerminalId: 777 }, ctx)).toEqual({ kind: 'idle', location: 'Локация не выбрана', target: null });
+  });
+  it('names the target next to the location before anything is bought', () => {
+    expect(stripModel(null, market, ref, { ...s, currentTerminalId: 1, targetTerminalId: 2 }, ctx))
+      .toEqual({ kind: 'idle', location: 'ARC-L1', target: 'TDD Area 18' });
+  });
+  it('leaves out a target that is missing from the reference', () => {
+    expect(stripModel(null, market, ref, { ...s, currentTerminalId: 1, targetTerminalId: 777 }, ctx)).toMatchObject({ target: null });
   });
 
   it('shows timer, cargo, target, expectation and rate', () => {
     // 96 SCU Gold bought at 6120 at terminal 1, 872 s ago; target 2: UEX 6900 (6400–7100); 1–2: 59 Gm
     expect(stripModel(active, market, ref, toTarget2, ctx)).toEqual({
-      kind: 'run', timer: '14:32', cargo: 'GOLD 96 SCU', target: 'TDD Area 18',
+      kind: 'run', timer: '14:32', phase: 'loading', phaseLabel: 'ПОГРУЗКА', phaseTimer: '14:32', next: 'depart',
+      cargo: 'GOLD 96 SCU', target: 'TDD Area 18',
       expect: `ждём 6${NBSP}900 (6${NBSP}400–7${NBSP}100)`, expectShort: `ждём 6${NBSP}900`, rate: '≈ 266k/ч',     // 96×780 = 74 880 per max(872, 1015) s
     });
   });
@@ -111,6 +119,20 @@ describe('stripModel', () => {
     });
     it('shows a loss with its sign', () => {
       expect(stripModel(active, withUexSell(market, 2, GOLD, 6000), ref, toTarget2, ctx)).toMatchObject({ rate: '≈ -41k/ч' });   // 96×(−120) per 1015 s
+    });
+  });
+
+  describe('phase of the run', () => {
+    it('shows the phase with its own timer, the whole run stays in `timer`, and offers the take-off while loading', () => {
+      expect(stripModel(active, market, ref, s, ctx)).toMatchObject({ timer: '14:32', phase: 'loading', phaseLabel: 'ПОГРУЗКА', phaseTimer: '14:32', next: 'depart' });
+    });
+    it('counts the flight from the take-off and offers the arrival', () => {
+      const flying = withEvents(active, ev({ id: 5, runId: 1, ts: NOW - 300, type: 'depart' }));
+      expect(stripModel(flying, market, ref, s, ctx)).toMatchObject({ timer: '14:32', phase: 'flight', phaseLabel: 'ПОЛЁТ', phaseTimer: '5:00', next: 'arrive' });
+    });
+    it('counts the unloading from the arrival and offers no mark: the sale ends it', () => {
+      const landed = withEvents(active, ev({ id: 5, runId: 1, ts: NOW - 600, type: 'depart' }), ev({ id: 6, runId: 1, ts: NOW - 125, type: 'arrive' }));
+      expect(stripModel(landed, market, ref, s, ctx)).toMatchObject({ phase: 'unloading', phaseLabel: 'ВЫГРУЗКА', phaseTimer: '2:05', next: null });
     });
   });
 

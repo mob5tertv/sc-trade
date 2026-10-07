@@ -23,6 +23,8 @@ import { commoditySearchItems, terminalSearchItems } from '../../ui/vm/header';
 import { lookupTitle } from '../../ui/vm/lookup';
 import { locationModel } from '../../ui/vm/location';
 import { defaultSide } from '../../ui/vm/quick-entry';
+import { phaseLine, runPhases } from '../../ui/vm/run-phase';
+import type { PhaseLine } from '../../ui/vm/run-phase';
 import { META_PRICES_SYNCED_AT, metaSeconds } from '../../ui/vm/sync-plan';
 import { historyRows, routeRows, sessionRows } from '../../ui/vm/stats-rows';
 import type { HistoryRow, RouteRow, SessionRow } from '../../ui/vm/stats-rows';
@@ -77,7 +79,7 @@ export interface GalleryData {
   runCounts: Map<string, number>;
   titles: { from: string; nearby: string; to: string; long: string };
   strip: { idle: StripModel; run: StripModel; long: StripModel };
-  runCard: { cargo: Array<{ code: string; scu: number; avgBuyPrice: number }>; timer: string; totals: RunTotals };
+  runCard: { cargo: Array<{ code: string; scu: number; avgBuyPrice: number }>; timer: string; phases: PhaseLine; totals: RunTotals };
   sell: { commodityCode: string; here: SellHere; alternatives: SellAlternative[] };
   history: HistoryRow[];
   sessions: SessionRow[];
@@ -207,6 +209,8 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
   const runCard = {
     cargo: lines.map((l) => ({ code: codeOf(l.commodityId), scu: l.scu, avgBuyPrice: l.avgBuyPrice })),
     timer: active === null ? '0:00' : formatDuration(now - active.run.startedAt),
+    // the leg of the run in progress: loading since the first purchase
+    phases: phaseLine(runPhases(active?.run ?? { id: 0, vehicleId: null, scuCapacity: 0, startedAt: now, endedAt: null, status: 'active' }, active?.events ?? [], now)),
     totals: runTotals(active?.run ?? { id: 0, vehicleId: null, scuCapacity: 0, startedAt: now, endedAt: null, status: 'active' }, active?.events ?? [], now),
   };
 
