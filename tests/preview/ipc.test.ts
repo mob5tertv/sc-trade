@@ -216,7 +216,7 @@ describe('the window', () => {
     await showWindow(layout, logger());
     await fitWindow({ width: 440, height: 300 }, layout, logger());
     await moveWindow({ x: 300, y: 300, width: 440, height: 300 }, logger());
-    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, remembered: 0, restored: 0 });
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, gameRemembered: 0, focusReturnedToGame: 0 });
     expect(focusEvents).toEqual([]);
   });
 
@@ -274,7 +274,7 @@ describe('the keyboard focus', () => {
     const { win, focusEvents } = start();
     await showWindow(layout, logger());
     await fitWindow({ width: 440, height: 300 }, layout, logger());
-    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, remembered: 0, restored: 0 });
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, gameRemembered: 0, focusReturnedToGame: 0 });
     expect(focusEvents).toEqual([]);
   });
 
@@ -283,11 +283,11 @@ describe('the keyboard focus', () => {
     await showWindow(layout, logger());
 
     await takeKeyboard(logger());
-    expect(win.snapshot()).toMatchObject({ keyboard: 'overlay', focusable: true, remembered: 1 });
+    expect(win.snapshot()).toMatchObject({ keyboard: 'overlay', focusable: true, gameRemembered: 1 });
     expect(await invoke('plugin:window|is_focused', { label: 'main' })).toBe(true);
 
     await giveKeyboard(logger(), true);
-    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, restored: 1 });
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, focusReturnedToGame: 1 });
     expect(focusEvents).toEqual([true, false]);
   });
 
@@ -297,7 +297,7 @@ describe('the keyboard focus', () => {
     await takeKeyboard(logger());
     win.clickGame(); // the player clicked the game: it has the focus already
     await giveKeyboard(logger(), false);
-    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, remembered: 1, restored: 0 });
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, gameRemembered: 1, focusReturnedToGame: 0 });
   });
 
   it('logs every take and give, with whether the focus went back', async () => {

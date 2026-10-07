@@ -25,9 +25,10 @@ export interface PreviewState {
   /** The keyboard is with the overlay. */
   focused: boolean;
   keyboard: 'game' | 'overlay';
-  /** How many times the window layer remembered the game window / handed the focus back to it. */
-  remembered: number;
-  restored: number;
+  /** How many times the game window was remembered (what the Rust side would store). */
+  gameRemembered: number;
+  /** How many times the focus was handed back to the game and Windows accepted it. */
+  focusReturnedToGame: number;
   /** Commands of Tauri that were called and are not mocked, each name once. */
   unknownCommands: string[];
 }
@@ -43,6 +44,8 @@ export interface PreviewGlobal {
   state(): PreviewState;
   /** The player clicks the game. */
   clickGame(): void;
+  /** Milliseconds since a command of the application last crossed the mocked boundary; 0 while one is being answered. */
+  idleMs(): number;
 }
 
 /** `window.__previewHost` in the desktop page. Rectangles are in pixels of the page. */
@@ -58,7 +61,10 @@ export interface PreviewHostGlobal {
   /** A point of the field away from the overlay window, where the game is. */
   gamePoint(): { x: number; y: number };
   clickGame(): void;
-  /** Resolves when the window state has not changed for two animation frames (at most `maxMs`). */
+  /**
+   * Resolves when the window state has not changed for two animation frames and the application is not waiting
+   * for the answer of a command (at most `maxMs`).
+   */
   settle(maxMs?: number): Promise<void>;
   /** The height of the service bar above the field. */
   barHeight(): number;

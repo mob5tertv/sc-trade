@@ -7,7 +7,7 @@ const snapshot = (partial: Partial<WindowSnapshot> = {}): WindowSnapshot => ({
   visible: true, closed: false,
   position: { x: 0, y: 0 }, size: { width: 470, height: 1080 },
   focusable: true, ignoreCursorEvents: false, skipTaskbar: true,
-  keyboard: 'game', remembered: 0, restored: 0,
+  keyboard: 'game', gameRemembered: 0, focusReturnedToGame: 0,
   ...partial,
 });
 
@@ -48,7 +48,7 @@ describe('windowFrame', () => {
 
 describe('windowStatus', () => {
   it('says in Russian where the window is and who has the keyboard', () => {
-    const text = windowStatus(snapshot({ position: { x: 1450, y: 0 }, remembered: 3, restored: 2 }));
+    const text = windowStatus(snapshot({ position: { x: 1450, y: 0 }, gameRemembered: 3, focusReturnedToGame: 2 }));
     expect(text).toContain('470×1080');
     expect(text).toContain('1450, 0');
     expect(text).toContain('клавиатура: игра');

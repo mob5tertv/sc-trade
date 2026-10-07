@@ -310,6 +310,20 @@ async function main() {
     const sceneError = await waitReady(cdp, options.timeout, diagnostics);
     await fitViewport(cdp, options.scale);
 
+    if (sceneError !== null) {
+      // The scene failed to start: its own error is what the user must read, not "the window is hidden" (a scene
+      // that failed before the window was shown has none). There is nothing to act on, so the steps are skipped.
+      // A picture is only a bonus, and `--state` may have nothing to say yet.
+      if (await capture(cdp, options.out, options.view).then(() => true, () => false)) {
+        const written = relative(process.cwd(), options.out);
+        console.log(`picture: ${isAbsolute(written) || written === '' ? options.out : written}`);
+      }
+      if (options.state) {
+        stateLine = await evaluate(cdp, `JSON.stringify(${APP_FRAME}.contentWindow.__preview.state())`).catch(() => null);
+      }
+      throw new ShotError(`the scene started with an error: ${sceneError}\n${await failureReport(cdp, diagnostics)}`, 2);
+    }
+
     let failedStep = null;
     for (const [i, step] of options.steps.entries()) {
       try {
@@ -330,9 +344,6 @@ async function main() {
     console.log(`${failedStep === null ? 'picture' : 'picture at the moment of the failure'}: ${isAbsolute(shown) || shown === '' ? out : shown}`);
 
     if (failedStep !== null) throw failedStep;
-    if (sceneError !== null) {
-      throw new ShotError(`the scene started with an error: ${sceneError}\n${await failureReport(cdp, diagnostics)}`, 2);
-    }
   } catch (err) {
     exitCode = err instanceof ShotError ? err.code : 1;
     console.error(err instanceof Error ? err.message : String(err));
