@@ -5,28 +5,108 @@ import { createRequestQueue } from './request-queue';
  *
  * The overlay never takes the keyboard focus from the game by itself: buttons and rows are clicked
  * with the mouse and the game stays the active window. The keyboard is needed only while the player
- * edits a text field. Whoever needs it is a "holder" with a name ('field', ...). The first holder
- * takes the keyboard (remembers the window that had it, makes the overlay focusable, focuses it), the
- * last one gives it back (not focusable again, the remembered window gets the focus).
+ * edits a text field. Whoever needs it is a "holder" with a name ('field', ...).
  *
- * Every request runs strictly after the previous one, so a `take` and a `give` are never in flight
- * together, and each request judges the state when its own turn comes.
+ * The window gets the keyboard by the player's own click, the way any window does, not by a call that
+ * Windows may refuse (and nothing synthetic is ever sent to make Windows agree). For that it is made
+ * activatable while the pointer is over a text field. Three states:
+ *  - `idle`: the window cannot be activated; clicks on buttons and rows leave the game active;
+ *  - `armed`: the pointer is over a text field and nobody holds the keyboard: the window can be
+ *    activated, so a press on the field activates it;
+ *  - `held`: at least one holder is there.
+ *
+ *   state | event                        | effects                                   | next
+ *   ------+------------------------------+-------------------------------------------+---------------
+ *   idle  | pointer comes over a field   | arm                                       | armed
+ *   idle  | hold, the take says yes      | take                                      | held
+ *   idle  | hold, Windows refuses        | take; then disarm unless the pointer has  | armed or idle
+ *         |                              | come over a field (the take made the      |
+ *         |                              | window activatable); NO holder            |
+ *   idle  | press next to a field, or    | (only within `settleMs` of a disarm; for  | idle
+ *         | the window says it got the   | the focus event after waiting `settleMs`  |
+ *         | focus                        | and with no request on its way:)          |
+ *         |                              | isForeground, and if yes give(true)       |
+ *   armed | pointer leaves the field,    | disarm                                    | idle
+ *         | the window is folded/hidden  |                                           |
+ *   armed | hold, the take says yes      | take                                      | held
+ *   armed | hold, Windows refuses        | take; NO holder                           | armed
+ *   armed | press next to a field        | isForeground, and if yes give(true), arm  | armed
+ *   armed | the window says it got the   | wait `settleMs`; if still no holder and   | armed
+ *         | focus, and no hold follows   | no request on its way: isForeground, and  |
+ *         |                              | if yes give(true), arm                    |
+ *   armed | refresh (the watchdog)       | remember (quiet)                          | armed
+ *   held  | pointer comes or leaves      | none (remembered for the release)         | held
+ *   held  | hold by another holder       | none                                      | held
+ *   held  | release, holders remain      | none                                      | held
+ *   held  | release of the last holder   | give(true), then arm when the pointer is  | armed or idle
+ *         |                              | still over a field                        |
+ *   held  | drop (the player went away)  | give(false)                               | idle
+ *
+ * Everything else changes nothing (a release of somebody who is not a holder, a drop without holders, a press next
+ * to a field or a focus event while somebody holds the keyboard, a focus event or a refresh of a window that is idle
+ * and was not armed lately: those cost no request at all).
+ *
+ * Every request runs strictly after the previous one, so two effects are never in flight together,
+ * and each request judges the state when its own turn comes.
  */
 export interface HoldEffects {
-  /** Remember the window that has the focus, then take the keyboard. */
-  take(): Promise<void>;
-  /** Stop taking the keyboard; `restore` hands the focus back to the remembered window. */
-  give(restore: boolean): Promise<void>;
+  /**
+   * The pointer came over a text field: remember the window that has the focus (after the click it will be our own)
+   * and make the overlay activatable. Nothing is activated here: the player's press does that.
+   */
+  arm(): Promise<void>;
+  /** The pointer left the field without a press: the overlay cannot be activated again. No focus was taken, none is returned. */
+  disarm(): Promise<void>;
+  /**
+   * A field was pressed: remember the window that has the focus, make the overlay activatable and make sure it is the
+   * foreground window. After a press on an armed window it already is; otherwise Windows is asked once and may refuse.
+   * Resolves to whether the overlay is the foreground window now. On `false` nothing was taken (and nothing is to be
+   * given back), but the overlay IS activatable. When it throws, the effect itself has made the overlay not activatable
+   * again and handed back whatever focus it had.
+   */
+  take(): Promise<boolean>;
+  /**
+   * Stop taking the keyboard: the overlay cannot be activated; `restore` hands the focus back to the remembered window.
+   * Resolves to whether that window has the focus again (`false` without `restore`, and when the window is gone or
+   * Windows refused).
+   */
+  give(restore: boolean): Promise<boolean>;
+  /**
+   * Remember the window that has the focus once more, quietly: the foreground may have changed while the pointer
+   * rested on a field. It runs every few hundred milliseconds, so it writes no line unless the window changed.
+   */
+  remember(): Promise<void>;
+  /** Whether the overlay is the foreground window: Windows' answer, not the focus of the page. */
+  isForeground(): Promise<boolean>;
 }
 
+export type HoldState = 'idle' | 'armed' | 'held';
+
+/**
+ * What became of a look for an activation nobody asked for. `none`: there was none (somebody holds the keyboard, or
+ * Windows says the window is not in front). `handed back`: the window was in front with nobody holding the keyboard;
+ * it cannot be activated any more and the remembered window has the focus again. `not handed back`: the same, but
+ * the focus did not go back (the remembered window is gone, or Windows refused): the player has to click the game.
+ */
+export type Stray = 'none' | 'handed back' | 'not handed back';
+
 export interface KeyboardHolds {
-  /** `why` needs the keyboard. The first holder takes it; a holder that is already there changes nothing. */
-  hold(why: string): Promise<void>;
-  /** `why` does not need the keyboard any more. The last holder to leave gives it back to the game. */
+  /**
+   * `why` needs the keyboard. The first holder takes it; a holder that is already there changes nothing. Resolves to
+   * whether the keyboard is held now. `false`: Windows refused to bring the window to the front, so nothing was taken
+   * and `why` is NOT a holder (a holder with the game in front would keep the window activatable for good and show a
+   * caret in a field whose keys go to the game). The window is left armed while the pointer is on a field, so the
+   * player's next press activates it; with the pointer gone it is disarmed.
+   */
+  hold(why: string): Promise<boolean>;
+  /**
+   * `why` does not need the keyboard any more. The last holder to leave gives it back to the game; when the pointer is
+   * still over a text field the window is armed again, so that the next press on the field activates it.
+   */
   release(why: string): Promise<void>;
   /**
    * The window lost the focus and it was the player who took it away (he clicked the game): there are no holders
-   * now and the focus is not pulled back. Resolves to `true` when the holders were dropped.
+   * now, the focus is not pulled back, and the window cannot be activated. Resolves to `true` when the holders were dropped.
    *
    * It is IGNORED (resolves to `false`) when the loss is only the echo of our own focus juggling: a request is being
    * taken care of (a take or a give is queued or running) or one finished less than `settleMs` ago. The blur that a
@@ -35,20 +115,59 @@ export interface KeyboardHolds {
    * not when the queue gets to it.
    */
   drop(): Promise<boolean>;
+  /** The pointer came over a text field (`true`) or is not over one any more (`false`). Telling the same thing twice changes nothing. */
+  pointerOverField(over: boolean): Promise<void>;
+  /**
+   * The player pressed something of the window that is not a text field. Usually that needs nothing. But a press that
+   * comes right after the pointer left a field may have activated the window: the disarm had not reached Windows yet.
+   * Nobody holds the keyboard then, so it would stay in the window. Hence: when nobody holds the keyboard and the window
+   * is still armed, or was disarmed less than `settleMs` ago, Windows is asked whether the window is the foreground one,
+   * and if it is, the keyboard goes back to the game at once. Resolves to what became of it.
+   *
+   * Outside that time a press makes no request at all. Whether to look is decided when it is called, like `drop`.
+   */
+  pressOutsideField(): Promise<Stray>;
+  /**
+   * The window says it got the focus (the event of the shell). Usually that is the echo of a press on a field (its
+   * holder is here or on its way), or nothing at all: the web view reports a focus for a click on a window that was
+   * never activated. But Windows also activates an activatable window with NO press of the player on it: the
+   * foreground window closes or is minimised while the pointer rests on a field, Alt+Tab passes over it. Nobody holds
+   * the keyboard then, and no press follows that would notice. So, when the window could have been activated at all
+   * (it is armed, or was until less than `settleMs` ago): wait `settleMs` (a press on a field has become a holder by
+   * then); if still nobody holds the keyboard and no request is on its way, ask Windows, and if the window is the
+   * foreground one, give the keyboard back. Resolves to what became of it.
+   *
+   * The event of a window that cannot be activated costs nothing: no wait, no request (a plain click on a button).
+   * While one look is waiting, further events start no second one.
+   */
+  focusGained(): Promise<Stray>;
+  /**
+   * Call it from time to time (the watchdog of the page does). While the window is armed, the window that will get
+   * the focus back is remembered again, so that it follows a foreground that changed while the pointer rested on a
+   * field. Idle or held it does nothing: nothing can take the focus, or the foreground window is our own.
+   */
+  refreshRemembered(): Promise<void>;
   /** At least one holder is there. */
   readonly held: boolean;
+  readonly state: HoldState;
 }
 
 export interface KeyboardHoldsOptions {
-  /** How long after a take or give a loss of the focus still counts as its echo. 0 (default): not at all. */
+  /**
+   * How long after a take or give a loss of the focus still counts as its echo, and how long after a disarm a press
+   * next to a field is still checked for having activated the window. 0 (default): not at all.
+   */
   settleMs?: number;
   /** The clock in milliseconds; for tests. */
   now?: () => number;
+  /** Resolves after that many milliseconds; for tests. */
+  wait?: (ms: number) => Promise<void>;
 }
 
 /**
  * `onChange` is told each time `held` flips. When an effect throws, the state is made consistent first
- * (a failed `take` forgets its holder, a failed `give` still counts as given) and the error goes to the caller.
+ * (a failed `take` forgets its holder and the window follows the pointer again, a failed `arm` is not armed, a failed
+ * `give` or `disarm` still counts as done) and the error goes to the caller.
  */
 export function createKeyboardHolds(
   effects: HoldEffects,
@@ -57,13 +176,31 @@ export function createKeyboardHolds(
 ): KeyboardHolds {
   const settleMs = options.settleMs ?? 0;
   const now = options.now ?? Date.now;
+  const wait = options.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const holders = new Set<string>();
   const queue = createRequestQueue();
   /** Requests that are queued or running: the focus is being moved by us right now, whatever blur comes belongs to that. */
   let pending = 0;
   /** When the last take or give ended; only an effect that really ran counts. */
   let effectEndedAt = Number.NEGATIVE_INFINITY;
+  /** The pointer is over a text field, as the page last said. */
+  let over = false;
+  /** The window was made activatable for the pointer over a field, and nobody holds the keyboard. */
+  let armed = false;
+  /** A disarm is on its way to Windows. */
+  let disarming = false;
+  /** When the last disarm ended. */
+  let disarmedAt = Number.NEGATIVE_INFINITY;
+  /** A look started by `focusGained` is waiting for its settle time. */
+  let looking = false;
 
+  /**
+   * Windows may have activated the window although nobody holds the keyboard: it is activatable now, or a disarm is on
+   * its way, or one ended so lately that a press (or Windows) may have been quicker.
+   */
+  const activatableLately = (): boolean => armed || disarming || now() - disarmedAt < settleMs;
+
+  /** A request that may move the focus: while it is queued or running a loss of the focus is its echo (see `drop`). */
   const request = <T>(job: () => Promise<T>): Promise<T> => {
     pending++;
     return queue(job).finally(() => {
@@ -72,30 +209,85 @@ export function createKeyboardHolds(
   };
 
   /** Runs a take or a give and remembers when it ended, whether it worked or not. */
-  const run = async (effect: () => Promise<void>): Promise<void> => {
+  const run = async <T>(effect: () => Promise<T>): Promise<T> => {
     try {
-      await effect();
+      return await effect();
     } finally {
       effectEndedAt = now();
     }
   };
 
+  /**
+   * With nobody holding the keyboard the window is armed exactly while the pointer is over a field. Always called
+   * inside a job of the queue. Arming and disarming move no focus, so they start no echo time.
+   */
+  const followPointer = async (): Promise<void> => {
+    if (holders.size > 0 || armed === over) return;
+    if (over) {
+      armed = true;
+      try {
+        await effects.arm();
+      } catch (err) {
+        armed = false;
+        throw err;
+      }
+      return;
+    }
+    armed = false;
+    disarming = true;
+    try {
+      await effects.disarm();
+    } finally {
+      disarming = false;
+      disarmedAt = now();
+    }
+  };
+
+  /**
+   * A job of the queue. Nobody holds the keyboard; when Windows says the window is the foreground one all the same,
+   * it was activated without being asked for: the keyboard goes back to the game, when Windows lets it.
+   */
+  const handBackIfStray = async (): Promise<Stray> => {
+    // a field was pressed before this turn came: the window is active because the keyboard is wanted
+    if (holders.size > 0) return 'none';
+    if (!(await effects.isForeground())) return 'none';
+    armed = false;
+    const restored = await run(() => effects.give(true));
+    await followPointer();
+    return restored ? 'handed back' : 'not handed back';
+  };
+
   return {
     hold: (why) =>
       request(async () => {
-        if (holders.has(why)) return;
+        if (holders.has(why)) return true;
         const first = holders.size === 0;
         holders.add(why);
-        if (!first) return;
+        if (!first) return true;
+        // from here on it is the holder that keeps the window activatable
+        armed = false;
         onChange?.(true);
+        let taken: boolean;
         try {
-          await run(() => effects.take());
+          taken = await run(() => effects.take());
         } catch (err) {
           // nothing else can have joined while the take was running: the queue lets one request at a time in
           holders.delete(why);
           onChange?.(false);
+          // The effect has made the window not activatable; the pointer may still be on the field. A second failure
+          // adds nothing to the first, which is the one the caller gets.
+          await followPointer().catch(() => undefined);
           throw err;
         }
+        if (taken) return true;
+        // Windows refused: nothing was taken, so nobody holds anything. But the take HAS made the window activatable:
+        // it counts as armed, and follows the pointer from here (still on the field: it stays armed and the next press
+        // activates it; gone: it is disarmed, or it would stay activatable with nobody to make it not so).
+        holders.delete(why);
+        onChange?.(false);
+        armed = true;
+        await followPointer();
+        return false;
       }),
 
     release: (why) =>
@@ -103,6 +295,8 @@ export function createKeyboardHolds(
         if (!holders.delete(why) || holders.size > 0) return;
         onChange?.(false);
         await run(() => effects.give(true));
+        // the pointer has not moved off the field: the next press on it must find the window activatable
+        await followPointer();
       }),
 
     drop: async () => {
@@ -116,8 +310,46 @@ export function createKeyboardHolds(
       });
     },
 
+    pointerOverField: (value) => {
+      if (over === value) return Promise.resolve();
+      over = value;
+      // not a `request`: making the window activatable or not moves no focus, and must not pass for a take or a give
+      return queue(followPointer);
+    },
+
+    pressOutsideField: async () => {
+      if (holders.size > 0 || !activatableLately()) return 'none';
+      return request(handBackIfStray);
+    },
+
+    focusGained: async () => {
+      if (holders.size > 0 || looking || !activatableLately()) return 'none';
+      looking = true;
+      try {
+        await wait(settleMs);
+      } finally {
+        looking = false;
+      }
+      // a holder: the event was the echo of a press on a field. A request on its way: it is that request that decides.
+      if (holders.size > 0 || pending > 0) return 'none';
+      return request(handBackIfStray);
+    },
+
+    refreshRemembered: () => {
+      if (holders.size > 0 || !armed) return Promise.resolve();
+      // not a `request`: it moves no focus. Judged again when its turn comes: a press may have taken the keyboard.
+      return queue(async () => {
+        if (holders.size === 0 && armed) await effects.remember();
+      });
+    },
+
     get held() {
       return holders.size > 0;
+    },
+
+    get state() {
+      if (holders.size > 0) return 'held';
+      return armed ? 'armed' : 'idle';
     },
   };
 }

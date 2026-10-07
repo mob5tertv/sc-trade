@@ -22,10 +22,13 @@ import { UexError, type UexClient } from '../data/uex-client';
 import { applyLogLevel } from '../platform/tauri-logger';
 import { bindTriggers, type TriggerName } from '../platform/triggers';
 import {
+  armKeyboard,
+  disarmKeyboard,
   fitWindow,
   giveKeyboard,
   isWindowFocused,
   moveWindow,
+  refreshRemembered,
   setWindowVisible,
   showWindow,
   takeKeyboard,
@@ -263,8 +266,12 @@ class AppState {
    */
   readonly keyboard: KeyboardHolds = createKeyboardHolds(
     {
+      arm: () => armKeyboard(this.#log),
+      disarm: () => disarmKeyboard(this.#log),
       take: () => this.#takeKeyboard(),
       give: (restore) => giveKeyboard(this.#log, restore),
+      remember: () => refreshRemembered(this.#log),
+      isForeground: () => isWindowFocused(this.#log),
     },
     (held) => {
       this.keyboardHeld = held;
@@ -669,6 +676,9 @@ class AppState {
         // The window shrinks under the cursor and may never report that the cursor left it; the idle timer must not
         // wait for the cursor of a window that is not there any more (the next movement over it says "inside" again).
         this.#pointerInside = false;
+        // The same goes for the holds: the pointer is over no field of a window that is folded, so the window must not
+        // stay armed (activatable) behind them. Told before the release, which would arm it again under the pointer.
+        await this.#pointerGone();
         // the player is done with the window: the keyboard goes back to the game, the window may fold
         await this.keyboard.release('field').catch(() => undefined); // a failure is logged by the window layer
       }
@@ -705,10 +715,22 @@ class AppState {
     await this.#refit();
   }
 
+  /**
+   * The pointer is over no field: the window is being folded, or is hidden. The page cannot be relied on to say so (a
+   * window that shrinks or disappears under the cursor reports no leave), so the holds are told here, and they disarm
+   * the window if it was armed. Never throws: a failure is logged by the window layer.
+   */
+  async #pointerGone(): Promise<void> {
+    await this.keyboard.pointerOverField(false).catch(() => undefined);
+  }
+
   /** Shows or hides the window as the mode and the "show the mini bar" setting say. */
   async #syncVisibility(): Promise<void> {
     const visible = this.#wantVisible();
     if (visible === this.#visible) return;
+    // A window that was hidden has had no pointer over a field: the holds are told before it is shown, so that they
+    // and the window layer (which never shows a window activatable) agree on what the window is.
+    if (visible) await this.#pointerGone();
     await setWindowVisible(visible, this.#log);
     this.#visible = visible;
   }
@@ -912,10 +934,10 @@ class AppState {
     if (collapse) void this.#changeMode(() => 'mini', `idle ${idleSec} s`);
   }
 
-  /** `take` of the keyboard holds: a key of the game that is still down must not type into a field. */
-  async #takeKeyboard(): Promise<void> {
+  /** `take` of the keyboard holds: a key of the game that is still down must not type into a field. Says whether the window is in front. */
+  async #takeKeyboard(): Promise<boolean> {
     resetHeldKeys();
-    await takeKeyboard(this.#log);
+    return takeKeyboard(this.#log);
   }
 
   /**
@@ -947,11 +969,30 @@ class AppState {
     }, FOCUS_SETTLE_MS + 50);
   }
 
+  /**
+   * The window says it got the focus. When that was a press on a field, the field holds the keyboard. When Windows
+   * activated the window by itself (the game was closed or minimised while the pointer rested on a field, Alt+Tab),
+   * nobody does, and no press follows that would notice: the holds look once their settle time is over and hand the
+   * keyboard back (`focusGained` in vm/keyboard-holds.ts). A window that cannot be activated costs no request there.
+   */
+  #onFocusGained(): void {
+    void this.keyboard
+      .focusGained()
+      .then((stray) => {
+        if (stray === 'handed back') {
+          this.#log.info('window', 'the window was activated with nobody holding the keyboard and no press on a field: the keyboard went back to the game');
+        } else if (stray === 'not handed back') {
+          this.#log.warn('window', 'the window was activated with nobody holding the keyboard and no press on a field. It cannot be activated any more, but the focus did NOT go back to the game (its window may be gone): click the window you want');
+        }
+      })
+      .catch(() => undefined); // a failure is logged by the window layer
+  }
+
   /** Starts listening for focus changes and for the tray's "Показать панель"; returns what stops it. */
   async watchWindow(): Promise<() => void> {
     const stops: Array<() => void> = [];
     try {
-      stops.push(await watchFocus(() => this.mode, this.#log, () => this.#onFocusLost()));
+      stops.push(await watchFocus(() => this.mode, this.#log, () => this.#onFocusLost(), () => this.#onFocusGained()));
     } catch (err) {
       this.#log.error('app', 'cannot listen for focus changes', { err });
     }

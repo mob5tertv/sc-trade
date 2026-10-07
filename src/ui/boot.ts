@@ -5,7 +5,7 @@ import { version as windowsVersion } from '@tauri-apps/plugin-os';
 import type { Reference } from '../core/types';
 import type { Db } from '../data/db';
 import type { Logger } from '../data/logger';
-import { migrate } from '../data/migrations';
+import { checkSchemaVersion, migrate, NewerDatabaseError } from '../data/migrations';
 import { loadSettings } from '../data/repo/settings';
 import { repairRuns } from '../data/trade';
 import { createUexClient } from '../data/uex-client';
@@ -14,30 +14,47 @@ import { openTauriDb } from '../platform/tauri-db';
 import { tauriFetchJson } from '../platform/tauri-http';
 import { applyLogLevel } from '../platform/tauri-logger';
 import { app } from './state.svelte';
+import { startDatabase, startFailureText } from './vm/startup-order';
 
 export type BootResult = { ok: true } | { ok: false; reason: string };
 
-// What the player reads when the start fails. Never raw error text: that is in the log.
+// What the player reads when the start fails. Never raw error text: that is in the log. (The one failure that speaks
+// for itself, a database from a newer version, carries a sentence written for the player: `startFailureText`.)
 const DATABASE_FAILED = 'Не удалось открыть локальную базу данных. Подробности в логе.';
 const DATA_FAILED = 'Не удалось прочитать данные из локальной базы. Подробности в логе.';
 
 // The database is opened exactly once per run: the trade service serialises its calls per `Db` object,
 // so a second object would break that. A retry after a failed start reuses it.
 let db: Db | null = null;
+// The database was made safe to migrate (its journal merged and the backup taken, or there was nothing to back up):
+// once per run too, a retry makes no second backup.
+let secured = false;
 let prepared = false;
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
 
 const referenceIsEmpty = (ref: Reference): boolean => ref.terminals.size === 0 || ref.starSystems.length === 0;
 
-/** The database is backed up BEFORE it is opened. A failed backup is logged and never stops the start. */
+/**
+ * Merges the write-ahead journal (`sctrade.db-wal`) into the database file, so that the backup, a copy of that one
+ * file, is the whole database. The line of the log is what SQLite answered: `busy` 1 when another connection kept it
+ * from finishing (the backup may then miss the newest pages), `log` the pages still in the journal and `checkpointed`
+ * how many of them are in the file. A complete merge empties the journal and answers 0 / 0; -1 / -1 is a database
+ * that keeps no such journal.
+ */
+async function mergeJournal(opened: Db, log: Logger): Promise<void> {
+  const rows = await opened.select<{ busy: number; log: number; checkpointed: number }>('PRAGMA wal_checkpoint(TRUNCATE)');
+  const answer = rows[0] ?? null;
+  if (answer === null || answer.busy !== 0) {
+    log.warn('db', 'the journal was not merged into the database file completely, the backup may miss the newest pages', { answer });
+  } else if (answer.log < 0) log.info('db', 'the database keeps no write-ahead journal, nothing to merge', { answer });
+  else log.info('db', 'journal merged into the database file', { answer });
+}
+
+/** The backup of the start: a copy of the database file, taken after the journal was merged into it and before the migrations. */
 async function backup(log: Logger): Promise<void> {
-  try {
-    const created = await invoke<string | null>('backup_db');
-    log.info('app', 'database backup', { created });
-  } catch (err) {
-    log.error('app', 'database backup failed', { err });
-  }
+  const created = await invoke<string | null>('backup_db');
+  log.info('app', 'database backup', { created });
 }
 
 async function appVersion(): Promise<string> {
@@ -80,14 +97,39 @@ async function logStart(log: Logger, schema: number): Promise<void> {
   });
 }
 
-/** Backup, database, migrations, settings, log level, the first window and the trigger keys. */
+/**
+ * The schema version the database is found with. A database from a newer version of the application is refused here
+ * (`checkSchemaVersion` logs it and throws), before anything is touched; a new one (version 0) is said to be new.
+ */
+async function schemaVersion(opened: Db, log: Logger): Promise<number> {
+  const version = await checkSchemaVersion(opened, log);
+  if (version === 0) log.info('app', 'the database is new: no journal to merge, nothing to back up yet');
+  return version;
+}
+
+/**
+ * Database (opened, its version checked, its journal merged, backed up, migrated: `vm/startup-order.ts`), settings,
+ * log level, the first window and the trigger keys.
+ */
 async function prepare(log: Logger): Promise<void> {
   if (prepared) return;
-  if (db === null) {
-    await backup(log);
-    db = await openTauriDb(log);
-  }
-  const schema = await migrate(db, log);
+  const started = await startDatabase({ db, secured }, {
+    open: () => openTauriDb(log),
+    opened: (opened) => {
+      db = opened;
+    },
+    schemaVersion: (opened) => schemaVersion(opened, log),
+    mergeJournal: (opened) => mergeJournal(opened, log),
+    backup: () => backup(log),
+    secured: () => {
+      secured = true;
+    },
+    migrate: (opened) => migrate(opened, log),
+    // neither stops the start
+    failed: (step, err) => log.error('app', step === 'backup' ? 'database backup failed' : 'cannot merge the journal into the database file', { err }),
+  });
+  db = started.db;
+  const schema = started.schema;
   const settings = await loadSettings(db, log);
   await applyLogLevel(log, settings.logLevel);
   await repairRuns({ db, log }); // before the active run is read: a run that a write cut off is never shown
@@ -126,8 +168,9 @@ export async function boot(): Promise<BootResult> {
   try {
     await prepare(log);
   } catch (err) {
-    log.error('app', 'start failed before the data was ready', { err });
-    return fail(DATABASE_FAILED);
+    // a database from a newer version has its own line in the log already (`checkSchemaVersion`): not said twice
+    if (!(err instanceof NewerDatabaseError)) log.error('app', 'start failed before the data was ready', { err });
+    return fail(startFailureText(err, DATABASE_FAILED));
   }
 
   try {

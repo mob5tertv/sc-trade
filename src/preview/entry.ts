@@ -46,6 +46,7 @@ const preview: PreviewGlobal = {
     throw new Error('the preview is not set up yet');
   },
   clickGame: () => {},
+  windowsActivates: () => {},
   idleMs,
 };
 window.__preview = preview;
@@ -127,8 +128,11 @@ async function run(): Promise<void> {
     },
   });
   preview.clickGame = () => win.clickGame();
-  // a mouse press inside the overlay gives it the keyboard when it can take the focus (the strip never does)
-  document.addEventListener('mousedown', () => win.pressInside(), true);
+  preview.windowsActivates = () => win.activatedByWindows();
+  // A press inside the overlay gives it the keyboard when it can take the focus (the strip never does). Windows
+  // activates the window BEFORE the page hears of the press, so this is the first listener a press meets: the capture
+  // phase of the window, ahead of the listeners the application has on the document.
+  window.addEventListener('pointerdown', () => win.pressInside(), true);
   preview.state = (): PreviewState => {
     const w = win.snapshot();
     return {
@@ -191,6 +195,9 @@ async function run(): Promise<void> {
   await waitForQuiet();
   await document.fonts.ready;
   await frames();
+  // A command nobody answers is a hole in the preview, or a call the application must never make (the focus command
+  // of Tauri, see ipc.ts): the scene has failed, whatever the screen looks like.
+  if (unknown.size > 0) throw new Error(`the scene called Tauri commands that are not mocked: ${[...unknown].join(', ')}`);
 }
 
 void run()

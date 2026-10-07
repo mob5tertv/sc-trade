@@ -38,16 +38,24 @@ export interface PreviewWindow {
   hide(): void;
   close(): void;
   setFocusable(focusable: boolean): void;
-  setFocus(): void;
+  /** `take_foreground`: granted only when the overlay is in front already (see focus-model.ts); nothing changes either way. */
+  takeForeground(): { foreground: boolean; asked: boolean };
+  /** The overlay is the foreground window: the answer to `panel_is_foreground`. */
   isFocused(): boolean;
   setSkipTaskbar(skip: boolean): void;
   setIgnoreCursorEvents(ignore: boolean): void;
-  rememberForeground(): void;
+  /** `remember_foreground`; `quiet` is the refresh made while the pointer rests on a field (see focus-model.ts). */
+  rememberForeground(quiet?: boolean): void;
   restoreForeground(): boolean;
   /** The player clicks the game: an overlay that holds the keyboard loses it. */
   clickGame(): void;
   /** The player presses a mouse button inside the window: a window that can take the focus gets the keyboard. */
   pressInside(): void;
+  /**
+   * Windows activates the window with no press of the player on it (the foreground window was closed or minimised,
+   * Alt+Tab passed over it): a shown window that can take the focus gets the keyboard, any other does not.
+   */
+  activatedByWindows(): void;
 }
 
 /** The window as `tauri.conf.json` creates it: hidden, 240x26, off the taskbar. */
@@ -105,11 +113,11 @@ export function createPreviewWindow(options: PreviewWindowOptions = {}): Preview
       return focus.leaveScreen();
     }),
     setFocusable: (value) => apply(() => { focus.setFocusable(value); }),
-    setFocus: () => apply(() => focus.take(visible)),
+    takeForeground: () => focus.takeForeground(),
     isFocused: () => focus.isFocused(),
     setSkipTaskbar: (value) => apply(() => { skipTaskbar = value; }),
     setIgnoreCursorEvents: (value) => apply(() => { ignoreCursorEvents = value; }),
-    rememberForeground: () => apply(() => focus.remember()),
+    rememberForeground: (quiet) => apply(() => focus.remember(quiet)),
     restoreForeground() {
       let restored = false;
       apply(() => {
@@ -122,5 +130,6 @@ export function createPreviewWindow(options: PreviewWindowOptions = {}): Preview
     clickGame: () => apply(() => focus.clickGame()),
     // a window that lets the clicks through never gets the press
     pressInside: () => apply(() => focus.take(visible && !ignoreCursorEvents)),
+    activatedByWindows: () => apply(() => focus.take(visible)),
   };
 }

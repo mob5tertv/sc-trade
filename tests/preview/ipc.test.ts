@@ -15,8 +15,8 @@ import { tauriFetchJson } from '../../src/platform/tauri-http';
 import { applyLogLevel } from '../../src/platform/tauri-logger';
 import { bindTriggers } from '../../src/platform/triggers';
 import {
-  fitWindow, giveKeyboard, isWindowFocused, moveWindow, setWindowVisible, showWindow, takeKeyboard, watchFocus,
-  windowGeometry, type WindowLayout,
+  armKeyboard, disarmKeyboard, fitWindow, giveKeyboard, isWindowFocused, moveWindow, refreshRemembered, setWindowVisible,
+  showWindow, takeKeyboard, watchFocus, windowGeometry, type WindowLayout,
 } from '../../src/platform/window';
 import { logicalSize, parseMonitor } from '../../src/preview/monitor';
 import { startPreviewHarness, type PreviewHarness } from '../helpers/preview-fixtures';
@@ -303,70 +303,247 @@ describe('the keyboard focus', () => {
     expect(focusEvents).toEqual([]);
   });
 
-  it('goes to the window when it takes the keyboard and back to the game when it gives it back', async () => {
+  /** The player's way to the keyboard: the pointer over a field arms the window, the press activates it, the field takes. */
+  async function pressField(win: PreviewHarness['win'], log = logger()): Promise<void> {
+    await armKeyboard(log);
+    win.pressInside();
+    await takeKeyboard(log);
+  }
+
+  it('the pointer over a field makes the window activatable and remembers the game; nothing is activated yet', async () => {
     const { win, focusEvents } = start();
     await showWindow(layout, logger());
+    await armKeyboard(logger());
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: true, gameRemembered: 1, focusReturnedToGame: 0 });
+    expect(focusEvents).toEqual([]);
+  });
 
-    await takeKeyboard(logger());
+  it('the pointer leaving the field makes it not activatable again, and hands no focus back: none was taken', async () => {
+    const { win, focusEvents } = start();
+    await showWindow(layout, logger());
+    await armKeyboard(logger());
+    await disarmKeyboard(logger());
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, gameRemembered: 1, focusReturnedToGame: 0 });
+    win.pressInside(); // a click on a button now
+    expect(win.snapshot().keyboard).toBe('game');
+    expect(focusEvents).toEqual([]);
+  });
+
+  it('a window that was hidden while it was armed is shown without the keyboard: it is made not activatable before it is shown', async () => {
+    const { win, focusEvents } = start();
+    await showWindow(layout, logger());
+    await armKeyboard(logger());
+    // folded by a key with the mini bar off: the pointer never "left" the field, the window is hidden as it is
+    await setWindowVisible(false, logger());
+    await setWindowVisible(true, logger());
+    expect(win.snapshot()).toMatchObject({ visible: true, focusable: false, keyboard: 'game' });
+    expect(focusEvents).toEqual([]);
+  });
+
+  it('goes to the window by the press on a field of the armed window and back to the game when it gives it back', async () => {
+    const { win, focusEvents, logged } = start();
+    await showWindow(layout, logger());
+
+    await armKeyboard(logger());
+    win.pressInside();
     expect(win.snapshot()).toMatchObject({ keyboard: 'overlay', focusable: true, gameRemembered: 1 });
-    expect(await invoke('plugin:window|is_focused', { label: 'main' })).toBe(true);
+    await takeKeyboard(logger());
+    // the window was in front already: nothing was asked, and its own window was not remembered as the game
+    expect(win.snapshot()).toMatchObject({ keyboard: 'overlay', focusable: true, gameRemembered: 1 });
+    expect(logged.filter((line) => line.includes('take_foreground'))).toEqual([
+      '[info] [preview] take_foreground: the overlay is the foreground window already (asked: false)',
+    ]);
+    expect(await invoke('panel_is_foreground')).toBe(true);
 
     await giveKeyboard(logger(), true);
     expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, focusReturnedToGame: 1 });
     expect(focusEvents).toEqual([true, false]);
   });
 
+  it('a take with no arm before it is refused by a strict Windows: it says no, warns in plain words, tries nothing else and gives nothing back', async () => {
+    const { win, focusEvents, logged, unknown } = start();
+    const sink = memorySink();
+    await showWindow(layout, logger());
+
+    // touch, a pen, a press that came before the arm
+    expect(await takeKeyboard(createLogger(sink))).toBe(false);
+    // nothing was taken, so nothing is undone here: the window is activatable (the holds decide what becomes of that),
+    // and no focus is "handed back" to a game that never lost it
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: true, gameRemembered: 1, focusReturnedToGame: 0 });
+    expect(focusEvents).toEqual([]);
+    expect(sink.lines.filter((l) => l.line.startsWith('[window] keyboard'))).toEqual([
+      {
+        level: 'warn',
+        line: '[window] keyboard NOT taken: Windows refused to bring the window to the front, the keys still go to the game. '
+          + 'Click the field once more: with the pointer on a field the click itself activates the window {"foreground":false}',
+      },
+    ]);
+    expect(logged.filter((line) => line.includes('take_foreground'))).toEqual([
+      '[warn] [preview] take_foreground: a strict Windows refuses, the overlay is not the foreground window (asked: true)',
+    ]);
+    expect(unknown).toEqual([]); // and no other command was tried to change its mind
+
+    win.pressInside(); // the player presses the field again: the window is activatable, Windows activates it
+    expect(win.snapshot().keyboard).toBe('overlay');
+    expect(focusEvents).toEqual([true]);
+    expect(await takeKeyboard(createLogger(sink))).toBe(true);
+  });
+
+  it('never calls set_focus of Tauri (it sends a key press when Windows refuses): the preview does not even answer it', async () => {
+    const { win, unknown } = start();
+    await showWindow(layout, logger());
+    await pressField(win);
+    await giveKeyboard(logger(), true);
+    await takeKeyboard(logger());
+    await giveKeyboard(logger(), false);
+    expect(unknown).toEqual([]);
+    await expect(invoke('plugin:window|set_focus', { label: 'main' })).rejects.toThrow('unmocked Tauri command: plugin:window|set_focus');
+    expect(unknown).toEqual(['plugin:window|set_focus']);
+  });
+
   it('a take that fails after the window became focusable makes it not focusable again: a plain click must not activate it', async () => {
     const { win } = start();
     await showWindow(layout, logger());
-    win.setFocus = () => {
-      throw new Error('Windows refused');
+    win.takeForeground = () => {
+      throw new Error('the command failed');
     };
-    await expect(takeKeyboard(logger())).rejects.toThrow('Windows refused');
+    await expect(takeKeyboard(logger())).rejects.toThrow('the command failed');
     expect(win.snapshot()).toMatchObject({ focusable: false, keyboard: 'game' });
   });
 
-  it('answers whether the window really has the focus', async () => {
+  it('a take that fails after the press has activated the window hands the keyboard back: nobody holds it, nobody else would', async () => {
+    const { win, focusEvents } = start();
+    await showWindow(layout, logger());
+    await armKeyboard(logger());
+    win.pressInside(); // the window is active now
+    win.takeForeground = () => {
+      throw new Error('the command failed');
+    };
+    await expect(takeKeyboard(logger())).rejects.toThrow('the command failed');
+    expect(win.snapshot()).toMatchObject({ focusable: false, keyboard: 'game', focusReturnedToGame: 1 });
+    expect(focusEvents).toEqual([true, false]);
+  });
+
+  it('an arm that fails leaves the window not activatable', async () => {
     const { win } = start();
     await showWindow(layout, logger());
+    const setFocusable = win.setFocusable;
+    win.setFocusable = (focusable) => {
+      if (focusable) throw new Error('the command failed');
+      setFocusable(focusable);
+    };
+    await expect(armKeyboard(logger())).rejects.toThrow('the command failed');
+    expect(win.snapshot()).toMatchObject({ focusable: false, keyboard: 'game' });
+  });
+
+  it('answers whether the window is the foreground one: the answer of Windows, asked through our own command', async () => {
+    const { win, unknown } = start();
+    await showWindow(layout, logger());
     expect(await isWindowFocused(logger())).toBe(false);
-    await takeKeyboard(logger());
+    await armKeyboard(logger());
+    expect(await isWindowFocused(logger())).toBe(false); // activatable is not active
+    win.pressInside();
     expect(await isWindowFocused(logger())).toBe(true);
     win.clickGame();
     expect(await isWindowFocused(logger())).toBe(false);
+    expect(unknown).toEqual([]);
   });
 
   it('does not hand the focus back when the player has already moved on', async () => {
     const { win } = start();
     await showWindow(layout, logger());
-    await takeKeyboard(logger());
+    await pressField(win);
     win.clickGame(); // the player clicked the game: it has the focus already
     await giveKeyboard(logger(), false);
     expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, gameRemembered: 1, focusReturnedToGame: 0 });
   });
 
-  it('logs every take and give, with whether the focus went back', async () => {
-    start();
+  it('logs the arm and the disarm at debug, every take and give at info, with whether the focus went back', async () => {
+    const { win } = start();
     const sink = memorySink();
     const log = createLogger(sink);
     await showWindow(layout, log);
-    await takeKeyboard(log);
+    await armKeyboard(log);
+    await disarmKeyboard(log);
+    await pressField(win, log);
     await giveKeyboard(log, true);
-    const lines = sink.lines.map((l) => l.line);
-    expect(lines.some((l) => l.startsWith('[window] keyboard taken'))).toBe(true);
-    expect(lines.some((l) => l.startsWith('[window] keyboard given') && l.includes('"restore":true') && l.includes('"restored":true'))).toBe(true);
+    const lines = sink.lines.filter((l) => /^\[window\] (armed|disarmed|keyboard)/.test(l.line)).map((l) => `${l.level} ${l.line}`);
+    expect(lines).toEqual([
+      'debug [window] armed: the pointer is over a field, a press on it activates the window',
+      'debug [window] disarmed: the pointer left the field, the window cannot be activated',
+      'debug [window] armed: the pointer is over a field, a press on it activates the window',
+      'info [window] keyboard taken {"foreground":true}',
+      'info [window] keyboard given {"restore":true,"restored":true}',
+    ]);
   });
 
-  it('is reported to the app through the same event Tauri uses', async () => {
+  it('is reported to the app through the same event Tauri uses: the focus gained and the focus lost', async () => {
     const { win } = start();
     const seen: boolean[] = [];
-    const stop = await watchFocus(() => 'expanded', logger(), () => seen.push(false));
+    const stop = await watchFocus(() => 'expanded', logger(), () => seen.push(false), () => seen.push(true));
     await showWindow(layout, logger());
-    await takeKeyboard(logger());
+    await pressField(win);
     win.clickGame();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(seen).toEqual([false]);
+    expect(seen).toEqual([true, false]);
     stop();
+  });
+
+  it('an activation by Windows itself, with no press, is reported as a focus gained', async () => {
+    const { win } = start();
+    const seen: boolean[] = [];
+    const stop = await watchFocus(() => 'expanded', logger(), undefined, () => seen.push(true));
+    await showWindow(layout, logger());
+    await armKeyboard(logger());
+    win.activatedByWindows(); // the game was closed while the pointer rested on a field
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(seen).toEqual([true]);
+    expect(await isWindowFocused(logger())).toBe(true);
+    stop();
+  });
+
+  it('says whether the focus went back: yes after a restore, no without one or with no window to give it to', async () => {
+    const { win } = start();
+    await showWindow(layout, logger());
+    expect(await giveKeyboard(logger(), true)).toBe(false); // nothing was ever remembered
+    await pressField(win);
+    expect(await giveKeyboard(logger(), true)).toBe(true);
+    await pressField(win);
+    win.clickGame();
+    expect(await giveKeyboard(logger(), false)).toBe(false); // not asked to
+  });
+
+  it('the refresh of the remembered window while armed is silent: no line of the app, no command but the one', async () => {
+    const { win, unknown } = start();
+    const sink = memorySink();
+    const log = createLogger(sink);
+    await showWindow(layout, logger());
+    await armKeyboard(logger());
+    const before = win.snapshot();
+    for (let tick = 0; tick < 5; tick++) await refreshRemembered(log);
+    expect(sink.lines).toEqual([]);
+    expect(win.snapshot()).toEqual(before); // the same game window: nothing new was remembered, nothing else moved
+    expect(unknown).toEqual([]);
+  });
+
+  it('a refresh that fails says so once, not at every tick', async () => {
+    const { win } = start();
+    const sink = memorySink();
+    const log = createLogger(sink);
+    await showWindow(layout, logger());
+    const rememberForeground = win.rememberForeground;
+    win.rememberForeground = () => {
+      throw new Error('the command failed');
+    };
+    for (let tick = 0; tick < 3; tick++) await refreshRemembered(log);
+    expect(sink.lines.map((l) => l.level)).toEqual(['warn']);
+    win.rememberForeground = rememberForeground;
+    await refreshRemembered(log); // it works again
+    win.rememberForeground = () => {
+      throw new Error('the command failed');
+    };
+    await refreshRemembered(log);
+    expect(sink.lines.map((l) => l.level)).toEqual(['warn', 'warn']); // and a new failure is said again
   });
 
   it('answers the focus questions with booleans', async () => {
@@ -374,6 +551,8 @@ describe('the keyboard focus', () => {
     expect(await invoke('restore_foreground')).toBe(false);
     expect(await invoke('remember_foreground')).toBeNull();
     expect(await invoke('restore_foreground')).toBe(true);
+    expect(await invoke('panel_is_foreground')).toBe(false);
+    expect(await invoke('take_foreground')).toBe(false);
   });
 });
 

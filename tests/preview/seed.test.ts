@@ -5,6 +5,7 @@ import { DATASET_NAMES, isDatasetName } from '../../src/preview/datasets';
 import { prepareAnyDataset } from '../../src/preview/prepare';
 import { prepareDataset } from '../../src/preview/seed';
 import { createLogger, memorySink } from '../../src/data/logger';
+import { checkSchemaVersion, MIGRATIONS, NewerDatabaseError } from '../../src/data/migrations';
 import { listRuns, getActiveRun } from '../../src/data/repo/runs';
 import { loadSettings } from '../../src/data/repo/settings';
 import { getMeta, loadDistances, loadReference, loadUexPrices } from '../../src/data/repo/uex-cache';
@@ -23,13 +24,24 @@ async function dataset(name: Parameters<typeof prepareDataset>[1]) {
 }
 
 describe('datasets', () => {
-  it('are default, run, empty, window (seed-window.ts), stats, no-runs, no-records (seed-stats.ts), the three run phases (seed-run.ts) and empty-no-strip (prepare.ts)', () => {
+  it('are default, run, empty, window (seed-window.ts), stats, no-runs, no-records (seed-stats.ts), the three run phases (seed-run.ts), empty-no-strip and newer-schema (prepare.ts)', () => {
     expect([...DATASET_NAMES]).toEqual([
       'default', 'run', 'empty', 'window', 'stats', 'no-runs', 'no-records', 'run-loading', 'run-flight', 'run-unloading',
-      'empty-no-strip',
+      'empty-no-strip', 'newer-schema',
     ]);
     expect(isDatasetName('run')).toBe(true);
     expect(isDatasetName('other')).toBe(false);
+  });
+});
+
+describe('the newer-schema dataset', () => {
+  it('is the default data in a database that a newer version of the application has written: this build refuses it', async () => {
+    const db = testDb();
+    await prepareAnyDataset(db, 'newer-schema', NOW);
+    const [{ user_version: version }] = await db.select<{ user_version: number }>('PRAGMA user_version');
+    expect(version).toBeGreaterThan(MIGRATIONS[MIGRATIONS.length - 1].version);
+    expect((await loadReference(db)).terminals.size).toBeGreaterThan(0);
+    await expect(checkSchemaVersion(db, log())).rejects.toBeInstanceOf(NewerDatabaseError);
   });
 });
 

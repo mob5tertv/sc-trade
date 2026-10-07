@@ -3,6 +3,7 @@ import type { DatasetName } from './datasets';
 import { ANCHOR_SCENES } from './scenes-anchor';
 import { INCOME_SCENES } from './scenes-income';
 import { INDICATOR_SCENES } from './scenes-indicators';
+import { KEYBOARD_SCENES } from './scenes-keyboard';
 import { ROI_SCENES } from './scenes-roi';
 import { REPAIR_SCENES } from './scenes-repairs';
 import { RUN_SCENES } from './scenes-run';
@@ -260,6 +261,13 @@ export const SCENES: readonly Scene[] = [
   },
   { name: 'boot-failed', title: 'Ошибка запуска: пустая база, UEX недоступен (окно развернулось само)', dataset: 'empty' },
   {
+    // The database was written by a newer version of the application: the start stops at the check of the schema, before
+    // it backs anything up or migrates, and the screen says so in the words of the error itself, not in the general sentence.
+    name: 'boot-newer-database',
+    title: 'Ошибка запуска: база создана более новой версией программы (текст самой ошибки)',
+    dataset: 'newer-schema',
+  },
+  {
     // The player has just clicked the mini bar, so the cursor is over the window. `hover:.sc-root;leave;wait:3000`
     // takes it away: the window folds 2 seconds later, unless the keyboard or a dialog holds it.
     name: 'idle',
@@ -274,6 +282,7 @@ export const SCENES: readonly Scene[] = [
   ...INCOME_SCENES,
   ...STATS_SCENES,
   ...INDICATOR_SCENES,
+  ...KEYBOARD_SCENES,
   ...REPAIR_SCENES,
 ];
 

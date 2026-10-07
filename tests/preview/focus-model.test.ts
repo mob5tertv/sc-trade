@@ -37,6 +37,33 @@ describe('focus model', () => {
     expect(focus.take(true)).toBe('focus');
   });
 
+  describe('take_foreground, with a Windows that is strict', () => {
+    it('is refused while the game has the keyboard, however activatable the window is: it was asked, and nothing moved', () => {
+      const focus = createFocusModel();
+      focus.remember();
+      expect(focus.takeForeground()).toEqual({ foreground: false, asked: true });
+      expect(focus.state()).toMatchObject({ keyboard: 'game', focusable: true });
+      expect(focus.isFocused()).toBe(false);
+      // asking again changes nothing: there is no trick that makes this Windows agree
+      expect(focus.takeForeground()).toEqual({ foreground: false, asked: true });
+    });
+
+    it('finds the overlay in front already after a press activated it, and asks nothing', () => {
+      const focus = createFocusModel();
+      focus.remember();
+      expect(focus.take(true)).toBe('focus'); // the press on an activatable window
+      expect(focus.takeForeground()).toEqual({ foreground: true, asked: false });
+      expect(focus.state().keyboard).toBe('overlay');
+    });
+
+    it('is refused again once the player has clicked the game', () => {
+      const focus = createFocusModel();
+      focus.take(true);
+      focus.clickGame();
+      expect(focus.takeForeground()).toEqual({ foreground: false, asked: true });
+    });
+  });
+
   it('has nothing to give back when no game window was remembered', () => {
     const focus = createFocusModel();
     expect(focus.restore()).toEqual({ restored: false, event: null });
@@ -64,6 +91,21 @@ describe('focus model', () => {
     focus.clickGame();
     focus.remember();
     expect(focus.state().gameRemembered).toBe(3);
+  });
+
+  it('a quiet refresh that finds the game it already knows is not counted; one that finds it for the first time is', () => {
+    const focus = createFocusModel();
+    focus.remember(true); // nothing was remembered yet: this is news
+    expect(focus.state().gameRemembered).toBe(1);
+    focus.remember(true);
+    focus.remember(true);
+    expect(focus.state().gameRemembered).toBe(1); // the same window every 400 ms
+    focus.remember(); // the pointer came over a field again: asked aloud
+    expect(focus.state().gameRemembered).toBe(2);
+    focus.take(true);
+    focus.remember(true); // the overlay's own window is never remembered, quietly or not
+    expect(focus.state().gameRemembered).toBe(2);
+    expect(focus.restore()).toEqual({ restored: true, event: 'blur' });
   });
 
   it('keeps what it remembered, so a later restore works again', () => {

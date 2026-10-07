@@ -45,6 +45,8 @@ pub fn run() {
             backup::backup_db,
             focus::remember_foreground,
             focus::restore_foreground,
+            focus::take_foreground,
+            focus::panel_is_foreground,
             place::place_window,
             input_hook::set_trigger_keys
         ])
