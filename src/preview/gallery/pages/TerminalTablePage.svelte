@@ -37,6 +37,9 @@
 <Frame name="buy-long" caption="buy · SCRA expanded, the longest line there is: the warning first, the plaque, the five-digit price that moved (red up), the stock estimate with its base, the learned rate; the texts give way with an ellipsis">
   <TableDemo rows={data.rows} side="buy" selected={idOf('SCRA')} />
 </Frame>
+<Frame name="ranges" caption="«Мин–макс»: a spread (TUNG), one price as «= price» (MEDS; GOLD: the week is flat, the month moved; TITA: seven digits), nothing as «—» (STIM, BERY: UEX has no row) · beside my price: one price (AGRI), a spread (DIAM), nothing (STIM)">
+  <TableDemo rows={data.ranges.rows} side="buy" />
+</Frame>
 <Frame name="sell" caption="sell: what the player can sell here · {counts.sell} rows · triangles: TUNG up (green), DIAM down (red), LARA the same, GOLD is UEX">
   <TableDemo rows={data.rows} side="sell" />
 </Frame>

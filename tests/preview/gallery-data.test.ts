@@ -40,8 +40,8 @@ describe('the gallery table of the viewed terminal', () => {
 
   it('has ranges where UEX knows one and none where it does not', () => {
     const cells = data.rows.flatMap((r) => [r.buy, r.sell]).filter((c) => c !== null);
-    expect(cells.some((c) => c.range !== null)).toBe(true);
-    expect(cells.some((c) => c.range === null)).toBe(true);
+    expect(cells.some((c) => c.range.kind === 'spread')).toBe(true);
+    expect(cells.some((c) => c.range.kind === 'none')).toBe(true);
   });
 
   it('has a price that looks like a typo, a stock moved by the refill timer and a quantity of the buyer', () => {
@@ -108,6 +108,52 @@ describe('the gallery table of the viewed terminal', () => {
   });
 });
 
+describe('the gallery «Мин–макс» states: a spread, one price, nothing', () => {
+  const tableRows = () => data.ranges.rows;
+  const buyOf = (code: string) => tableRows().find((r) => r.code === code)?.buy ?? null;
+  const tripsAt = (mode: 'from' | 'to') => data.ranges.trips.map((o) => routeOptionRow(o, data.reference, mode, data.runCounts, { uexRange: data.ranges.uexRange }));
+  const nb = (s: string) => s.replace(/ /g, String.fromCharCode(0xa0));
+
+  it('has a table with a row of each kind, from a terminal that is none of the other states', () => {
+    expect(data.ranges.terminalId).not.toBe(VIEWED_TERMINAL);
+    const kinds = new Set(tableRows().map((r) => r.buy?.range.kind));
+    expect([...kinds].sort()).toEqual(['flat', 'none', 'spread']);
+  });
+
+  it('has the one price UEX gives as the same minimum and maximum, the week deciding over the month', () => {
+    expect(buyOf('MEDS')?.range).toEqual({ kind: 'flat', price: 5500 });
+    expect(buyOf('GOLD')?.range).toEqual({ kind: 'flat', price: 31_000 }); // the month moved 30 000-31 000; the estimate takes the week
+    expect(buyOf('TUNG')?.range).toEqual({ kind: 'spread', low: 3480, high: 3820 });
+  });
+
+  it('has a seven-digit price that is one price', () => {
+    expect(buyOf('TITA')?.range).toEqual({ kind: 'flat', price: 1_300_000 });
+    expect(buyOf('TITA')?.hint).toBe(1_300_000);
+  });
+
+  it('has prices of mine with what UEX knows beside them: one price, a spread and nothing', () => {
+    expect(buyOf('AGRI')).toMatchObject({ own: 2700, range: { kind: 'flat', price: 2650 } });
+    expect(buyOf('DIAM')).toMatchObject({ own: 7100, range: { kind: 'spread', low: 6800, high: 7300 } });
+    expect(buyOf('STIM')).toMatchObject({ own: 3100, range: { kind: 'none' } });
+  });
+
+  it('has a cold price of mine that UEX knows nothing about: a hint and a dash', () => {
+    expect(buyOf('BERY')).toMatchObject({ own: null, hint: 4200, range: { kind: 'none' }, badge: { kind: 'cold' } });
+  });
+
+  it('has trips for the list that show the three kinds in the «Мин–макс» column, one of them seven digits', () => {
+    const rows = tripsAt('from');
+    expect(new Set(rows.map((r) => r.price.range.kind))).toEqual(new Set(['spread', 'flat', 'none']));
+    expect(rows.map((r) => r.price.range.text)).toContain(`= ${nb('1 300 000')}`);
+    expect(rows.map((r) => r.price.range.text)).toContain(`= ${nb('5 500')}`);
+  });
+
+  it('has trips whose price is mine, with the one price or the spread UEX knows beside it', () => {
+    const own = tripsAt('from').filter((r) => r.price.badge.kind !== 'uex');
+    expect(own.map((r) => r.price.range.kind).sort()).toEqual(['flat', 'none', 'spread']);
+  });
+});
+
 describe('the gallery route lists', () => {
   const rowsOf = (options: GalleryData['routes']['from'], mode: 'from' | 'to') =>
     options.map((o) => routeOptionRow(o, data.reference, mode, data.runCounts, {
@@ -117,7 +163,7 @@ describe('the gallery route lists', () => {
   it('has trips whose far price is mine, with the range UEX knows beside it', () => {
     const own = rowsOf(data.routes.to, 'to').filter((r) => r.price.badge.kind !== 'uex');
     expect(own.length).toBeGreaterThan(0);
-    expect(own.every((r) => r.price.range !== null)).toBe(true); // UEX knows a range at every place of the dataset
+    expect(own.every((r) => r.price.range.kind !== 'none')).toBe(true); // UEX knows a price at every place of the dataset
   });
 
   /** The trips whose price in the «Цена» column is mine and has an earlier reading that says exactly the same. */

@@ -7,11 +7,12 @@
   import { app } from './state.svelte';
   import Strip from './Strip.svelte';
 
-  let root = $state<HTMLDivElement>();
+  // `bind:this` is `undefined` before the element exists and `null` after it has gone
+  let root = $state<HTMLDivElement | null>();
 
   onMount(() => {
     const element = root;
-    if (element === undefined) return;
+    if (!element) return;
     let disposed = false;
     let unwatch: (() => void) | undefined;
     const stopKeyboard = installKeyboard(app.keyboard, app.log);

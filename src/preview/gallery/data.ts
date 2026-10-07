@@ -8,13 +8,13 @@ import type { SellAlternative, SellHere } from '../../core/sell';
 import type { Searchable } from '../../core/search';
 import type { Settings } from '../../core/settings';
 import { ownRunCounts, routeStats, sessions } from '../../core/stats';
-import type { Market, Reference, Side, UexPrice } from '../../core/types';
+import type { Market, Reference, Side, UexPrice, UexSideStats } from '../../core/types';
 import type { Db } from '../../data/db';
 import type { Logger } from '../../data/logger';
 import { addObservation } from '../../data/repo/diary';
 import { allRecordTimestamps, getActiveRun, listRuns } from '../../data/repo/runs';
 import { loadSettings } from '../../data/repo/settings';
-import { getMeta, loadDistances, loadReference, loadUexPrices } from '../../data/repo/uex-cache';
+import { getMeta, loadDistances, loadReference, loadUexPrices, upsertPrices } from '../../data/repo/uex-cache';
 import { loadMarket, suggestFrom, suggestTo } from '../../data/suggest';
 import type { SuggestDeps } from '../../data/suggest';
 import { recordBuy } from '../../data/trade';
@@ -47,6 +47,9 @@ export const NO_DATA_TERMINAL = 9999;
 
 /** The ROI of the five options of the tier ladder, one per tier, best first. */
 export const LADDER_ROI = [0.42, 0.22, 0.09, 0.025, -0.04] as const;
+
+/** The terminal whose table shows the three things «Мин–макс» can say (Levski: far from every trip of the other states). */
+export const RANGE_TERMINAL = 17;
 
 export interface GalleryData {
   now: number;
@@ -83,6 +86,12 @@ export interface GalleryData {
   sessions: SessionRow[];
   routeStats: RouteRow[];
   trade: { title: string; scu: number; price: number };
+  /**
+   * What the «Мин–макс» column says in a table and in a list of trips: a spread, one price (UEX gives the same number as
+   * the minimum and the maximum), or nothing. The rows are those of `RANGE_TERMINAL`, the trips are the first trip of the
+   * search with its sale at that terminal.
+   */
+  ranges: { terminalId: number; rows: TerminalRow[]; trips: RouteOption[]; uexRange: UexRangeOf };
 }
 
 export interface GalleryDeps { db: Db; log: Logger; uex: UexClient; now: number }
@@ -148,6 +157,85 @@ async function writePlayerPrices(deps: GalleryDeps, ref: Reference): Promise<voi
     for (const earlier of p.before ?? []) await write(earlier.factor, earlier.ageMin, earlier.scu ?? null);
     await write(p.factor, p.ageMin, p.scu);
   }
+}
+
+/** How UEX describes the price of one side: the numbers it gives for the week, the month and all time. */
+type RangeShape =
+  | { kind: 'flat'; price: number }
+  | { kind: 'spread'; avg: number; low: number; high: number }
+  /** The week has one price, the month moved: the estimate takes the week (src/core/estimate.ts), so the cell says one price. */
+  | { kind: 'week-flat'; price: number; monthLow: number; monthHigh: number };
+
+/** What the table of `RANGE_TERMINAL` holds. `uex: null` is a place UEX has no row for; `own` is a price I saw there. */
+const RANGE_ROWS: Array<{ code: string; uex: RangeShape | null; own?: { price: number; ageMin: number }; trip?: false }> = [
+  { code: 'MEDS', uex: { kind: 'flat', price: 5500 } },
+  { code: 'GOLD', uex: { kind: 'week-flat', price: 31_000, monthLow: 30_000, monthHigh: 31_000 } },
+  { code: 'TUNG', uex: { kind: 'spread', avg: 3650, low: 3480, high: 3820 } },
+  { code: 'TITA', uex: { kind: 'flat', price: 1_300_000 } }, // seven digits: must fit the column whole
+  { code: 'AGRI', uex: { kind: 'flat', price: 2650 }, own: { price: 2700, ageMin: 20 } }, // mine, and one price of UEX beside it
+  { code: 'DIAM', uex: { kind: 'spread', avg: 7050, low: 6800, high: 7300 }, own: { price: 7100, ageMin: 25 } }, // mine, and a spread beside it
+  { code: 'STIM', uex: null, own: { price: 3100, ageMin: 15 } }, // mine, and UEX knows nothing there
+  { code: 'BERY', uex: null, own: { price: 4200, ageMin: 420 }, trip: false }, // mine and cold: a grey hint and a dash
+];
+
+const sideStats = (avg: number, low: number, high: number): UexSideStats => ({
+  last: avg, avgWeek: avg, minWeek: low, maxWeek: high, avgMonth: avg, minMonth: low, maxMonth: high, avg, min: low, max: high,
+});
+
+function rangeStats(shape: RangeShape): UexSideStats {
+  switch (shape.kind) {
+    case 'flat':
+      return sideStats(shape.price, shape.price, shape.price);
+    case 'spread':
+      return sideStats(shape.avg, shape.low, shape.high);
+    case 'week-flat':
+      return {
+        ...sideStats(shape.price, shape.price, shape.price),
+        avgMonth: Math.round((shape.monthLow + shape.monthHigh) / 2), minMonth: shape.monthLow, maxMonth: shape.monthHigh,
+        min: shape.monthLow, max: shape.monthHigh,
+      };
+  }
+}
+
+/**
+ * The table of `RANGE_TERMINAL` and the trips that end there. UEX gives the terminal exactly the rows of `RANGE_ROWS`
+ * (the sync writes them, the old ones of the dataset go), and the player has seen the prices of `own` there. The rows come
+ * out of the real view model; the trips are the first trip of the search with its sale replaced by the real estimate at
+ * that terminal (as the ladder replaces the ROI: the search itself never goes to a terminal in another star system).
+ */
+async function loadRanges(deps: GalleryDeps, ref: Reference, ctx: RouteCtx, base: RouteOption): Promise<GalleryData['ranges']> {
+  const { db, log, now } = deps;
+  const rows: UexPrice[] = [];
+  for (const { code, uex } of RANGE_ROWS) {
+    if (uex === null) continue;
+    rows.push({
+      terminalId: RANGE_TERMINAL, commodityId: commodityByCode(ref, code), buy: rangeStats(uex), sell: rangeStats(uex),
+      scuBuy: 500, scuSell: 500, scuBuyMax: 0, scuSellMax: 0, dateModified: now - 3 * 3600,
+    });
+  }
+  await upsertPrices(db, [RANGE_TERMINAL], rows, now + 1); // later than the dataset's rows of this terminal: they are removed
+  for (const { code, own } of RANGE_ROWS) {
+    if (own === undefined) continue;
+    for (const side of ['buy', 'sell'] as const) {
+      await addObservation(db, log, {
+        ts: now - own.ageMin * 60 - 5, terminalId: RANGE_TERMINAL, commodityId: commodityByCode(ref, code), side, price: own.price, scu: null,
+      });
+    }
+  }
+  const market = await loadMarket(db);
+  const trips: RouteOption[] = [];
+  for (const { code, trip } of RANGE_ROWS) {
+    if (trip === false) continue;
+    const commodityId = commodityByCode(ref, code);
+    const sell = estimate(market, RANGE_TERMINAL, commodityId, 'sell', ctx);
+    if (sell !== null) trips.push({ ...base, commodityId, destId: RANGE_TERMINAL, sell });
+  }
+  return {
+    terminalId: RANGE_TERMINAL,
+    rows: terminalRows(market, ref, RANGE_TERMINAL, ctx),
+    trips,
+    uexRange: (terminalId, commodityId, side) => uexRangeOf(market, terminalId, commodityId, side, ctx),
+  };
 }
 
 function routeCtx(settings: Settings, ref: Reference, distances: Map<string, number | null>, now: number): RouteCtx {
@@ -236,6 +324,9 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
 
   const viewedName = locationModel(reference, settings, VIEWED_TERMINAL, pricesSyncedAt, true, now).header.location;
   const meds = commodityByCode(reference, 'MEDS');
+  // last: it rewrites the prices of one far terminal, which no other state looks at
+  if (from[0] === undefined) throw new Error('gallery: the search found no trip from the viewed terminal');
+  const ranges = await loadRanges(deps, reference, ctx, from[0]);
   const request = { kind: 'from' as const, terminalId: VIEWED_TERMINAL, commodityId: null, price: null };
   return {
     now, reference, settings, viewedId: VIEWED_TERMINAL, viewedName, rows, noRows,
@@ -256,5 +347,6 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
     runCard, sell: { commodityCode: codeOf(first.commodityId), here, alternatives },
     history, sessions: sessionList, routeStats: stats,
     trade: { title: `Купил ${reference.commodities.get(meds)?.name ?? 'MEDS'}`, scu: 120, price: 2115 },
+    ranges,
   };
 }

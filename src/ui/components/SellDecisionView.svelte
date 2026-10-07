@@ -46,7 +46,7 @@
       {#each rows as row (row.key)}
         <div class="grid line" role="row">
           <span class="terminal" title={row.terminal}>{row.terminal}</span>
-          <span class="cell sc-num" title={row.price.range ? `Диапазон цен ${row.price.range}` : undefined}>
+          <span class="cell sc-num" title={row.price.range.kind === 'spread' ? `Диапазон цен ${row.price.range.text}` : undefined}>
             <span>{row.price.price}</span>
             <TempBadge compact text={row.price.badge.text} kind={row.price.badge.kind} />
           </span>

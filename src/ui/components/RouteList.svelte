@@ -60,7 +60,7 @@
     <span class="sc-label">{label}</span>
     <span class="inline">
       <span class="sc-num">{view.price}</span>
-      {#if view.range}<span class="muted sc-num" title="Диапазон цен">{view.range}</span>{/if}
+      {#if view.range.kind !== 'none'}<span class="muted sc-num" title={view.range.title}>{view.range.text}</span>{/if}
       <TempBadge text={view.badge.text} kind={view.badge.kind} />
     </span>
   </div>
@@ -92,7 +92,7 @@
             <span class="digits">{row.price.price}</span>
             <TempBadge compact text={row.price.badge.text} kind={row.price.badge.kind} />
           </span>
-          <span class="range sc-num" title={row.price.range === null ? undefined : 'Диапазон цен'}>{row.price.range ?? '—'}</span>
+          <span class="range sc-num" data-range={row.price.range.kind} title={row.price.range.title}>{row.price.range.text}</span>
           <span class="roi sc-num" title="Прибыль к вложенному">{row.roi}</span>
           <span class="rate sc-num" class:best={row.key === bestRate} title="UEC в час">{row.rate}</span>
         </button>
