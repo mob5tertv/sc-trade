@@ -46,6 +46,28 @@ export const SCENES: readonly Scene[] = [
     },
   },
   {
+    // Windows delivers the loss of the focus that a give causes a moment later (here 400 ms): `click:input;press:Escape;click:input`
+    // must still end with the keyboard in the window.
+    name: 'slow-blur',
+    title: 'Короткое содержимое, потеря фокуса приходит с задержкой 400 мс',
+    dataset: 'default',
+    act: async (app) => {
+      (window as unknown as { __previewBlurDelayMs: number }).__previewBlurDelayMs = 400;
+      await app.expand('preview');
+      app.setTab('run');
+    },
+  },
+  {
+    // the mini line is switched off and the window is hidden: expanding it must place it before it is shown
+    name: 'hidden-expand',
+    title: 'Мини-строка выключена, окно разворачивается из скрытого',
+    dataset: 'default',
+    act: async (app) => {
+      await app.updateSetting('showStrip', false);
+      await app.expand('preview');
+    },
+  },
+  {
     name: 'expanded-short-bottom-left',
     title: 'Короткое содержимое в левом нижнем углу',
     dataset: 'default',

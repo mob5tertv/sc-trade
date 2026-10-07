@@ -26,15 +26,20 @@
     // The window is exactly as big as this root. Every change of its size goes to the window, at most
     // once per frame; the content is measured in CSS pixels and rounded up so that nothing is cut off.
     let frame = 0;
+    const size = () => {
+      const { width, height } = element.getBoundingClientRect(); // forces the layout, painting or not
+      return { width: Math.ceil(width), height: Math.ceil(height) };
+    };
     const measure = (): void => {
       frame = 0;
-      const { width, height } = element.getBoundingClientRect();
-      app.fit({ width: Math.ceil(width), height: Math.ceil(height) });
+      app.fit(size());
     };
     const observer = new ResizeObserver(() => {
       if (frame === 0) frame = requestAnimationFrame(measure);
     });
     observer.observe(element);
+    // a hidden window paints nothing, so nothing reports its size; the state asks for it before it shows the window
+    app.setRootMeasurer(size);
 
     // The cursor over the window is activity (the window does not fold under it); leaving starts the idle time.
     const inside = (): void => app.pointer(true);
@@ -57,6 +62,7 @@
       unwatch?.();
       stopKeyboard();
       stopDrag();
+      app.setRootMeasurer(null);
       observer.disconnect();
       cancelAnimationFrame(frame);
       element.removeEventListener('pointerenter', inside);

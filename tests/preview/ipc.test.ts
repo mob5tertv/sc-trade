@@ -15,8 +15,8 @@ import { tauriFetchJson } from '../../src/platform/tauri-http';
 import { applyLogLevel } from '../../src/platform/tauri-logger';
 import { bindTriggers } from '../../src/platform/triggers';
 import {
-  fitWindow, giveKeyboard, moveWindow, setWindowVisible, showWindow, takeKeyboard, watchFocus, windowGeometry,
-  type WindowLayout,
+  fitWindow, giveKeyboard, isWindowFocused, moveWindow, setWindowVisible, showWindow, takeKeyboard, watchFocus,
+  windowGeometry, type WindowLayout,
 } from '../../src/platform/window';
 import { logicalSize, parseMonitor } from '../../src/preview/monitor';
 import { startPreviewHarness, type PreviewHarness } from '../helpers/preview-fixtures';
@@ -289,6 +289,26 @@ describe('the keyboard focus', () => {
     await giveKeyboard(logger(), true);
     expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, focusReturnedToGame: 1 });
     expect(focusEvents).toEqual([true, false]);
+  });
+
+  it('a take that fails after the window became focusable makes it not focusable again: a plain click must not activate it', async () => {
+    const { win } = start();
+    await showWindow(layout, logger());
+    win.setFocus = () => {
+      throw new Error('Windows refused');
+    };
+    await expect(takeKeyboard(logger())).rejects.toThrow('Windows refused');
+    expect(win.snapshot()).toMatchObject({ focusable: false, keyboard: 'game' });
+  });
+
+  it('answers whether the window really has the focus', async () => {
+    const { win } = start();
+    await showWindow(layout, logger());
+    expect(await isWindowFocused(logger())).toBe(false);
+    await takeKeyboard(logger());
+    expect(await isWindowFocused(logger())).toBe(true);
+    win.clickGame();
+    expect(await isWindowFocused(logger())).toBe(false);
   });
 
   it('does not hand the focus back when the player has already moved on', async () => {

@@ -1,21 +1,12 @@
-import { movedRect, type Rect, type Size } from '../core/layout';
+import { startDrag, type DragHost } from './vm/drag-session';
 
 // The DOM side of dragging the window by its grip: any element with the attribute `data-drag`.
 //
 // The window is NOT moved by the system (`startDragging()` would make the overlay the active window and take
 // the keyboard from the game); the page moves it itself. Pressing the grip captures the pointer; every move is
 // measured on the SCREEN (`screenX` / `screenY` do not depend on where the window is right now, so the window
-// following the pointer does not disturb them); the window is placed at most once per animation frame, always
-// from where the drag began; releasing the pointer ends the drag. No keyboard is taken for any of this.
-
-export interface DragHost {
-  /** The grip was pressed: where the window is and how big the monitor is (logical px), or `null` when nothing may move (locked). */
-  begin(): Promise<{ rect: Rect; monitor: Size } | null>;
-  /** Put the window here. */
-  move(rect: Rect): Promise<void>;
-  /** The drag is over: the window ended in `rect`, or `null` when the grip was pressed and released without moving. */
-  end(rect: Rect | null): Promise<void>;
-}
+// following the pointer does not disturb them). What a drag does with those numbers (once per frame, only the
+// latest rectangle, the end position from the release alone) is in `vm/drag-session.ts`. No keyboard is taken.
 
 /** Starts listening; returns the function that stops. */
 export function installDrag(host: DragHost): () => void {
@@ -25,89 +16,54 @@ export function installDrag(host: DragHost): () => void {
     if (!(grip instanceof HTMLElement)) return;
     // no text selection, no focus change: only the drag
     event.preventDefault();
-    follow(grip, event);
-  };
 
-  /** One drag, from the press to the release. */
-  function follow(grip: HTMLElement, down: PointerEvent): void {
-    const { pointerId } = down;
-    const origin = { x: down.screenX, y: down.screenY };
-    let latest = origin;
-    let start: { rect: Rect; monitor: Size } | null = null;
-    let frame = 0;
-    let finished = false;
-
+    const { pointerId } = event;
     try {
       grip.setPointerCapture(pointerId);
     } catch {
-      // the pointer is already gone: the release below ends the drag
+      // the pointer is already gone: the release or the cancel below ends the drag
     }
-
-    const rectNow = (): Rect | null =>
-      start === null ? null : movedRect(start.rect, { dx: latest.x - origin.x, dy: latest.y - origin.y }, start.monitor);
-    const moved = (): boolean => latest.x !== origin.x || latest.y !== origin.y;
-
-    // Everything the drag does to the window is one chain: the begin, the moves, the end, in this order.
-    const ready = host.begin().then(
-      (found) => {
-        start = found;
-      },
-      () => {
-        start = null;
-      },
-    );
-    let chain: Promise<void> = ready;
-
-    const schedule = (): void => {
-      if (frame !== 0 || finished || start === null) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        const rect = rectNow();
-        if (rect !== null && !finished) chain = chain.then(() => host.move(rect));
-      });
-    };
-
-    void ready.then(() => {
-      if (moved()) schedule();
+    const session = startDrag(host, { x: event.screenX, y: event.screenY }, (run) => {
+      const id = requestAnimationFrame(run);
+      return () => cancelAnimationFrame(id);
     });
 
-    const onMove = (event: PointerEvent): void => {
-      if (event.pointerId !== pointerId) return;
-      latest = { x: event.screenX, y: event.screenY };
-      schedule();
-    };
-
-    const onEnd = (event: PointerEvent): void => {
-      if (event.pointerId !== pointerId || finished) return;
-      finished = true;
-      latest = { x: event.screenX, y: event.screenY };
+    const stop = (): void => {
       grip.removeEventListener('pointermove', onMove);
-      grip.removeEventListener('pointerup', onEnd);
-      grip.removeEventListener('pointercancel', onEnd);
-      grip.removeEventListener('lostpointercapture', onEnd);
-      cancelAnimationFrame(frame);
+      grip.removeEventListener('pointerup', onUp);
+      grip.removeEventListener('pointercancel', onLost);
+      grip.removeEventListener('lostpointercapture', onLost);
+    };
+    const onMove = (move: PointerEvent): void => {
+      if (move.pointerId === pointerId) session.move({ x: move.screenX, y: move.screenY });
+    };
+    // The only event whose position is the end of the drag.
+    const onUp = (up: PointerEvent): void => {
+      if (up.pointerId !== pointerId) return;
+      stop();
       try {
         grip.releasePointerCapture(pointerId);
       } catch {
         // the capture is gone with the pointer
       }
-      chain = chain
-        .then(async () => {
-          if (start === null) return; // nothing was begun: nothing to end
-          const rect = moved() ? rectNow() : null;
-          if (rect !== null) await host.move(rect);
-          await host.end(rect);
-        })
-        .catch(() => undefined);
+      void session.up({ x: up.screenX, y: up.screenY }).catch(() => undefined);
+    };
+    // A cancelled pointer or a capture taken away (the window was deactivated, the grip was removed) may carry zero or
+    // stale coordinates: the drag simply stops where the window was last placed.
+    const onLost = (lost: PointerEvent): void => {
+      if (lost.pointerId !== pointerId) return;
+      stop();
+      void session.cancel().catch(() => undefined);
     };
 
     grip.addEventListener('pointermove', onMove);
-    grip.addEventListener('pointerup', onEnd);
-    grip.addEventListener('pointercancel', onEnd);
-    // the capture can be taken away without a release (the window was deactivated, the grip was removed): that ends the drag too
-    grip.addEventListener('lostpointercapture', onEnd);
-  }
+    grip.addEventListener('pointerup', onUp);
+    grip.addEventListener('pointercancel', onLost);
+    grip.addEventListener('lostpointercapture', onLost);
+  };
 
   document.addEventListener('pointerdown', onPointerDown, true);
   return () => document.removeEventListener('pointerdown', onPointerDown, true);
 }
+
+export type { DragHost };

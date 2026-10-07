@@ -58,7 +58,11 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   const onKeyUpCapture = (event: KeyboardEvent): void => heldKeys.released(event.code);
 
   const onPointerDown = (event: PointerEvent): void => {
-    const field = event.target instanceof Element ? event.target.closest('input, textarea, select, [contenteditable]') : null;
+    const hit =
+      event.target instanceof Element ? event.target.closest('input, textarea, select, [contenteditable], label') : null;
+    // A click on the text of a label puts the focus into the control it belongs to (the settings screen is full of
+    // them): that is a click on the field, and it needs the keyboard like one.
+    const field = hit instanceof HTMLLabelElement ? hit.control : hit;
     if (!(field instanceof HTMLElement) || !isEditable(field)) return;
     lastPressAt = performance.now();
     if (!holds.held) log.debug('ui', 'field pressed, the window needs the keyboard', { field: field.id || field.tagName });

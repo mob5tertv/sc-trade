@@ -236,7 +236,23 @@ export async function takeKeyboard(log: Logger): Promise<void> {
     else log.warn('window', 'keyboard taken, but Windows did not give the window the focus', { focused });
   } catch (err) {
     log.error('window', 'cannot take the keyboard', { err });
+    // The window may already be focusable; with no holder behind it a plain click would activate it and take the focus
+    // from the game. Best effort: if this fails too there is nothing more to do.
+    await getCurrentWindow().setFocusable(false).catch(() => undefined);
     throw err;
+  }
+}
+
+/**
+ * Whether the window really has the focus now (Windows' answer, not ours). A failure to ask is taken as "yes": the
+ * caller drops its holders only when it KNOWS the focus is gone.
+ */
+export async function isWindowFocused(log: Logger): Promise<boolean> {
+  try {
+    return await getCurrentWindow().isFocused();
+  } catch (err) {
+    log.warn('window', 'cannot ask whether the window has the focus', { err });
+    return true;
   }
 }
 

@@ -110,8 +110,12 @@ async function run(): Promise<void> {
 
   const win = createPreviewWindow({
     onChange: (state: WindowSnapshot) => post({ source: MESSAGE_SOURCE, type: 'window', state }),
-    // Tauri sends the focus events from its own loop, not from inside the command
-    onFocus: (focused) => setTimeout(() => void emit(focused ? 'tauri://focus' : 'tauri://blur', focused), 0),
+    // Tauri sends the focus events from its own loop, not from inside the command; Windows delivers the loss of the
+    // focus even later. A scene can set `__previewBlurDelayMs` to show what that late blur does.
+    onFocus: (focused) => {
+      const delay = focused ? 0 : Number((window as unknown as { __previewBlurDelayMs?: number }).__previewBlurDelayMs ?? 0);
+      setTimeout(() => void emit(focused ? 'tauri://focus' : 'tauri://blur', focused), delay);
+    },
   });
   preview.clickGame = () => win.clickGame();
   // a mouse press inside the overlay gives it the keyboard when it can take the focus (the strip never does)

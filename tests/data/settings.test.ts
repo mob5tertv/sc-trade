@@ -47,11 +47,18 @@ describe('settings repository', () => {
     expect([settings.stripCorner, settings.windowDx, settings.windowDy, settings.windowLocked]).toEqual(['bottom-left', 120, 45, true]);
   });
 
-  it('keeps a panel width an older version stored: only a changed value is stored, a default never is', async () => {
+  it('a fresh database has no setting rows (migrations store no defaults); loading it does not write any either', async () => {
     const db = await migratedDb();
     expect(await db.select('SELECT key FROM setting')).toEqual([]);
+    await loadSettings(db, log);
+    expect(await db.select('SELECT key FROM setting')).toEqual([]);
+  });
+
+  it('a panel width saved by an older version (470) is read back as it is and is not replaced by the new default (440)', async () => {
+    const db = await migratedDb();
     await saveSetting(db, log, 'panelWidth', 470);
     expect((await loadSettings(db, log)).panelWidth).toBe(470);
+    expect(await db.select('SELECT key FROM setting')).toEqual([{ key: 'panelWidth' }]);
   });
 
   it('round-trips the idle collapse time and the open sections', async () => {

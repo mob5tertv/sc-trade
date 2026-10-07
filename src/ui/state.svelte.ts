@@ -1,4 +1,5 @@
 import { listen } from '@tauri-apps/api/event';
+import { tick } from 'svelte';
 import { appLogDir, join } from '@tauri-apps/api/path';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
@@ -20,6 +21,7 @@ import { bindTriggers, type TriggerName } from '../platform/triggers';
 import {
   fitWindow,
   giveKeyboard,
+  isWindowFocused,
   moveWindow,
   setWindowVisible,
   showWindow,
@@ -59,11 +61,18 @@ import { uexErrorText } from './vm/uex-error';
 //    (writes what the player saw), and the lookup (`lookup`, `runLookup`, `rerunLookup`, `newRoute`): where to
 //    buy / where to sell, one answer at a time, the newest request wins;
 //  - the window: it is the mini bar (`mini`) or the expanded view (`expanded`), as big as its content and
-//    glued to a corner. It never takes the keyboard from the game by itself: the keyboard is taken only
-//    through `keyboard.hold(...)` (a text field is edited) and handed back by `release`. Mode changes run
-//    one after another through `#modeQueue`, placing the window through `#fitQueue`, and the keyboard
-//    through the queue inside `keyboard`. A job of one of these queues must not wait for a job of a queue
-//    that may be waiting for it. The expanded view folds into the mini bar by itself (`idleCollapseSec`).
+//    anchored to a corner. It never takes the keyboard from the game by itself: the keyboard is taken only
+//    through `keyboard.hold(...)` (a text field is edited) and handed back by `release`. The expanded view
+//    folds into the mini bar by itself (`idleCollapseSec`). Window operations run in THREE queues, each one job
+//    at a time: `#modeQueue` (mode changes, show / hide), `#fitQueue` (`place_window`), and the queue inside
+//    `keyboard` (take / give of the keyboard). Operations of DIFFERENT queues may overlap, and that is harmless:
+//    they change different properties of the window (visibility, the rectangle, focusability and the foreground
+//    window) with separate calls that Tauri runs on the main thread in the order they arrive, and none of them
+//    reads what another writes. The pairs that DO depend on each other are ordered on purpose: a collapse releases
+//    the keyboard before it hides the window (it awaits `keyboard.release` inside its mode job), and a window that
+//    is shown after being hidden is placed first (`#placeBeforeShow`). A job of one queue must never wait for a job
+//    of a queue that may be waiting for it: a mode job awaits the keyboard and fit queues, and neither of those
+//    ever awaits the mode queue. A drag (`dragBegin` .. `dragEnd`) is the one thing that stops `#refit`.
 
 export type Tab = 'terminal' | 'run' | 'routes';
 /** What the expanded window shows: the main screen or the settings, which take the whole window. */
@@ -100,6 +109,12 @@ const PRICE_SYNC_INTERVAL_MS = 60 * 60 * 1000;
 const NOTICE_MS = 8000;
 /** Temperatures and stock estimates move slowly: the table is refreshed this often, not every second. */
 const ROWS_TICK_MS = 15_000;
+/**
+ * After our own take or give of the keyboard the window may report that it lost the focus: Windows sends that a moment
+ * later, when a new take can already be under way. A loss this soon after is the echo of our own focus juggling, not the
+ * player clicking the game (see `drop` in vm/keyboard-holds.ts). A loss that is real is found again after this time.
+ */
+const FOCUS_SETTLE_MS = 500;
 
 const RECORD_FAILED = 'Не удалось записать цену. Подробности в логе.';
 const LOOKUP_FAILED = 'Не удалось подобрать маршруты. Подробности в логе.';
@@ -168,6 +183,7 @@ class AppState {
       this.keyboardHeld = held;
       if (!held) this.#touch();
     },
+    { settleMs: FOCUS_SETTLE_MS },
   );
   triggerErrors = $state<Record<TriggerName, string | null>>({ panel: null, depart: null, arrive: null });
   /** What the Terminal tab shows (spec 14.2); not persisted. The current location is `settings.currentTerminalId`. */
@@ -205,6 +221,10 @@ class AppState {
   /** Unix seconds of the last click or movement over the window, or of the moment it was expanded. */
   #lastActivityAt = nowSec();
   #pointerInside = false;
+  /** The root of the interface measures itself (set by `App.svelte`); `null` before it is mounted. */
+  #measureRoot: (() => Size) | null = null;
+  /** A look at the real focus of the window is planned after a loss of focus that was taken for an echo. */
+  #focusCheck: ReturnType<typeof setTimeout> | undefined;
   /** Reasons why the window must not fold by itself (a trade dialog is open). */
   readonly #busy = new Set<string>();
   /** The sections that are open, from the setting. */
@@ -465,6 +485,9 @@ class AppState {
       this.#log.info('window', 'mode change', { from, to: next, reason });
       if (next === 'mini') {
         this.view = 'main';
+        // The window shrinks under the cursor and may never report that the cursor left it; the idle timer must not
+        // wait for the cursor of a window that is not there any more (the next movement over it says "inside" again).
+        this.#pointerInside = false;
         // the player is done with the window: the keyboard goes back to the game, the window may fold
         await this.keyboard.release('field').catch(() => undefined); // a failure is logged by the window layer
       }
@@ -473,11 +496,31 @@ class AppState {
       // before the first show the first show decides what is visible
       if (!this.#windowReady) return;
       try {
+        // A hidden window is not painting, so nothing reports the size of the expanded view; lay it out, measure it
+        // and put the window at that size BEFORE it is shown, or its first frame would be a clipped corner.
+        if (next === 'expanded' && !this.#visible) await this.#placeBeforeShow();
         await this.#syncVisibility();
       } catch {
         this.mode = from; // already logged by the window layer
       }
     });
+  }
+
+  /** The root of the interface says how to measure itself (`App.svelte`). */
+  setRootMeasurer(measure: (() => Size) | null): void {
+    this.#measureRoot = measure;
+  }
+
+  /**
+   * The expanded view is in the DOM (the caller has set `mode`): waits for Svelte to put it there, measures it (a
+   * measurement forces the layout, painting or not) and places the window at that size. A hidden window can be placed.
+   */
+  async #placeBeforeShow(): Promise<void> {
+    await tick();
+    const size = this.#measureRoot?.();
+    if (size === undefined || !(size.width > 0) || !(size.height > 0)) return;
+    this.#content = size;
+    await this.#refit();
   }
 
   /** Shows or hides the window as the mode and the "show the mini bar" setting say. */
@@ -525,17 +568,18 @@ class AppState {
    */
   fit(content: Size): void {
     this.#content = content;
-    if (this.#windowReady) void this.#refit();
+    void this.#refit();
   }
 
   /**
    * Places the window by the content measured last. Never throws: a failure is logged by the window layer.
-   * While the window is being dragged nothing places it (it would jump under the cursor): the request is
-   * dropped, and the end of the drag fits the window again.
+   * Nothing is placed before the window was shown for the first time (the first show places it itself). While the
+   * window is being dragged nothing places it (it would jump under the cursor): the request is dropped, and the
+   * end of the drag fits the window again.
    */
   #refit(): Promise<void> {
     return this.#fitQueue(async () => {
-      if (this.#content === null || this.#dragging) return;
+      if (!this.#windowReady || this.#content === null || this.#dragging) return;
       try {
         await fitWindow(this.#content, this.layout, this.#log);
       } catch {
@@ -671,11 +715,32 @@ class AppState {
   }
 
   /**
-   * The player clicked the game: the window lost the focus. The game already has it, so it is not pulled
-   * back by force; the window only stops waiting for the keyboard. The window stays as it is.
+   * The window lost the focus. When the player clicked the game, the game already has the focus, so it is not pulled
+   * back by force; the window only stops waiting for the keyboard (the window stays as it is). When it is only the
+   * echo of our own take or give (see `FOCUS_SETTLE_MS`), nothing changes now; the real focus is looked at once the
+   * echo time is over, so that a real loss that was taken for an echo does not leave the window focusable for good.
    */
   #onFocusLost(): void {
-    void this.keyboard.drop().catch(() => undefined); // a failure is logged by the window layer
+    void this.keyboard
+      .drop()
+      .then((dropped) => {
+        if (dropped) this.#log.info('window', 'focus lost: the player went to the game, the keyboard is dropped');
+        else if (this.keyboard.held) this.#checkFocusLater();
+      })
+      .catch(() => undefined); // a failure is logged by the window layer
+  }
+
+  /** Once the echo time is over: a window that holds the keyboard but has not the focus has lost it for real. */
+  #checkFocusLater(): void {
+    if (this.#focusCheck !== undefined) return;
+    this.#focusCheck = setTimeout(() => {
+      this.#focusCheck = undefined;
+      if (!this.keyboard.held) return;
+      void isWindowFocused(this.#log).then((focused) => {
+        if (focused) return;
+        this.#onFocusLost(); // asks `drop` again; still inside an echo time of a newer take or give, it waits once more
+      });
+    }, FOCUS_SETTLE_MS + 50);
   }
 
   /** Starts listening for focus changes and for the tray's "Показать панель"; returns what stops it. */

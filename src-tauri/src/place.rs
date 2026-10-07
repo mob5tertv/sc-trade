@@ -35,9 +35,9 @@ mod sys {
 pub fn place_window(window: tauri::Window, x: i32, y: i32, width: i32, height: i32) -> Result<(), String> {
     check_size(width, height)?;
     let hwnd = window.hwnd().map_err(|err| format!("no window handle: {err}"))?;
-    sys::place(hwnd.0 as isize, x, y, width, height).inspect_err(|err| log::error!("[place] {err}"))?;
-    log::debug!("[place] window placed at {x},{y} size {width}x{height}");
-    Ok(())
+    // A success is not logged here: this runs for every frame of a drag. The window layer in the webview logs each new
+    // rectangle that is not part of a drag; only a failure is worth a line from this side.
+    sys::place(hwnd.0 as isize, x, y, width, height).inspect_err(|err| log::error!("[place] {err}"))
 }
 
 // The app is Windows-only; this stand-in only keeps other platforms compiling.
