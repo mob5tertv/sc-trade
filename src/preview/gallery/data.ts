@@ -22,6 +22,9 @@ import { commoditySearchItems, terminalSearchItems } from '../../ui/vm/header';
 import { lookupTitle } from '../../ui/vm/lookup';
 import { locationModel } from '../../ui/vm/location';
 import { defaultSide } from '../../ui/vm/quick-entry';
+import { rowRoiMap } from '../../ui/vm/row-roi';
+import type { RowRoi } from '../../ui/vm/row-roi';
+import { BUY_PRICES, LORVILLE, SELL_PRICES } from '../scenes-roi';
 import { runOutlook } from '../../ui/vm/run-outlook';
 import type { RunOutlook } from '../../ui/vm/run-outlook';
 import { phaseLine, runPhases } from '../../ui/vm/run-phase';
@@ -95,6 +98,16 @@ export interface GalleryData {
    * search with its sale at that terminal.
    */
   ranges: { terminalId: number; rows: TerminalRow[]; trips: RouteOption[]; uexRange: UexRangeOf };
+  /**
+   * The best ROI of every commodity of a table, by commodity id, from the real search over the market of the dataset
+   * (`rowRoiMap`). `here` are the two tables of the viewed terminal (HUR-L1); `lorville` is the story of the spec: the player
+   * has come to Lorville and typed what the terminal pays and asks (the prices of the scenes `roi-sell` and `roi-buy`), so
+   * its table has a row of every tier, rows above the threshold and rows without a trip.
+   */
+  roi: {
+    here: { buy: ReadonlyMap<number, RowRoi>; sell: ReadonlyMap<number, RowRoi> };
+    lorville: { terminalId: number; rows: TerminalRow[]; buy: ReadonlyMap<number, RowRoi>; sell: ReadonlyMap<number, RowRoi> };
+  };
 }
 
 export interface GalleryDeps { db: Db; log: Logger; uex: UexClient; now: number }
@@ -246,6 +259,28 @@ async function loadRanges(deps: GalleryDeps, ref: Reference, ctx: RouteCtx, base
   };
 }
 
+/**
+ * The player at Lorville: what he saw the terminal pay and ask (the prices of the scenes), written the way `recordPrice`
+ * writes them, then the table and the best ROI of its rows. Lorville is a terminal of the other states too, so this is done
+ * after the tables of the viewed terminal have been made, and the readings are made at `now`, like those of the cargo: the
+ * diary that the tests read has them taken out again, so that it stays what the other states saw.
+ */
+async function loadLorville(deps: GalleryDeps, ref: Reference, ctx: RouteCtx): Promise<GalleryData['roi']['lorville']> {
+  const { db, log, now } = deps;
+  for (const [side, prices] of [['sell', SELL_PRICES], ['buy', BUY_PRICES]] as const) {
+    for (const { code, price } of prices) {
+      await addObservation(db, log, { ts: now, terminalId: LORVILLE, commodityId: commodityByCode(ref, code), side, price, scu: null });
+    }
+  }
+  const market = await loadMarket(db);
+  return {
+    terminalId: LORVILLE,
+    rows: terminalRows(market, ref, LORVILLE, ctx),
+    buy: rowRoiMap(market, LORVILLE, 'buy', ctx),
+    sell: rowRoiMap(market, LORVILLE, 'sell', ctx),
+  };
+}
+
 function routeCtx(settings: Settings, ref: Reference, distances: Map<string, number | null>, now: number): RouteCtx {
   return {
     now,
@@ -326,6 +361,9 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
   const market: Market = await loadMarket(db);
   const rows = terminalRows(market, reference, VIEWED_TERMINAL, ctx);
   const noRows = terminalRows(market, reference, NO_DATA_TERMINAL, ctx);
+  const hereRoi = { buy: rowRoiMap(market, VIEWED_TERMINAL, 'buy', ctx), sell: rowRoiMap(market, VIEWED_TERMINAL, 'sell', ctx) };
+  // Lorville's table over the same market, before the cargo below changes the prices of HUR-L1 (a source of its trips)
+  const lorville = await loadLorville(deps, reference, ctx);
 
   // a cargo of six lines for the mini line, bought last: it changes the prices the player saw
   for (const { code, scu } of EXTRA_CARGO) {
@@ -361,5 +399,6 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
     history, sessions: sessionList, routeStats: stats,
     trade: { title: `Купил ${reference.commodities.get(meds)?.name ?? 'MEDS'}`, scu: 120, price: 2115 },
     ranges,
+    roi: { here: hereRoi, lorville },
   };
 }

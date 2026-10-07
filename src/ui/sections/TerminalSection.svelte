@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import { cargoOf } from '../../core/run';
   import type { Side } from '../../core/types';
+  import Icon from '../components/Icon.svelte';
   import QuickEntry from '../components/QuickEntry.svelte';
   import Section from '../components/Section.svelte';
   import TerminalTable from '../components/TerminalTable.svelte';
@@ -11,6 +12,7 @@
   import { locationModel } from '../vm/location';
   import { kindForSide, lookupPrice } from '../vm/lookup';
   import { defaultSide } from '../vm/quick-entry';
+  import { crossedRows, roiCells, type RoiSnapshot } from '../vm/row-roi';
   import { sideCounts, type TerminalRow } from '../vm/terminal-rows';
   import { selectedCommodity, type RowPick } from '../vm/terminal-side';
   import {
@@ -34,15 +36,24 @@
       : 'Локация не выбрана',
   );
 
+  // The rows that flash now (see `enteringPrice`): commodity ids, so they belong to the table that was drawn when they crossed the threshold
+  const PULSE_MS = 1300;
+  const NO_PULSE: ReadonlySet<number> = new Set();
+  let pulse = $state.raw<ReadonlySet<number>>(NO_PULSE);
+  let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+
   // The open row belongs to the terminal and the side it was opened on: with a change of either it is gone.
   let pick = $state<RowPick | null>(null);
   const selectedCommodityId = $derived(selectedCommodity(pick, viewedId, side, rows));
-  // ...and it is forgotten for good, not only hidden: coming back to the side or the terminal shows no open row
+  // ...and it is forgotten for good, not only hidden: coming back to the side or the terminal shows no open row. The flash goes
+  // the same way: a row of the NEW table with the commodity of a row that was flashing must not flash in its place.
   $effect(() => {
     void side;
     void viewedId;
     untrack(() => {
       pick = null;
+      clearTimeout(pulseTimer);
+      pulse = NO_PULSE;
     });
   });
 
@@ -68,11 +79,48 @@
     if (failure !== null) app.notify(failure, 'error');
   }
 
-  // "Где продать" / "Где купить": the lookup for this commodity; it opens the "Варианты" section itself
+  // "Где продать" / "Где купить" and the ROI of a row: the lookup for this commodity; it opens the "Варианты" section itself
   function lookupRow(row: { commodityId: number; side: Side }): void {
     if (viewedId === null) return;
     const price = lookupPrice(rows.find((r) => r.commodityId === row.commodityId), row.side);
     void app.runLookup({ kind: kindForSide(row.side), terminalId: viewedId, commodityId: row.commodityId, price });
+  }
+
+  // ---- the profit of the rows (spec 14.10) ---------------------------------------------------------------------------
+
+  // The ROI of each row, in the words of the table; counted by the state on the slow clock of the table (`app.rowRoi`)
+  const roiByRow = $derived(roiCells(app.rowRoi, side, app.reference, app.settings.roiHighlightPct));
+
+  // The button of the header: the lookup over ALL the commodities of the viewed terminal, the side of the table says which one
+  // (what to bring here / where to take things from here)
+  const searchTitle = $derived(
+    side === 'sell'
+      ? 'Что везти сюда: лучшие варианты по всем товарам, которые здесь покупают'
+      : 'Куда отсюда: лучшие варианты по всем товарам, которые можно купить здесь',
+  );
+  function searchAll(): void {
+    if (viewedId === null) return;
+    void app.runLookup({ kind: kindForSide(side), terminalId: viewedId, commodityId: null, price: null });
+  }
+
+  // A row that crosses the threshold because a price was entered flashes once. "Because a price was entered" is known
+  // here and nowhere else: the entry is run between two looks at the ROI of the table, and the rows that were below the
+  // threshold before and are at or above it now are the ones to flash. A table that was opened or switched flashes nothing.
+  $effect(() => () => clearTimeout(pulseTimer));
+
+  const roiSnapshot = (): RoiSnapshot => ({ terminalId: viewedId, side, roi: app.rowRoi });
+
+  async function enteringPrice<T>(enter: () => Promise<T>): Promise<T> {
+    const before = roiSnapshot();
+    const result = await enter();
+    const crossed = crossedRows(before, roiSnapshot(), app.settings.roiHighlightPct);
+    if (crossed.length > 0) {
+      app.log.debug('ui', 'rows crossed the ROI threshold', { terminalId: viewedId, side, commodityIds: crossed });
+      pulse = new Set(crossed);
+      clearTimeout(pulseTimer);
+      pulseTimer = setTimeout(() => (pulse = NO_PULSE), PULSE_MS);
+    }
+    return result;
   }
 
   // ---- the form of a trade, under the open row ----------------------------------------------------------------------
@@ -155,6 +203,9 @@
       <button type="button" aria-pressed={side === 'buy'} title="Что можно купить здесь" onclick={() => app.setTerminalSide('buy')}>Купить · {counts.buy}</button>
       <button type="button" aria-pressed={side === 'sell'} title="Что можно продать здесь" onclick={() => app.setTerminalSide('sell')}>Продать · {counts.sell}</button>
     </div>
+    <button type="button" class="sc-btn sc-btn--act sc-btn--icon search" aria-label={searchTitle} title={searchTitle} onclick={searchAll}>
+      <Icon name="search" />
+    </button>
     <button
       type="button"
       class="sc-btn sc-btn--act entry"
@@ -171,7 +222,7 @@
     {commodityItems}
     {boostIds}
     {sideFor}
-    onSave={(input) => app.recordPrice(input)}
+    onSave={(input) => enteringPrice(() => app.recordPrice(input))}
     onReject={(e) => app.log.info('ui', 'quick entry rejected', { terminalId: viewedId, ...e })}
     onFailure={(err, input) => app.log.error('ui', 'quick entry save failed', { ...input, err })}
   />
@@ -210,11 +261,14 @@
       {selectedCommodityId}
       scope={viewedId}
       onSelect={select}
-      onSavePrice={(edit) => void savePrice(edit)}
+      onSavePrice={(edit) => void enteringPrice(() => savePrice(edit))}
       onLookup={lookupRow}
       onTrade={openTrade}
       {tradeFor}
       {tradeForm}
+      roi={roiByRow}
+      {pulse}
+      noCapacity={app.settings.scuCapacity <= 0}
     />
   {/if}
 </Section>

@@ -4,10 +4,15 @@
   import type { Side } from '../../core/types';
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
   import type { EditBase } from '../vm/inputs';
+  import type { RoiCell } from '../vm/row-roi';
   import { cellScu, rangeView } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
   import TempBadge from './TempBadge.svelte';
   import TrendMark from './TrendMark.svelte';
+
+  const NO_ROI: ReadonlyMap<number, RoiCell> = new Map();
+  const NO_PULSE: ReadonlySet<number> = new Set();
+  const NO_CAPACITY_HINT = 'Укажи корабль в настройках — без вместимости ROI не считается';
 
   interface Props {
     rows: TerminalRow[];
@@ -34,8 +39,21 @@
      */
     tradeFor?: number | null;
     tradeForm?: Snippet<[TerminalRow]>;
+    /**
+     * The best ROI of each commodity of the table, by commodity id (`roiCells`): the number in the last column, in the
+     * colour of its tier, a button that asks `onLookup` for the options of that commodity. A row with a cell that is
+     * `hot` stands out with a bar at its edge. A commodity with no entry has an empty cell.
+     */
+    roi?: ReadonlyMap<number, RoiCell>;
+    /** The commodities whose rows flash once now (they crossed the threshold after a price was entered). */
+    pulse?: ReadonlySet<number>;
+    /** The cargo space is not set: no ROI is counted, and the tooltip of the column says why. */
+    noCapacity?: boolean;
   }
-  let { rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onLookup, onTrade, tradeFor = null, tradeForm }: Props = $props();
+  let {
+    rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onLookup, onTrade, tradeFor = null, tradeForm,
+    roi = NO_ROI, pulse = NO_PULSE, noCapacity = false,
+  }: Props = $props();
 
   /**
    * What is being typed into one cell (one commodity, one side). A cell with no draft shows its values from
@@ -226,6 +244,7 @@
       <span role="columnheader" class="r price-head">Цена</span>
       <span role="columnheader" class="r">Мин–макс</span>
       <span role="columnheader" class="r">SCU</span>
+      <span role="columnheader" class="r" title={noCapacity ? NO_CAPACITY_HINT : 'Лучший ROI для этого товара'}>ROI</span>
     </div>
     {#each shown as row (row.commodityId)}
       {@const cell = row[side]}
@@ -233,18 +252,32 @@
         {@const selected = row.commodityId === selectedCommodityId}
         {@const scu = cellScu(cell, side)}
         {@const span = rangeView(cell.range)}
-        <div class="row" class:selected role="row">
-          <button type="button" class="grid line" aria-expanded={selected} onclick={() => toggle(row.commodityId)}>
-            <span class="name" title={row.name}><span class="code">{row.code}</span><span class="full">{row.name}</span></span>
-            <span class="price sc-num" class:hint={cell.own === null}>
-              {#if cell.warn}<span class="bang" title="Цена далеко от истории UEX: проверь цифру">!</span>{/if}
-              <TrendMark trend={cell.trend} />
-              <span class="digits">{cell.own === null && cell.hint === null ? '—' : formatUec(cell.own ?? cell.hint ?? 0)}</span>
-              {#if cell.badge}<TempBadge compact text={cell.badge.text} kind={cell.badge.kind} />{:else}<span class="nomark"></span>{/if}
-            </span>
-            <span class="range sc-num" data-range={span.kind} title={span.title}>{span.text}</span>
-            <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu?.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
-          </button>
+        {@const best = roi.get(row.commodityId)}
+        <!-- the number of the ROI is a button of its own, beside the one of the row (a button inside a button is not allowed):
+             a click on it asks for the options and does not open the row -->
+        <div class="row {best ? `tier-${best.tier}` : ''}" class:selected class:hot={best?.hot} class:pulse={pulse.has(row.commodityId)} role="row">
+          <div class="top">
+            <button type="button" class="grid line" aria-expanded={selected} onclick={() => toggle(row.commodityId)}>
+              <span class="name" title={row.name}><span class="code">{row.code}</span><span class="full">{row.name}</span></span>
+              <span class="price sc-num" class:hint={cell.own === null}>
+                {#if cell.warn}<span class="bang" title="Цена далеко от истории UEX: проверь цифру">!</span>{/if}
+                <TrendMark trend={cell.trend} />
+                <span class="digits">{cell.own === null && cell.hint === null ? '—' : formatUec(cell.own ?? cell.hint ?? 0)}</span>
+                {#if cell.badge}<TempBadge compact text={cell.badge.text} kind={cell.badge.kind} />{:else}<span class="nomark"></span>{/if}
+              </span>
+              <span class="range sc-num" data-range={span.kind} title={span.title}>{span.text}</span>
+              <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu?.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
+            </button>
+            {#if best}
+              <button
+                type="button"
+                class="roi sc-num"
+                aria-label="ROI {best.text}: варианты для {row.name}"
+                title={best.title}
+                onclick={() => onLookup({ commodityId: row.commodityId, side })}
+              >{best.text}</button>
+            {/if}
+          </div>
           {#if selected}{@render expanded(row, cell)}{/if}
           {#if selected && tradeForm && tradeFor === row.commodityId}{@render tradeForm(row)}{/if}
         </div>
@@ -254,11 +287,23 @@
 {/if}
 
 <style>
+  /* The columns, named once for the head and for the rows. Measured on the real texts (the gallery state `roi-long`): a
+     seven-digit price is 47 px, a spread of four-digit numbers in «Мин–макс» 52 px (a six-digit one is about 73 by its
+     digits), a stock of four digits with its «≈» 35 px, the ROI «990%» 26 px. What is left goes to the names: 180 px, where
+     the longest there is, «RMC Recycled Material Composite», takes 168 */
+  .table {
+    /* the number and its 6 px mark (62 px) and the slot of the triangle with the gap before the number */
+    --col-price: calc(62px + var(--sc-trend-w) + 4px);
+    --col-range: 76px;
+    --col-scu: 44px;
+    --col-roi: 32px;
+    --col-gap: 4px;
+  }
+
   .grid {
     display: grid;
-    /* the price column holds the number and its 6 px mark (62 px) and the slot of the triangle with the gap before the number */
-    grid-template-columns: minmax(0, 1fr) calc(62px + var(--sc-trend-w) + 4px) 80px 52px;
-    column-gap: var(--sc-gap);
+    grid-template-columns: minmax(0, 1fr) var(--col-price) var(--col-range) var(--col-scu) var(--col-roi);
+    column-gap: var(--col-gap);
     align-items: center;
     padding: 0 var(--sc-pad-x);
   }
@@ -283,9 +328,17 @@
     border-bottom: 1px solid var(--sc-surface-2);
   }
 
+  /* the top of a row: its button and, over the room that the button leaves at its right edge, the button of the ROI */
+  .top {
+    position: relative;
+  }
+
   .line {
+    /* the ROI column is not in this grid: its room is the padding */
+    grid-template-columns: minmax(0, 1fr) var(--col-price) var(--col-range) var(--col-scu);
     width: 100%;
     height: calc(var(--sc-row-h) - 1px);
+    padding-right: calc(var(--sc-pad-x) + var(--col-roi) + var(--col-gap));
     border: 0;
     background: transparent;
     color: var(--sc-text);
@@ -294,9 +347,76 @@
     cursor: pointer;
   }
 
-  .line:hover,
+  .top:hover .line,
   .row.selected .line {
     background: var(--sc-surface-2);
+  }
+
+  /* the colour of the tier of the best ROI: the number, the bar and the flash of a row */
+  .tier-great { --tier: var(--sc-roi-great); }
+  .tier-good { --tier: var(--sc-roi-good); }
+  .tier-ok { --tier: var(--sc-roi-ok); }
+  .tier-poor { --tier: var(--sc-roi-poor); }
+  .tier-loss { --tier: var(--sc-roi-loss); }
+
+  .roi {
+    position: absolute;
+    top: 0;
+    right: var(--sc-pad-x);
+    bottom: 0;
+    width: var(--col-roi);
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    background: transparent;
+    color: var(--tier);
+    font: inherit;
+    font-weight: 600;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .roi:hover {
+    text-decoration: underline;
+  }
+
+  /* a row at or above the threshold stands out with a bar at its left edge, in the colour of its tier; the bar lies over
+     the padding of the row, so the texts do not move when a row gets one, and takes no clicks, so that the whole row opens */
+  .row.hot .top::before {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 3px;
+    background: var(--tier);
+    content: '';
+    pointer-events: none;
+  }
+
+  /* One soft flash of a row that has just crossed the threshold, drawn over the row so that an open row shows it too.
+     It changes no size and no place: only the opacity of a layer that takes no clicks. */
+  .row.pulse .top::after {
+    position: absolute;
+    inset: 0;
+    background: var(--tier);
+    content: '';
+    opacity: 0;
+    pointer-events: none;
+    animation: roi-pulse 1200ms ease-out 1;
+  }
+
+  @keyframes roi-pulse {
+    0% { opacity: 0; }
+    15% { opacity: 0.28; }
+    100% { opacity: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .row.pulse .top::after {
+      animation: none;
+    }
   }
 
   .name {

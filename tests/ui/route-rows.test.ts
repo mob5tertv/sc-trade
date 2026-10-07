@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { formatDistance, formatRoi, routeOptionRow, sellAlternativeRow, sellHereRow } from '../../src/ui/vm/route-rows';
+import { formatCompact } from '../../src/core/format';
+import { formatDistance, formatRoi, perHourBare, perHourNarrow, routeOptionRow, sellAlternativeRow, sellHereRow } from '../../src/ui/vm/route-rows';
 import type { RouteOption } from '../../src/core/routes';
 import type { SellAlternative, SellHere } from '../../src/core/sell';
 import type { Estimate } from '../../src/core/types';
@@ -73,6 +74,65 @@ describe('formatRoi', () => {
     expect(formatRoi(Number.NaN)).toBe('—');
     expect(formatRoi(Number.POSITIVE_INFINITY)).toBe('—');
     expect(formatRoi(Number.NEGATIVE_INFINITY)).toBe('—');
+  });
+});
+
+describe('perHourNarrow: the rate in the 34 px column of the list of options', () => {
+  it('is the compact rate as it is below 10M: two decimals, the dash for no rate', () => {
+    expect(perHourNarrow(null)).toBe('—');
+    expect(perHourNarrow(0)).toBe('0');
+    expect(perHourNarrow(255_545)).toBe('256k');
+    expect(perHourNarrow(2_010_000)).toBe('2,01M');
+    expect(perHourNarrow(9_270_000)).toBe('9,27M');
+    expect(perHourNarrow(7_690_000)).toBe('7,69M');
+    expect(perHourNarrow(4_970_000)).toBe('4,97M');
+  });
+
+  it('is below 10M the very text of the shared compact format, up to the last number before 10M', () => {
+    for (const n of [999_999, 1_000_000, 5_555_555, 9_994_999]) expect(perHourNarrow(n), String(n)).toBe(formatCompact(n));
+    expect(perHourNarrow(9_994_999)).toBe('9,99M');
+  });
+
+  it('rounds up to 10M the numbers that the two-decimal form rounds up to it', () => {
+    expect(perHourNarrow(9_995_000)).toBe('10M');
+    expect(perHourNarrow(9_999_999)).toBe('10M');
+    expect(perHourNarrow(10_000_000)).toBe('10M');
+  });
+
+  it('has one decimal from 10M, so that it is five characters and not six', () => {
+    expect(perHourNarrow(10_049_999)).toBe('10M');
+    expect(perHourNarrow(10_050_000)).toBe('10,1M');
+    expect(perHourNarrow(12_530_000)).toBe('12,5M');
+    expect(perHourNarrow(12_549_999)).toBe('12,5M');
+    expect(perHourNarrow(12_550_000)).toBe('12,6M');
+    expect(perHourNarrow(99_949_999)).toBe('99,9M');
+  });
+
+  it('is whole millions from 100M, which the one decimal would make six characters again', () => {
+    expect(perHourNarrow(99_950_000)).toBe('100M');
+    expect(perHourNarrow(100_000_000)).toBe('100M');
+    expect(perHourNarrow(123_456_789)).toBe('123M');
+    expect(perHourNarrow(1_234_567_890)).toBe('1235M');
+  });
+
+  it('keeps the minus and the same rules for a loss: -12,5M is as wide as the -1,25M of today (33,5 px of 34)', () => {
+    expect(perHourNarrow(-95_200)).toBe('-95k');
+    expect(perHourNarrow(-1_250_000)).toBe('-1,25M');
+    expect(perHourNarrow(-9_994_999)).toBe('-9,99M');
+    expect(perHourNarrow(-12_530_000)).toBe('-12,5M');
+    expect(perHourNarrow(-99_950_000)).toBe('-100M');
+    expect(perHourNarrow(-123_456_789)).toBe('-123M');
+  });
+
+  it('is only for the list of options: the shared forms of the other lists keep their two decimals', () => {
+    expect(perHourBare(12_530_000)).toBe('12,53M');
+    expect(formatCompact(12_530_000)).toBe('12,53M');
+  });
+
+  it('is what the row of an option shows as its rate', () => {
+    expect(routeOptionRow(option({ uecPerHour: 12_530_000 }), ref, 'from', new Map()).rate).toBe('12,5M');
+    expect(routeOptionRow(option({ uecPerHour: 2_010_000 }), ref, 'to', new Map()).rate).toBe('2,01M');
+    expect(routeOptionRow(option({ uecPerHour: null }), ref, 'from', new Map()).rate).toBe('—');
   });
 });
 
