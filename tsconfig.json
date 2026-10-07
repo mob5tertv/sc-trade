@@ -5,6 +5,7 @@
     "module": "esnext",
     "types": ["svelte", "vite/client", "node"],
     "allowArbitraryExtensions": true,
+    "allowImportingTsExtensions": true,
     "noEmit": true,
     "allowJs": true,
     "checkJs": true,

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>SC Trade — просмотр интерфейса</title>
+    <style>
+      /* The desktop page of the browser preview (dev server only, see src/preview/host.ts). */
+      :root {
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #07090d;
+        color: #d6dbe6;
+        font: 12px/1.3 'Segoe UI', system-ui, sans-serif;
+      }
+
+      /* The service bar stands outside the field: pictures of the window and of the field never show it. */
+      #bar {
+        position: sticky;
+        top: 0;
+        left: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        height: 34px;
+        padding: 0 12px;
+        border-bottom: 1px solid #262b36;
+        background: #11141b;
+        white-space: nowrap;
+      }
+
+      #bar label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #98a1b3;
+      }
+
+      #bar select,
+      #bar button {
+        height: 24px;
+        border: 1px solid #343b4a;
+        border-radius: 4px;
+        background: #1a1f29;
+        color: #e8ebf2;
+        font: inherit;
+      }
+
+      #bar button {
+        padding: 0 10px;
+        cursor: pointer;
+      }
+
+      #bar button:hover {
+        background: #232a37;
+      }
+
+      #status {
+        flex: 1 1 0;
+        min-width: 0;
+        overflow: hidden;
+        color: #98a1b3;
+        text-overflow: ellipsis;
+      }
+
+      #status.error {
+        color: #ff6b6b;
+      }
+
+      /* A narrow browser window: the bar wraps instead of running off the page. */
+      @media (max-width: 900px) {
+        #bar {
+          flex-wrap: wrap;
+          gap: 4px 12px;
+          height: auto;
+          min-height: 34px;
+          padding: 4px 12px;
+        }
+
+        #status {
+          flex-basis: 100%;
+        }
+      }
+
+      #stage {
+        position: relative;
+      }
+
+      #sizer {
+        position: relative;
+      }
+
+      /* The field is the monitor: its size is the logical size of the display, shrunk as a whole to fit the window. */
+      #field {
+        position: absolute;
+        top: 0;
+        left: 0;
+        overflow: hidden;
+        transform-origin: 0 0;
+        background:
+          radial-gradient(ellipse at 70% 25%, rgb(94 130 190 / 0.35), transparent 55%),
+          radial-gradient(ellipse at 20% 80%, rgb(120 70 150 / 0.28), transparent 50%),
+          linear-gradient(160deg, #1b2a41 0%, #0c1220 60%, #1a1424 100%);
+        background-position: center;
+        background-size: cover;
+      }
+
+      /* Transparent, like the window of the game overlay: the game shows through. `color-scheme` must match the
+         page inside, or the browser paints the iframe opaque. */
+      #overlay {
+        position: absolute;
+        visibility: hidden;
+        border: 0;
+        background: transparent;
+        color-scheme: dark;
+      }
+    </style>
+  </head>
+  <body>
+    <header id="bar">
+      <strong>Просмотр интерфейса</strong>
+      <label>Сцена <select id="scene"></select></label>
+      <label>Монитор <select id="monitor"></select></label>
+      <button id="game" type="button" title="Оверлей теряет клавиатуру, как при клике в игру">Клик по игре</button>
+      <span id="status">запуск…</span>
+    </header>
+    <main id="stage">
+      <div id="sizer">
+        <div id="field">
+          <iframe id="overlay" title="Окно оверлея"></iframe>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="/src/preview/host.ts"></script>
+  </body>
+</html>
