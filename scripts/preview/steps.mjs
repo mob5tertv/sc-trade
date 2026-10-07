@@ -3,6 +3,8 @@
 //
 //   click:<css selector>   a real mouse click at the centre of the element
 //   hover:<css selector>   the mouse over the centre of the element
+//   drag:<css>:<dx>,<dy>   a real drag: the button goes down at the centre of the element, the mouse moves by the shift
+//                          (page pixels, in several moves) and the button goes up
 //   type:<text>            real key presses into whatever holds the focus
 //   press:<Key>            one key: Enter, Escape, Tab, ArrowDown, F8, a, Ctrl+A ...
 //   leave                  the mouse leaves the overlay window for the game
@@ -17,6 +19,7 @@
  *   `modifiers` is the bit mask of the DevTools protocol: Alt 1, Ctrl 2, Meta 4, Shift 8.
  *
  * @typedef {{ kind: 'click' | 'hover', selector: string, source: string }
+ *   | { kind: 'drag', selector: string, dx: number, dy: number, source: string }
  *   | { kind: 'type', text: string, source: string }
  *   | { kind: 'press', key: string, source: string }
  *   | { kind: 'leave' | 'game', source: string }
@@ -159,6 +162,14 @@ function parseStep(piece, index) {
     case 'hover':
       if (arg === '') throw fail(`${kind} needs a CSS selector, like ${kind}:.strip`);
       return { kind, selector: arg, source };
+    case 'drag': {
+      // the shift is after the LAST colon: a selector may have colons of its own (`button:not(.x)`)
+      const match = /^(.*):\s*(-?\d+)\s*,\s*(-?\d+)\s*$/.exec(arg);
+      if (match === null) throw fail('drag needs a selector and a shift of the mouse in pixels, like drag:[data-drag]:-300,200');
+      const selector = match[1].trim();
+      if (selector === '') throw fail('drag needs the CSS selector of what to drag, like drag:[data-drag]:-300,200');
+      return { kind, selector, dx: Number(match[2]), dy: Number(match[3]), source };
+    }
     case 'type':
       if (arg === '') throw fail('type needs the text to type, like type:HUR');
       return { kind, text: arg, source };
@@ -183,6 +194,6 @@ function parseStep(piece, index) {
       if (arg === '') throw fail('eval needs an expression, like eval:document.title');
       return { kind, expression: arg, source };
     default:
-      throw fail(`unknown step "${kind}" (click, hover, type, press, leave, game, wait, eval)`);
+      throw fail(`unknown step "${kind}" (click, hover, drag, type, press, leave, game, wait, eval)`);
   }
 }

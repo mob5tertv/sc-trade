@@ -3,6 +3,7 @@
   import { app } from './state.svelte';
   import { terminalSearchItems } from './vm/header';
   import { locationModel } from './vm/location';
+  import WindowGrip from './WindowGrip.svelte';
 
   let { onClose }: { onClose: () => void } = $props();
 
@@ -15,6 +16,7 @@
 
 <header>
   <div class="location">
+    <WindowGrip />
     <div class="where">
       <span class="label">Локация</span>
       <strong class="name" title={model.header.location}>{model.header.location}</strong>
@@ -24,6 +26,16 @@
         Я здесь
       </button>
     {/if}
+    <button
+      class="sc-btn sc-btn--ghost sc-btn--icon"
+      type="button"
+      aria-pressed={app.windowLocked}
+      aria-label={app.windowLocked ? 'Открепить окно' : 'Закрепить окно'}
+      title={app.windowLocked ? 'Открепить окно' : 'Закрепить окно'}
+      onclick={() => app.toggleWindowLock()}
+    >
+      {app.windowLocked ? '🔒' : '🔓'}
+    </button>
     <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Настройки" title="Настройки" onclick={() => app.openSettings()}>
       ⚙
     </button>

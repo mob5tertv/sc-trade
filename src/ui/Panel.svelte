@@ -3,6 +3,7 @@
   import { app, type Tab } from './state.svelte';
   import SettingsTab from './tabs/SettingsTab.svelte';
   import TerminalTab from './tabs/TerminalTab.svelte';
+  import WindowGrip from './WindowGrip.svelte';
 
   const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
     { id: 'terminal', label: 'Терминал' },
@@ -14,6 +15,7 @@
 <main>
   {#if app.view === 'settings'}
     <div class="settings-head">
+      <WindowGrip />
       <button class="sc-btn" type="button" onclick={() => app.closeSettings()}>← Назад</button>
       <strong>Настройки</strong>
       <button class="sc-btn sc-btn--ghost sc-btn--icon close" type="button" aria-label="Свернуть" title="Свернуть" onclick={() => app.collapse('close button')}>

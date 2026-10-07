@@ -15,7 +15,8 @@ import { tauriFetchJson } from '../../src/platform/tauri-http';
 import { applyLogLevel } from '../../src/platform/tauri-logger';
 import { bindTriggers } from '../../src/platform/triggers';
 import {
-  fitWindow, giveKeyboard, setWindowVisible, showWindow, takeKeyboard, watchFocus, type WindowLayout,
+  fitWindow, giveKeyboard, moveWindow, setWindowVisible, showWindow, takeKeyboard, watchFocus, windowGeometry,
+  type WindowLayout,
 } from '../../src/platform/window';
 import { logicalSize, parseMonitor } from '../../src/preview/monitor';
 import { startPreviewHarness, type PreviewHarness } from '../helpers/preview-fixtures';
@@ -32,7 +33,7 @@ afterEach(() => {
   harness = undefined;
 });
 
-const layout: WindowLayout = { corner: 'top-right', showMini: true, opacity: 0.9 };
+const layout: WindowLayout = { corner: 'top-right', offset: { dx: 16, dy: 16 }, showMini: true, opacity: 0.9 };
 const logger = () => createLogger(memorySink());
 
 describe('commands nobody mocks', () => {
@@ -158,6 +159,66 @@ describe('the window', () => {
       });
     },
   );
+
+  it('stands at the anchor: the corner and the offsets from it, and the corner stays while the size changes', async () => {
+    const monitor = parseMonitor('2560x1440@1.5');
+    const { win } = start({ monitor });
+    const size = logicalSize(monitor);
+    const anchor: WindowLayout = { corner: 'bottom-left', offset: { dx: 100, dy: 50 }, showMini: true, opacity: 0.9 };
+    await showWindow(anchor, logger());
+    for (const content of [{ width: 310, height: 26 }, { width: 440, height: 600 }]) {
+      await fitWindow(content, anchor, logger());
+      const wanted = toPhysicalRect(anchoredRect(size, 'bottom-left', content, { dx: 100, dy: 50 }), { x: 0, y: 0 }, monitor.scale);
+      expect(win.snapshot()).toMatchObject({
+        position: { x: wanted.x, y: wanted.y }, size: { width: wanted.width, height: wanted.height },
+      });
+      // the left edge and the bottom edge are the fixed ones
+      expect(win.snapshot().position.x).toBe(150);
+      expect(win.snapshot().position.y + win.snapshot().size.height).toBe(1440 - 75);
+    }
+  });
+
+  it('knows where the window stands, in logical pixels of the monitor', async () => {
+    const monitor = parseMonitor('2560x1440@1.5');
+    start({ monitor });
+    expect(await showWindow(layout, logger())).toEqual(maxContentSize(logicalSize(monitor)));
+    await fitWindow({ width: 440, height: 300 }, layout, logger());
+    expect(windowGeometry()).toEqual({
+      rect: anchoredRect(logicalSize(monitor), 'top-right', { width: 440, height: 300 }),
+      monitor: logicalSize(monitor),
+    });
+  });
+
+  it('moves the window by one command, keeps the size, and does not write a line to the log of the app', async () => {
+    const monitor = parseMonitor('2560x1440@1.5');
+    const { win, logged } = start({ monitor });
+    const sink = memorySink();
+    const log = createLogger(sink);
+    await showWindow(layout, log);
+    await fitWindow({ width: 440, height: 300 }, layout, log);
+    const placed = () => logged.filter((line) => line.includes('place_window')).length;
+    const before = { lines: sink.lines.length, placed: placed() };
+
+    await moveWindow({ x: 100, y: 200, width: 440, height: 300 }, log);
+    const moved = toPhysicalRect({ x: 100, y: 200, width: 440, height: 300 }, { x: 0, y: 0 }, monitor.scale);
+    expect(win.snapshot()).toMatchObject({ position: { x: moved.x, y: moved.y }, size: { width: moved.width, height: moved.height } });
+    expect(placed()).toBe(before.placed + 1);
+    expect(sink.lines.length).toBe(before.lines);
+    expect(windowGeometry()?.rect).toEqual({ x: 100, y: 200, width: 440, height: 300 });
+
+    // what stands there is not set a second time
+    await moveWindow({ x: 100, y: 200, width: 440, height: 300 }, log);
+    expect(placed()).toBe(before.placed + 1);
+  });
+
+  it('stays with the game while it is moved: moving takes neither the focus nor the keyboard', async () => {
+    const { win, focusEvents } = start();
+    await showWindow(layout, logger());
+    await fitWindow({ width: 440, height: 300 }, layout, logger());
+    await moveWindow({ x: 300, y: 300, width: 440, height: 300 }, logger());
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, remembered: 0, restored: 0 });
+    expect(focusEvents).toEqual([]);
+  });
 
   it('cuts content that is bigger than the monitor down to the largest content size', async () => {
     const monitor = parseMonitor('1920x1080@1');

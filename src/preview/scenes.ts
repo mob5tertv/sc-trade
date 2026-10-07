@@ -23,7 +23,7 @@ export const SCENES: readonly Scene[] = [
     name: 'mini-bottom-left',
     title: 'Мини-строка в левом нижнем углу',
     dataset: 'default',
-    act: async (app) => void (await app.updateSetting('stripCorner', 'bottom-left')),
+    act: async (app) => void (await app.setCorner('bottom-left')),
   },
   { name: 'expanded', title: 'Развёрнутый вид, вкладка по умолчанию', dataset: 'default', act: (app) => app.expand('preview') },
   {
@@ -31,7 +31,7 @@ export const SCENES: readonly Scene[] = [
     title: 'Развёрнутый вид в левом нижнем углу',
     dataset: 'default',
     act: async (app) => {
-      await app.updateSetting('stripCorner', 'bottom-left');
+      await app.setCorner('bottom-left');
       await app.expand('preview');
     },
   },
@@ -50,7 +50,7 @@ export const SCENES: readonly Scene[] = [
     title: 'Короткое содержимое в левом нижнем углу',
     dataset: 'default',
     act: async (app) => {
-      await app.updateSetting('stripCorner', 'bottom-left');
+      await app.setCorner('bottom-left');
       await app.expand('preview');
       app.setTab('run');
     },

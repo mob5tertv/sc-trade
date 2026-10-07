@@ -31,6 +31,22 @@ describe('settings repository', () => {
     expect(settings.panelWidth).toBe(440);
   });
 
+  it('defaults: the window is 16 px from the edges of its corner and not locked', async () => {
+    const settings = await loadSettings(await migratedDb(), log);
+    expect([settings.windowDx, settings.windowDy]).toEqual([16, 16]);
+    expect(settings.windowLocked).toBe(false);
+  });
+
+  it('round-trips where the player put the window and the lock', async () => {
+    const db = await migratedDb();
+    await saveSetting(db, log, 'stripCorner', 'bottom-left');
+    await saveSetting(db, log, 'windowDx', 120);
+    await saveSetting(db, log, 'windowDy', 45);
+    await saveSetting(db, log, 'windowLocked', true);
+    const settings = await loadSettings(db, log);
+    expect([settings.stripCorner, settings.windowDx, settings.windowDy, settings.windowLocked]).toEqual(['bottom-left', 120, 45, true]);
+  });
+
   it('keeps a panel width an older version stored: only a changed value is stored, a default never is', async () => {
     const db = await migratedDb();
     expect(await db.select('SELECT key FROM setting')).toEqual([]);

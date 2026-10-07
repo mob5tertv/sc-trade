@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { boot } from './boot';
+  import { installDrag } from './drag';
   import { installKeyboard } from './keyboard';
   import Panel from './Panel.svelte';
   import { app } from './state.svelte';
   import Strip from './Strip.svelte';
+  import WindowGrip from './WindowGrip.svelte';
 
   let root = $state<HTMLDivElement>();
 
@@ -14,6 +16,12 @@
     let disposed = false;
     let unwatch: (() => void) | undefined;
     const stopKeyboard = installKeyboard(app.keyboard, app.log);
+    // the grip moves the window without taking the focus (no `startDragging()`, no keyboard)
+    const stopDrag = installDrag({
+      begin: () => app.dragBegin(),
+      move: (rect) => app.dragMove(rect),
+      end: (rect) => app.dragEnd(rect),
+    });
 
     // The window is exactly as big as this root. Every change of its size goes to the window, at most
     // once per frame; the content is measured in CSS pixels and rounded up so that nothing is cut off.
@@ -48,6 +56,7 @@
       disposed = true;
       unwatch?.();
       stopKeyboard();
+      stopDrag();
       observer.disconnect();
       cancelAnimationFrame(frame);
       element.removeEventListener('pointerenter', inside);
@@ -78,7 +87,8 @@
     <!-- the expanded view while the application starts or when the start failed -->
     <main>
       <header>
-        <strong>SC Trade</strong>
+        <WindowGrip />
+        <strong class="title">SC Trade</strong>
         <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Свернуть" title="Свернуть" onclick={() => app.collapse('close button')}>
           ×
         </button>
@@ -142,7 +152,11 @@
   header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: var(--sc-gap);
+  }
+
+  .title {
+    flex: 1;
   }
 
   .error {

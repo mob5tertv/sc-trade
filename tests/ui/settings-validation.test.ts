@@ -153,6 +153,30 @@ describe('validateSetting: trigger keys', () => {
   });
 });
 
+describe('validateSetting: where the window stands', () => {
+  it('wants the offsets from the corner to be whole pixels from 0', () => {
+    for (const key of ['windowDx', 'windowDy'] as const) {
+      expect(validateSetting(key, 0, S), key).toBeNull();
+      expect(validateSetting(key, 16, S), key).toBeNull();
+      expect(validateSetting(key, 960, S), key).toBeNull();
+      expect(validateSetting(key, -1, S), key).not.toBeNull();
+      expect(validateSetting(key, 2.5, S), key).not.toBeNull();
+      expect(validateSetting(key, NaN, S), key).not.toBeNull();
+    }
+  });
+
+  it('does not refuse an offset only because it would push the window off a monitor: that is cut when it is placed', () => {
+    expect(validateSetting('windowDx', 100_000, S)).toBeNull();
+    expect(validateSetting('windowDy', 100_000, S)).toBeNull();
+  });
+
+  it('wants the lock to be a yes or a no', () => {
+    expect(validateSetting('windowLocked', true, S)).toBeNull();
+    expect(validateSetting('windowLocked', false, S)).toBeNull();
+    expect(validateSetting('windowLocked', 1 as unknown as boolean, S)).not.toBeNull();
+  });
+});
+
 describe('validateSetting: open sections', () => {
   it('takes any text, the empty one included (nothing is open)', () => {
     expect(validateSetting('openSections', '', S)).toBeNull();

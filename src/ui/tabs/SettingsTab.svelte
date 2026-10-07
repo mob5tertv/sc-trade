@@ -181,7 +181,7 @@
         id="set-corner"
         class="sc-input"
         value={app.settings.stripCorner}
-        onchange={(event) => settle('stripCorner', () => app.updateSetting('stripCorner', event.currentTarget.value as Settings['stripCorner']))}
+        onchange={(event) => settle('stripCorner', () => app.setCorner(event.currentTarget.value as Settings['stripCorner']))}
       >
         {#each CORNERS as corner (corner.id)}
           <option value={corner.id}>{corner.label}</option>

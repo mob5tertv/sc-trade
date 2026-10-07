@@ -2,7 +2,7 @@ import { listen } from '@tauri-apps/api/event';
 import { appLogDir, join } from '@tauri-apps/api/path';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
-import type { Size } from '../core/layout';
+import { anchorFromRect, WINDOW_MARGIN, type Corner, type Rect, type Size } from '../core/layout';
 import type { RouteCtx, RouteOption } from '../core/routes';
 import { DEFAULT_SETTINGS, type Settings } from '../core/settings';
 import type { Market, Reference, RunWithEvents, Side } from '../core/types';
@@ -20,10 +20,12 @@ import { bindTriggers, type TriggerName } from '../platform/triggers';
 import {
   fitWindow,
   giveKeyboard,
+  moveWindow,
   setWindowVisible,
   showWindow,
   takeKeyboard,
   watchFocus,
+  windowGeometry,
   type WindowLayout,
   type WindowMode,
 } from '../platform/window';
@@ -198,6 +200,8 @@ class AppState {
   #visible = false;
   /** The content of the window as the last measurement said; `null` before the first one. */
   #content: Size | null = null;
+  /** The player is dragging the window: it must not be placed by anything else until the drag ends. */
+  #dragging = false;
   /** Unix seconds of the last click or movement over the window, or of the moment it was expanded. */
   #lastActivityAt = nowSec();
   #pointerInside = false;
@@ -408,7 +412,16 @@ class AppState {
 
   get layout(): WindowLayout {
     const s = this.settings;
-    return { corner: s.stripCorner, showMini: s.showStrip, opacity: s.opacity };
+    return {
+      corner: s.stripCorner,
+      offset: { dx: s.windowDx, dy: s.windowDy },
+      showMini: s.showStrip,
+      opacity: s.opacity,
+    };
+  }
+
+  get windowLocked(): boolean {
+    return this.settings.windowLocked;
   }
 
   /** The window is on the screen when it is expanded, or collapsed with the mini bar switched on. */
@@ -515,16 +528,110 @@ class AppState {
     if (this.#windowReady) void this.#refit();
   }
 
-  /** Places the window by the content measured last. Never throws: a failure is logged by the window layer. */
+  /**
+   * Places the window by the content measured last. Never throws: a failure is logged by the window layer.
+   * While the window is being dragged nothing places it (it would jump under the cursor): the request is
+   * dropped, and the end of the drag fits the window again.
+   */
   #refit(): Promise<void> {
     return this.#fitQueue(async () => {
-      if (this.#content === null) return;
+      if (this.#content === null || this.#dragging) return;
       try {
         await fitWindow(this.#content, this.layout, this.#log);
       } catch {
         // already logged by the window layer
       }
     });
+  }
+
+  // ---- where the window stands ------------------------------------------------------------------------
+
+  /**
+   * Saves a new anchor of the window (the corner and the distances from it) as one change: the settings are
+   * written, then `settings` changes once. Returns the sentence to show when it was not saved, `null` when it was.
+   * It does not place the window: the caller does, with `#refit`.
+   */
+  async #setAnchor(corner: Corner, dx: number, dy: number): Promise<string | null> {
+    const next = { stripCorner: corner, windowDx: dx, windowDy: dy };
+    for (const key of Object.keys(next) as Array<keyof typeof next>) {
+      const invalid = validateSetting(key, next[key], this.settings);
+      if (invalid !== null) {
+        this.#log.warn('ui', 'setting rejected', { key, value: next[key], reason: invalid });
+        return invalid;
+      }
+    }
+    try {
+      const { db } = this.#syncDeps();
+      // only what changed is written
+      if (this.settings.stripCorner !== corner) await saveSetting(db, this.#log, 'stripCorner', corner);
+      if (this.settings.windowDx !== dx) await saveSetting(db, this.#log, 'windowDx', dx);
+      if (this.settings.windowDy !== dy) await saveSetting(db, this.#log, 'windowDy', dy);
+    } catch (err) {
+      this.#log.error('ui', 'cannot save the position of the window', { ...next, err });
+      const text = 'Не удалось сохранить положение окна. Подробности в логе.';
+      this.notify(text, 'error');
+      return text;
+    }
+    this.settings = { ...this.settings, ...next };
+    return null;
+  }
+
+  /** The corner of the settings: the window goes to that corner, 16 px from its edges (the offsets are reset). */
+  async setCorner(corner: Corner): Promise<string | null> {
+    this.#log.info('ui', 'set corner', { corner });
+    const failure = await this.#setAnchor(corner, WINDOW_MARGIN, WINDOW_MARGIN);
+    if (failure === null) await this.#refit();
+    return failure;
+  }
+
+  /** The lock: a locked window cannot be moved by its grip. */
+  async toggleWindowLock(): Promise<void> {
+    const locked = !this.settings.windowLocked;
+    this.#log.info('ui', 'toggle window lock', { locked });
+    await this.updateSetting('windowLocked', locked);
+  }
+
+  /**
+   * The player pressed the grip. Returns where the window is and how big the monitor is (logical pixels) so that
+   * the drag can work out new places, or `null` when nothing may be dragged (locked, not shown yet). From now on
+   * nothing but the drag places the window; every drag must end with `dragEnd`.
+   */
+  async dragBegin(): Promise<{ rect: Rect; monitor: Size } | null> {
+    if (this.settings.windowLocked || !this.#windowReady || this.#dragging) return null;
+    this.#dragging = true;
+    // a placement that is already under way finishes first, so that it cannot land on top of the first move
+    await this.#fitQueue(async () => undefined);
+    const geometry = windowGeometry();
+    if (geometry === null) this.#dragging = false;
+    return geometry;
+  }
+
+  /** The window follows the pointer (at most once per frame); not logged. A failure is logged by the window layer. */
+  async dragMove(rect: Rect): Promise<void> {
+    try {
+      await moveWindow(rect, this.#log);
+    } catch {
+      // already logged by the window layer
+    }
+  }
+
+  /**
+   * The drag is over. With the rect where the window ended the anchor is worked out and saved (one `ui` line),
+   * with `null` the window was only pressed and stays. Either way the window is fitted to its content again,
+   * with the requests that came during the drag.
+   */
+  async dragEnd(rect: Rect | null): Promise<void> {
+    try {
+      const monitor = windowGeometry()?.monitor;
+      if (rect !== null && monitor !== undefined) {
+        const anchor = anchorFromRect(monitor, rect);
+        this.#log.info('ui', 'window moved', anchor);
+        await this.#setAnchor(anchor.corner, anchor.dx, anchor.dy);
+      }
+    } finally {
+      this.#dragging = false;
+    }
+    await this.#refit();
   }
 
   /** The cursor is over the window or has left it. Any movement over the window counts as activity; not logged. */
@@ -797,6 +904,8 @@ class AppState {
         await this.applyTriggers();
         break;
       case 'stripCorner':
+      case 'windowDx':
+      case 'windowDy':
       case 'opacity':
         // the corner and the opacity reach the window through the same fit as a change of the content;
         // the width needs nothing here: the root of the interface changes its size and reports it itself

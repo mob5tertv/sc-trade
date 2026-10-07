@@ -5,13 +5,14 @@ import {
   maxContentSize,
   toPhysicalRect,
   type Corner,
+  type Offset,
   type Rect,
   type Size,
 } from '../core/layout';
 import type { Logger } from '../data/logger';
 
-// The one overlay window. It is as big as its content, glued to a corner of the primary monitor, and it
-// never takes the keyboard focus from the game by itself: buttons are clicked with the mouse while the
+// The one overlay window. It is as big as its content, anchored to a corner of the primary monitor (the anchor
+// corner stays where it is while the size changes), and it never takes the keyboard focus from the game by itself: buttons are clicked with the mouse while the
 // game stays the active window. The keyboard is taken only for the time a text field is edited
 // (`takeKeyboard`) and handed back afterwards (`giveKeyboard`). Every failure is logged and rethrown, so
 // the caller can keep its own state consistent.
@@ -19,7 +20,9 @@ import type { Logger } from '../data/logger';
 export type WindowMode = 'mini' | 'expanded';
 
 export interface WindowLayout {
+  /** The anchor: a corner of the monitor and the distances of the window from that corner's two edges. */
   corner: Corner;
+  offset: Offset;
   /** Whether the collapsed window (the mini bar) is shown; off, it is hidden and the tray or a key opens it. */
   showMini: boolean;
   /** Applied as the CSS custom property `--overlay-opacity` on the document root. */
@@ -88,6 +91,8 @@ const sameRect = (a: Rect, b: Rect): boolean =>
 
 /** Where the window stands now, in physical pixels of the desktop; `null` until it was placed. */
 let placed: Rect | null = null;
+/** The same place in logical pixels of the monitor, and the monitor it was worked out for (a drag starts from here). */
+let placedLogical: { rect: Rect; monitor: MonitorGeometry } | null = null;
 
 /**
  * Puts the window, sized to `content` (CSS pixels), into the corner of the monitor. Position and size
@@ -102,12 +107,18 @@ async function placeContent(
 ): Promise<void> {
   // nothing is laid out yet (the content has no size): there is nothing to place
   if (!(content.width > 0) || !(content.height > 0)) return;
-  const rect = anchoredRect(monitor.size, layout.corner, content);
+  const rect = anchoredRect(monitor.size, layout.corner, content, layout.offset);
   const physical = toPhysicalRect(rect, monitor.origin, monitor.scaleFactor);
-  if (placed !== null && sameRect(placed, physical)) return;
+  if (placed !== null && sameRect(placed, physical)) {
+    placedLogical = { rect, monitor };
+    return;
+  }
   await invoke('place_window', { x: physical.x, y: physical.y, width: physical.width, height: physical.height });
   placed = physical;
-  log.info('window', 'window placed', { corner: layout.corner, content, rect, physical, scale: monitor.scaleFactor });
+  placedLogical = { rect, monitor };
+  log.info('window', 'window placed', {
+    corner: layout.corner, offset: layout.offset, content, rect, physical, scale: monitor.scaleFactor,
+  });
 }
 
 /**
@@ -136,7 +147,7 @@ export async function showWindow(layout: WindowLayout, log: Logger): Promise<Siz
     await win.setIgnoreCursorEvents(false);
     await win.setSkipTaskbar(true);
     const monitor = await monitorGeometry(log);
-    const max = maxContentSize(monitor.size);
+    const max = maxContentSize(monitor.size, layout.offset);
     applyMaxSize(max);
     placed = null;
     await placeContent(FIRST_CONTENT, layout, monitor, log);
@@ -153,20 +164,47 @@ export async function showWindow(layout: WindowLayout, log: Logger): Promise<Siz
 }
 
 /**
- * Sets the window to the size of its content (CSS pixels) in the corner of the primary monitor. The
- * corner, the opacity and the largest size are applied each time, so a change of any of them goes
+ * Sets the window to the size of its content (CSS pixels) at its anchor on the primary monitor. The
+ * anchor, the opacity and the largest size are applied each time, so a change of any of them goes
  * through here. The same rectangle is not set a second time.
  */
 export async function fitWindow(content: Size, layout: WindowLayout, log: Logger): Promise<void> {
   try {
     applyOpacity(layout.opacity);
     const monitor = await monitorGeometry(log);
-    applyMaxSize(maxContentSize(monitor.size));
+    applyMaxSize(maxContentSize(monitor.size, layout.offset));
     await placeContent(content, layout, monitor, log);
   } catch (err) {
     log.error('window', 'cannot fit the window', { content, err });
     throw err;
   }
+}
+
+/**
+ * The window as it stands now, in logical pixels of the primary monitor, with the size of that monitor:
+ * what a drag starts from. `null` until the window has been placed.
+ */
+export function windowGeometry(): { rect: Rect; monitor: Size } | null {
+  return placedLogical === null ? null : { rect: { ...placedLogical.rect }, monitor: { ...placedLogical.monitor.size } };
+}
+
+/**
+ * Moves the window to `rect` (logical pixels of the monitor) with ONE `place_window`, keeping its size. This
+ * is the drag: it is called up to once per frame, so a success is not logged; a failure is.
+ */
+export async function moveWindow(rect: Rect, log: Logger): Promise<void> {
+  if (placedLogical === null) return;
+  const { monitor } = placedLogical;
+  const physical = toPhysicalRect(rect, monitor.origin, monitor.scaleFactor);
+  if (placed !== null && sameRect(placed, physical)) return; // e.g. the pointer keeps pushing against the edge of the monitor
+  try {
+    await invoke('place_window', { x: physical.x, y: physical.y, width: physical.width, height: physical.height });
+  } catch (err) {
+    log.error('window', 'cannot move the window', { rect, err });
+    throw err;
+  }
+  placed = physical;
+  placedLogical = { rect: { ...rect }, monitor };
 }
 
 /** Shows or hides the window; showing never takes the focus (the window is not focusable). */

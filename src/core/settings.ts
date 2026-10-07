@@ -11,8 +11,16 @@ export interface Settings {
   hotkeyPanel: string; hotkeyDepart: string; hotkeyArrive: string;
   /** Width of the expanded window in px; its height follows its content. */
   panelWidth: number;
-  /** The corner of the monitor the window stands in, mini bar and expanded view alike. */
+  /**
+   * Where the window stands, mini bar and expanded view alike: the anchor corner of the monitor, and the
+   * distances (logical px) of the window from that corner's two edges. The player drags the window; the
+   * anchor corner of the window stays fixed while its size changes.
+   */
   stripCorner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  windowDx: number;
+  windowDy: number;
+  /** The grip does not move a locked window. */
+  windowLocked: boolean;
   /** Seconds without activity before the expanded window folds into the mini bar by itself; 0 = never. */
   idleCollapseSec: number;
   /** Ids of the sections that are open in the expanded window, separated by commas. */
@@ -30,7 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, topN: 5,
   sort: 'uecPerHour', nearby: false,
   hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '',
-  panelWidth: 440, stripCorner: 'top-right',
+  panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
   idleCollapseSec: 40, openSections: 'terminal,options,settings:ship',
   opacity: 0.92, showStrip: true, logLevel: 'debug',
   serverChangedAt: null, currentTerminalId: null, targetTerminalId: null,

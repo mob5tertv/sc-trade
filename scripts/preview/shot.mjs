@@ -22,7 +22,7 @@ const HELP = `usage: npm run preview:shot -- --scene <name> [options]
   --scale <n>           pixel density of the picture, default 1
   --out <file.png>      default .superpowers/preview/<scene>-<view>.png
   --do "<steps>"        steps before the picture, separated by ";": click:<css>, type:<text>, press:<Key>, hover:<css>,
-                        leave, game, wait:<ms>, eval:<js>
+                        drag:<css>:<dx>,<dy>, leave, game, wait:<ms>, eval:<js>
   --state               print the mocked state of the window as one JSON line at the end
   --timeout <seconds>   wait for the scene to be ready, default 30`;
 
@@ -165,6 +165,10 @@ async function locate(/** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {str
 
 const mouse = (/** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {object} */ event) => cdp.send('Input.dispatchMouseEvent', event);
 
+/** A drag is made of this many mouse moves, with a pause after each so that the page can react (a frame is 16 ms). */
+const DRAG_MOVES = 8;
+const DRAG_PAUSE_MS = 40;
+
 async function click(/** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {string} */ selector) {
   const { x, y } = await locate(cdp, selector);
   await mouse(cdp, { type: 'mouseMoved', x, y });
@@ -188,6 +192,19 @@ async function perform(/** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {im
     case 'hover': {
       const { x, y } = await locate(cdp, step.selector);
       await mouse(cdp, { type: 'mouseMoved', x, y });
+      return;
+    }
+    case 'drag': {
+      // The button goes down on the element, the mouse moves in several increments (the page follows between them,
+      // as the window follows the pointer in life), the button goes up where the mouse ended.
+      const { x, y } = await locate(cdp, step.selector);
+      await mouse(cdp, { type: 'mouseMoved', x, y });
+      await mouse(cdp, { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+      for (let i = 1; i <= DRAG_MOVES; i++) {
+        await mouse(cdp, { type: 'mouseMoved', x: x + (step.dx * i) / DRAG_MOVES, y: y + (step.dy * i) / DRAG_MOVES, button: 'left', buttons: 1 });
+        await sleep(DRAG_PAUSE_MS);
+      }
+      await mouse(cdp, { type: 'mouseReleased', x: x + step.dx, y: y + step.dy, button: 'left', buttons: 0, clickCount: 1 });
       return;
     }
     case 'type':

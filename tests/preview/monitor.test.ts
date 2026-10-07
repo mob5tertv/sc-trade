@@ -83,7 +83,7 @@ describe('toLogicalRect', () => {
 
     it('keeps a window glued to the corner of the desktop when there is no margin', () => {
       const corner = toLogicalRect(
-        toPhysicalRect(anchoredRect(size, 'bottom-right', { width: 440, height: 612 }, 0), origin, monitor.scale),
+        toPhysicalRect(anchoredRect(size, 'bottom-right', { width: 440, height: 612 }, { dx: 0, dy: 0 }), origin, monitor.scale),
         origin,
         monitor.scale,
       );
