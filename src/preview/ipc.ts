@@ -225,6 +225,7 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
       case 'restore_foreground':
         return win.restoreForeground();
       case 'set_trigger_keys':
+        log('debug', '[preview] set_trigger_keys'); // a scene counts these: how often the application sets the keys again
         return [null, null, null]; // every key is accepted; there is no keyboard hook
       default:
         return UNKNOWN;

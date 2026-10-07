@@ -633,8 +633,11 @@ class AppState {
     });
   }
 
-  /** Runs one mode change after the previous ones; keeps the window and `mode` consistent. */
-  #changeMode(pick: (current: WindowMode) => WindowMode, reason: string): Promise<void> {
+  /**
+   * Runs one mode change after the previous ones; keeps the window and `mode` consistent. `whenExpanded` runs when this change
+   * is the one that unfolded the window (not when it was unfolded already).
+   */
+  #changeMode(pick: (current: WindowMode) => WindowMode, reason: string, whenExpanded?: () => void): Promise<void> {
     return this.#modeQueue(async () => {
       // A first show that failed was set back for another try (`ensureShown`), and nothing else would make it: the tray and the
       // key of the panel come here, so every request to change the window asks for the show again. It runs after this job, when
@@ -655,6 +658,7 @@ class AppState {
       }
       this.mode = next;
       this.#touch();
+      if (next === 'expanded') whenExpanded?.();
       // before the first show the first show decides what is visible
       if (!this.#windowReady) return;
       try {
@@ -693,10 +697,24 @@ class AppState {
     this.#visible = visible;
   }
 
-  /** The "развернуть" of the mini bar, the tray, a key. */
+  /** Unfolds the window (the start that failed, the scenes of the preview). */
   expand(reason: string): Promise<void> {
     this.#log.info('ui', 'expand', { reason });
     return this.#changeMode(() => 'expanded', reason);
+  }
+
+  /**
+   * The player opens the window by hand: the click on the mini line, the "Показать панель" of the tray. The trigger keys are set
+   * again with it: Windows may have dropped the keyboard hook without a word, and the hook comes back only with `set_trigger_keys`,
+   * which the interface otherwise asks for when a key setting CHANGES. Not when the window is opened by the trigger key itself (the
+   * hook evidently works then: `toggleMode`), and not on a collapse. Nothing waits for it; its failure is `applyTriggers`' own.
+   */
+  expandByHand(reason: string): Promise<void> {
+    this.#log.info('ui', 'expand', { reason });
+    return this.#changeMode(() => 'expanded', reason, () => {
+      this.#log.info('ui', 'apply trigger keys again', { why: reason });
+      void this.applyTriggers().catch(() => undefined);
+    });
   }
 
   /** The "свернуть" button and everything else that puts the window away. */
@@ -918,7 +936,7 @@ class AppState {
     try {
       stops.push(await listen('tray://show-panel', () => {
         this.#log.info('app', 'tray: show panel');
-        void this.expand('tray');
+        void this.expandByHand('tray');
       }));
     } catch (err) {
       this.#log.error('app', 'cannot listen for the tray event', { err });
@@ -1182,6 +1200,10 @@ class AppState {
    * Reads the active run again after a trade, and keeps the one the state has when the database says the same (whoever follows
    * `activeRun` by identity, the statistics, is woken only by a change). The market is read again only when something may have
    * been written: a refusal of the service (`TradeError`) wrote nothing, a failure of the database may have written a part.
+   * The run is read after EVERY write of the trade service, a refusal or a failure included (every trade method calls this before
+   * it returns): the service repairs half-written runs before it works, so the run on the screen may be gone or closed by the time
+   * it refuses (`no_active_run`: the player reads «Нет активного рейса», in the form under the row, or as the message of the mini
+   * line and of the notice line for a mark and for a lost cargo), and the screen then stops showing it.
    */
   async #reloadRun(mayHaveWritten: boolean): Promise<void> {
     try {

@@ -1,3 +1,4 @@
+import { emit } from '@tauri-apps/api/event';
 import { saveReference } from '../data/repo/uex-cache';
 import { installPriceFake } from './fake-prices';
 import { installHttpFake, type FakeAnswer } from './http-fake';
@@ -67,6 +68,32 @@ export const REPAIR_SCENES: readonly Scene[] = [
       void app.syncPricesNow();
       await until('the 13th price request', () => fake.asked() >= 13);
       await pause(300);
+    },
+  },
+  {
+    // The run of the screen is gone from the database behind the state's back (the data layer repairs half-written runs before it
+    // works): the mark is refused by the service («Нет активного рейса»), and the state reads the run again, so the screen
+    // stops showing a run that is not there: the mini line is the idle one with the message.
+    name: 'run-gone-behind-the-state',
+    title: 'Рейс исчез из базы мимо состояния: отметка получает «Нет активного рейса», и экран больше не показывает рейс',
+    dataset: 'run',
+    act: async (app) => {
+      const { db } = app.suggestDeps();
+      await db.execute("DELETE FROM run_event WHERE run_id IN (SELECT id FROM run WHERE status = 'active')");
+      await db.execute("DELETE FROM run WHERE status = 'active'");
+      await app.mark('depart');
+    },
+  },
+  {
+    // The keyboard hook may have been dropped by Windows without a word, and only a new `set_trigger_keys` brings it back: the keys are set
+    // again whenever the player opens the window by hand (a click on the mini line, the tray), not when the trigger key opened it and
+    // not on a collapse. `window.__emitTray()` is the click of the tray; the count is `window.__preview.log` lines `set_trigger_keys`:
+    // `--do "eval:KEYS();click:button.open;wait:300;eval:KEYS()"` with `KEYS = () => window.__preview.log.filter(l => l.includes('set_trigger_keys')).length`.
+    name: 'trigger-keys-reapply',
+    title: 'Мини-строка: клавиши-триггеры задаются заново при открытии окна рукой (клик, трей), но не клавишей и не при сворачивании',
+    dataset: 'default',
+    act: () => {
+      (window as unknown as { __emitTray: () => Promise<void> }).__emitTray = () => emit('tray://show-panel');
     },
   },
   {
