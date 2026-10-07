@@ -49,7 +49,7 @@
   --sc-mini-h: 26px; /* the mini line */
   --sc-ctl-h: 22px; /* a field or a button inside a row */
   --sc-icon-w: 24px; /* an icon button of a header */
-  --sc-field-w: 132px; /* the field of a line of the settings ("label · field") */
+  --sc-field-w: 160px; /* the field of a line of the settings ("label · field"): the longest ship name fits */
 
   --sc-font: 12.5px;
   --sc-font-sm: 11px;

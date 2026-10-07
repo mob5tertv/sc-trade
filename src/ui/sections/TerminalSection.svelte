@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import type { Side } from '../../core/types';
   import QuickEntry from '../components/QuickEntry.svelte';
   import Section from '../components/Section.svelte';
@@ -32,6 +33,14 @@
   // The open row belongs to the terminal and the side it was opened on: with a change of either it is gone.
   let pick = $state<RowPick | null>(null);
   const selectedCommodityId = $derived(selectedCommodity(pick, viewedId, side, rows));
+  // ...and it is forgotten for good, not only hidden: coming back to the side or the terminal shows no open row
+  $effect(() => {
+    void side;
+    void viewedId;
+    untrack(() => {
+      pick = null;
+    });
+  });
 
   const commodityItems = $derived(commoditySearchItems(app.reference));
   const boostIds = $derived(viewedId === null ? new Set<number>() : new Set(app.market.byTerminal.get(viewedId)));

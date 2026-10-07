@@ -20,14 +20,19 @@
     children: Snippet;
     /** The content may shrink and scroll when the window has no height to spare; the header stays. */
     scroll?: boolean;
+    /**
+     * Of two open sections that scroll, the one with the larger number gives up more of its height first (a flex
+     * shrink factor). The section that matters less, or is short, takes a small one. Only with `scroll`.
+     */
+    shrink?: number;
   }
-  let { title, summary, open, onToggle, onClose, actions, lead, children, scroll = false }: Props = $props();
+  let { title, summary, open, onToggle, onClose, actions, lead, children, scroll = false, shrink = 1 }: Props = $props();
 
   const uid = $props.id();
   const bodyId = `${uid}-body`;
 </script>
 
-<section class="section" class:open class:scroll>
+<section class="section" class:open class:scroll style:--shrink={shrink}>
   <div class="head">
     <button type="button" class="toggle" aria-expanded={open} aria-controls={open ? bodyId : undefined} title={summary ? `${title}: ${summary}` : title} onclick={() => onToggle()}>
       <svg class="chevron" class:open viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M3 1.5 7 5 3 8.5" /></svg>
@@ -55,9 +60,10 @@
     min-height: 0;
   }
 
-  /* a section that may scroll takes what is left of the window and no more than its content */
-  .section.scroll {
-    flex: 0 1 auto;
+  /* an open section that may scroll takes what is left of the window and no more than its content; a closed one is
+     its header only and never shrinks below it */
+  .section.scroll.open {
+    flex: 0 var(--shrink, 1) auto;
   }
 
   .head {

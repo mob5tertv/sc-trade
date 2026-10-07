@@ -10,6 +10,9 @@
   // My finished runs per pair: there are none to count until the trade runs exist in the interface.
   const NO_RUNS = new Map<string, number>();
   const SECTION = 'options';
+  // When the window has no height to spare the table above gives up its rows first: the answer the player asked for
+  // stays whole as long as it can.
+  const OPTIONS_SHRINK = 0.2;
 
   // The section is drawn only while there is a request (the owner checks), but a lookup that is closed in the same
   // moment must not break the render.
@@ -55,6 +58,7 @@
     onClose={() => app.closeLookup()}
     {actions}
     scroll
+    shrink={OPTIONS_SHRINK}
   >
     {#if needsCapacity}
       <div class="note">
