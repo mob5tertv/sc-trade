@@ -24,6 +24,29 @@ describe('settings repository', () => {
     expect(Object.hasOwn(settings, 'panelSide')).toBe(false);
   });
 
+  it('defaults: the window collapses after 40 s, three sections are open, the panel is 440 px wide', async () => {
+    const settings = await loadSettings(await migratedDb(), log);
+    expect(settings.idleCollapseSec).toBe(40);
+    expect(settings.openSections).toBe('terminal,options,settings:ship');
+    expect(settings.panelWidth).toBe(440);
+  });
+
+  it('keeps a panel width an older version stored: only a changed value is stored, a default never is', async () => {
+    const db = await migratedDb();
+    expect(await db.select('SELECT key FROM setting')).toEqual([]);
+    await saveSetting(db, log, 'panelWidth', 470);
+    expect((await loadSettings(db, log)).panelWidth).toBe(470);
+  });
+
+  it('round-trips the idle collapse time and the open sections', async () => {
+    const db = await migratedDb();
+    await saveSetting(db, log, 'idleCollapseSec', 0);
+    await saveSetting(db, log, 'openSections', 'options,terminal');
+    const settings = await loadSettings(db, log);
+    expect(settings.idleCollapseSec).toBe(0);
+    expect(settings.openSections).toBe('options,terminal');
+  });
+
   it('skips a panelSide row stored by an older version', async () => {
     const db = await migratedDb();
     await db.execute("INSERT INTO setting VALUES ('panelSide', '\"left\"')");

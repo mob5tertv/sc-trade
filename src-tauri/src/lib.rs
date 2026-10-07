@@ -3,6 +3,7 @@ mod focus;
 mod input_hook;
 mod keys;
 mod logging;
+mod place;
 mod tray;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -20,7 +21,7 @@ pub fn run() {
         .manage(input_hook::HookController::default())
         .setup(|app| {
             logging::announce_portable_log();
-            // Without a tray icon the app still works (the strip opens the panel), so a failure
+            // Without a tray icon the app still works (the mini bar expands the window), so a failure
             // is logged, not fatal.
             if let Err(err) = tray::setup(app.handle()) {
                 log::error!("[tray] cannot create the tray icon: {err}");
@@ -32,6 +33,7 @@ pub fn run() {
             backup::backup_db,
             focus::remember_foreground,
             focus::restore_foreground,
+            place::place_window,
             input_hook::set_trigger_keys
         ])
         .run(tauri::generate_context!())

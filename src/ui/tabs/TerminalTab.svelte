@@ -142,7 +142,7 @@
     {#if needsCapacity}
       <div class="note">
         <p>Укажи корабль или объём трюма в настройках</p>
-        <button type="button" class="sc-btn" onclick={() => app.setTab('settings')}>Открыть настройки</button>
+        <button type="button" class="sc-btn" onclick={() => app.openSettings()}>Открыть настройки</button>
       </div>
     {:else if lookup.request === null}
       <p class="hint">Введи цену выше, нажми «Где купить» или «Где продать» у товара, либо «Новый маршрут».</p>

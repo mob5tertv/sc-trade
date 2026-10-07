@@ -2,6 +2,7 @@ import { listen } from '@tauri-apps/api/event';
 import { appLogDir, join } from '@tauri-apps/api/path';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import type { Size } from '../core/layout';
 import type { RouteCtx, RouteOption } from '../core/routes';
 import { DEFAULT_SETTINGS, type Settings } from '../core/settings';
 import type { Market, Reference, RunWithEvents, Side } from '../core/types';
@@ -16,10 +17,23 @@ import { syncPrices, syncReference, type SyncDeps } from '../data/sync';
 import { UexError, type UexClient } from '../data/uex-client';
 import { applyLogLevel } from '../platform/tauri-logger';
 import { bindTriggers, type TriggerName } from '../platform/triggers';
-import { setMode, watchFocus, type SetModeOptions, type WindowLayout, type WindowMode } from '../platform/window';
+import {
+  fitWindow,
+  giveKeyboard,
+  setWindowVisible,
+  showWindow,
+  takeKeyboard,
+  watchFocus,
+  type WindowLayout,
+  type WindowMode,
+} from '../platform/window';
+import { resetHeldKeys } from './keyboard';
+import { shouldCollapse } from './vm/idle';
+import { createKeyboardHolds, type KeyboardHolds } from './vm/keyboard-holds';
 import { createLatestRequest } from './vm/latest-request';
 import { affectsLookup, kindForSide, lookupTitle, terminalLabel, type LookupRequest } from './vm/lookup';
 import { createRequestQueue } from './vm/request-queue';
+import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
 import { validateSetting } from './vm/settings-validation';
 import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, syncPlan } from './vm/sync-plan';
 import { terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
@@ -41,9 +55,17 @@ import { uexErrorText } from './vm/uex-error';
 //  - UEX health is tracked per sync (`referenceOk`, `pricesOk`); `uexOk` is both together;
 //  - the Terminal tab: `terminalRows` (the table of the viewed terminal, on a 15 s clock), `recordPrice`
 //    (writes what the player saw), and the lookup (`lookup`, `runLookup`, `rerunLookup`, `newRoute`): where to
-//    buy / where to sell, one answer at a time, the newest request wins.
+//    buy / where to sell, one answer at a time, the newest request wins;
+//  - the window: it is the mini bar (`mini`) or the expanded view (`expanded`), as big as its content and
+//    glued to a corner. It never takes the keyboard from the game by itself: the keyboard is taken only
+//    through `keyboard.hold(...)` (a text field is edited) and handed back by `release`. Mode changes run
+//    one after another through `#modeQueue`, placing the window through `#fitQueue`, and the keyboard
+//    through the queue inside `keyboard`. A job of one of these queues must not wait for a job of a queue
+//    that may be waiting for it. The expanded view folds into the mini bar by itself (`idleCollapseSec`).
 
-export type Tab = 'terminal' | 'run' | 'routes' | 'settings';
+export type Tab = 'terminal' | 'run' | 'routes';
+/** What the expanded window shows: the main screen or the settings, which take the whole window. */
+export type View = 'main' | 'settings';
 export type Phase = 'booting' | 'ready' | 'failed';
 export interface Notice { text: string; kind: 'info' | 'error' }
 
@@ -125,8 +147,26 @@ class AppState {
   });
 
   // ---- window and screen ------------------------------------------------------------------------
-  mode = $state<WindowMode>('strip');
+  mode = $state<WindowMode>('mini');
+  /** The main screen or the settings (the settings keep the window open: they count as busy). */
+  view = $state<View>('main');
   tab = $state<Tab>('terminal');
+  /** The keyboard is with the window: the player is typing. */
+  keyboardHeld = $state(false);
+  /**
+   * Who needs the keyboard (see `HoldEffects` in vm/keyboard-holds.ts). The only way to the keyboard: the
+   * window never takes the focus from the game by itself. `hold('field')` takes it, `release` gives it back.
+   */
+  readonly keyboard: KeyboardHolds = createKeyboardHolds(
+    {
+      take: () => this.#takeKeyboard(),
+      give: (restore) => giveKeyboard(this.#log, restore),
+    },
+    (held) => {
+      this.keyboardHeld = held;
+      if (!held) this.#touch();
+    },
+  );
   triggerErrors = $state<Record<TriggerName, string | null>>({ panel: null, depart: null, arrive: null });
   /** What the Terminal tab shows (spec 14.2); not persisted. The current location is `settings.currentTerminalId`. */
   viewTerminalId = $state<number | null>(null);
@@ -145,11 +185,26 @@ class AppState {
   readonly #triggerQueue = createRequestQueue();
   #log: Logger = createLogger({ write() {} });
   #data: DataDeps | null = null;
-  /** The mode being switched to; it leads `mode` while a switch is in progress. */
-  #requestedMode: WindowMode = 'strip';
-  /** Mode changes come from the strip, the keys, the tray, Esc and the focus; they run one after another. */
+  /** Mode changes come from the mini bar, the keys, the tray, the buttons and the idle timer; they run one after another. */
   readonly #modeQueue = createRequestQueue();
+  /** The window is placed one rectangle at a time, each job with the content as it is when its turn comes. */
+  readonly #fitQueue = createRequestQueue();
+  /** Opening and closing a section is written to the settings one at a time, each from the state its turn finds. */
+  readonly #sectionQueue = createRequestQueue();
   #shown = false;
+  /** The window was shown for the first time: from now on it is fitted to its content. */
+  #windowReady = false;
+  /** The window is on the screen (not hidden). */
+  #visible = false;
+  /** The content of the window as the last measurement said; `null` before the first one. */
+  #content: Size | null = null;
+  /** Unix seconds of the last click or movement over the window, or of the moment it was expanded. */
+  #lastActivityAt = nowSec();
+  #pointerInside = false;
+  /** Reasons why the window must not fold by itself (a trade dialog is open). */
+  readonly #busy = new Set<string>();
+  /** The sections that are open, from the setting. */
+  #openIds = $derived(parseOpenSections(this.settings.openSections));
   #noticeTimer: ReturnType<typeof setTimeout> | undefined;
   #backgroundStarted = false;
   #pricesInFlight = false;
@@ -163,6 +218,7 @@ class AppState {
     this.#log = log;
     setInterval(() => {
       this.now = nowSec();
+      this.#collapseWhenIdle();
     }, 1000);
     setInterval(() => {
       this.rowsNow = nowSec();
@@ -352,75 +408,202 @@ class AppState {
 
   get layout(): WindowLayout {
     const s = this.settings;
-    return { panelWidth: s.panelWidth, stripCorner: s.stripCorner, showStrip: s.showStrip, opacity: s.opacity };
+    return { corner: s.stripCorner, showMini: s.showStrip, opacity: s.opacity };
   }
 
-  /** Shows the strip for the first time, whatever the start came to: the player must always see something. */
+  /** The window is on the screen when it is expanded, or collapsed with the mini bar switched on. */
+  #wantVisible(): boolean {
+    return this.mode === 'expanded' || this.settings.showStrip;
+  }
+
+  /** Marks "the player is here now": the idle time counts from this moment. */
+  #touch(): void {
+    this.#lastActivityAt = nowSec();
+  }
+
+  /**
+   * Shows the window for the first time, whatever the start came to: the player must always see something
+   * (with the mini bar switched off, the window is prepared and stays hidden until it is expanded).
+   * A failure is logged and allows another try.
+   */
   ensureShown(): void {
     if (this.#shown) return;
     this.#shown = true;
-    void this.changeMode(() => 'strip', 'startup');
-  }
-
-  /** Runs one mode change after the previous ones; keeps the window and `mode` consistent. */
-  changeMode(pick: (current: WindowMode) => WindowMode, reason: string, options: SetModeOptions = {}): Promise<void> {
-    return this.#modeQueue(async () => {
-      const next = pick(this.mode);
-      this.#log.info('app', 'mode change', { from: this.mode, to: next, reason });
-      this.#requestedMode = next;
+    void this.#modeQueue(async () => {
       try {
-        await setMode(next, this.layout, this.#log, options);
-        this.mode = next;
+        const visible = this.#wantVisible();
+        await showWindow({ ...this.layout, showMini: visible }, this.#log);
+        this.#visible = visible;
+        this.#windowReady = true;
+        void this.#refit();
       } catch {
-        // already logged by setMode; keep the previous mode
-        this.#requestedMode = this.mode;
+        // already logged by the window layer
+        this.#shown = false;
       }
     });
   }
 
-  openPanel(reason = 'strip click'): Promise<void> {
-    this.#log.info('ui', 'open panel', { reason });
-    return this.changeMode(() => 'panel', reason);
+  /** Runs one mode change after the previous ones; keeps the window and `mode` consistent. */
+  #changeMode(pick: (current: WindowMode) => WindowMode, reason: string): Promise<void> {
+    return this.#modeQueue(async () => {
+      const from = this.mode;
+      const next = pick(from);
+      if (next === from) return;
+      this.#log.info('window', 'mode change', { from, to: next, reason });
+      if (next === 'mini') {
+        this.view = 'main';
+        // the player is done with the window: the keyboard goes back to the game, the window may fold
+        await this.keyboard.release('field').catch(() => undefined); // a failure is logged by the window layer
+      }
+      this.mode = next;
+      this.#touch();
+      // before the first show the first show decides what is visible
+      if (!this.#windowReady) return;
+      try {
+        await this.#syncVisibility();
+      } catch {
+        this.mode = from; // already logged by the window layer
+      }
+    });
   }
 
-  closePanel(reason: string): Promise<void> {
-    this.#log.info('ui', 'close panel', { reason });
-    return this.changeMode(() => 'strip', reason);
+  /** Shows or hides the window as the mode and the "show the mini bar" setting say. */
+  async #syncVisibility(): Promise<void> {
+    const visible = this.#wantVisible();
+    if (visible === this.#visible) return;
+    await setWindowVisible(visible, this.#log);
+    this.#visible = visible;
+  }
+
+  /** The "развернуть" of the mini bar, the tray, a key. */
+  expand(reason: string): Promise<void> {
+    this.#log.info('ui', 'expand', { reason });
+    return this.#changeMode(() => 'expanded', reason);
+  }
+
+  /** The "свернуть" button and everything else that puts the window away. */
+  collapse(reason: string): Promise<void> {
+    this.#log.info('ui', 'collapse', { reason });
+    return this.#changeMode(() => 'mini', reason);
   }
 
   toggleMode(): Promise<void> {
-    this.#log.info('ui', 'toggle panel');
-    return this.changeMode((current) => (current === 'panel' ? 'strip' : 'panel'), 'trigger');
+    this.#log.info('ui', 'toggle window');
+    return this.#changeMode((current) => (current === 'expanded' ? 'mini' : 'expanded'), 'trigger');
+  }
+
+  openSettings(): void {
+    if (this.view === 'settings') return;
+    this.#log.info('ui', 'open settings');
+    this.view = 'settings';
+    this.#touch();
+  }
+
+  closeSettings(): void {
+    if (this.view === 'main') return;
+    this.#log.info('ui', 'close settings');
+    this.view = 'main';
+    this.#touch();
   }
 
   /**
-   * The panel collapses by itself when the player clicks the game. Only a settled panel does: while a
-   * switch is in progress, the focus changes belong to the switch. The game already has the focus
-   * then, so it is not pulled back by force.
+   * The content of the window measured (CSS pixels, rounded up); the window takes this size in its corner.
+   * Called by the root of the interface whenever its size changes. Before the first show only the size is kept.
+   */
+  fit(content: Size): void {
+    this.#content = content;
+    if (this.#windowReady) void this.#refit();
+  }
+
+  /** Places the window by the content measured last. Never throws: a failure is logged by the window layer. */
+  #refit(): Promise<void> {
+    return this.#fitQueue(async () => {
+      if (this.#content === null) return;
+      try {
+        await fitWindow(this.#content, this.layout, this.#log);
+      } catch {
+        // already logged by the window layer
+      }
+    });
+  }
+
+  /** The cursor is over the window or has left it. Any movement over the window counts as activity; not logged. */
+  pointer(inside: boolean): void {
+    this.#pointerInside = inside;
+    this.#touch();
+  }
+
+  /** Something needs the window to stay as it is (a dialog is open): it does not fold by itself while that lasts. */
+  holdBusy(why: string): void {
+    this.#busy.add(why);
+  }
+
+  releaseBusy(why: string): void {
+    if (this.#busy.delete(why)) this.#touch();
+  }
+
+  /** Once a second: the expanded window folds into the mini bar when nobody has touched it for the time of the setting. */
+  #collapseWhenIdle(): void {
+    const idleSec = this.settings.idleCollapseSec;
+    const collapse = shouldCollapse({
+      mode: this.mode,
+      idleSec,
+      now: nowSec(),
+      pointerInside: this.#pointerInside,
+      lastActivityAt: this.#lastActivityAt,
+      keyboardHeld: this.keyboardHeld,
+      busy: this.#busy.size > 0 || this.view === 'settings',
+    });
+    if (collapse) void this.#changeMode(() => 'mini', `idle ${idleSec} s`);
+  }
+
+  /** `take` of the keyboard holds: a key of the game that is still down must not type into a field. */
+  async #takeKeyboard(): Promise<void> {
+    resetHeldKeys();
+    await takeKeyboard(this.#log);
+  }
+
+  /**
+   * The player clicked the game: the window lost the focus. The game already has it, so it is not pulled
+   * back by force; the window only stops waiting for the keyboard. The window stays as it is.
    */
   #onFocusLost(): void {
-    if (this.mode === 'panel' && this.#requestedMode === 'panel') {
-      void this.changeMode(() => 'strip', 'focus lost', { restoreFocus: false });
-    }
+    void this.keyboard.drop().catch(() => undefined); // a failure is logged by the window layer
   }
 
   /** Starts listening for focus changes and for the tray's "Показать панель"; returns what stops it. */
   async watchWindow(): Promise<() => void> {
     const stops: Array<() => void> = [];
     try {
-      stops.push(await watchFocus(() => this.#requestedMode, this.#log, () => this.#onFocusLost()));
+      stops.push(await watchFocus(() => this.mode, this.#log, () => this.#onFocusLost()));
     } catch (err) {
       this.#log.error('app', 'cannot listen for focus changes', { err });
     }
     try {
       stops.push(await listen('tray://show-panel', () => {
         this.#log.info('app', 'tray: show panel');
-        void this.openPanel('tray');
+        void this.expand('tray');
       }));
     } catch (err) {
       this.#log.error('app', 'cannot listen for the tray event', { err });
     }
     return () => stops.forEach((stop) => stop());
+  }
+
+  // ---- sections of the expanded window ------------------------------------------------------------
+
+  /** Whether the section is open; the state is kept between runs (setting `openSections`). */
+  sectionOpen(id: string): boolean {
+    return this.#openIds.has(id);
+  }
+
+  /** Opens a closed section, closes an open one; the state is saved. */
+  toggleSection(id: string): Promise<void> {
+    return this.#sectionQueue(async () => {
+      const next = toggledSection(this.#openIds, id);
+      this.#log.info('ui', 'toggle section', { id, open: next.has(id.trim()) });
+      await this.updateSetting('openSections', serializeOpenSections(next));
+    });
   }
 
   // ---- triggers ---------------------------------------------------------------------------------
@@ -613,12 +796,21 @@ class AppState {
       case 'hotkeyArrive':
         await this.applyTriggers();
         break;
-      case 'panelWidth':
       case 'stripCorner':
-      case 'showStrip':
       case 'opacity':
-        // the settings are used by the player in the panel, which keeps the focus it has
-        await this.changeMode((current) => current, `setting ${key}`, { restoreFocus: false });
+        // the corner and the opacity reach the window through the same fit as a change of the content;
+        // the width needs nothing here: the root of the interface changes its size and reports it itself
+        await this.#refit();
+        break;
+      case 'showStrip':
+        await this.#modeQueue(async () => {
+          if (!this.#windowReady) return;
+          try {
+            await this.#syncVisibility();
+          } catch {
+            // already logged by the window layer
+          }
+        });
         break;
       case 'logLevel':
         await applyLogLevel(this.#log, this.settings.logLevel);

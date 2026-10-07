@@ -141,6 +141,7 @@ describe('affectsLookup', () => {
     const unrelated = [
       'vehicleId', 'hotkeyPanel', 'hotkeyDepart', 'hotkeyArrive', 'panelWidth', 'stripCorner',
       'opacity', 'showStrip', 'logLevel', 'currentTerminalId', 'targetTerminalId',
+      'idleCollapseSec', 'openSections',
     ] as const;
     for (const key of unrelated) expect(affectsLookup(key, 'from'), key).toBe(false);
   });

@@ -8,7 +8,7 @@ const LOG_LEVELS: ReadonlyArray<Settings['logLevel']> = ['debug', 'info', 'warn'
 const SORTS: ReadonlyArray<Settings['sort']> = ['uecPerHour', 'roi'];
 
 const OPACITY_RANGE = { min: 0.3, max: 1 };
-const PANEL_WIDTH_RANGE = { min: 360, max: 900 };
+const PANEL_WIDTH_RANGE = { min: 380, max: 640 };
 
 const NOT_A_NUMBER = 'Введите число';
 const THRESHOLD_ORDER = 'Пороги должны быть больше нуля и расти: горячая < тёплая < остывает';
@@ -65,6 +65,10 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
       return isNumber(v) && v >= PANEL_WIDTH_RANGE.min && v <= PANEL_WIDTH_RANGE.max
         ? null
         : `От ${PANEL_WIDTH_RANGE.min} до ${PANEL_WIDTH_RANGE.max} пикселей`;
+    case 'idleCollapseSec':
+      return isNumber(v) && Number.isInteger(v) && v >= 0 ? null : 'Целое число секунд, 0 — не сворачивать';
+    case 'openSections':
+      return typeof v === 'string' ? null : 'Нужен текст';
     case 'scuCapacity':
       return isNumber(v) && Number.isInteger(v) && v >= 0 ? null : 'Целое число SCU, от нуля';
     case 'budget':

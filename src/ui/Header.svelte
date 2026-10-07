@@ -6,13 +6,6 @@
 
   let { onClose }: { onClose: () => void } = $props();
 
-  let searchBox = $state<ReturnType<typeof SearchBox>>();
-
-  /** Puts the cursor into the location search. */
-  export function focusSearch(): void {
-    searchBox?.focus();
-  }
-
   const model = $derived(
     locationModel(app.reference, app.settings, app.viewTerminalId, app.pricesSyncedAt, app.uexOk, app.now),
   );
@@ -31,7 +24,10 @@
         Я здесь
       </button>
     {/if}
-    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Закрыть" title="Закрыть (Esc)" onclick={onClose}>
+    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Настройки" title="Настройки" onclick={() => app.openSettings()}>
+      ⚙
+    </button>
+    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Свернуть" title="Свернуть" onclick={onClose}>
       ×
     </button>
   </div>
@@ -41,7 +37,6 @@
   {/if}
 
   <SearchBox
-    bind:this={searchBox}
     {items}
     placeholder="Сменить локацию: три буквы и Enter"
     label="Поиск локации"
