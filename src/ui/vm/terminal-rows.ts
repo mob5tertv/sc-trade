@@ -7,6 +7,22 @@ import type { Estimate, Market, Reference, Side, StockEstimate, Temp } from '../
 import { priceTrend } from './price-trend';
 import type { PriceTrend } from './price-trend';
 
+/**
+ * What UEX says about how far the price of one side of a terminal moved: it moved between two numbers (`spread`), it did
+ * not move and UEX knows one price (`flat`: the same number as minimum and maximum), or there is nothing to draw. Of
+ * the two kinds of nothing, `no-bounds` is a UEX price without usable bounds (an average, and minimum and maximum
+ * zero) and `none` is no UEX price for the side at all; both are a dash, but the tooltip must not say that UEX knows no
+ * price while the price column shows one. `flat` is not `none`: a column of dashes reads as "nothing was loaded".
+ */
+export type UexRange =
+  | { kind: 'spread'; low: number; high: number }
+  | { kind: 'flat'; price: number }
+  | { kind: 'no-bounds' }
+  | { kind: 'none' };
+
+export const NO_RANGE: UexRange = { kind: 'none' };
+const NO_BOUNDS: UexRange = { kind: 'no-bounds' };
+
 export interface Cell {
   own: number | null; ownScu: number | null;      // my price, shown only while it is not cold; ownScu is only ever MY quantity (0 is a known zero) and has its own clock (spec 14.6), so it may stand next to a UEX price: buy side, the stock estimated for now; sell side, the buyer's inventory as recorded
   ownScuBase: { scu: number; age: string } | null; // 'was 40 · 20 min': what I saw, when the estimate differs from it; null on the sell side (no estimate there)
@@ -14,7 +30,7 @@ export interface Cell {
   hint: number | null; hintScu: number | null;    // a UEX estimate, or my cold value when UEX has nothing; hintScu is also the UEX quantity next to my price
   badge: { text: string; kind: Temp | 'uex' } | null;
   uexRange: { low: number; high: number } | null; // the UEX range next to my cooling value
-  range: { low: number; high: number } | null;    // the range UEX knows for this side (week, else month, else all time), next to my own price or to a UEX one; null when it is flat or unknown
+  range: UexRange;                                // what UEX knows about the spread of this side (week, else month, else all time), next to my own price or to a UEX one
   ownLast: { price: number; age: string } | null; // my cold value kept for reference when the cell fell back to UEX
   trend: PriceTrend | null;                       // how my own price moved since my previous reading; null for a UEX or cold value, a first reading, or the same price
   warn: boolean;                                  // my value looks like a typo against the UEX history
@@ -63,23 +79,47 @@ export function sideCounts(rows: Array<Pick<TerminalRow, 'buy' | 'sell'>>): { bu
  */
 export const isOwnPrice = (e: Estimate): boolean => e.source === 'own' && e.temp !== 'cold';
 
-/** A flat price or one without bounds is no range. */
-const rangeOfUex = (e: Estimate | null): Cell['range'] =>
-  e !== null && e.source === 'uex' && e.low > 0 && e.high > e.low ? { low: e.low, high: e.high } : null;
+/**
+ * The range of a UEX estimate: the bounds of the period it was taken from (src/core/estimate.ts: the week, else the
+ * month, else all time, else the last report). Different bounds are a spread, the same number is one price. Bounds
+ * that are missing (zero), upside down or not numbers are `no-bounds`: UEX has a price, but nothing to say about its
+ * spread. Without a UEX estimate (none, or a price of mine, which has no bounds of its own) it is `none`.
+ */
+export function rangeOfEstimate(e: Estimate | null): UexRange {
+  if (e === null || e.source !== 'uex') return NO_RANGE;
+  if (!(e.low > 0) || !(e.high >= e.low)) return NO_BOUNDS;
+  return e.high > e.low ? { kind: 'spread', low: e.low, high: e.high } : { kind: 'flat', price: e.low };
+}
 
 /**
  * The range UEX knows for one side of a terminal, whatever my diary says there. A price of my own has none in its
  * estimate, so the estimate is taken with my diary left out; it picks the period (week, month, all time) exactly as
  * the price does. This is the reference that stands beside my own price in a table and in a list of trips.
  */
-export function uexRangeOf(m: Market, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): Cell['range'] {
-  return rangeOfUex(estimate({ ...m, own: new Map() }, terminalId, commodityId, side, ctx));
+export function uexRangeOf(m: Market, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): UexRange {
+  return rangeOfEstimate(estimate({ ...m, own: new Map() }, terminalId, commodityId, side, ctx));
+}
+
+/** The «Мин–макс» cell as it is read: `3 900–4 300`, `= 5 500` or `—` (two kinds of it), and what the tooltip says about it. */
+export interface RangeView { kind: UexRange['kind']; text: string; title: string }
+
+export function rangeView(range: UexRange): RangeView {
+  switch (range.kind) {
+    case 'spread':
+      return { kind: 'spread', text: `${formatUec(range.low)}–${formatUec(range.high)}`, title: 'Диапазон цен по данным UEX' };
+    case 'flat':
+      return { kind: 'flat', text: `= ${formatUec(range.price)}`, title: 'UEX: одна цена за период, разброса нет' };
+    case 'no-bounds':
+      return { kind: 'no-bounds', text: '—', title: 'UEX не даёт границ цены' };
+    case 'none':
+      return { kind: 'none', text: '—', title: 'UEX не знает цену' };
+  }
 }
 
 function cell(m: Market, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): Cell | null {
   const e = estimate(m, terminalId, commodityId, side, ctx);
   if (!e) return null;
-  const range = e.source === 'uex' ? rangeOfUex(e) : uexRangeOf(m, terminalId, commodityId, side, ctx);
+  const range = e.source === 'uex' ? rangeOfEstimate(e) : uexRangeOf(m, terminalId, commodityId, side, ctx);
   // The quantity is a reading of its own, apart from the price (spec 14.6): mine whenever `scuOrigin` says so (zero
   // included), even next to a UEX price. On the buy side `e.stock` is its estimate for now; on the sell side it is
   // the buyer's inventory and stays as recorded, with no estimate (spec 14.5). A UEX quantity goes to the grey

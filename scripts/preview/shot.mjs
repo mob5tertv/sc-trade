@@ -2,13 +2,14 @@
 // and writes a PNG, so that the real interface can be looked at without Tauri and without the game.
 //
 //   npm run preview:shot -- --scene expanded [--monitor 1920x1080@1] [--view window|desktop] [--scale 2] [--out path.png]
-//                           [--do "click:.strip;wait:300"] [--state] [--timeout 30]
+//                           [--do "click:.strip;wait:300"] [--state] [--timeout 30] [--allow-crash]
 //   npm run preview:shot -- --gallery terminal-table[/buy-expanded] [--bg light] [--opacity 0.6] [--scale 2]
 //                           the component gallery (src/preview/gallery/) instead of a scene of the application
 //
 // It starts its own Vite dev server on a free port and its own browser on a throw-away profile, and stops both.
 // `--do` runs steps in the application before the picture (see steps.mjs); `--state` prints the mocked state of
-// the window as one JSON line at the very end.
+// the window as one JSON line at the very end. An error nobody caught (a `[crash]` line in the log of the scene, or an
+// uncaught error of the page) while the scene and the steps ran fails the run with exit code 4 (see uncaught.mjs).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -16,6 +17,7 @@ import { findBrowser, launchBrowser, pageSocketUrl } from './browser.mjs';
 import { connect } from './cdp.mjs';
 import { projectRoot, startDevServer } from './server.mjs';
 import { charKey, parseSteps, pressKey } from './steps.mjs';
+import { exceptionText, findUncaughtErrors, uncaughtVerdict } from './uncaught.mjs';
 
 const HELP = `usage: npm run preview:shot -- --scene <name> [options]
   --scene <name>        scene of src/preview/scenes.ts (mini, mini-run, expanded, settings, boot-failed, idle, ...)
@@ -27,10 +29,14 @@ const HELP = `usage: npm run preview:shot -- --scene <name> [options]
   --out <file.png>      default .superpowers/preview/<scene>-<view>.png
   --do "<steps>"        steps before the picture, separated by ";": click:<css>, type:<text>, press:<Key>, hover:<css>,
                         drag:<css>:<dx>,<dy>, leave, game, wait:<ms>, eval:<js>
-  --state               print the mocked state of the window as one JSON line at the end
+  --state               print the mocked state of the window as one JSON line at the end (uncaughtErrors: how many)
+  --allow-crash         do not fail on uncaught errors (a scene that shows a crash on purpose); they are still counted
   --timeout <seconds>   wait for the scene to be ready, default 30`;
 
-/** Exit codes: 1 the scene did not become ready or something broke, 2 the scene started with an error, 3 a step failed. */
+/**
+ * Exit codes: 1 the scene did not become ready or something broke, 2 the scene started with an error, 3 a step failed,
+ * 4 an error nobody caught happened while the scene and the steps ran.
+ */
 class ShotError extends Error {
   /** @param {string} message @param {number} code */
   constructor(message, code) {
@@ -54,7 +60,7 @@ function readOptions() {
     options: {
       scene: { type: 'string' }, monitor: { type: 'string' }, view: { type: 'string' }, scale: { type: 'string' },
       out: { type: 'string' }, do: { type: 'string' }, state: { type: 'boolean' }, timeout: { type: 'string' },
-      gallery: { type: 'string' }, bg: { type: 'string' }, opacity: { type: 'string' },
+      gallery: { type: 'string' }, bg: { type: 'string' }, opacity: { type: 'string' }, 'allow-crash': { type: 'boolean' },
       help: { type: 'boolean' },
     },
   });
@@ -90,11 +96,18 @@ function readOptions() {
     throw new ShotError(`--do: ${err instanceof Error ? err.message : err}`, 1);
   }
   const out = resolve(projectRoot, values.out ?? `.superpowers/preview/${values.scene}-${view}.png`);
-  return { scene: values.scene, monitor: values.monitor ?? '1920x1080@1', view, scale, out, steps, state: values.state === true, timeout };
+  return {
+    scene: values.scene, monitor: values.monitor ?? '1920x1080@1', view, scale, out, steps, state: values.state === true, timeout,
+    allowCrash: values['allow-crash'] === true,
+  };
 }
 
-/** Everything the page said that is worth reading when something goes wrong. */
-function watchDiagnostics(/** @type {import('./cdp.mjs').Cdp} */ cdp) {
+/**
+ * Everything the page said that is worth reading when something goes wrong. The one subscription to
+ * `Runtime.exceptionThrown` also fills `uncaught`: the text of every error nobody caught (a throw in a handler or an
+ * effect, a rejected promise), which fails the run.
+ */
+function watchDiagnostics(/** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {string[]} */ uncaught) {
   /** @type {string[]} */
   const lines = [];
   cdp.on('Runtime.consoleAPICalled', (event) => {
@@ -103,6 +116,7 @@ function watchDiagnostics(/** @type {import('./cdp.mjs').Cdp} */ cdp) {
   });
   cdp.on('Runtime.exceptionThrown', (event) => {
     lines.push(`exception: ${event.exceptionDetails.exception?.description ?? event.exceptionDetails.text}`);
+    uncaught.push(exceptionText(event.exceptionDetails));
   });
   cdp.on('Log.entryAdded', (event) => {
     if (event.entry.level === 'error') lines.push(`log: ${event.entry.text} ${event.entry.url ?? ''}`.trim());
@@ -124,6 +138,17 @@ async function appLog(/** @type {import('./cdp.mjs').Cdp} */ cdp) {
   } catch {
     return [];
   }
+}
+
+/** The errors nobody caught so far: what the page threw and what the crash handler of the application logged. */
+async function uncaughtErrors(/** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {string[]} */ exceptions) {
+  const log = await evaluate(cdp, `${APP_FRAME}.contentWindow.__preview?.log ?? []`).catch(() => []);
+  return findUncaughtErrors({ log, exceptions });
+}
+
+/** The mocked state of the window as one JSON line, with the number of uncaught errors. */
+async function stateJson(/** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {{ length: number }} */ errors) {
+  return JSON.stringify({ ...(await evaluate(cdp, `${APP_FRAME}.contentWindow.__preview.state()`)), uncaughtErrors: errors.length });
 }
 
 async function failureReport(/** @type {import('./cdp.mjs').Cdp} */ cdp, /** @type {string[]} */ diagnostics) {
@@ -317,7 +342,9 @@ async function main() {
     cleanups.push(() => browser.close());
     const cdp = await connect(await pageSocketUrl(browser.port));
     cleanups.push(async () => cdp.close());
-    const diagnostics = watchDiagnostics(cdp);
+    /** @type {string[]} */
+    const uncaught = [];
+    const diagnostics = watchDiagnostics(cdp, uncaught);
 
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
@@ -341,7 +368,7 @@ async function main() {
         console.log(`picture: ${isAbsolute(written) || written === '' ? options.out : written}`);
       }
       if (options.state) {
-        stateLine = await evaluate(cdp, `JSON.stringify(${APP_FRAME}.contentWindow.__preview.state())`).catch(() => null);
+        stateLine = await stateJson(cdp, await uncaughtErrors(cdp, uncaught)).catch(() => null);
       }
       throw new ShotError(`the scene started with an error: ${sceneError}\n${await failureReport(cdp, diagnostics)}`, 2);
     }
@@ -361,11 +388,17 @@ async function main() {
 
     const out = failedStep === null ? options.out : options.out.replace(/\.png$/i, '') + '-failed.png';
     await capture(cdp, out, options.view);
-    if (options.state) stateLine = JSON.stringify(await evaluate(cdp, `${APP_FRAME}.contentWindow.__preview.state()`));
+    const errors = await uncaughtErrors(cdp, uncaught);
+    if (options.state) stateLine = await stateJson(cdp, errors);
     const shown = relative(process.cwd(), out);
     console.log(`${failedStep === null ? 'picture' : 'picture at the moment of the failure'}: ${isAbsolute(shown) || shown === '' ? out : shown}`);
 
+    // a failed step is reported first; an uncaught error is told about too (it is often what made the step fail)
+    const verdict = uncaughtVerdict({ errors, allowCrash: options.allowCrash });
+    if (verdict.exitCode === 0 && verdict.note !== '') console.log(verdict.note);
+    if (verdict.exitCode !== 0 && failedStep !== null) console.error(verdict.note);
     if (failedStep !== null) throw failedStep;
+    if (verdict.exitCode !== 0) throw new ShotError(verdict.note, verdict.exitCode);
   } catch (err) {
     exitCode = err instanceof ShotError ? err.code : 1;
     console.error(err instanceof Error ? err.message : String(err));

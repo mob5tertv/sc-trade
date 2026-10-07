@@ -18,6 +18,13 @@
   async function openFirst(frame: HTMLElement): Promise<void> {
     await click(find(frame, '.row .line'));
   }
+
+  // the trip of AGRI: the sale price is mine, with the one price of UEX beside it
+  async function openAgri(frame: HTMLElement): Promise<void> {
+    const line = [...frame.querySelectorAll<HTMLElement>('.row .line')].find((el) => (el.textContent ?? '').includes('AGRI'));
+    if (line === undefined) throw new Error('the list has no trip of AGRI');
+    await click(line);
+  }
 </script>
 
 <Frame name="from" caption="from: «Куда» · sale price at the destination (green up MIC-L1: sold dearer; red down Port Tressler: sold cheaper; Lorville the same; UEX has no triangle), ROI by tier, UEC/ч (best in green) · the second trip is the target">
@@ -42,6 +49,12 @@
   await click(find(frame, '.row.tier-great .line, .row .line'));
 }}>
   <RouteList options={routes.ladder} {reference} {runCounts} mode="from" showCommodity={true} emptyText="" anchorTerminalId={viewedId} {uexRange} targetTerminalId={routes.ladder[0].destId} onTarget={log} />
+</Frame>
+<Frame name="ranges" caption="«Мин–макс» of the sale price: one price «= price» (MEDS, GOLD; TITA: seven digits), a spread (TUNG), beside my price: one price (AGRI), a spread (DIAM), nothing «—» (STIM; QUAR: UEX has the price, no bounds)">
+  <RouteList options={data.ranges.trips} {reference} {runCounts} mode="from" showCommodity={true} emptyText="" anchorTerminalId={viewedId} uexRange={data.ranges.uexRange} targetTerminalId={null} onTarget={log} />
+</Frame>
+<Frame name="ranges-expanded" caption="the trip of AGRI expanded: both prices, the sale price of mine with the one price of UEX beside it" act={openAgri}>
+  <RouteList options={data.ranges.trips} {reference} {runCounts} mode="from" showCommodity={true} emptyText="" anchorTerminalId={viewedId} uexRange={data.ranges.uexRange} targetTerminalId={null} onTarget={log} />
 </Frame>
 <Frame name="empty" caption="nothing found: one muted row">
   <RouteList options={[]} {reference} {runCounts} mode="from" showCommodity={true} emptyText={lookupEmptyText(request, reference)} anchorTerminalId={viewedId} {uexRange} targetTerminalId={null} onTarget={log} />

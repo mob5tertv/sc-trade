@@ -44,9 +44,10 @@
   let status = $state<{ text: string; kind: 'ok' | 'error' } | null>(null);
   const problem = $derived(status !== null && status.kind === 'error' ? status.text : null);
 
-  let commodityBox = $state<ReturnType<typeof SearchBox>>();
-  let priceInput = $state<HTMLInputElement>();
-  let scuInput = $state<HTMLInputElement>();
+  // `bind:this` gives `undefined` before the element exists and `null` after it has gone: both are "not there"
+  let commodityBox = $state<ReturnType<typeof SearchBox> | null>();
+  let priceInput = $state<HTMLInputElement | null>();
+  let scuInput = $state<HTMLInputElement | null>();
 
   const chosen = $derived(commodityId === null ? undefined : commodityItems.find((c) => c.id === commodityId));
   const side = $derived<Side>(pickedSide ?? (commodityId === null ? 'buy' : sideFor(commodityId)));

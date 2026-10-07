@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { badgeText, cellScu, isOwnPrice, sideCounts, terminalRows, uexRangeOf } from '../../src/ui/vm/terminal-rows';
+import { badgeText, cellScu, isOwnPrice, rangeOfEstimate, rangeView, sideCounts, terminalRows, uexRangeOf } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
+import type { UexSideStats } from '../../src/core/types';
 import { obs, px, ref } from '../helpers/factories';
+import { SEVEN_DIGITS, rangeMarket } from '../helpers/flat-range-fixtures';
 import { withOwnSellScu } from '../helpers/route-fixtures';
 import { NOW, ctx, est, market, marketAfterPriceOnlyEdit, marketWithStock, withOwnBuy, withUexRange } from '../helpers/terminal-fixtures';
+
+// formatUec separates thousands with a non-breaking space
+const nb = (s: string) => s.replace(/ /g, String.fromCharCode(0xa0));
+/** The three things the «Мин–макс» cell can hold. */
+const SPREAD = { kind: 'spread', low: 5900, high: 6200 } as const;
+const NONE = { kind: 'none' } as const;
+const NO_BOUNDS = { kind: 'no-bounds' } as const;
 
 describe('terminalRows', () => {
   it('shows own values with a temperature badge and UEX values as hints', () => {
@@ -12,37 +21,35 @@ describe('terminalRows', () => {
     expect(rows.map(r => r.code)).toEqual(['GOLD', 'TUNG']);
     expect(rows[0].buy).toEqual({
       own: 6120, ownScu: 340, ownScuBase: null, ownScuRate: 'none', hint: null, hintScu: null, badge: { text: 'моя · 2 мин', kind: 'hot' },
-      uexRange: null, range: { low: 5900, high: 6200 }, ownLast: null, trend: null, warn: false,
+      uexRange: null, range: SPREAD, ownLast: null, trend: null, warn: false,
     });
     expect(rows[0].sell).toBeNull();
     expect(rows[1].buy).toEqual({
       own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 3980, hintScu: 410, badge: { text: 'UEX · 1 ч', kind: 'uex' },
-      uexRange: null, range: null, ownLast: null, trend: null, warn: false,
+      uexRange: null, range: { kind: 'flat', price: 3980 }, ownLast: null, trend: null, warn: false,
     });
   });
 
   it('gives the range UEX knows for a cell, next to my own price and to a UEX one alike', () => {
     // Gold: my own hot price 6120; the UEX week says 5900-6200
-    expect(terminalRows(market, ref, 1, ctx)[0].buy?.range).toEqual({ low: 5900, high: 6200 });
+    expect(terminalRows(market, ref, 1, ctx)[0].buy?.range).toEqual(SPREAD);
     // the same range stands next to a hint, whether UEX or my cold value gave the price
     const cold = terminalRows(withOwnBuy(market, 1, 10, 6120, NOW - 5 * 3600), ref, 1, ctx)[0].buy;
-    expect(cold).toMatchObject({ own: null, hint: 6000, range: { low: 5900, high: 6200 } });
+    expect(cold).toMatchObject({ own: null, hint: 6000, range: SPREAD });
   });
 
-  it('has no range when UEX has none: a flat price, no statistics, or no UEX row at all', () => {
-    const flat = terminalRows(market, ref, 1, ctx)[1].buy; // Tungsten: 3980 flat
-    expect(flat?.range).toBeNull();
+  it('has no range when UEX has no price for the side, or has one without bounds', () => {
     const noStats = buildMarket([px(1, 10, { buy: { avgWeek: 6500 } })], []); // the week has an average but no bounds
-    expect(terminalRows(noStats, ref, 1, ctx)[0].buy?.range).toBeNull();
+    expect(terminalRows(noStats, ref, 1, ctx)[0].buy?.range).toEqual(NO_BOUNDS);
     const ownOnly = buildMarket([], [obs({ ts: NOW - 60, terminalId: 1, commodityId: 10, side: 'buy', price: 6100 })]);
-    expect(terminalRows(ownOnly, ref, 1, ctx)[0].buy?.range).toBeNull();
+    expect(terminalRows(ownOnly, ref, 1, ctx)[0].buy?.range).toEqual(NONE);
   });
 
   it('takes the range of the side the cell is on', () => {
     const m = buildMarket([px(1, 10, { buy: { avgWeek: 6000, minWeek: 5900, maxWeek: 6200 }, sell: { avgWeek: 6500, minWeek: 6300, maxWeek: 6900 } })], []);
     const [row] = terminalRows(m, ref, 1, ctx);
-    expect(row.buy?.range).toEqual({ low: 5900, high: 6200 });
-    expect(row.sell?.range).toEqual({ low: 6300, high: 6900 });
+    expect(row.buy?.range).toEqual(SPREAD);
+    expect(row.sell?.range).toEqual({ kind: 'spread', low: 6300, high: 6900 });
   });
 
   it('shows the estimated stock with its base when the timer has moved it', () => {
@@ -84,7 +91,7 @@ describe('terminalRows', () => {
     );
     expect(terminalRows(m, ref, 1, ctx)[0].buy).toEqual({
       own: null, ownScu: 130, ownScuBase: { scu: 40, age: '20 мин' }, ownScuRate: 'default', hint: 6000, hintScu: null,
-      badge: { text: 'UEX · 1 ч', kind: 'uex' }, uexRange: null, range: { low: 5900, high: 6200 }, ownLast: { price: 6120, age: '5 ч' }, trend: null, warn: false,
+      badge: { text: 'UEX · 1 ч', kind: 'uex' }, uexRange: null, range: SPREAD, ownLast: { price: 6120, age: '5 ч' }, trend: null, warn: false,
     });
   });
 
@@ -198,7 +205,7 @@ describe('terminalRows', () => {
     expect(row.buy).toMatchObject({ own: 6100, ownScu: 200 });
     expect(row.sell).toEqual({
       own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 6500, hintScu: 90, badge: { text: 'UEX · 2 ч', kind: 'uex' },
-      uexRange: null, range: null, ownLast: null, trend: null, warn: false,
+      uexRange: null, range: NO_BOUNDS, ownLast: null, trend: null, warn: false,
     });
   });
 
@@ -206,7 +213,7 @@ describe('terminalRows', () => {
     const m = buildMarket([], [obs({ ts: NOW - 5 * 3600, terminalId: 1, commodityId: 10, side: 'buy', price: 6120, scu: 340 })]);
     expect(terminalRows(m, ref, 1, ctx)[0].buy).toEqual({
       own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 6120, hintScu: null, badge: { text: 'моя · 5 ч', kind: 'cold' },
-      uexRange: null, range: null, ownLast: null, trend: null, warn: false,
+      uexRange: null, range: NONE, ownLast: null, trend: null, warn: false,
     });
   });
 
@@ -235,15 +242,103 @@ describe('terminalRows', () => {
 });
 
 describe('uexRangeOf', () => {
-  it('is the range UEX knows for a side of a terminal, whatever my diary says there', () => {
-    expect(uexRangeOf(market, 1, 10, 'buy', ctx)).toEqual({ low: 5900, high: 6200 }); // Gold: my own hot price, UEX week 5900–6200
-    expect(uexRangeOf(withOwnBuy(market, 1, 10, 6120, NOW - 5 * 3600), 1, 10, 'buy', ctx)).toEqual({ low: 5900, high: 6200 });
+  it('is no-bounds when UEX has a price for the side and no usable bounds for it, beside my own price too', () => {
+    const m = buildMarket([px(1, 10, { buy: { avgWeek: 6500 } })], [obs({ ts: NOW - 60, terminalId: 1, commodityId: 10, side: 'buy', price: 6100 })]);
+    expect(uexRangeOf(m, 1, 10, 'buy', ctx)).toEqual(NO_BOUNDS);
   });
 
-  it('is null for a flat price, a side UEX knows nothing about and a place without a UEX row', () => {
-    expect(uexRangeOf(market, 1, 30, 'buy', ctx)).toBeNull(); // Tungsten 3980 flat
-    expect(uexRangeOf(market, 1, 10, 'sell', ctx)).toBeNull(); // nobody buys Gold here according to UEX
-    expect(uexRangeOf(market, 4, 10, 'buy', ctx)).toBeNull(); // no row for terminal 4
+  it('is the range UEX knows for a side of a terminal, whatever my diary says there', () => {
+    expect(uexRangeOf(market, 1, 10, 'buy', ctx)).toEqual(SPREAD); // Gold: my own hot price, UEX week 5900–6200
+    expect(uexRangeOf(withOwnBuy(market, 1, 10, 6120, NOW - 5 * 3600), 1, 10, 'buy', ctx)).toEqual(SPREAD);
+  });
+
+  it('is the one price UEX knows when it gives the same number as minimum and maximum', () => {
+    expect(uexRangeOf(market, 1, 30, 'buy', ctx)).toEqual({ kind: 'flat', price: 3980 }); // Tungsten 3980 flat
+  });
+
+  it('is none for a side UEX knows nothing about and for a place without a UEX row', () => {
+    expect(uexRangeOf(market, 1, 10, 'sell', ctx)).toEqual(NONE); // nobody buys Gold here according to UEX
+    expect(uexRangeOf(market, 4, 10, 'buy', ctx)).toEqual(NONE); // no row for terminal 4
+  });
+});
+
+describe('the «Мин–макс» cell: a spread, one price, or nothing', () => {
+  // UEX gave min = max = price for the week, the month and all time (a terminal like CBD Lorville: every row of it)
+  const sellOf = (commodityId: number) => terminalRows(rangeMarket, ref, 1, ctx).find((r) => r.commodityId === commodityId)?.sell;
+  const buyOf = (commodityId: number) => terminalRows(rangeMarket, ref, 1, ctx).find((r) => r.commodityId === commodityId)?.buy;
+
+  it('tells a price that moved from a price UEX knows as one number from a price UEX does not know', () => {
+    expect(sellOf(10)?.range).toEqual({ kind: 'spread', low: 6300, high: 6900 });
+    expect(sellOf(20)?.range).toEqual({ kind: 'flat', price: 5500 });
+    expect(buyOf(10)?.range).toEqual(NONE); // my own hot price, and UEX has nothing about buying Gold here
+  });
+
+  it('gives the price itself for a flat range, whatever the size of the number', () => {
+    expect(sellOf(30)).toMatchObject({ hint: SEVEN_DIGITS, range: { kind: 'flat', price: SEVEN_DIGITS } });
+  });
+
+  it('follows the order of the estimate: the week decides, the month is not looked at while the week has a price', () => {
+    // Titanium, buy: week 31 000-31 000, month 30 000-31 000
+    expect(buyOf(20)?.range).toEqual({ kind: 'flat', price: 31_000 });
+  });
+
+  it('falls back to the month, then to all time, then to the last price, as the estimate does', () => {
+    const rangeOf = (buy: Partial<UexSideStats>) => terminalRows(buildMarket([px(1, 10, { buy })], []), ref, 1, ctx)[0].buy?.range;
+    expect(rangeOf({ avgMonth: 4000, minMonth: 3800, maxMonth: 4200 })).toEqual({ kind: 'spread', low: 3800, high: 4200 });
+    expect(rangeOf({ avgMonth: 4000, minMonth: 4000, maxMonth: 4000 })).toEqual({ kind: 'flat', price: 4000 });
+    expect(rangeOf({ avg: 4100, min: 4100, max: 4100 })).toEqual({ kind: 'flat', price: 4100 });
+    expect(rangeOf({ last: 4300 })).toEqual({ kind: 'flat', price: 4300 }); // only the last report: one number
+  });
+
+  it('shows one price next to my own, as a reference from UEX', () => {
+    const own = withOwnBuy(rangeMarket, 1, 20, 31_500, NOW - 60); // my hot price for Titanium; UEX says 31 000 and nothing else
+    expect(terminalRows(own, ref, 1, ctx).find((r) => r.commodityId === 20)?.buy).toMatchObject({ own: 31_500, range: { kind: 'flat', price: 31_000 } });
+  });
+
+  it('does not take a price without usable bounds for one price: UEX gives a price and no bounds for it', () => {
+    const rangeOf = (buy: Partial<UexSideStats>) => terminalRows(buildMarket([px(1, 10, { buy })], []), ref, 1, ctx)[0].buy?.range;
+    expect(rangeOf({ avgWeek: 6500 })).toEqual(NO_BOUNDS); // an average and no bounds
+    expect(rangeOf({ avgWeek: 6500, minWeek: 0, maxWeek: 6900 })).toEqual(NO_BOUNDS); // one bound missing
+    expect(rangeOf({ avgWeek: 6500, minWeek: 7000, maxWeek: 6900 })).toEqual(NO_BOUNDS); // upside down
+  });
+});
+
+describe('rangeOfEstimate', () => {
+  const uexEstimate = (low: number, high: number) => ({ ...est, source: 'uex' as const, temp: null, price: 6000, low, high });
+
+  it('is a spread when the bounds differ, one price when they are the same, no bounds when they are unusable, none without a UEX price', () => {
+    expect(rangeOfEstimate(uexEstimate(5900, 6200))).toEqual(SPREAD);
+    expect(rangeOfEstimate(uexEstimate(5500, 5500))).toEqual({ kind: 'flat', price: 5500 });
+    expect(rangeOfEstimate(uexEstimate(0, 0))).toEqual(NO_BOUNDS);
+    expect(rangeOfEstimate(uexEstimate(0, 6200))).toEqual(NO_BOUNDS);
+    expect(rangeOfEstimate(uexEstimate(Number.NaN, Number.NaN))).toEqual(NO_BOUNDS);
+    expect(rangeOfEstimate(null)).toEqual(NONE);
+  });
+
+  it('is none for a price of mine: it has no bounds of its own, the range of UEX is asked for apart', () => {
+    expect(rangeOfEstimate({ ...est, source: 'own', temp: 'hot', price: 6120, low: 6120, high: 6120 })).toEqual(NONE);
+  });
+});
+
+describe('rangeView', () => {
+  it('writes a spread as low–high with the old tooltip', () => {
+    expect(rangeView(SPREAD)).toEqual({ kind: 'spread', text: `${nb('5 900')}–${nb('6 200')}`, title: 'Диапазон цен по данным UEX' });
+  });
+
+  it('writes one price with a sign of equality and says that there is no spread', () => {
+    expect(rangeView({ kind: 'flat', price: 5500 })).toEqual({ kind: 'flat', text: `= ${nb('5 500')}`, title: 'UEX: одна цена за период, разброса нет' });
+  });
+
+  it('writes a dash and says that UEX does not know the price when there is nothing', () => {
+    expect(rangeView(NONE)).toEqual({ kind: 'none', text: '—', title: 'UEX не знает цену' });
+  });
+
+  it('writes the same dash but another tooltip when UEX has a price and gives no bounds for it', () => {
+    expect(rangeView(NO_BOUNDS)).toEqual({ kind: 'no-bounds', text: '—', title: 'UEX не даёт границ цены' });
+  });
+
+  it('keeps a seven-digit price whole', () => {
+    expect(rangeView({ kind: 'flat', price: SEVEN_DIGITS }).text).toBe(`= ${nb('1 300 000')}`);
   });
 });
 

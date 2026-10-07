@@ -4,7 +4,7 @@
   import type { Side } from '../../core/types';
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
   import type { EditBase } from '../vm/inputs';
-  import { cellScu } from '../vm/terminal-rows';
+  import { cellScu, rangeView } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
   import TempBadge from './TempBadge.svelte';
   import TrendMark from './TrendMark.svelte';
@@ -139,7 +139,6 @@
 
   const shown = $derived(rows.filter(row => row[side] !== null));
   const empty = $derived(rows.length === 0 ? 'Нет цен' : side === 'buy' ? 'Здесь ничего не продают' : 'Здесь ничего не покупают');
-  const range = (cell: Cell): string | null => (cell.range === null ? null : `${formatUec(cell.range.low)}–${formatUec(cell.range.high)}`);
 </script>
 
 {#snippet expanded(row: TerminalRow, cell: Cell)}
@@ -233,7 +232,7 @@
       {#if cell}
         {@const selected = row.commodityId === selectedCommodityId}
         {@const scu = cellScu(cell, side)}
-        {@const span = range(cell)}
+        {@const span = rangeView(cell.range)}
         <div class="row" class:selected role="row">
           <button type="button" class="grid line" aria-expanded={selected} onclick={() => toggle(row.commodityId)}>
             <span class="name" title={row.name}><span class="code">{row.code}</span><span class="full">{row.name}</span></span>
@@ -243,7 +242,7 @@
               <span class="digits">{cell.own === null && cell.hint === null ? '—' : formatUec(cell.own ?? cell.hint ?? 0)}</span>
               {#if cell.badge}<TempBadge compact text={cell.badge.text} kind={cell.badge.kind} />{:else}<span class="nomark"></span>{/if}
             </span>
-            <span class="range sc-num" title={span === null ? undefined : 'Диапазон цен по данным UEX'}>{span ?? '—'}</span>
+            <span class="range sc-num" data-range={span.kind} title={span.title}>{span.text}</span>
             <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu?.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
           </button>
           {#if selected}{@render expanded(row, cell)}{/if}

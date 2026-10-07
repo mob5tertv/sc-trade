@@ -62,7 +62,7 @@
     <span class="sc-label">{label}</span>
     <span class="inline">
       <span class="sc-num">{view.price}</span>
-      {#if view.range}<span class="muted sc-num" title="Диапазон цен">{view.range}</span>{/if}
+      {#if view.range.kind === 'spread' || view.range.kind === 'flat'}<span class="muted sc-num" title={view.range.title}>{view.range.text}</span>{/if}
       <TempBadge text={view.badge.text} kind={view.badge.kind} />
     </span>
   </div>
@@ -94,7 +94,7 @@
             <span class="digits">{row.price.price}</span>
             <TempBadge compact text={row.price.badge.text} kind={row.price.badge.kind} />
           </span>
-          <span class="range sc-num" title={row.price.range === null ? undefined : 'Диапазон цен'}>{row.price.range ?? '—'}</span>
+          <span class="range sc-num" data-range={row.price.range.kind} title={row.price.range.title}>{row.price.range.text}</span>
           <span class="roi sc-num" title="Прибыль к вложенному">{row.roi}</span>
           <span class="rate sc-num" class:best={row.key === bestRate} title="UEC в час">{row.rate}</span>
         </button>
@@ -131,9 +131,11 @@
 <style>
   .grid {
     display: grid;
-    /* the price column holds the number and its 6 px mark (48 px) and the slot of the triangle with the gap before the number */
-    grid-template-columns: minmax(0, 1fr) calc(48px + var(--sc-trend-w) + 4px) 64px 36px 40px;
-    column-gap: 4px;
+    /* the price column holds a seven-digit number and its 6 px mark (62 px, as in the table of the terminal) and the slot of
+       the triangle with the gap before the number. The 14 px it needed come from the numbers that had room to spare (ROI
+       `42%` is 22 px of 36, UEC/ч `2,33M` 28 px of 40) and from the gaps, so that the names keep the room they had */
+    grid-template-columns: minmax(0, 1fr) calc(62px + var(--sc-trend-w) + 4px) 64px 32px 34px;
+    column-gap: 3px;
     align-items: center;
     padding: 0 var(--sc-pad-x);
   }

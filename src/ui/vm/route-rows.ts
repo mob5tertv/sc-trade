@@ -8,7 +8,8 @@ import { priceTrend } from './price-trend';
 import type { PriceTrend } from './price-trend';
 import { roiTier } from './roi-tier';
 import type { RoiTier } from './roi-tier';
-import { badgeText, isOwnPrice } from './terminal-rows';
+import { NO_RANGE, badgeText, isOwnPrice, rangeOfEstimate, rangeView } from './terminal-rows';
+import type { RangeView, UexRange } from './terminal-rows';
 
 // Display rows of the route suggestions and of the "sell here or fly on" block. Every number is already formatted.
 
@@ -65,23 +66,21 @@ export function formatDistance(gm: number | null): string {
 }
 
 /**
- * A price with the range it was estimated in (only when there is one) and the badge of its source and age.
- * The badge text is `badgeText(e)` as it is, so a UEX price of unknown age is just 'UEX'.
+ * A price with what UEX says about its spread (`range`: a spread, one price, or a dash, see `rangeView`) and the badge
+ * of its source and age. The badge text is `badgeText(e)` as it is, so a UEX price of unknown age is just 'UEX'.
  */
-export interface PriceView { price: string; range: string | null; badge: { text: string; kind: Temp | 'uex' } }
+export interface PriceView { price: string; range: RangeView; badge: { text: string; kind: Temp | 'uex' } }
 
 /** The range UEX knows for a side of a terminal (`uexRangeOf` of terminal-rows, with the market bound to it). */
-export type UexRangeOf = (terminalId: number, commodityId: number, side: Side) => { low: number; high: number } | null;
-
-const rangeText = (r: { low: number; high: number }): string => `${formatUec(r.low)}–${formatUec(r.high)}`;
+export type UexRangeOf = (terminalId: number, commodityId: number, side: Side) => UexRange;
 
 /**
- * The range of a UEX price is its own (low to high); beside a price of mine it is the reference UEX knows for the
- * place, asked for only then.
+ * The range of a UEX price is its own (the bounds of the estimate); beside a price of mine it is the reference UEX
+ * knows for the place, asked for only then.
  */
-function priceView(e: Estimate, uexRange: () => { low: number; high: number } | null = () => null): PriceView {
-  const range = e.source === 'uex' ? (e.low !== e.high ? { low: e.low, high: e.high } : null) : uexRange();
-  return { price: formatUec(e.price), range: range === null ? null : rangeText(range), badge: badgeText(e) };
+function priceView(e: Estimate, uexRange: () => UexRange = () => NO_RANGE): PriceView {
+  const range = e.source === 'uex' ? rangeOfEstimate(e) : uexRange();
+  return { price: formatUec(e.price), range: rangeView(range), badge: badgeText(e) };
 }
 
 export interface RouteOptionRow {
@@ -144,8 +143,8 @@ export function routeOptionRow(
   const from = mode === 'from';
   const { anchorTerminalId = null, targetTerminalId = null, uexRange } = marks;
   const ownEndId = from ? o.originId : o.destId;
-  const buyView = priceView(o.buy, () => uexRange?.(o.originId, o.commodityId, 'buy') ?? null);
-  const sellView = priceView(o.sell, () => uexRange?.(o.destId, o.commodityId, 'sell') ?? null);
+  const buyView = priceView(o.buy, () => uexRange?.(o.originId, o.commodityId, 'buy') ?? NO_RANGE);
+  const sellView = priceView(o.sell, () => uexRange?.(o.destId, o.commodityId, 'sell') ?? NO_RANGE);
   return {
     key: `${pairKey(o.originId, o.destId)}:${o.commodityId}`,
     terminal: terminalLabel(ref, from ? o.destId : o.originId),

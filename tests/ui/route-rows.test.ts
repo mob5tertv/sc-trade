@@ -5,9 +5,16 @@ import type { SellAlternative, SellHere } from '../../src/core/sell';
 import type { Estimate } from '../../src/core/types';
 import { pairKey } from '../../src/core/types';
 import { ref, term } from '../helpers/factories';
+import type { UexRange } from '../../src/ui/vm/terminal-rows';
 
 // formatUec separates thousands with a non-breaking space
 const nb = (s: string) => s.replace(/ /g, String.fromCharCode(0xa0));
+
+/** What the «Мин–макс» cell holds: a spread, one price UEX knows, nothing (see `rangeView` of terminal-rows). */
+const SPREAD = { kind: 'spread', text: `${nb('6 400')}–${nb('7 100')}`, title: 'Диапазон цен по данным UEX' } as const;
+const ONE_PRICE = (price: string) => ({ kind: 'flat', text: `= ${nb(price)}`, title: 'UEX: одна цена за период, разброса нет' }) as const;
+const NO_PRICE = { kind: 'none', text: '—', title: 'UEX не знает цену' } as const;
+const NO_BOUNDS = { kind: 'no-bounds', text: '—', title: 'UEX не даёт границ цены' } as const;
 
 const estimate = (partial: Partial<Estimate> = {}): Estimate => ({
   price: 6900, low: 6400, high: 7100, source: 'uex', temp: null, ageSec: 2 * 86_400, ageKnown: true,
@@ -75,12 +82,12 @@ describe('routeOptionRow', () => {
       key: '1>2:10', terminal: 'TDD Area 18', commodity: 'GOLD',
       distance: '59 Гм', time: '17:35', timeTitle: 'оценка по расстоянию',
       runs: 0,
-      price: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
+      price: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
       roi: '13%', rate: '256k', worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
       origin: 'ARC-L1', dest: 'TDD Area 18', bothEnds: true, isTarget: false, tier: 'ok',
       invested: nb('587 520'), profit: nb('74 880'), profitLoss: false, trend: null, priceIsOwn: false,
-      buy: { price: nb('6 120'), range: null, badge: { text: 'моя · 40 мин', kind: 'hot' } },
-      sell: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
+      buy: { price: nb('6 120'), range: NO_PRICE, badge: { text: 'моя · 40 мин', kind: 'hot' } },
+      sell: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
     });
   });
 
@@ -88,7 +95,7 @@ describe('routeOptionRow', () => {
     const row = routeOptionRow(option(), ref, 'to', new Map());
     expect(row.terminal).toBe('ARC-L1');
     // my own price has no range, and its badge carries the temperature
-    expect(row.price).toEqual({ price: nb('6 120'), range: null, badge: { text: 'моя · 40 мин', kind: 'hot' } });
+    expect(row.price).toEqual({ price: nb('6 120'), range: NO_PRICE, badge: { text: 'моя · 40 мин', kind: 'hot' } });
   });
 
   describe('the trend of the price in the «Цена» column', () => {
@@ -191,26 +198,66 @@ describe('routeOptionRow', () => {
 
 describe('routeOptionRow: the UEX range next to my own price', () => {
   // my own hot purchase price at the origin (ARC-L1) has no range of its own; UEX knows 5 900–6 200 for that place
-  const uexRange = (terminalId: number, commodityId: number, side: string) =>
-    terminalId === 1 && commodityId === 10 && side === 'buy' ? { low: 5900, high: 6200 } : null;
+  const uexRange = (terminalId: number, commodityId: number, side: string): UexRange =>
+    terminalId === 1 && commodityId === 10 && side === 'buy' ? { kind: 'spread', low: 5900, high: 6200 } : { kind: 'none' };
 
   it('shows the range UEX knows for the place beside my own price, and marks the price as mine', () => {
     const row = routeOptionRow(option(), ref, 'to', new Map(), { uexRange });
-    expect(row.price).toEqual({ price: nb('6 120'), range: `${nb('5 900')}–${nb('6 200')}`, badge: { text: 'моя · 40 мин', kind: 'hot' } });
-    expect(row.buy.range).toBe(`${nb('5 900')}–${nb('6 200')}`);
+    const range = { kind: 'spread', text: `${nb('5 900')}–${nb('6 200')}`, title: 'Диапазон цен по данным UEX' };
+    expect(row.price).toEqual({ price: nb('6 120'), range, badge: { text: 'моя · 40 мин', kind: 'hot' } });
+    expect(row.buy.range).toEqual(range);
   });
 
   it('asks UEX for the right place, commodity and side, and only for a price that is mine', () => {
     const asked: unknown[] = [];
-    routeOptionRow(option(), ref, 'from', new Map(), { uexRange: (t, c, s) => { asked.push([t, c, s]); return null; } });
+    routeOptionRow(option(), ref, 'from', new Map(), { uexRange: (t, c, s) => { asked.push([t, c, s]); return { kind: 'none' }; } });
     expect(asked).toContainEqual([1, 10, 'buy']); // the purchase of the trip: my own price at the origin
     expect(asked).not.toContainEqual([2, 10, 'sell']); // the sale price is UEX's own and carries its range already
   });
 
   it('leaves a UEX price with its own range and shows nothing for a place UEX knows no range for', () => {
-    expect(routeOptionRow(option(), ref, 'from', new Map(), { uexRange }).price.range).toBe(`${nb('6 400')}–${nb('7 100')}`);
-    expect(routeOptionRow(option(), ref, 'to', new Map(), { uexRange: () => null }).price.range).toBeNull();
-    expect(routeOptionRow(option(), ref, 'to', new Map()).price.range).toBeNull(); // no lookup given: as before
+    expect(routeOptionRow(option(), ref, 'from', new Map(), { uexRange }).price.range).toEqual(SPREAD);
+    expect(routeOptionRow(option(), ref, 'to', new Map(), { uexRange: () => ({ kind: 'none' }) }).price.range).toEqual(NO_PRICE);
+    expect(routeOptionRow(option(), ref, 'to', new Map()).price.range).toEqual(NO_PRICE); // no lookup given: as before
+  });
+});
+
+describe('routeOptionRow: one price instead of a dash', () => {
+  // UEX gave min = max = price: a flat UEX price (low === high) and a flat price of UEX beside my own
+  const flat = (price: number) => estimate({ price, low: price, high: price });
+
+  it('writes a flat UEX price as "= price" in the «Мин–макс» cell, in both modes', () => {
+    expect(routeOptionRow(option({ sell: flat(5500) }), ref, 'from', new Map()).price.range).toEqual(ONE_PRICE('5 500'));
+    expect(routeOptionRow(option({ buy: flat(5500) }), ref, 'to', new Map()).price.range).toEqual(ONE_PRICE('5 500'));
+  });
+
+  it('writes the same in the expanded details, for the purchase and for the sale', () => {
+    const row = routeOptionRow(option({ buy: flat(5400), sell: flat(5500) }), ref, 'from', new Map());
+    expect(row.buy.range).toEqual(ONE_PRICE('5 400'));
+    expect(row.sell.range).toEqual(ONE_PRICE('5 500'));
+  });
+
+  it('keeps a seven-digit price whole', () => {
+    expect(routeOptionRow(option({ sell: flat(1_300_000) }), ref, 'from', new Map()).price.range.text).toBe(`= ${nb('1 300 000')}`);
+  });
+
+  it('writes the one price UEX knows for the place beside my own price, as a reference', () => {
+    const row = routeOptionRow(option(), ref, 'to', new Map(), { uexRange: () => ({ kind: 'flat', price: 5500 }) });
+    expect(row.price).toEqual({ price: nb('6 120'), range: ONE_PRICE('5 500'), badge: { text: 'моя · 40 мин', kind: 'hot' } });
+  });
+
+  it('still tells a dash from one price: a UEX price with no bounds is no flat price, and the tooltip does not say UEX knows no price', () => {
+    const noBounds = estimate({ price: 6900, low: 0, high: 0 });
+    expect(routeOptionRow(option({ sell: noBounds }), ref, 'from', new Map()).price.range).toEqual(NO_BOUNDS);
+  });
+
+  it('writes the dash of the place UEX gives a price without bounds for, beside my own price as well', () => {
+    const row = routeOptionRow(option(), ref, 'to', new Map(), { uexRange: () => ({ kind: 'no-bounds' }) });
+    expect(row.price.range).toEqual(NO_BOUNDS);
+  });
+
+  it('shows the alternatives of «продать или лететь дальше» the same way', () => {
+    expect(sellAlternativeRow(alternative({ sell: flat(5500) }), ref).price.range).toEqual(ONE_PRICE('5 500'));
   });
 });
 
@@ -303,7 +350,7 @@ describe('sellAlternativeRow', () => {
   it('formats an alternative with its price, rates and extra flight', () => {
     expect(sellAlternativeRow(alternative(), ref)).toEqual({
       key: '2', terminal: 'TDD Area 18',
-      price: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
+      price: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
       profit: nb('69 120'), loss: false, expectedRate: '264k/ч', worstRate: '120k/ч', extra: '17:35',
     });
   });

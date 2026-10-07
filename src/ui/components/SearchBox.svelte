@@ -31,8 +31,9 @@
   let editing = $state(false);
   let open = $state(false);
   let active = $state(0);
-  let input: HTMLInputElement | undefined = $state();
-  let list: HTMLElement | undefined = $state();
+  // `bind:this` is `undefined` until the element exists and `null` once it has gone (the list closes): both are "not there".
+  let input: HTMLInputElement | null | undefined = $state();
+  let list: HTMLElement | null | undefined = $state();
 
   const shown = $derived(editing || value === undefined ? query : value);
   const results = $derived(search(items, query, boostIds, MAX_RESULTS));
@@ -45,7 +46,7 @@
   // nothing happens and the list is as wide as the CSS below says.
   $effect(() => {
     const element = list;
-    if (element === undefined) return;
+    if (!element) return; // not open yet (`undefined`) or closed again (`null`)
     void results.length; // the list changes its height with the results
     const host = element.closest<HTMLElement>('[data-float-host]');
     if (host === null) return;
