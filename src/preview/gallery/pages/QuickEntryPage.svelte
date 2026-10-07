@@ -52,7 +52,7 @@
   <QuickEntry {terminalId} commodityItems={data.commodityItems} boostIds={data.boostIds} sideFor={data.sideFor} onSave={save} />
 {/snippet}
 
-<Frame name="empty" caption="empty: product search (stretches) · side · price · SCU · write — no location field, no status block">
+<Frame name="empty" caption="empty: product search (stretches) · side · price · SCU · write; no location field, nothing under the line">
   {@render entry()}
 </Frame>
 <Frame name="filled" caption="commodity chosen (the field shows it), side follows the terminal, price and SCU typed" act={filled}>

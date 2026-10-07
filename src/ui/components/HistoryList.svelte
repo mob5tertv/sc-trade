@@ -35,7 +35,7 @@
 <style>
   .grid {
     display: grid;
-    grid-template-columns: 70px minmax(0, 1fr) 62px 52px 46px 54px;
+    grid-template-columns: 60px minmax(0, 1fr) 58px 46px 44px 50px;
     column-gap: 4px;
     align-items: center;
     padding: 0 var(--sc-pad-x);

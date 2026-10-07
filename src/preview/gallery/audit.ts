@@ -40,7 +40,7 @@ export function auditGallery(root: ParentNode = document): GalleryAudit {
       if (el.scrollWidth <= el.clientWidth + 1 || el.clientWidth === 0) continue;
       if (getComputedStyle(el).overflowX === 'visible') continue;
       const text = (el.textContent ?? '').trim();
-      if (text === '' || el.tagName === 'INPUT') continue;
+      if (text === '' || el.tagName === 'INPUT' || el.closest('.sr-only') !== null) continue; // a line for the screen reader has no place on the screen
       if (NUMBER.test(text)) audit.clippedNumbers.push(`${name}: "${text}"`);
       else audit.ellipsised.push(`${name}: "${text.slice(0, 48)}"`);
     }
