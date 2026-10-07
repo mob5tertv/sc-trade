@@ -261,6 +261,13 @@ export const SCENES: readonly Scene[] = [
   },
   { name: 'boot-failed', title: 'Ошибка запуска: пустая база, UEX недоступен (окно развернулось само)', dataset: 'empty' },
   {
+    // The database was written by a newer version of the application: the start stops at the check of the schema, before
+    // it backs anything up or migrates, and the screen says so in the words of the error itself, not in the general sentence.
+    name: 'boot-newer-database',
+    title: 'Ошибка запуска: база создана более новой версией программы (текст самой ошибки)',
+    dataset: 'newer-schema',
+  },
+  {
     // The player has just clicked the mini bar, so the cursor is over the window. `hover:.sc-root;leave;wait:3000`
     // takes it away: the window folds 2 seconds later, unless the keyboard or a dialog holds it.
     name: 'idle',

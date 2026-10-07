@@ -103,7 +103,9 @@ fn backup_in(config_dir: &Path, stamp: &str, keep: usize) -> Result<Option<Strin
 /// no database file. The copy is of the ONE file, and the database keeps a write-ahead journal
 /// next to it, so the webview calls this after it has opened the database and merged the journal
 /// into the file (`PRAGMA wal_checkpoint(TRUNCATE)`), and before the migrations. A copy taken
-/// while the newest pages were still in the journal was stale, or empty.
+/// while the newest pages were still in the journal was stale, or empty. The webview does not
+/// call it for a database that was only just created (there is nothing in it) nor for one written
+/// by a newer build (that one is not touched at all): see `src/ui/vm/startup-order.ts`.
 #[tauri::command(async)]
 pub fn backup_db(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let config_dir = app.path().app_config_dir().map_err(|err| {
