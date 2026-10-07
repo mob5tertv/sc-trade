@@ -79,10 +79,10 @@ pub fn remember_foreground(state: State<'_, ForegroundState>) {
     let hwnd = sys::foreground_window();
     let pid = sys::window_process_id(hwnd);
     if remember(&state, hwnd, pid, std::process::id()) {
-        log::info!("[focus] remembered foreground window {hwnd:#x} (pid {pid})");
+        log::info!("[focus] remembered foreground window {hwnd:#x}");
     } else {
         log::debug!(
-            "[focus] foreground window {hwnd:#x} (pid {pid}) not remembered, keeping {:#x}",
+            "[focus] foreground window {hwnd:#x} not remembered, keeping {:#x}",
             state.0.load(Ordering::SeqCst)
         );
     }

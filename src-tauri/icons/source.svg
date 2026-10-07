@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- SC Trade: a glass plate with the cut top-left and bottom-right corners of the window, and a price going up and down. -->
+  <!-- The colours are the theme of the app (src/ui/theme.css): glass, frame and accent. -->
+  <polygon points="288,48 976,48 976,736 736,976 48,976 48,288" fill="#2b8fa8"/>
+  <polygon points="318,120 904,120 904,706 706,904 120,904 120,318" fill="#07121b"/>
+  <polygon points="335,347 480,677 190,677" fill="#3fd0f0"/>
+  <polygon points="544,347 834,347 689,677" fill="#2b8fa8"/>
+</svg>
