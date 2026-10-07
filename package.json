@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "preview:ui": "node scripts/preview/ui.mjs",
+    "preview:shot": "node scripts/preview/shot.mjs",
     "test": "vitest run",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "tauri": "tauri"
