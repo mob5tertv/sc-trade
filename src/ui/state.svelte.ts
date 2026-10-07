@@ -22,6 +22,8 @@ import { UexError, type UexClient } from '../data/uex-client';
 import { applyLogLevel } from '../platform/tauri-logger';
 import { bindTriggers, type TriggerName } from '../platform/triggers';
 import {
+  armKeyboard,
+  disarmKeyboard,
   fitWindow,
   giveKeyboard,
   isWindowFocused,
@@ -258,8 +260,11 @@ class AppState {
    */
   readonly keyboard: KeyboardHolds = createKeyboardHolds(
     {
+      arm: () => armKeyboard(this.#log),
+      disarm: () => disarmKeyboard(this.#log),
       take: () => this.#takeKeyboard(),
       give: (restore) => giveKeyboard(this.#log, restore),
+      isForeground: () => isWindowFocused(this.#log),
     },
     (held) => {
       this.keyboardHeld = held;

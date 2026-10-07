@@ -55,18 +55,30 @@ describe('preview window', () => {
     expect(before.size).toEqual({ width: 240, height: 26 });
   });
 
-  it('gives the focus to the overlay only when the window is shown and focusable', () => {
-    const { win, focusEvents } = harness();
-    win.setFocus(); // hidden
-    expect(win.isFocused()).toBe(false);
-    win.setFocusable(false);
-    win.show();
-    win.setFocus();
-    expect(win.isFocused()).toBe(false);
-    win.setFocusable(true);
-    win.setFocus();
-    expect(win.isFocused()).toBe(true);
-    expect(focusEvents).toEqual([true]);
+  describe('take_foreground (a strict Windows: the request is granted only to a window that is in front already)', () => {
+    it('is refused while the game has the keyboard: hidden, shown, activatable or not', () => {
+      const { win, focusEvents, changes } = harness();
+      expect(win.takeForeground()).toEqual({ foreground: false, asked: true }); // hidden
+      win.setFocusable(false);
+      win.show();
+      expect(win.takeForeground()).toEqual({ foreground: false, asked: true });
+      win.setFocusable(true);
+      const before = changes.length;
+      expect(win.takeForeground()).toEqual({ foreground: false, asked: true });
+      expect(win.isFocused()).toBe(false);
+      expect(focusEvents).toEqual([]);
+      expect(changes).toHaveLength(before); // nothing moved, so nothing is reported
+    });
+
+    it('says the overlay is in front, without asking, once a press on the activatable window has activated it', () => {
+      const { win, focusEvents } = harness();
+      win.setFocusable(false);
+      win.show();
+      win.setFocusable(true); // armed
+      win.pressInside();
+      expect(win.takeForeground()).toEqual({ foreground: true, asked: false });
+      expect(focusEvents).toEqual([true]); // the press sent it, the request sends none
+    });
   });
 
   it('showing a window that can take the focus gives it the keyboard, as Windows activates a shown window', () => {
@@ -132,29 +144,34 @@ describe('preview window', () => {
     });
   });
 
-  it('remembers the game, takes the focus, and returns it', () => {
-    const { win, focusEvents } = harness();
-    win.rememberForeground();
-    win.show();
-    win.setFocus();
+  /** The window as the application keeps it (shown, not activatable), then armed and pressed by the player. */
+  function pressedWhileArmed() {
+    const h = harness();
+    h.win.setFocusable(false);
+    h.win.show();
+    h.win.rememberForeground();
+    h.win.setFocusable(true);
+    h.win.pressInside();
+    return h;
+  }
+
+  it('remembers the game, gets the keyboard by the press on the armed window, and returns it', () => {
+    const { win, focusEvents } = pressedWhileArmed();
+    expect(win.snapshot()).toMatchObject({ keyboard: 'overlay', gameRemembered: 1 });
     expect(win.restoreForeground()).toBe(true);
     expect(win.snapshot()).toMatchObject({ keyboard: 'game', gameRemembered: 1, focusReturnedToGame: 1 });
     expect(focusEvents).toEqual([true, false]);
   });
 
   it('a click on the game takes the focus from a focused overlay', () => {
-    const { win, focusEvents } = harness();
-    win.show();
-    win.setFocus();
+    const { win, focusEvents } = pressedWhileArmed();
     win.clickGame();
     expect(win.isFocused()).toBe(false);
     expect(focusEvents).toEqual([true, false]);
   });
 
   it('hiding a focused window gives the keyboard to the game', () => {
-    const { win, focusEvents } = harness();
-    win.show();
-    win.setFocus();
+    const { win, focusEvents } = pressedWhileArmed();
     win.hide();
     expect(win.snapshot()).toMatchObject({ visible: false, keyboard: 'game' });
     expect(focusEvents).toEqual([true, false]);

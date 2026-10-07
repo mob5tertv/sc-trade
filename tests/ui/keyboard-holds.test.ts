@@ -20,11 +20,16 @@ const settle = async (): Promise<void> => {
 };
 
 interface Options {
-  /** Each take / give waits for the matching gate before it finishes. */
+  /** Each effect waits for the matching gate before it finishes. */
   slow?: boolean;
   failTake?: boolean;
   failGive?: boolean;
-  /** How long after a take or give a focus loss is still taken for the echo of our own focus juggling. */
+  failArm?: boolean;
+  failDisarm?: boolean;
+  /**
+   * How long after a take or give a focus loss is still taken for the echo of our own focus juggling, and how long
+   * after a disarm a press next to a field is still looked at.
+   */
   settleMs?: number;
 }
 
@@ -32,6 +37,8 @@ function setup(options: Options = {}) {
   const clock = { t: 0 };
   const calls: string[] = [];
   const gates: Gate[] = [];
+  /** What Windows answers to "is the overlay the foreground window"; a test changes it. */
+  const windows = { foreground: false };
   const wait = async (): Promise<void> => {
     if (!options.slow) return;
     const g = gate();
@@ -39,6 +46,18 @@ function setup(options: Options = {}) {
     await g.promise;
   };
   const effects: HoldEffects = {
+    async arm() {
+      calls.push('arm:start');
+      await wait();
+      if (options.failArm) throw new Error('arm failed');
+      calls.push('arm:end');
+    },
+    async disarm() {
+      calls.push('disarm:start');
+      await wait();
+      if (options.failDisarm) throw new Error('disarm failed');
+      calls.push('disarm:end');
+    },
     async take() {
       calls.push('take:start');
       await wait();
@@ -51,13 +70,17 @@ function setup(options: Options = {}) {
       if (options.failGive) throw new Error('give failed');
       calls.push(`give:end:${restore}`);
     },
+    async isForeground() {
+      calls.push(`foreground?:${windows.foreground}`);
+      return windows.foreground;
+    },
   };
   const changes: boolean[] = [];
   const holds = createKeyboardHolds(effects, (held) => changes.push(held), {
     settleMs: options.settleMs ?? 0,
     now: () => clock.t,
   });
-  return { holds, calls, changes, gates, clock };
+  return { holds, calls, changes, gates, clock, windows };
 }
 
 describe('createKeyboardHolds', () => {
@@ -311,5 +334,355 @@ describe('createKeyboardHolds', () => {
     expect(holds.held).toBe(false);
     await holds.hold('field');
     expect(calls.filter((c) => c === 'take:start')).toHaveLength(2);
+  });
+});
+
+// The window is activated by the player's own click: while the pointer is over a text field the window is
+// activatable ("armed"), so the press activates it the way Windows activates any window, with no request from us.
+describe('the pointer over a text field', () => {
+  it('starts idle: nothing is armed, nobody holds the keyboard', () => {
+    const { holds, calls } = setup();
+    expect(holds.state).toBe('idle');
+    expect(holds.held).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('arms the window when the pointer comes over a field, and disarms it when the pointer leaves without a press', async () => {
+    const { holds, calls, changes } = setup();
+    await holds.pointerOverField(true);
+    expect(calls).toEqual(['arm:start', 'arm:end']);
+    expect(holds.state).toBe('armed');
+    expect(holds.held).toBe(false);
+
+    await holds.pointerOverField(false);
+    expect(calls).toEqual(['arm:start', 'arm:end', 'disarm:start', 'disarm:end']);
+    expect(holds.state).toBe('idle');
+    // nobody took the keyboard, so nothing is given back and nobody is told
+    expect(calls.some((c) => c.startsWith('give'))).toBe(false);
+    expect(changes).toEqual([]);
+  });
+
+  it('does nothing when it is told the same thing again', async () => {
+    const { holds, calls } = setup();
+    await holds.pointerOverField(false);
+    expect(calls).toEqual([]);
+    await holds.pointerOverField(true);
+    await holds.pointerOverField(true);
+    expect(calls).toEqual(['arm:start', 'arm:end']);
+    await holds.pointerOverField(false);
+    await holds.pointerOverField(false);
+    expect(calls).toEqual(['arm:start', 'arm:end', 'disarm:start', 'disarm:end']);
+  });
+
+  it('a press on the field of an armed window takes the keyboard: the take follows the arm, with no disarm between', async () => {
+    const { holds, calls, changes } = setup();
+    await holds.pointerOverField(true);
+    await holds.hold('field');
+    expect(calls).toEqual(['arm:start', 'arm:end', 'take:start', 'take:end']);
+    expect(holds.state).toBe('held');
+    expect(changes).toEqual([true]);
+  });
+
+  it('a press that comes before the pointer was seen over the field (touch, pen) takes the keyboard all the same', async () => {
+    const { holds, calls } = setup();
+    await holds.hold('field');
+    expect(calls).toEqual(['take:start', 'take:end']);
+    expect(holds.state).toBe('held');
+  });
+
+  it('a press that overtakes its own arm waits for it: arm, then take, never the two at once', async () => {
+    const { holds, calls, gates } = setup({ slow: true });
+    const arming = holds.pointerOverField(true);
+    const holding = holds.hold('field');
+    await settle();
+    expect(calls).toEqual(['arm:start']);
+    gates[0].open();
+    await settle();
+    expect(calls).toEqual(['arm:start', 'arm:end', 'take:start']);
+    gates[1].open();
+    await Promise.all([arming, holding]);
+    expect(holds.state).toBe('held');
+  });
+
+  it('while somebody holds the keyboard the pointer coming and going changes nothing', async () => {
+    const { holds, calls } = setup();
+    await holds.hold('field');
+    await holds.pointerOverField(true);
+    await holds.pointerOverField(false);
+    await holds.pointerOverField(true);
+    expect(calls).toEqual(['take:start', 'take:end']);
+    expect(holds.state).toBe('held');
+  });
+
+  it('after the last release the window is armed again when the pointer is still over a field', async () => {
+    const { holds, calls, changes } = setup();
+    await holds.pointerOverField(true);
+    await holds.hold('field');
+    await holds.release('field'); // Esc; the pointer has not moved
+    expect(calls).toEqual([
+      'arm:start', 'arm:end', 'take:start', 'take:end', 'give:start:true', 'give:end:true', 'arm:start', 'arm:end',
+    ]);
+    expect(holds.state).toBe('armed');
+    expect(changes).toEqual([true, false]);
+    // so the next press on the same field finds the window activatable
+    await holds.hold('field');
+    expect(calls.slice(8)).toEqual(['take:start', 'take:end']);
+  });
+
+  it('after the last release the window stays not activatable when the pointer has left the field', async () => {
+    const { holds, calls } = setup();
+    await holds.pointerOverField(true);
+    await holds.hold('field');
+    await holds.pointerOverField(false);
+    await holds.release('field');
+    expect(calls).toEqual(['arm:start', 'arm:end', 'take:start', 'take:end', 'give:start:true', 'give:end:true']);
+    expect(holds.state).toBe('idle');
+  });
+
+  it('a pointer that came over a field while the keyboard was held arms the window after the release', async () => {
+    const { holds, calls } = setup();
+    await holds.hold('field'); // a press with no pointer seen before it
+    await holds.pointerOverField(true);
+    await holds.release('field');
+    expect(calls.slice(-4)).toEqual(['give:start:true', 'give:end:true', 'arm:start', 'arm:end']);
+    expect(holds.state).toBe('armed');
+  });
+
+  it('after a drop (the player went to the game) the window is not activatable, even with the pointer over a field', async () => {
+    const { holds, calls } = setup();
+    await holds.pointerOverField(true);
+    await holds.hold('field');
+    expect(await holds.drop()).toBe(true);
+    expect(calls.slice(-2)).toEqual(['give:start:false', 'give:end:false']);
+    expect(holds.state).toBe('idle');
+    // the pointer leaves and comes back: the window is armed as usual
+    await holds.pointerOverField(false);
+    await holds.pointerOverField(true);
+    expect(calls.slice(-2)).toEqual(['arm:start', 'arm:end']);
+    expect(calls.filter((c) => c === 'disarm:start')).toHaveLength(0); // it was not armed, there was nothing to disarm
+    expect(holds.state).toBe('armed');
+  });
+
+  it('a loss of the focus while the window is only armed drops nothing', async () => {
+    const { holds, calls } = setup();
+    await holds.pointerOverField(true);
+    expect(await holds.drop()).toBe(false);
+    expect(calls).toEqual(['arm:start', 'arm:end']);
+    expect(holds.state).toBe('armed');
+  });
+
+  it('judges the pointer when its turn comes: a pointer that crossed a field while another request ran arms nothing', async () => {
+    const { holds, calls, gates } = setup({ slow: true });
+    const holding = holds.hold('field');
+    await settle();
+    const releasing = holds.release('field');
+    const over = holds.pointerOverField(true);
+    const away = holds.pointerOverField(false);
+    gates[0].open(); // the take
+    await settle();
+    gates[1].open(); // the give
+    await Promise.all([holding, releasing, over, away]);
+    expect(calls).toEqual(['take:start', 'take:end', 'give:start:true', 'give:end:true']);
+    expect(holds.state).toBe('idle');
+  });
+
+  it('arming and disarming move no focus: a pointer crossing the fields does not hide a real loss of the focus from drop', async () => {
+    const { holds, clock } = setup({ settleMs: 500 });
+    await holds.hold('field');
+    clock.t = 5000;
+    void holds.pointerOverField(true); // the pointer moves over the fields while one is edited
+    void holds.pointerOverField(false);
+    expect(await holds.drop()).toBe(true); // the player clicked the game at that very moment
+  });
+
+  it('a failed arm leaves the window not armed, and the next time the pointer comes it is tried again', async () => {
+    const { holds, calls } = setup({ failArm: true });
+    await expect(holds.pointerOverField(true)).rejects.toThrow('arm failed');
+    expect(holds.state).toBe('idle');
+    await holds.pointerOverField(false);
+    expect(calls).toEqual(['arm:start']); // nothing was armed, so nothing is disarmed
+    await expect(holds.pointerOverField(true)).rejects.toThrow('arm failed');
+    expect(calls).toEqual(['arm:start', 'arm:start']);
+  });
+
+  it('a failed disarm still counts as disarmed, and the queue goes on', async () => {
+    const { holds, calls } = setup({ failDisarm: true });
+    await holds.pointerOverField(true);
+    await expect(holds.pointerOverField(false)).rejects.toThrow('disarm failed');
+    expect(holds.state).toBe('idle');
+    await holds.hold('field');
+    expect(calls.slice(-2)).toEqual(['take:start', 'take:end']);
+  });
+
+  it('a failed take on an armed window leaves it idle: the window layer has made it not activatable', async () => {
+    const { holds, calls, changes } = setup({ failTake: true });
+    await holds.pointerOverField(true);
+    await expect(holds.hold('field')).rejects.toThrow('take failed');
+    expect(holds.state).toBe('idle');
+    expect(changes).toEqual([true, false]);
+    expect(calls).toEqual(['arm:start', 'arm:end', 'take:start']);
+  });
+
+  it('a failed give is not followed by a new arm', async () => {
+    const { holds, calls } = setup({ failGive: true });
+    await holds.pointerOverField(true);
+    await holds.hold('field');
+    await expect(holds.release('field')).rejects.toThrow('give failed');
+    expect(holds.state).toBe('idle');
+    expect(calls.filter((c) => c === 'arm:start')).toHaveLength(1);
+  });
+});
+
+// The window is armed, the pointer slides off the field and presses a button at once: the disarm has not reached
+// Windows yet, the press activated the window, and nobody holds the keyboard. It must go back to the game.
+describe('a press next to a field right after the window was armed', () => {
+  const SETTLE = 500;
+
+  it('asks Windows whether the window was activated and gives the keyboard back when it was', async () => {
+    const { holds, calls, clock, windows } = setup({ settleMs: SETTLE });
+    await holds.pointerOverField(true);
+    clock.t = 100;
+    await holds.pointerOverField(false);
+    clock.t = 140;
+    windows.foreground = true; // the press landed while the window was still activatable
+    expect(await holds.pressOutsideField()).toBe(true);
+    expect(calls.slice(4)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true']);
+    expect(holds.state).toBe('idle');
+    expect(holds.held).toBe(false);
+  });
+
+  it('gives nothing back when Windows says the window was not activated', async () => {
+    const { holds, calls, clock } = setup({ settleMs: SETTLE });
+    await holds.pointerOverField(true);
+    clock.t = 100;
+    await holds.pointerOverField(false);
+    clock.t = 140;
+    expect(await holds.pressOutsideField()).toBe(false);
+    expect(calls.slice(4)).toEqual(['foreground?:false']);
+    expect(holds.state).toBe('idle');
+  });
+
+  it('asks whenever the press comes inside the settle time after the disarm, and never after it', async () => {
+    for (const [after, asked] of [[0, true], [250, true], [499, true], [500, false], [5000, false]] as const) {
+      const { holds, calls, clock } = setup({ settleMs: SETTLE });
+      await holds.pointerOverField(true);
+      clock.t = 100;
+      await holds.pointerOverField(false);
+      clock.t = 100 + after;
+      await holds.pressOutsideField();
+      expect(calls.some((c) => c.startsWith('foreground?')), `${after} ms after the disarm`).toBe(asked);
+    }
+  });
+
+  it('counts the settle time from the end of the disarm, not from its start', async () => {
+    const { holds, calls, clock, gates } = setup({ settleMs: SETTLE, slow: true });
+    const arming = holds.pointerOverField(true);
+    await settle();
+    gates[0].open();
+    await arming;
+    const disarming = holds.pointerOverField(false);
+    await settle();
+    clock.t = 2000; // the disarm was slow
+    gates[1].open();
+    await disarming;
+    clock.t = 2400;
+    await holds.pressOutsideField();
+    expect(calls.at(-1)).toBe('foreground?:false');
+  });
+
+  it('asks when the disarm is still on its way to Windows: the question waits for its turn behind it', async () => {
+    const { holds, calls, gates, windows } = setup({ settleMs: SETTLE, slow: true });
+    const arming = holds.pointerOverField(true);
+    await settle();
+    gates[0].open();
+    await arming;
+    windows.foreground = true;
+    const disarming = holds.pointerOverField(false);
+    const pressing = holds.pressOutsideField();
+    await settle();
+    expect(calls).toEqual(['arm:start', 'arm:end', 'disarm:start']);
+    gates[1].open(); // the disarm
+    await settle();
+    expect(calls.slice(3)).toEqual(['disarm:end', 'foreground?:true', 'give:start:true']);
+    gates[2].open(); // the give
+    await disarming;
+    expect(await pressing).toBe(true);
+    expect(holds.state).toBe('idle');
+  });
+
+  it('asks while the disarm is running', async () => {
+    const { holds, calls, gates, windows } = setup({ settleMs: SETTLE, slow: true });
+    const arming = holds.pointerOverField(true);
+    await settle();
+    gates[0].open();
+    await arming;
+    const disarming = holds.pointerOverField(false);
+    await settle();
+    expect(calls.at(-1)).toBe('disarm:start');
+    windows.foreground = true;
+    const pressing = holds.pressOutsideField();
+    gates[1].open();
+    await settle();
+    expect(calls.slice(3)).toEqual(['disarm:end', 'foreground?:true', 'give:start:true']);
+    gates[2].open();
+    await disarming;
+    expect(await pressing).toBe(true);
+  });
+
+  it('asks while the window is still armed (the pointer was not seen leaving the field)', async () => {
+    const { holds, calls, windows } = setup({ settleMs: SETTLE });
+    await holds.pointerOverField(true);
+    windows.foreground = true;
+    expect(await holds.pressOutsideField()).toBe(true);
+    // the keyboard went back; the pointer still counts as over a field, so the window is armed again
+    expect(calls.slice(2)).toEqual(['foreground?:true', 'give:start:true', 'give:end:true', 'arm:start', 'arm:end']);
+    expect(holds.state).toBe('armed');
+  });
+
+  it('makes no request at all when the window was not armed lately: plain clicks on buttons cost nothing', async () => {
+    const { holds, calls, clock } = setup({ settleMs: SETTLE });
+    expect(await holds.pressOutsideField()).toBe(false);
+    await holds.pointerOverField(true);
+    clock.t = 100;
+    await holds.pointerOverField(false);
+    clock.t = 1000;
+    expect(await holds.pressOutsideField()).toBe(false);
+    expect(await holds.pressOutsideField()).toBe(false);
+    expect(calls).toEqual(['arm:start', 'arm:end', 'disarm:start', 'disarm:end']);
+  });
+
+  it('makes no request while somebody holds the keyboard: the window is active because it is wanted', async () => {
+    const { holds, calls, windows } = setup({ settleMs: SETTLE });
+    await holds.pointerOverField(true);
+    await holds.hold('field');
+    windows.foreground = true;
+    expect(await holds.pressOutsideField()).toBe(false);
+    expect(calls).toEqual(['arm:start', 'arm:end', 'take:start', 'take:end']);
+    expect(holds.held).toBe(true);
+  });
+
+  it('gives nothing back when a field was pressed before its turn came', async () => {
+    const { holds, calls, gates, windows } = setup({ settleMs: SETTLE, slow: true });
+    windows.foreground = true;
+    const arming = holds.pointerOverField(true);
+    await settle(); // the arm is running
+    const holding = holds.hold('field'); // waits behind the arm
+    const pressing = holds.pressOutsideField(); // judged now (armed, nobody holds yet): waits behind the hold
+    gates[0].open(); // the arm
+    await settle();
+    gates[1].open(); // the take
+    await Promise.all([arming, holding]);
+    expect(await pressing).toBe(false);
+    expect(calls).toEqual(['arm:start', 'arm:end', 'take:start', 'take:end']);
+    expect(holds.held).toBe(true);
+  });
+
+  it('with no settle time only a window that is still armed is looked at', async () => {
+    const { holds, calls, windows } = setup(); // settleMs: 0
+    windows.foreground = true;
+    await holds.pointerOverField(true);
+    await holds.pointerOverField(false);
+    expect(await holds.pressOutsideField()).toBe(false);
+    expect(calls).toEqual(['arm:start', 'arm:end', 'disarm:start', 'disarm:end']);
   });
 });

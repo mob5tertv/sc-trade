@@ -3,6 +3,7 @@ import type { DatasetName } from './datasets';
 import { ANCHOR_SCENES } from './scenes-anchor';
 import { INCOME_SCENES } from './scenes-income';
 import { INDICATOR_SCENES } from './scenes-indicators';
+import { KEYBOARD_SCENES } from './scenes-keyboard';
 import { ROI_SCENES } from './scenes-roi';
 import { RUN_SCENES } from './scenes-run';
 import { STATS_SCENES } from './scenes-stats';
@@ -265,6 +266,7 @@ export const SCENES: readonly Scene[] = [
   ...INCOME_SCENES,
   ...STATS_SCENES,
   ...INDICATOR_SCENES,
+  ...KEYBOARD_SCENES,
 ];
 
 export const DEFAULT_SCENE = 'mini';

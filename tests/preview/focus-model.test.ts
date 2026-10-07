@@ -37,6 +37,33 @@ describe('focus model', () => {
     expect(focus.take(true)).toBe('focus');
   });
 
+  describe('take_foreground, with a Windows that is strict', () => {
+    it('is refused while the game has the keyboard, however activatable the window is: it was asked, and nothing moved', () => {
+      const focus = createFocusModel();
+      focus.remember();
+      expect(focus.takeForeground()).toEqual({ foreground: false, asked: true });
+      expect(focus.state()).toMatchObject({ keyboard: 'game', focusable: true });
+      expect(focus.isFocused()).toBe(false);
+      // asking again changes nothing: there is no trick that makes this Windows agree
+      expect(focus.takeForeground()).toEqual({ foreground: false, asked: true });
+    });
+
+    it('finds the overlay in front already after a press activated it, and asks nothing', () => {
+      const focus = createFocusModel();
+      focus.remember();
+      expect(focus.take(true)).toBe('focus'); // the press on an activatable window
+      expect(focus.takeForeground()).toEqual({ foreground: true, asked: false });
+      expect(focus.state().keyboard).toBe('overlay');
+    });
+
+    it('is refused again once the player has clicked the game', () => {
+      const focus = createFocusModel();
+      focus.take(true);
+      focus.clickGame();
+      expect(focus.takeForeground()).toEqual({ foreground: false, asked: true });
+    });
+  });
+
   it('has nothing to give back when no game window was remembered', () => {
     const focus = createFocusModel();
     expect(focus.restore()).toEqual({ restored: false, event: null });

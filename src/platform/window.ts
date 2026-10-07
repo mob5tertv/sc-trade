@@ -14,8 +14,10 @@ import type { Logger } from '../data/logger';
 // The one overlay window. It is as big as its content, anchored to a corner of the primary monitor (the anchor
 // corner stays where it is while the size changes), and it never takes the keyboard focus from the game by itself: buttons are clicked with the mouse while the
 // game stays the active window. The keyboard is taken only for the time a text field is edited
-// (`takeKeyboard`) and handed back afterwards (`giveKeyboard`). Every failure is logged and rethrown, so
-// the caller can keep its own state consistent.
+// (`takeKeyboard`) and handed back afterwards (`giveKeyboard`). It is the player's own click that activates the
+// window: while the pointer is over a text field the window is activatable (`armKeyboard` / `disarmKeyboard`).
+// Nothing synthetic is ever sent to the input stream, and Tauri's `setFocus` is never called (it does send a key
+// press when Windows refuses). Every failure is logged and rethrown, so the caller can keep its own state consistent.
 
 export type WindowMode = 'mini' | 'expanded';
 
@@ -221,37 +223,78 @@ export async function setWindowVisible(visible: boolean, log: Logger): Promise<v
 }
 
 /**
- * The player needs the keyboard (a text field is clicked): remembers the window that has the focus (the
- * game), makes the overlay focusable and focuses it. Windows may refuse the focus, e.g. when a key
- * opened the window while the game had it.
+ * The pointer came over a text field: remembers the window that has the focus (the game) and makes the overlay
+ * activatable. Nothing is activated and nothing is asked of Windows here: the press that follows activates the
+ * window the way Windows activates any window it lets be activated. The game is remembered NOW, because after
+ * that press the foreground window is our own, and our own window is never remembered.
  */
-export async function takeKeyboard(log: Logger): Promise<void> {
+export async function armKeyboard(log: Logger): Promise<void> {
   try {
-    const win = getCurrentWindow();
     await invoke('remember_foreground');
-    await win.setFocusable(true);
-    await win.setFocus();
-    const focused = await win.isFocused();
-    if (focused) log.info('window', 'keyboard taken', { focused });
-    else log.warn('window', 'keyboard taken, but Windows did not give the window the focus', { focused });
+    await getCurrentWindow().setFocusable(true);
+    log.debug('window', 'armed: the pointer is over a field, a press on it activates the window');
   } catch (err) {
-    log.error('window', 'cannot take the keyboard', { err });
-    // The window may already be focusable; with no holder behind it a plain click would activate it and take the focus
-    // from the game. Best effort: if this fails too there is nothing more to do.
+    log.error('window', 'cannot arm the window', { err });
+    // Half done, the window may be activatable with nobody to make it not so again. Best effort, as in `takeKeyboard`.
     await getCurrentWindow().setFocusable(false).catch(() => undefined);
     throw err;
   }
 }
 
 /**
- * Whether the window really has the focus now (Windows' answer, not ours). A failure to ask is taken as "yes": the
- * caller drops its holders only when it KNOWS the focus is gone.
+ * The pointer left the field without a press: the overlay cannot be activated again. No focus was taken, so
+ * none is handed back.
+ */
+export async function disarmKeyboard(log: Logger): Promise<void> {
+  try {
+    await getCurrentWindow().setFocusable(false);
+    log.debug('window', 'disarmed: the pointer left the field, the window cannot be activated');
+  } catch (err) {
+    log.error('window', 'cannot disarm the window', { err });
+    throw err;
+  }
+}
+
+/**
+ * The player needs the keyboard (a text field is pressed): remembers the window that has the focus, makes the
+ * overlay activatable and makes sure it is the foreground window (`take_foreground`, src-tauri/src/focus.rs).
+ * After a press on an armed window it already is (the press activated it), and Windows is not asked for
+ * anything. Otherwise (touch, a pen, a press that came before the arm reached Windows) Windows is asked ONCE
+ * and may refuse: the process that got the click is the WebView's, not ours. A refusal is a warning and
+ * nothing more. Nothing is done to change Windows' mind; the window stays activatable, so the player's next
+ * press on a field activates it. The Rust side logs whether Windows had to be asked (`[focus] ... (asked: ...)`).
+ */
+export async function takeKeyboard(log: Logger): Promise<void> {
+  try {
+    await invoke('remember_foreground');
+    await getCurrentWindow().setFocusable(true);
+    const foreground = await invoke<boolean>('take_foreground');
+    if (foreground) log.info('window', 'keyboard taken', { foreground });
+    else {
+      log.warn('window', 'keyboard wanted, but Windows refused to make the window the foreground one; the next press on a field activates it', { foreground });
+    }
+  } catch (err) {
+    log.error('window', 'cannot take the keyboard', { err });
+    // Nobody holds the keyboard after a failure, so nobody would undo what is done by now. The window may already be
+    // activatable (a plain click would activate it and take the focus from the game), and after a press on an armed
+    // window it IS active already: it is made not activatable and the focus goes back to the remembered window.
+    // Best effort: if this fails too (it has logged why) there is nothing more to do.
+    await giveKeyboard(log, true).catch(() => undefined);
+    throw err;
+  }
+}
+
+/**
+ * Whether the window is the foreground window now: Windows' answer (`panel_is_foreground`), not the focus of the
+ * page, which the page reports even for a window that was never activated. A failure to ask is taken as "yes":
+ * a caller drops its holders only when it KNOWS the focus is gone, and handing the keyboard back to the game once
+ * too often does no harm.
  */
 export async function isWindowFocused(log: Logger): Promise<boolean> {
   try {
-    return await getCurrentWindow().isFocused();
+    return await invoke<boolean>('panel_is_foreground');
   } catch (err) {
-    log.warn('window', 'cannot ask whether the window has the focus', { err });
+    log.warn('window', 'cannot ask whether the window is the foreground one', { err });
     return true;
   }
 }

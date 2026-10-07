@@ -38,7 +38,9 @@ export interface PreviewWindow {
   hide(): void;
   close(): void;
   setFocusable(focusable: boolean): void;
-  setFocus(): void;
+  /** `take_foreground`: granted only when the overlay is in front already (see focus-model.ts); nothing changes either way. */
+  takeForeground(): { foreground: boolean; asked: boolean };
+  /** The overlay is the foreground window: the answer to `panel_is_foreground`. */
   isFocused(): boolean;
   setSkipTaskbar(skip: boolean): void;
   setIgnoreCursorEvents(ignore: boolean): void;
@@ -105,7 +107,7 @@ export function createPreviewWindow(options: PreviewWindowOptions = {}): Preview
       return focus.leaveScreen();
     }),
     setFocusable: (value) => apply(() => { focus.setFocusable(value); }),
-    setFocus: () => apply(() => focus.take(visible)),
+    takeForeground: () => focus.takeForeground(),
     isFocused: () => focus.isFocused(),
     setSkipTaskbar: (value) => apply(() => { skipTaskbar = value; }),
     setIgnoreCursorEvents: (value) => apply(() => { ignoreCursorEvents = value; }),

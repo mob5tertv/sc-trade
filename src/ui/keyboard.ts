@@ -5,7 +5,10 @@ import type { KeyboardHolds } from './vm/keyboard-holds';
 // The DOM side of the keyboard rules. The overlay never takes the keyboard from the game by itself; it
 // does so only while the player edits a text field. Everything else (who holds the keyboard, what taking
 // and giving it mean) is in `vm/keyboard-holds.ts` and `platform/window.ts`; here are the listeners:
+//  - the pointer over a text field makes the window activatable, so that the player's own press activates it; the
+//    pointer leaving the field makes it not activatable again;
 //  - a press on a text field takes the keyboard first and puts the cursor into the field afterwards;
+//  - a press on anything else is told to the holds: right after the pointer left a field it may have activated the window;
 //  - `Esc` in a field (when nothing else used it) leaves the field and gives the keyboard back to the game,
 //    the window stays open;
 //  - a watchdog gives the keyboard back when the field is gone (an answer was sent and the screen was redrawn);
@@ -25,6 +28,15 @@ export function isEditable(element: Element | null): boolean {
   if (element instanceof HTMLInputElement) return !NOT_TEXT_INPUTS.has(element.type);
   if (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) return true;
   return element instanceof HTMLElement && element.isContentEditable;
+}
+
+/** The text field at `target` (what a pointer event hit): the field itself or the one its label belongs to; `null` when there is none. */
+function fieldAt(target: EventTarget | null): HTMLElement | null {
+  const hit = target instanceof Element ? target.closest('input, textarea, select, [contenteditable], label') : null;
+  // A click on the text of a label puts the focus into the control it belongs to (the settings screen is full of
+  // them): that is a click on the field, and it needs the keyboard like one.
+  const field = hit instanceof HTMLLabelElement ? hit.control : hit;
+  return field instanceof HTMLElement && isEditable(field) ? field : null;
 }
 
 // The player opens the window with a click while still holding a key of the game (`F` shows its
@@ -57,18 +69,44 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   };
   const onKeyUpCapture = (event: KeyboardEvent): void => heldKeys.released(event.code);
 
+  /** The text field the pointer is over; `null` when it is over none, or not over the window at all. */
+  let hovered: HTMLElement | null = null;
+  /** Tells the holds when the pointer comes over a field or leaves it; from one field straight to another nothing changes. */
+  const pointerAt = (field: HTMLElement | null): void => {
+    const wasOver = hovered !== null;
+    hovered = field;
+    if (wasOver !== (field !== null)) void quietly(holds.pointerOverField(field !== null));
+  };
+
+  const onPointerOver = (event: PointerEvent): void => pointerAt(fieldAt(event.target));
+  // the pointer left the window altogether (inside the window the next `pointerover` says where it is)
+  const onPointerOut = (event: PointerEvent): void => {
+    if (event.relatedTarget === null) pointerAt(null);
+  };
+
   const onPointerDown = (event: PointerEvent): void => {
-    const hit =
-      event.target instanceof Element ? event.target.closest('input, textarea, select, [contenteditable], label') : null;
-    // A click on the text of a label puts the focus into the control it belongs to (the settings screen is full of
-    // them): that is a click on the field, and it needs the keyboard like one.
-    const field = hit instanceof HTMLLabelElement ? hit.control : hit;
-    if (!(field instanceof HTMLElement) || !isEditable(field)) return;
+    const field = fieldAt(event.target);
+    if (field === null) {
+      // whatever was seen last, the pointer is over no field now
+      pointerAt(null);
+      void holds.pressOutsideField().then(
+        (givenBack) => {
+          if (givenBack) log.info('ui', 'a press next to a field had activated the window, the keyboard went back to the game');
+        },
+        () => undefined, // the window layer has logged it
+      );
+      return;
+    }
     lastPressAt = performance.now();
-    if (!holds.held) log.debug('ui', 'field pressed, the window needs the keyboard', { field: field.id || field.tagName });
+    if (!holds.held) {
+      log.debug('ui', 'field pressed, the window needs the keyboard', { field: field.id || field.tagName, armed: holds.state === 'armed' });
+    }
     void quietly(holds.hold(FIELD)).then(() => {
       if (field.isConnected) field.focus();
     });
+    // A press with no pointer seen over the field before it (touch, a pen): it is over the field now. Told after the
+    // hold, so that the hold is not kept waiting for an arm of its own.
+    pointerAt(field);
   };
 
   // Bubble phase: a field or a search list that used Esc itself (closed its list, dropped a draft) comes first.
@@ -81,6 +119,8 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
 
   // The field may vanish with a redraw (an answer was sent): there is no event for that, so look.
   const watchdog = window.setInterval(() => {
+    // the same goes for the field under the pointer (the window was folded): the pointer is over no field then
+    if (hovered !== null && !hovered.isConnected) pointerAt(null);
     if (!holds.held || isEditable(document.activeElement)) return;
     if (performance.now() - lastPressAt < PRESS_GRACE_MS) return;
     log.debug('ui', 'no field is being edited, the keyboard goes back to the game');
@@ -91,6 +131,9 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   window.addEventListener('keyup', onKeyUpCapture, true);
   // the window got the focus again (the player came back to it): keys held by then are not ours
   window.addEventListener('focus', resetHeldKeys);
+  // delegated on the document, like the press: no listener per field
+  document.addEventListener('pointerover', onPointerOver, true);
+  document.addEventListener('pointerout', onPointerOut, true);
   document.addEventListener('pointerdown', onPointerDown, true);
   window.addEventListener('keydown', onKeyDown);
   resetHeldKeys();
@@ -100,6 +143,8 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     window.removeEventListener('keydown', onKeyDownCapture, true);
     window.removeEventListener('keyup', onKeyUpCapture, true);
     window.removeEventListener('focus', resetHeldKeys);
+    document.removeEventListener('pointerover', onPointerOver, true);
+    document.removeEventListener('pointerout', onPointerOut, true);
     document.removeEventListener('pointerdown', onPointerDown, true);
     window.removeEventListener('keydown', onKeyDown);
   };

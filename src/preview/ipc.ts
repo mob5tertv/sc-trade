@@ -4,7 +4,7 @@ import type { PreviewWindow } from './window-state';
 
 // The answers of the preview to every command the application sends through Tauri's `invoke`: the plugins
 // (`plugin:sql|…`, `plugin:window|…`, `plugin:log|…`, `plugin:app|…`, `plugin:path|…`, `plugin:opener|…`,
-// `plugin:http|…`) and the commands of our own Rust side (`backup_db`, `remember_foreground`, …).
+// `plugin:http|…`) and the commands of our own Rust side (`backup_db`, `remember_foreground`, `take_foreground`, …).
 // Names and payloads come from `node_modules/@tauri-apps/*` and `src-tauri/src/*.rs`.
 // A command that is not here is an error with its name, never a quiet `null`: a hole must be seen.
 
@@ -117,9 +117,9 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
         return null;
       case 'is_visible':
         return win.snapshot().visible;
-      case 'set_focus':
-        win.setFocus();
-        return null;
+      // `set_focus` is NOT here on purpose. Tauri's setFocus presses a key through the input stream when Windows
+      // refuses the foreground, so the application must never call it (it has no permission for it either). A call
+      // lands in "unmocked command": it fails, and a scene that makes it at its start fails with it (entry.ts).
       case 'set_focusable':
         win.setFocusable(args.value === true);
         return null;
@@ -211,6 +211,17 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
         return null;
       case 'restore_foreground':
         return win.restoreForeground();
+      case 'take_foreground': {
+        // src-tauri/src/focus.rs: one request at most, the answer of Windows is final. The Windows of the preview is a
+        // strict one (focus-model.ts): it says yes only to a window that is in front already. The line stands in for
+        // the `[focus]` line of the Rust side.
+        const { foreground, asked } = win.takeForeground();
+        if (foreground) log('info', `[preview] take_foreground: the overlay is the foreground window already (asked: ${asked})`);
+        else log('warn', `[preview] take_foreground: a strict Windows refuses, the overlay is not the foreground window (asked: ${asked})`);
+        return foreground;
+      }
+      case 'panel_is_foreground':
+        return win.isFocused();
       case 'set_trigger_keys':
         return [null, null, null]; // every key is accepted; there is no keyboard hook
       default:
