@@ -7,6 +7,7 @@
   import { cellScu } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
   import TempBadge from './TempBadge.svelte';
+  import TrendMark from './TrendMark.svelte';
 
   interface Props {
     rows: TerminalRow[];
@@ -184,9 +185,12 @@
         <button type="button" class="sc-btn sc-btn--act" aria-label="Продал {row.code}" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Продал</button>
       {/if}
     </div>
-    {#if cell.badge || cell.warn || cell.ownLast || (estimated && cell.ownScuBase)}
+    {#if cell.badge || cell.trend || cell.warn || cell.ownLast || (estimated && cell.ownScuBase)}
       <div class="meta">
         {#if cell.badge}<TempBadge text={cell.badge.text} kind={cell.badge.kind} />{/if}
+        {#if cell.trend}
+          <span class="note"><TrendMark trend={cell.trend} /><span class="muted">{cell.trend.title}</span></span>
+        {/if}
         {#if estimated && cell.ownScuBase}
           <span class="muted">было {formatUec(cell.ownScuBase.scu)} · {cell.ownScuBase.age}</span>
           {#if cell.ownScuRate === 'learned'}
@@ -225,6 +229,7 @@
             <span class="name" title={row.name}><span class="code">{row.code}</span><span class="full">{row.name}</span></span>
             <span class="price sc-num" class:hint={cell.own === null}>
               {#if cell.warn}<span class="bang" title="Цена далеко от истории UEX: проверь цифру">!</span>{/if}
+              <TrendMark trend={cell.trend} />
               <span class="digits">{cell.own === null && cell.hint === null ? '—' : formatUec(cell.own ?? cell.hint ?? 0)}</span>
               {#if cell.badge}<TempBadge compact text={cell.badge.text} kind={cell.badge.kind} />{:else}<span class="nomark"></span>{/if}
             </span>
@@ -241,7 +246,8 @@
 <style>
   .grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 62px 80px 52px;
+    /* the price column holds the triangle slot (8 px + 4), the number and its 6 px mark */
+    grid-template-columns: minmax(0, 1fr) 74px 80px 52px;
     column-gap: var(--sc-gap);
     align-items: center;
     padding: 0 var(--sc-pad-x);
@@ -399,6 +405,14 @@
 
   .warn {
     color: var(--sc-warn);
+  }
+
+  /* how the price moved: the same triangle as in the row, then the text of its hint */
+  .note {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
   }
 
   .muted {

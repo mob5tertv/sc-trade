@@ -22,11 +22,14 @@
   }
 </script>
 
-<Frame name="buy" caption="buy: what the player can buy here · {counts.buy} rows · own prices of every age, UEX, a typo (!)">
+<Frame name="buy" caption="buy: what the player can buy here · {counts.buy} rows · own prices of every age, UEX, a typo (!) · triangles: MEDS, STIM up (red), PFOO down (green), HYDR the same, the rest a first reading or UEX">
   <TableDemo rows={data.rows} side="buy" />
 </Frame>
-<Frame name="buy-expanded" caption="buy · MEDS expanded: fields, plaque, was 380 · age, actions">
+<Frame name="buy-expanded" caption="buy · MEDS expanded: fields, plaque, how the price moved (red up: bought dearer), was 380 · age, actions">
   <TableDemo rows={data.rows} side="buy" selected={idOf('MEDS')} />
+</Frame>
+<Frame name="buy-fell" caption="buy · PFOO expanded: the price fell (green down: bought cheaper), the text next to the plaque">
+  <TableDemo rows={data.rows} side="buy" selected={idOf('PFOO')} />
 </Frame>
 <Frame name="buy-cold" caption="buy · ALUM expanded: my cold price kept next to UEX, range next to it">
   <TableDemo rows={data.rows} side="buy" selected={idOf('ALUM')} />
@@ -34,11 +37,14 @@
 <Frame name="buy-typo" caption="buy · SCRA expanded: the typo warning">
   <TableDemo rows={data.rows} side="buy" selected={idOf('SCRA')} />
 </Frame>
-<Frame name="sell" caption="sell: what the player can sell here · {counts.sell} rows">
+<Frame name="sell" caption="sell: what the player can sell here · {counts.sell} rows · triangles: TUNG up (green), DIAM down (red), LARA the same, GOLD is UEX">
   <TableDemo rows={data.rows} side="sell" />
 </Frame>
-<Frame name="sell-expanded" caption="sell · TUNG expanded: the buyer's inventory, «Где купить» / «Продал»">
+<Frame name="sell-expanded" caption="sell · TUNG expanded: the buyer's inventory, the price rose (green up: sold dearer), «Где купить» / «Продал»">
   <TableDemo rows={data.rows} side="sell" selected={idOf('TUNG')} />
+</Frame>
+<Frame name="sell-fell" caption="sell · DIAM expanded: the price fell (red down: sold cheaper)">
+  <TableDemo rows={data.rows} side="sell" selected={idOf('DIAM')} />
 </Frame>
 <Frame name="bad-price" caption="buy · MEDS expanded, «12x» typed and Enter pressed: the price is marked" act={badPrice}>
   <TableDemo rows={data.rows} side="buy" selected={idOf('MEDS')} />

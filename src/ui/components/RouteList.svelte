@@ -4,6 +4,7 @@
   import { routeOptionRow } from '../vm/route-rows';
   import type { RouteMode, RouteOptionRow, UexRangeOf } from '../vm/route-rows';
   import TempBadge from './TempBadge.svelte';
+  import TrendMark from './TrendMark.svelte';
 
   interface Props {
     options: RouteOption[];
@@ -87,6 +88,7 @@
             {#if row.isTarget}<span class="goal" title="Цель рейса">цель</span>{/if}
           </span>
           <span class="cell sc-num">
+            <TrendMark trend={row.trend} />
             <span class="digits">{row.price.price}</span>
             <TempBadge compact text={row.price.badge.text} kind={row.price.badge.kind} />
           </span>
@@ -125,7 +127,8 @@
 <style>
   .grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 48px 64px 36px 40px;
+    /* the price column holds the triangle slot (8 px + 4), the number and its 6 px mark */
+    grid-template-columns: minmax(0, 1fr) 60px 64px 36px 40px;
     column-gap: 4px;
     align-items: center;
     padding: 0 var(--sc-pad-x);

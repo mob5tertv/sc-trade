@@ -3,6 +3,7 @@ import type { EstimateCtx } from '../../src/core/estimate';
 import { obsKey, priceKey } from '../../src/core/types';
 import type { Estimate, Market, Side } from '../../src/core/types';
 import { obs, px } from './factories';
+import { previousOf } from './previous-price-fixtures';
 import { quantitiesOf, readingsOf } from './quantity-fixtures';
 
 // Fixtures for the terminal-rows view model. The shared `ref` (Gold 10, Titanium 20, Tungsten 30) comes from factories.ts.
@@ -56,7 +57,7 @@ export function withOwnBuy(m: Market, terminalId: number, commodityId: number, p
   const key = obsKey(terminalId, commodityId, 'buy');
   const others = [...m.own].filter(([k]) => k !== key).map(([, o]) => o);
   const next = obs({ id: 1000, ts, terminalId, commodityId, side: 'buy', price, scu });
-  return buildMarket([...m.uex.values()], [...others, next], m.stock, [...quantitiesOf(m, key), ...readingsOf(next)]);
+  return buildMarket([...m.uex.values()], [...others, next], m.stock, [...quantitiesOf(m, key), ...readingsOf(next)], previousOf(m));
 }
 
 /** A copy of `m` where the UEX row's all-time min and max of one side are set (the row is created when missing). */
@@ -64,5 +65,5 @@ export function withUexRange(m: Market, terminalId: number, commodityId: number,
   const key = priceKey(terminalId, commodityId);
   const row = m.uex.get(key) ?? px(terminalId, commodityId);
   const uex = new Map(m.uex).set(key, { ...row, [side]: { ...row[side], min, max } });
-  return buildMarket([...uex.values()], [...m.own.values()], m.stock, quantitiesOf(m));
+  return buildMarket([...uex.values()], [...m.own.values()], m.stock, quantitiesOf(m), previousOf(m));
 }

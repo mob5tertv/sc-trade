@@ -4,6 +4,8 @@ import { formatAge, formatUec } from '../../core/format';
 import { priceWarning } from '../../core/input';
 import { priceKey } from '../../core/types';
 import type { Estimate, Market, Reference, Side, StockEstimate, Temp } from '../../core/types';
+import { priceTrend } from './price-trend';
+import type { PriceTrend } from './price-trend';
 
 export interface Cell {
   own: number | null; ownScu: number | null;      // my price, shown only while it is not cold; ownScu is only ever MY quantity (0 is a known zero) and has its own clock (spec 14.6), so it may stand next to a UEX price: buy side, the stock estimated for now; sell side, the buyer's inventory as recorded
@@ -14,6 +16,7 @@ export interface Cell {
   uexRange: { low: number; high: number } | null; // the UEX range next to my cooling value
   range: { low: number; high: number } | null;    // the range UEX knows for this side (week, else month, else all time), next to my own price or to a UEX one; null when it is flat or unknown
   ownLast: { price: number; age: string } | null; // my cold value kept for reference when the cell fell back to UEX
+  trend: PriceTrend | null;                       // how my own price moved since my previous reading; null for a UEX or cold value, a first reading, or the same price
   warn: boolean;                                  // my value looks like a typo against the UEX history
 }
 
@@ -86,7 +89,7 @@ function cell(m: Market, terminalId: number, commodityId: number, side: Side, ct
     const row = m.uex.get(priceKey(terminalId, commodityId));
     return {
       own: e.price, ...quantity, hint: null,
-      badge: badgeText(e), uexRange: e.uexRange, range, ownLast: null,
+      badge: badgeText(e), uexRange: e.uexRange, range, ownLast: null, trend: priceTrend(e, side),
       warn: row ? priceWarning(e.price, row[side].min, row[side].max) : false,
     };
   }
@@ -94,6 +97,7 @@ function cell(m: Market, terminalId: number, commodityId: number, side: Side, ct
     own: null, ...quantity, hint: e.price,
     badge: badgeText(e), uexRange: null, range,
     ownLast: e.ownLast && { price: e.ownLast.price, age: formatAge(e.ownLast.ageSec) },
+    trend: null,
     warn: false,
   };
 }

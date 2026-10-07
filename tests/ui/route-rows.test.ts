@@ -78,7 +78,7 @@ describe('routeOptionRow', () => {
       price: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
       roi: '13%', rate: '256k', worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
       origin: 'ARC-L1', dest: 'TDD Area 18', bothEnds: true, isTarget: false, tier: 'ok',
-      invested: nb('587 520'), profit: nb('74 880'), profitLoss: false,
+      invested: nb('587 520'), profit: nb('74 880'), profitLoss: false, trend: null,
       buy: { price: nb('6 120'), range: null, badge: { text: 'моя · 40 мин', kind: 'hot' } },
       sell: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
     });
@@ -89,6 +89,45 @@ describe('routeOptionRow', () => {
     expect(row.terminal).toBe('ARC-L1');
     // my own price has no range, and its badge carries the temperature
     expect(row.price).toEqual({ price: nb('6 120'), range: null, badge: { text: 'моя · 40 мин', kind: 'hot' } });
+  });
+
+  describe('the trend of the price in the «Цена» column', () => {
+    const own = (partial: Partial<Estimate>) => estimate({ source: 'own', temp: 'hot', ageSec: 40 * 60, low: 0, high: 0, ...partial });
+    // bought at 6120 (it was 6200 two hours ago: a fall), sold at 6900 (it was 6800 two hours ago: a rise)
+    const moving = option({
+      buy: own({ price: 6120, prev: { price: 6200, ageSec: 7200 } }),
+      sell: own({ price: 6900, prev: { price: 6800, ageSec: 7200 } }),
+    });
+
+    it('takes the sale price at the destination for trips from here: a rise where I sell is good', () => {
+      expect(routeOptionRow(moving, ref, 'from', new Map()).trend).toEqual({
+        dir: 'up', good: true, title: `было ${nb('6 800')} · 2 ч назад (+100)`,
+      });
+    });
+
+    it('takes the purchase price at the origin for trips to here: a fall where I buy is good', () => {
+      expect(routeOptionRow(moving, ref, 'to', new Map()).trend).toEqual({
+        dir: 'down', good: true, title: `было ${nb('6 200')} · 2 ч назад (-80)`,
+      });
+    });
+
+    it('judges the same movement by the side of the price shown', () => {
+      const worse = option({
+        buy: own({ price: 6300, prev: { price: 6200, ageSec: 7200 } }),   // bought dearer: bad
+        sell: own({ price: 6700, prev: { price: 6800, ageSec: 7200 } }),  // sold cheaper: bad
+      });
+      expect(routeOptionRow(worse, ref, 'from', new Map()).trend).toMatchObject({ dir: 'down', good: false });
+      expect(routeOptionRow(worse, ref, 'to', new Map()).trend).toMatchObject({ dir: 'up', good: false });
+    });
+
+    it('has no trend when the shown price is a UEX one or has not moved, whatever the other end did', () => {
+      const uexSell = option({ buy: moving.buy, sell: estimate({ price: 6900 }) });
+      expect(routeOptionRow(uexSell, ref, 'from', new Map()).trend).toBeNull();
+      expect(routeOptionRow(uexSell, ref, 'to', new Map()).trend).toMatchObject({ dir: 'down' });
+      const still = option({ buy: moving.buy, sell: own({ price: 6900, prev: { price: 6900, ageSec: 7200 } }) });
+      expect(routeOptionRow(still, ref, 'from', new Map()).trend).toBeNull();
+      expect(routeOptionRow(option(), ref, 'to', new Map()).trend).toBeNull(); // my own price, no previous reading
+    });
   });
 
   it('labels a UEX price of unknown age with a plain UEX badge, without an age', () => {

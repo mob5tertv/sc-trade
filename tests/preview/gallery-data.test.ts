@@ -46,6 +46,29 @@ describe('the gallery table of the viewed terminal', () => {
     expect(data.rows.some((r) => r.sell?.ownScu !== null && r.sell?.ownScu !== undefined)).toBe(true);
   });
 
+  describe('the triangles of prices of mine that moved', () => {
+    const cellOf = (code: string, side: 'buy' | 'sell') => data.rows.find((r) => r.code === code)?.[side] ?? null;
+
+    it('has a rise and a fall on each side, coloured by what is good for the player there', () => {
+      expect(cellOf('MEDS', 'buy')?.trend).toMatchObject({ dir: 'up', good: false }); // bought dearer
+      expect(cellOf('PFOO', 'buy')?.trend).toMatchObject({ dir: 'down', good: true }); // bought cheaper
+      expect(cellOf('TUNG', 'sell')?.trend).toMatchObject({ dir: 'up', good: true }); // sold dearer
+      expect(cellOf('DIAM', 'sell')?.trend).toMatchObject({ dir: 'down', good: false }); // sold cheaper
+    });
+
+    it('has prices of mine without a triangle: the same price as before, and a first reading', () => {
+      for (const [code, side] of [['HYDR', 'buy'], ['LARA', 'sell'], ['SCRA', 'buy'], ['GOLD', 'buy']] as const) {
+        expect(cellOf(code, side), `${code} ${side}`).toMatchObject({ trend: null });
+        expect(cellOf(code, side)?.own, `${code} ${side} is mine`).not.toBeNull();
+      }
+    });
+
+    it('has UEX prices and a cold price of mine without a triangle', () => {
+      expect(cellOf('GOLD', 'sell')).toMatchObject({ own: null, trend: null });
+      expect(cellOf('ALUM', 'buy')).toMatchObject({ own: null, trend: null });
+    });
+  });
+
   it('has a table that is empty for a terminal nothing is known about', () => {
     expect(NO_DATA_TERMINAL).not.toBe(VIEWED_TERMINAL);
     expect(data.noRows).toEqual([]);
@@ -70,6 +93,20 @@ describe('the gallery route lists', () => {
     const own = rowsOf(data.routes.to, 'to').filter((r) => r.price.badge.kind !== 'uex');
     expect(own.length).toBeGreaterThan(0);
     expect(own.every((r) => r.price.range !== null)).toBe(true); // UEX knows a range at every place of the dataset
+  });
+
+  it('has trips whose price in the «Цена» column moved, unchanged, or is UEX: the triangles of both modes', () => {
+    const from = rowsOf(data.routes.from, 'from');
+    // trips from here show the sale price at the far end: a rise is good, a fall is bad
+    expect(from.some((r) => r.trend?.dir === 'up' && r.trend.good)).toBe(true);
+    expect(from.some((r) => r.trend?.dir === 'down' && !r.trend.good)).toBe(true);
+    expect(from.some((r) => r.trend === null && r.price.badge.kind !== 'uex')).toBe(true); // mine, and the same as before
+    expect(from.some((r) => r.trend === null && r.price.badge.kind === 'uex')).toBe(true);
+    // trips to here show the purchase price at the far end: a fall is good, a rise is bad
+    const to = rowsOf(data.routes.to, 'to');
+    expect(to.some((r) => r.trend?.dir === 'down' && r.trend.good)).toBe(true);
+    expect(to.some((r) => r.trend?.dir === 'up' && !r.trend.good)).toBe(true);
+    expect(to.some((r) => r.trend === null && r.price.badge.kind === 'uex')).toBe(true);
   });
 
   it('has trips from and to the viewed terminal', () => {

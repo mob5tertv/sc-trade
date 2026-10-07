@@ -7,7 +7,7 @@ import { createLogger, memorySink } from '../../src/data/logger';
 import { listRuns, getActiveRun } from '../../src/data/repo/runs';
 import { loadSettings } from '../../src/data/repo/settings';
 import { getMeta, loadDistances, loadReference, loadUexPrices } from '../../src/data/repo/uex-cache';
-import { latestObservations } from '../../src/data/repo/diary';
+import { latestObservations, previousPrices } from '../../src/data/repo/diary';
 import { syncPlan } from '../../src/ui/vm/sync-plan';
 import { testDb } from '../helpers/test-db';
 
@@ -126,6 +126,21 @@ describe('the default dataset', () => {
     expect(own.some((o) => o.scu !== null && o.scu > 0)).toBe(true);
     expect(own.every((o) => o.ts <= NOW)).toBe(true);
     expect(own.some((o) => o.side === 'buy') && own.some((o) => o.side === 'sell')).toBe(true);
+  });
+
+  it('has own prices seen again after a while: a price that rose, one that fell and one that stayed', async () => {
+    const db = await dataset('default');
+    const own = await latestObservations(db);
+    const previous = await previousPrices(db);
+    const moves = previous.map((p) => {
+      const latest = own.find((o) => o.terminalId === p.terminalId && o.commodityId === p.commodityId && o.side === p.side);
+      expect(latest, `the latest reading of ${p.terminalId}:${p.commodityId}:${p.side}`).toBeDefined();
+      expect(latest!.ts - p.ts, 'a correction is not a move').toBeGreaterThanOrEqual(120);
+      return Math.sign(latest!.price - p.price);
+    });
+    expect(new Set(moves)).toEqual(new Set([1, -1, 0]));
+    // both sides of the market have one: a purchase price and a sale price that was seen twice
+    expect(new Set(previous.map((p) => p.side))).toEqual(new Set(['buy', 'sell']));
   });
 
   it('measures every age from the moment the database was made, a few seconds past the minute', async () => {

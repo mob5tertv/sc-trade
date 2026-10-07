@@ -273,6 +273,19 @@ const OWN_OBSERVATIONS: OwnObservation[] = [
   { terminal: 8, code: 'DIAM', side: 'sell', jitter: 1.05, scu: null, age: ago.d(2) },
   { terminal: 12, code: 'TITA', side: 'buy', jitter: 0.95, scu: 0, age: ago.d(3) },
   { terminal: 13, code: 'STIM', side: 'buy', jitter: 1.08, scu: 40, age: ago.d(4) },
+
+  // The same price seen again: the player's own sale prices at the places of the trips from HUR-L1 (Stims), each
+  // after an earlier reading of it, hours before: it rose, fell, stayed
+  { terminal: 4, code: 'STIM', side: 'sell', jitter: 1.03, scu: null, age: ago.m(18) }, // hot
+  { terminal: 4, code: 'STIM', side: 'sell', jitter: 0.96, scu: null, age: ago.h(5) },
+  { terminal: 11, code: 'STIM', side: 'sell', jitter: 0.97, scu: null, age: ago.m(75) }, // warm
+  { terminal: 11, code: 'STIM', side: 'sell', jitter: 1.05, scu: null, age: ago.h(4) },
+  { terminal: 6, code: 'STIM', side: 'sell', jitter: 1.01, scu: null, age: ago.m(33) }, // hot
+  { terminal: 6, code: 'STIM', side: 'sell', jitter: 1.01, scu: null, age: ago.h(2) },
+  // and the readings before two purchase prices above, those of the trips to HUR-L1: Diamond at Everus Harbor fell,
+  // Gold at ARC-L1 rose
+  { terminal: 9, code: 'DIAM', side: 'buy', jitter: 1.1, scu: null, age: ago.h(7) },
+  { terminal: 1, code: 'GOLD', side: 'buy', jitter: 0.94, scu: null, age: ago.h(3) },
 ];
 
 // ---------------------------------------------------------------------------------------------------
