@@ -12,7 +12,15 @@ pub fn run() {
     logging::install_panic_hook();
 
     tauri::Builder::default()
-        // The log plugin goes first so that the other plugins can log during setup.
+        // Must be the first plugin: a second start hands over to the running copy and exits while the
+        // plugins are set up, before anything of its own (log file, window, hook) exists.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // The command line and the working directory of the second start are not logged: a path
+            // in them holds the Windows user name.
+            log::info!("[single-instance] a second start asked for the panel");
+            tray::show_panel(app);
+        }))
+        // The log plugin goes right after it so that the other plugins can log during setup.
         .plugin(logging::plugin())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_http::init())

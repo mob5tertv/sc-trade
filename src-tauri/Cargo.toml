@@ -26,6 +26,7 @@ tauri-plugin-sql = { version = "2.5.0", features = ["sqlite"] }
 tauri-plugin-http = { version = "2.8.0", features = ["gzip", "brotli"] }
 tauri-plugin-os = "2.4.0"
 tauri-plugin-opener = "2.7.0"
+tauri-plugin-single-instance = "2.5.2"
 
 # Foreground-window handling (focus.rs) and the keyboard hook (input_hook.rs) are Windows-only.
 [target.'cfg(windows)'.dependencies]
