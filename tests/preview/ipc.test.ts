@@ -329,6 +329,17 @@ describe('the keyboard focus', () => {
     expect(focusEvents).toEqual([]);
   });
 
+  it('a window that was hidden while it was armed is shown without the keyboard: it is made not activatable before it is shown', async () => {
+    const { win, focusEvents } = start();
+    await showWindow(layout, logger());
+    await armKeyboard(logger());
+    // folded by a key with the mini bar off: the pointer never "left" the field, the window is hidden as it is
+    await setWindowVisible(false, logger());
+    await setWindowVisible(true, logger());
+    expect(win.snapshot()).toMatchObject({ visible: true, focusable: false, keyboard: 'game' });
+    expect(focusEvents).toEqual([]);
+  });
+
   it('goes to the window by the press on a field of the armed window and back to the game when it gives it back', async () => {
     const { win, focusEvents, logged } = start();
     await showWindow(layout, logger());

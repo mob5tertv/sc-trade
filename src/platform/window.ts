@@ -209,12 +209,19 @@ export async function moveWindow(rect: Rect, log: Logger): Promise<void> {
   placedLogical = { rect: { ...rect }, monitor };
 }
 
-/** Shows or hides the window; showing never takes the focus (the window is not focusable). */
+/**
+ * Shows or hides the window; showing never takes the focus, because a window is never shown activatable. It is made
+ * not activatable right before it is shown: it may have been hidden while it was armed (folded by a key with the
+ * pointer resting on a field: nothing tells the page that the pointer has left a window that is gone), and Windows
+ * activates an activatable window that is shown. A hidden window has no holder of the keyboard, so nothing is lost.
+ */
 export async function setWindowVisible(visible: boolean, log: Logger): Promise<void> {
   try {
     const win = getCurrentWindow();
-    if (visible) await win.show();
-    else await win.hide();
+    if (visible) {
+      await win.setFocusable(false);
+      await win.show();
+    } else await win.hide();
     log.info('window', visible ? 'window shown' : 'window hidden');
   } catch (err) {
     log.error('window', 'cannot change the visibility', { visible, err });
