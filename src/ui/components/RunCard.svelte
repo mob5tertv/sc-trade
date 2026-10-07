@@ -16,7 +16,7 @@
   const NONE = '—';
 
   let confirming = $state(false);
-  let cancelButton: HTMLButtonElement | undefined = $state();
+  let cancelButton: HTMLButtonElement | null | undefined = $state(); // `bind:this`: `null` once the element has gone
 
   // The safe answer gets the focus: a stray Enter must not lose the cargo.
   $effect(() => {

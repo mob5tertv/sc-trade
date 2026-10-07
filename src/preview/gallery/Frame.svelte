@@ -19,7 +19,7 @@
 
   const { only } = useGallery();
   const shown = $derived(only === null || only === name);
-  let glass: HTMLElement | undefined = $state();
+  let glass: HTMLElement | null | undefined = $state(); // `bind:this`: `null` once the element has gone
 
   onMount(() => {
     const element = glass;

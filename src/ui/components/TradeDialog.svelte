@@ -24,7 +24,7 @@
   let priceText = $derived(String(defaultPrice));
   let badScu = $state(false);
   let badPrice = $state(false);
-  let scuInput: HTMLInputElement | undefined = $state();
+  let scuInput: HTMLInputElement | null | undefined = $state(); // `bind:this`: `null` once the element has gone
 
   // A double click on the button or a held Enter must not write the trade twice while the owner is still writing it.
   let confirmed = false;
