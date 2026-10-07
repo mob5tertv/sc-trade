@@ -1147,8 +1147,9 @@ class AppState {
    * changed. A refusal of the service wrote nothing and re-reads nothing.
    */
   sell(input: TradeInput, income = false): Promise<string | null> {
+    const what = income ? 'sell without purchase' : 'sell';
     return this.#tradeQueue(async () => {
-      this.#log.info('ui', income ? 'sell without purchase' : 'sell', { ...input });
+      this.#log.info('ui', what, { ...input });
       let failure: string | null = null;
       let finished = false;
       let mayHaveWritten = true;
@@ -1156,7 +1157,7 @@ class AppState {
         if (income) await recordIncome(this.#tradeDeps(), input);
         else finished = (await recordSell(this.#tradeDeps(), input)).finished;
       } catch (err) {
-        failure = this.#tradeFailure(income ? 'sell without purchase' : 'sell', err, { ...input });
+        failure = this.#tradeFailure(what, err, { ...input });
         mayHaveWritten = !(err instanceof TradeError);
       }
       await this.#reloadRun(mayHaveWritten);

@@ -75,13 +75,15 @@ function tradedCommodityIds(events: RunEvent[]): number[] {
 function runTitle(events: RunEvent[], ref: Reference): string {
   const ids = tradedCommodityIds(events);
   if (ids.length === 0) return NONE;
+  return `${ids.map(id => commodityName(ref, id)).join(', ')}: ${runKind(events, ref)}`;
+}
+
+/** The part of a run's title after the commodities: the route, or what kind of run it is when it is not one route. */
+function runKind(events: RunEvent[], ref: Reference): string {
   const route = simpleRoute(events);
-  const sold = events.some(e => e.type === 'sell' && isTrade(e));
-  const bought = events.some(e => e.type === 'buy' && isTrade(e));
-  const where = route !== null ? routeName(ref, route.originId, route.destId)
-    : !sold ? 'рейс без продаж'
-      : bought ? 'смешанный рейс' : 'продажа без закупки';
-  return `${ids.map(id => commodityName(ref, id)).join(', ')}: ${where}`;
+  if (route !== null) return routeName(ref, route.originId, route.destId);
+  if (!events.some(e => e.type === 'sell' && isTrade(e))) return 'рейс без продаж';
+  return events.some(e => e.type === 'buy' && isTrade(e)) ? 'смешанный рейс' : 'продажа без закупки';
 }
 
 /**
