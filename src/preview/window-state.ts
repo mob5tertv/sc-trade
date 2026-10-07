@@ -16,10 +16,10 @@ export interface WindowSnapshot {
   ignoreCursorEvents: boolean;
   skipTaskbar: boolean;
   keyboard: KeyboardOwner;
-  /** How many times the window layer asked to remember the game window. */
-  remembered: number;
-  /** How many times the focus was handed back to the game. */
-  restored: number;
+  /** How many times the game window was remembered: the `remember_foreground` calls the Rust side would store. */
+  gameRemembered: number;
+  /** How many times the focus was handed back to the game: the `restore_foreground` calls that worked. */
+  focusReturnedToGame: number;
 }
 
 export interface PreviewWindowOptions {
@@ -44,6 +44,8 @@ export interface PreviewWindow {
   restoreForeground(): boolean;
   /** The player clicks the game: an overlay that holds the keyboard loses it. */
   clickGame(): void;
+  /** The player presses a mouse button inside the window: a window that can take the focus gets the keyboard. */
+  pressInside(): void;
 }
 
 /** The window as `tauri.conf.json` creates it: hidden, 520x32, off the taskbar. */
@@ -57,10 +59,10 @@ export function createPreviewWindow(options: PreviewWindowOptions = {}): Preview
   let skipTaskbar = true;
 
   const snapshot = (): WindowSnapshot => {
-    const { keyboard, focusable, remembered, restored } = focus.state();
+    const { keyboard, focusable, gameRemembered, focusReturnedToGame } = focus.state();
     return {
       visible, closed, position: { ...position }, size: { ...size },
-      focusable, ignoreCursorEvents, skipTaskbar, keyboard, remembered, restored,
+      focusable, ignoreCursorEvents, skipTaskbar, keyboard, gameRemembered, focusReturnedToGame,
     };
   };
 
@@ -81,7 +83,12 @@ export function createPreviewWindow(options: PreviewWindowOptions = {}): Preview
     snapshot,
     setSize: (next) => apply(() => { size = { width: next.width, height: next.height }; }),
     setPosition: (next) => apply(() => { position = { x: next.x, y: next.y }; }),
-    show: () => apply(() => { if (!closed) visible = true; }),
+    // a shown window is activated, unless it cannot take the focus
+    show: () => apply(() => {
+      if (closed) return null;
+      visible = true;
+      return focus.take(true);
+    }),
     hide: () => apply(() => {
       visible = false;
       return focus.leaveScreen();
@@ -107,5 +114,7 @@ export function createPreviewWindow(options: PreviewWindowOptions = {}): Preview
       return restored;
     },
     clickGame: () => apply(() => focus.clickGame()),
+    // a window that lets the clicks through never gets the press
+    pressInside: () => apply(() => focus.take(visible && !ignoreCursorEvents)),
   };
 }

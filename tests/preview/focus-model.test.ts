@@ -5,7 +5,7 @@ import { createFocusModel } from '../../src/preview/focus-model';
 describe('focus model', () => {
   it('starts with the game holding the keyboard and nothing remembered', () => {
     const focus = createFocusModel();
-    expect(focus.state()).toEqual({ keyboard: 'game', focusable: true, remembered: 0, restored: 0 });
+    expect(focus.state()).toEqual({ keyboard: 'game', focusable: true, gameRemembered: 0, focusReturnedToGame: 0 });
     expect(focus.isFocused()).toBe(false);
   });
 
@@ -17,7 +17,7 @@ describe('focus model', () => {
     expect(focus.isFocused()).toBe(true);
 
     expect(focus.restore()).toEqual({ restored: true, event: 'blur' });
-    expect(focus.state()).toMatchObject({ keyboard: 'game', remembered: 1, restored: 1 });
+    expect(focus.state()).toMatchObject({ keyboard: 'game', gameRemembered: 1, focusReturnedToGame: 1 });
   });
 
   it('does not repeat the focus event when the overlay already has the keyboard', () => {
@@ -40,7 +40,7 @@ describe('focus model', () => {
   it('has nothing to give back when no game window was remembered', () => {
     const focus = createFocusModel();
     expect(focus.restore()).toEqual({ restored: false, event: null });
-    expect(focus.state().restored).toBe(0);
+    expect(focus.state().focusReturnedToGame).toBe(0);
   });
 
   it('does not remember the overlay itself as the game', () => {
@@ -49,7 +49,21 @@ describe('focus model', () => {
     focus.remember();
     // the overlay holds the keyboard: nothing to remember, as the Rust side ignores its own window
     expect(focus.restore()).toEqual({ restored: false, event: null });
-    expect(focus.state()).toMatchObject({ keyboard: 'overlay', remembered: 1, restored: 0 });
+    expect(focus.state()).toMatchObject({ keyboard: 'overlay', gameRemembered: 0, focusReturnedToGame: 0 });
+  });
+
+  it('counts only the calls that store a game window, the way src-tauri/src/focus.rs does', () => {
+    const focus = createFocusModel();
+    focus.remember();
+    focus.remember();
+    expect(focus.state().gameRemembered).toBe(2);
+    focus.take(true);
+    focus.remember(); // refused: the foreground window is the overlay's own
+    focus.remember();
+    expect(focus.state().gameRemembered).toBe(2);
+    focus.clickGame();
+    focus.remember();
+    expect(focus.state().gameRemembered).toBe(3);
   });
 
   it('keeps what it remembered, so a later restore works again', () => {
@@ -59,14 +73,14 @@ describe('focus model', () => {
     focus.restore();
     focus.take(true);
     expect(focus.restore()).toEqual({ restored: true, event: 'blur' });
-    expect(focus.state().restored).toBe(2);
+    expect(focus.state().focusReturnedToGame).toBe(2);
   });
 
   it('counts a restore that found the keyboard already with the game, without an event', () => {
     const focus = createFocusModel();
     focus.remember();
     expect(focus.restore()).toEqual({ restored: true, event: null });
-    expect(focus.state().restored).toBe(1);
+    expect(focus.state().focusReturnedToGame).toBe(1);
   });
 
   it('a click on the game takes the keyboard away without counting as a return', () => {
@@ -74,7 +88,7 @@ describe('focus model', () => {
     focus.remember();
     focus.take(true);
     expect(focus.clickGame()).toBe('blur');
-    expect(focus.state()).toMatchObject({ keyboard: 'game', restored: 0 });
+    expect(focus.state()).toMatchObject({ keyboard: 'game', focusReturnedToGame: 0 });
     expect(focus.clickGame()).toBeNull();
   });
 

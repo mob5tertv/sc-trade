@@ -149,6 +149,9 @@ const rectOf = (el: HTMLElement) => {
   return { x: r.left + window.scrollX, y: r.top + window.scrollY, width: r.width, height: r.height };
 };
 
+/** After a step the application counts as settled when no command has crossed the mocked boundary for this long. */
+const SETTLE_QUIET_MS = 150;
+
 const nextFrames = (): Promise<void> =>
   Promise.race([
     new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
@@ -179,7 +182,9 @@ const hostApi: PreviewHostGlobal = {
     for (;;) {
       const before = messageCount;
       await nextFrames();
-      if (messageCount === before || performance.now() > deadline) return;
+      // nothing moved for two frames, and the application is not waiting for an answer (a click that reads the database)
+      const quiet = (overlay.contentWindow?.__preview?.idleMs() ?? Infinity) >= SETTLE_QUIET_MS;
+      if ((messageCount === before && quiet) || performance.now() > deadline) return;
     }
   },
   barHeight: () => bar.offsetHeight,
