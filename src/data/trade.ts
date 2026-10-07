@@ -4,9 +4,10 @@ import type { RunEvent, RunWithEvents } from '../core/types';
 import type { Db } from './db';
 import type { Logger } from './logger';
 import { addObservation } from './repo/diary';
-import { addRunEvent, closeRun, getActiveRun, getRun, startRun } from './repo/runs';
+import { addFinishedRun, addRunEvent, closeRun, getActiveRun, getRun, removeEmptyRun, startRun } from './repo/runs';
 
-// The trade service: records a purchase, a sale, a depart or arrive mark or a lost cargo.
+// The trade service: records a purchase, a sale, a sale of goods that were never bought here (income), a depart or arrive
+// mark or a lost cargo.
 // The first purchase starts the run, the sale that empties the hold finishes it, and trades that cannot
 // happen (selling what is not on board, buying more than fits, no run, bad numbers) are rejected with a
 // `TradeError` whose message is shown to the player. A rejected call writes nothing.
@@ -20,12 +21,14 @@ import { addRunEvent, closeRun, getActiveRun, getRun, startRun } from './repo/ru
 //    computed from. A failure at the event leaves an empty active run: the next purchase joins it;
 //  - the run is closed last, once its final sale is recorded. A failure there leaves the sale recorded
 //    and the run active with an empty hold: nothing is lost, but the run has to be closed by hand ("cargo lost").
+//  - an income sale (spec 14.10) is a run of its own, written already finished (so it never takes the slot of the run that is
+//    going, and the schema needs nothing new), with one sale event. A failure at that event removes the empty run again.
 // Calls on one database run one after another, so two quick presses cannot both pass a check that only
 // the first of them should pass.
 
 const LOG = 'run';
 
-export type TradeErrorCode = 'no_active_run' | 'oversell' | 'no_space' | 'bad_input';
+export type TradeErrorCode = 'no_active_run' | 'oversell' | 'no_space' | 'bad_input' | 'on_board';
 
 /** A trade that cannot happen. `message` is meant for the player; `code` is for the caller's logic. */
 export class TradeError extends Error {
@@ -92,11 +95,11 @@ async function writeObservation(d: TradeDeps, side: 'buy' | 'sell', t: TradeInpu
   await addObservation(d.db, d.log, { ts, terminalId: t.terminalId, commodityId: t.commodityId, side, price: t.price, scu: scuAfter(side, t) });
 }
 
-/** Writes a buy or sell event and logs it; returns the event with its new id. */
-async function writeTrade(d: TradeDeps, runId: number, type: 'buy' | 'sell', t: TradeInput, ts: number): Promise<RunEvent> {
+/** Writes a buy or sell event and logs it (`logAs` names the line, the type of the event by default); returns the event with its new id. */
+async function writeTrade(d: TradeDeps, runId: number, type: 'buy' | 'sell', t: TradeInput, ts: number, logAs: string = type): Promise<RunEvent> {
   const draft: Omit<RunEvent, 'id'> = { runId, ts, type, terminalId: t.terminalId, commodityId: t.commodityId, scu: t.scu, price: t.price };
   const id = await addRunEvent(d.db, draft);
-  d.log.info(LOG, type, { runId, eventId: id, ts, terminalId: t.terminalId, commodityId: t.commodityId, scu: t.scu, price: t.price });
+  d.log.info(LOG, logAs, { runId, eventId: id, ts, terminalId: t.terminalId, commodityId: t.commodityId, scu: t.scu, price: t.price });
   return { id, ...draft };
 }
 
@@ -152,6 +155,36 @@ export function recordSell(d: TradeDeps, t: TradeInput): Promise<{ run: RunWithE
       d.log.info(LOG, 'finished', { runId, endedAt: ts, invested, revenue, profit, durationSec });
     }
     return { run, finished };
+  });
+}
+
+/**
+ * Records a sale of goods that were never bought through the application (bought before it ran, mined, assembled): an
+ * income. It is a run of its own, finished at the moment of the sale, with that one sale: nothing invested, the profit is the
+ * revenue. The run that is going (if any) is not touched. Rejected for goods that are in the hold of the run that is going:
+ * those are sold from the run, or the cargo would be counted twice. The quantity is not checked against any hold.
+ * The buyer's inventory goes to the diary by the rule of a sale (`knownScu` plus what was sold).
+ */
+export function recordIncome(d: TradeDeps, t: TradeInput): Promise<RunWithEvents> {
+  return serialized(d.db, async () => {
+    checkInput(t);
+    const active = await getActiveRun(d.db);
+    if (cargoOf(active?.events ?? []).some(line => line.commodityId === t.commodityId)) {
+      throw new TradeError('on_board', 'Этот товар числится в трюме: продай его из рейса');
+    }
+
+    const ts = d.now();
+    await writeObservation(d, 'sell', t, ts);
+    const { vehicleId, scuCapacity } = d.settings;
+    const runId = await addFinishedRun(d.db, { vehicleId, scuCapacity, startedAt: ts, endedAt: ts });
+    try {
+      await writeTrade(d, runId, 'sell', t, ts, 'income');
+    } catch (err) {
+      // an empty finished run would be a row of nothing in the history: take it back (the failure of that is only logged)
+      await removeEmptyRun(d.db, runId).catch((removeErr: unknown) => d.log.warn(LOG, 'cannot remove the empty run', { runId, err: removeErr }));
+      throw err;
+    }
+    return reload(d.db, runId);
   });
 }
 

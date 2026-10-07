@@ -101,6 +101,27 @@ export async function startRun(db: Db, r: { vehicleId: number | null; scuCapacit
   return result.lastInsertId;
 }
 
+/**
+ * Writes a run that is over already, `done`, in one statement; returns its id. It never takes the slot of the active run (the
+ * `run_one_active` index only counts `active` rows), so it can be written while a run is going. Used for a sale of goods that
+ * were never bought through the application.
+ */
+export async function addFinishedRun(db: Db, r: { vehicleId: number | null; scuCapacity: number; startedAt: number; endedAt: number }): Promise<number> {
+  const result = await db.execute(
+    "INSERT INTO run (vehicle_id, scu_capacity, started_at, ended_at, status) VALUES (?, ?, ?, ?, 'done')",
+    [r.vehicleId, r.scuCapacity, r.startedAt, r.endedAt],
+  );
+  return result.lastInsertId;
+}
+
+/** Removes the run `id` when it is over and has no events (what a write that failed half-way leaves). A run with events, and the active run, stay. */
+export async function removeEmptyRun(db: Db, id: number): Promise<void> {
+  await db.execute(
+    "DELETE FROM run WHERE id = ? AND status <> 'active' AND NOT EXISTS (SELECT 1 FROM run_event WHERE run_id = ?)",
+    [id, id],
+  );
+}
+
 /** Appends an event to a run; returns its id. */
 export async function addRunEvent(db: Db, e: Omit<RunEvent, 'id'>): Promise<number> {
   const result = await db.execute(

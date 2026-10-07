@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cargoOf, phases, runTotals, simpleRoute } from '../../src/core/run';
 import { ev, run } from '../helpers/factories';
+import { incomeRun } from '../helpers/income-fixtures';
 
 const buy = (ts: number, scu: number, price: number, terminalId = 1, commodityId = 10) => ev({ ts, type: 'buy', terminalId, commodityId, scu, price });
 const sell = (ts: number, scu: number, price: number, terminalId = 2, commodityId = 10) => ev({ ts, type: 'sell', terminalId, commodityId, scu, price });
@@ -105,5 +106,25 @@ describe('phases', () => {
     const late = [buy(1000, 100, 6000), ev({ ts: 1300, type: 'depart' }), ev({ ts: 3500, type: 'arrive' }), sell(3400, 100, 7000)];
     expect(phases(early)).toBeNull();
     expect(phases(late)).toBeNull();
+  });
+});
+
+describe('a run of one sale and no purchase (income, task 32)', () => {
+  const income = incomeRun(1, 5000, 120, 3700);
+
+  it('has nothing invested, the profit is the revenue, and there is no ROI and no rate to divide by', () => {
+    const t = runTotals(income.run, income.events, 9999);
+    expect(t).toEqual({ invested: 0, revenue: 444_000, profit: 444_000, roi: null, durationSec: 0, uecPerHour: null });
+    for (const value of Object.values(t)) expect(Number.isNaN(value)).toBe(false);
+  });
+
+  it('is the same wherever "now" is: a finished run does not grow', () => {
+    expect(runTotals(income.run, income.events, 5000)).toEqual(runTotals(income.run, income.events, 99_999));
+  });
+
+  it('leaves nothing in the hold, is no route and has no phases', () => {
+    expect(cargoOf(income.events)).toEqual([]);
+    expect(simpleRoute(income.events)).toBeNull();
+    expect(phases(income.events)).toBeNull();
   });
 });
