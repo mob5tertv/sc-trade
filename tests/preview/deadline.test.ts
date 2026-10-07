@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DeadlineError, withDeadline } from '../../scripts/preview/deadline.mjs';
 
 const later = <T>(ms: number, value: T) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
@@ -25,8 +25,29 @@ describe('withDeadline', () => {
     await expect(withDeadline(later(200, 'late'), 20, 'the job')).rejects.toBeInstanceOf(DeadlineError);
   });
 
-  it('does not keep the process alive for its timer after the job is done', async () => {
-    // a 60 s timer left behind would hold the test process open; the call must clear it (the run would hang otherwise)
-    await withDeadline(later(1, 'x'), 60_000, 'the job');
+  describe('does not leave its timer behind (it would hold the process open until it fires)', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('when the job succeeds', async () => {
+      vi.useFakeTimers();
+      await withDeadline(Promise.resolve('x'), 60_000, 'the job');
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('when the job fails', async () => {
+      vi.useFakeTimers();
+      await expect(withDeadline(Promise.reject(new Error('boom')), 60_000, 'the job')).rejects.toThrow('boom');
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('when the deadline itself fires', async () => {
+      vi.useFakeTimers();
+      const failure = withDeadline(never(), 1000, 'the job');
+      const caught = expect(failure).rejects.toBeInstanceOf(DeadlineError);
+      expect(vi.getTimerCount()).toBe(1); // armed while the job runs
+      await vi.advanceTimersByTimeAsync(1000);
+      await caught;
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });
