@@ -10,7 +10,7 @@ import {
 import { ref, term } from '../helpers/factories';
 import { FakeUex } from '../helpers/fake-uex';
 import { GOLD, NOW } from '../helpers/route-fixtures';
-import { expectSoundProgress, recordProgress } from '../helpers/suggest-progress-fixtures';
+import { countingDb, expectSoundProgress, recordProgress } from '../helpers/suggest-progress-fixtures';
 import { addUexBuy, addUexSell, seedRouteScenario, suggestDeps } from '../helpers/suggest-fixtures';
 import { migratedDb } from '../helpers/test-db';
 
@@ -599,6 +599,78 @@ describe('suggestFromDetailed progress', () => {
     const r = await suggestFromDetailed(deps, 1, 696, undefined, { onProgress: () => { throw 'plain text'; } });
     expect(r.options).toHaveLength(2);
     expect(warnings()[0].line).toContain('plain text');
+  });
+});
+
+describe('suggestFromDetailed progress across terminals', () => {
+  it('stays sound and ends complete when a request of an earlier terminal fails and a later one still runs', async () => {
+    await addUexBuy(db, 5, GOLD, 6000);
+    uex.failRoutes = true;                                   // pairs only
+    uex.failDistances = (a) => a === 5;                      // the pairs asked of terminal 5 (the first group) fail
+    const { points, onProgress } = recordProgress();
+    const r = await suggestFromDetailed(withNearby(deps), 1, 696, undefined, { onProgress });
+    // terminal 5: the route list and two pairs planned (3), terminal 1: the route list and three pairs (4);
+    // the first pair of 5 fails, so its second pair is dropped; terminal 1 goes on with all of its own
+    expect(points).toEqual([
+      { done: 0, total: 7 }, { done: 1, total: 7 }, { done: 2, total: 6 },
+      { done: 3, total: 6 }, { done: 4, total: 6 }, { done: 5, total: 6 }, { done: 6, total: 6 },
+    ]);
+    expectSoundProgress(points);
+    expect(uex.routeCalls).toEqual([5, 1]);
+    expect(uex.distanceCalls).toEqual([[5, 2], [1, 5], [1, 2], [1, 3]]);
+    expect(uex.maxInFlight).toBe(1);
+    expect(r.missing).toBe(2);                               // 5-2 and 5-3 are still unknown
+  });
+});
+
+describe('suggestFromDetailed, cached then fetch then cached', () => {
+  it('leaves no trace in the first call, and the third call returns what the second did', async () => {
+    const first = await suggestFromDetailed(deps, 1, 696, undefined, cached);
+    expect(first.missing).toBe(2);
+    noUexCalls();
+    expect(await loadDistances(db)).toEqual(new Map());
+    expect(await getMeta(db, 'routes_fetched:1')).toBeNull();
+
+    const second = await suggestFromDetailed(deps, 1, 696);
+    expect(second.missing).toBe(0);
+    expect(second.options.map((x) => x.timeSec)).toEqual([1015, 1025]);
+    expect(uex.routeCalls).toEqual([1]);
+
+    uex.routeCalls.length = 0;
+    const third = await suggestFromDetailed(deps, 1, 696, undefined, cached);
+    expect(third).toEqual(second);
+    noUexCalls();
+    expect(third.options).not.toEqual(first.options);        // the first answer had no times
+  });
+});
+
+describe('what a suggestion spends on planning', () => {
+  it('reads nothing for a plan when nobody asked for progress', async () => {
+    const counted = countingDb(db);
+    await suggestFromDetailed({ ...deps, db: counted.db }, 1, 696);
+    // the table once for the ranking and once in the one terminal's ensureDistances; the meta once (is its route list due)
+    expect(counted.reads()).toEqual({ distances: 2, meta: 1 });
+  });
+
+  it('with progress the plan costs one meta read per terminal and no read of the distance table', async () => {
+    const counted = countingDb(db);
+    const { onProgress } = recordProgress();
+    await suggestFromDetailed({ ...deps, db: counted.db }, 1, 696, undefined, { onProgress });
+    expect(counted.reads()).toEqual({ distances: 2, meta: 2 });
+  });
+
+  it('reads the table once per terminal, however many terminals are asked', async () => {
+    await addUexBuy(db, 5, GOLD, 6000);
+    const counted = countingDb(db);
+    await suggestFromDetailed(withNearby({ ...deps, db: counted.db }), 1, 696);
+    expect(uex.routeCalls.sort()).toEqual([1, 5]);
+    expect(counted.reads()).toEqual({ distances: 3, meta: 2 });
+  });
+
+  it("reads nothing but the table once in the 'cached' mode", async () => {
+    const counted = countingDb(db);
+    await suggestFromDetailed({ ...deps, db: counted.db }, 1, 696, undefined, cached);
+    expect(counted.reads()).toEqual({ distances: 1, meta: 0 });
   });
 });
 

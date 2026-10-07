@@ -39,13 +39,24 @@ type DistanceMode = NonNullable<SuggestRun['distances']>;
 export interface Suggestion {
   options: RouteOption[];
   /**
-   * How many distances the best candidates (the ones the 'fetch' mode would fetch for) still lack. 0 means the
-   * answer is final; in the 'fetch' mode it counts what a repeated run would ask, such as the pairs UEX did not answer.
+   * How many distinct distances the best `MAX_MEASURED_OPTIONS` candidates (the ones the 'fetch' mode fetches for)
+   * still lack at the end of the call. 0 means the answer is final.
+   *
+   * It can stay above 0 after a successful 'fetch' too:
+   *  - when more candidates than `MAX_MEASURED_OPTIONS` lacked a distance, the run fetched the best batch and
+   *    the next run would fetch the next one;
+   *  - when UEX failed or did not answer a pair (a failed pair is not stored, and a failure stops the rest of
+   *    that terminal's pairs).
+   * A caller must therefore never repeat the fetch in a loop while `missing > 0`: it may never reach 0. Fetch once
+   * per user request, and show what is known.
    */
   missing: number;
 }
 
-/** How many of the best candidates (by ROI) get their missing distances fetched in one suggestion. */
+/**
+ * How many of the best candidates (by ROI) get their missing distances fetched in one suggestion. Candidates
+ * beyond them stay unmeasured until a later run, so `Suggestion.missing` may be above 0 after a successful fetch.
+ */
 const MAX_MEASURED_OPTIONS = 20;
 
 /**
@@ -118,10 +129,9 @@ const reason = (err: unknown): string => (err instanceof Error ? err.message : S
  * Hands the progress points to the caller: a point equal to the last one is skipped, nothing is reported
  * while nothing has to be requested, and a callback that throws is logged and never stops the suggestion.
  */
-function progressReporter(d: SuggestDeps, onProgress: SuggestRun['onProgress']): (p: SuggestProgress) => void {
+function progressReporter(d: SuggestDeps, onProgress: (p: SuggestProgress) => void): (p: SuggestProgress) => void {
   let last: SuggestProgress | null = null;
   return (p) => {
-    if (!onProgress) return;
     if (last === null ? p.total === 0 : p.done === last.done && p.total === last.total) return;
     last = p;
     try {
@@ -135,16 +145,22 @@ function progressReporter(d: SuggestDeps, onProgress: SuggestRun['onProgress']):
 /**
  * Asks UEX, one terminal at a time and never in parallel, for the distances the groups lack. The progress
  * counts the requests of all the groups together: groups that have not started are counted as they were
- * planned, a started one as it really goes (its plan can only shrink), so `total` never grows.
+ * planned, a started one as it really goes (its plan can only shrink), so `total` never grows. Without
+ * `onProgress` nothing is planned: the plan is only there to be reported.
  */
 async function fetchDistances(
   d: SuggestDeps, distances: Map<string, number | null>,
   groups: Map<number, Map<string, [number, number]>>, onProgress: SuggestRun['onProgress'],
 ): Promise<Map<string, number | null>> {
-  const report = progressReporter(d, onProgress);
   const asked = [...groups].map(([from, pairs]) => ({ from, pairs: [...pairs.values()] }));
+  if (!onProgress) {
+    for (const { from, pairs } of asked) distances = await ensureDistances(d, from, pairs);
+    return distances;
+  }
+
+  const report = progressReporter(d, onProgress);
   const planned: number[] = [];
-  for (const { from, pairs } of asked) planned.push(await countDistanceRequests(d, from, pairs));
+  for (const { from, pairs } of asked) planned.push(await countDistanceRequests(d, from, pairs, distances));
   const plannedFrom = (index: number): number => planned.slice(index).reduce((sum, n) => sum + n, 0);
   report({ done: 0, total: plannedFrom(0) });
 
@@ -164,7 +180,9 @@ async function fetchDistances(
 /**
  * Ranks every candidate first. In the `'fetch'` mode (the default) it then fetches the distances the best of
  * them lack (UEX failures never abort) and ranks again with what the cache holds; in the `'cached'` mode it
- * ranks again at once and asks UEX nothing. `missing` is what the best candidates still lack at the end.
+ * ranks again at once and asks UEX nothing. `missing` is what the best candidates still lack at the end; after
+ * a 'fetch' it is the next run's work (unmeasured candidates beyond the limit, pairs UEX did not answer), so it
+ * is not a reason to fetch again at once (see `Suggestion.missing`).
  */
 async function rank(
   d: SuggestDeps, now: number, freeScu: number,

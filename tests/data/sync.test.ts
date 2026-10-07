@@ -10,6 +10,7 @@ import {
 import { UexError } from '../../src/data/uex-client';
 import { px, seedTerminals, term, veh } from '../helpers/factories';
 import { FakeUex } from '../helpers/fake-uex';
+import { countingDb } from '../helpers/suggest-progress-fixtures';
 import { migratedDb } from '../helpers/test-db';
 
 const NOW = 1_800_000_000;
@@ -399,11 +400,60 @@ describe('ensureDistances progress', () => {
   });
 });
 
+describe('ensureDistances progress callback that throws', () => {
+  it('does not lose the pairs it already fetched, goes on asking and logs the failure', async () => {
+    uex.routes = [];
+    const calls: number[] = [];
+    const d = await ensureDistances(deps, 1, [[1, 2], [1, 3]], (p) => { calls.push(p.done); throw new Error('the screen is gone'); });
+    expect(calls).toEqual([0, 1, 2, 3]);                                 // called again after every throw
+    expect(uex.distanceCalls).toEqual([[1, 2], [1, 3]]);
+    expect(d.get(distKey(1, 2))).toBe(7);
+    expect((await loadDistances(db)).get(distKey(1, 3))).toBe(7);        // stored although the callback threw each time
+    const logged = warnings().filter((l) => l.line.includes('the screen is gone'));
+    expect(logged).toHaveLength(4);
+  });
+
+  it('survives a thrown value that is not an Error', async () => {
+    await expect(ensureDistances(deps, 1, [[1, 2]], () => { throw 'plain text'; })).resolves.toBeInstanceOf(Map);
+    expect((await loadDistances(db)).get(distKey(1, 2))).toBe(7);
+  });
+});
+
+describe('ensureDistances reads', () => {
+  it('loads the distance table once, also when the route list is due, and still sees what the route list brought', async () => {
+    uex.routes = [{ destId: 12, gm: 59 }];
+    const counted = countingDb(db);
+    const d = await ensureDistances({ ...deps, db: counted.db }, 85, [[85, 12], [85, 100]]);
+    expect(counted.reads()).toEqual({ distances: 1, meta: 1 });
+    expect(uex.distanceCalls).toEqual([[85, 100]]);                      // 85-12 came with the route list
+    expect(d.get(distKey(85, 12))).toBe(59);
+    expect(d.get(distKey(85, 100))).toBe(7);
+    expect((await loadDistances(db)).get(distKey(85, 12))).toBe(59);     // and it is stored
+  });
+
+  it('keeps a route-list row that is the terminal itself out of the table, as the store does', async () => {
+    uex.routes = [{ destId: 85, gm: 1 }, { destId: 12, gm: 59 }];
+    const d = await ensureDistances(deps, 85, []);
+    expect(d).toEqual(new Map([[distKey(85, 12), 59]]));
+    expect(await loadDistances(db)).toEqual(d);
+  });
+
+  it('loads the table once when the route list is not due', async () => {
+    uex.routes = [{ destId: 12, gm: 59 }];
+    await ensureDistances(deps, 85, []);
+    const counted = countingDb(db);
+    await ensureDistances({ ...deps, db: counted.db }, 85, [[85, 12]]);
+    expect(counted.reads()).toEqual({ distances: 1, meta: 1 });
+  });
+});
+
 describe('countDistanceRequests', () => {
+  const known = () => loadDistances(db);
+
   it('counts the route list and the unknown pairs, the same as ensureDistances then plans', async () => {
     uex.routes = [{ destId: 12, gm: 59 }];
     const pairs: Array<[number, number]> = [[85, 12], [12, 85], [85, 100], [85, 85]];
-    expect(await countDistanceRequests(deps, 85, pairs)).toBe(3);        // the route list, 85-12 and 85-100 (the repeat and the self pair do not count)
+    expect(await countDistanceRequests(deps, 85, pairs, await known())).toBe(3);   // the route list, 85-12 and 85-100 (the repeat and the self pair do not count)
     expect(uex.routeCalls).toEqual([]);                                  // counting asks UEX nothing
     expect(uex.distanceCalls).toEqual([]);
     const points: DistanceProgress[] = [];
@@ -411,19 +461,27 @@ describe('countDistanceRequests', () => {
     expect(points[0]).toEqual({ done: 0, total: 3 });
   });
 
+  it('counts by the distances it is given and reads only the meta table', async () => {
+    const counted = countingDb(db);
+    const pairs: Array<[number, number]> = [[85, 100], [85, 101]];
+    const distances = new Map<string, number | null>([[distKey(85, 100), 5]]);   // not in the database
+    expect(await countDistanceRequests({ ...deps, db: counted.db }, 85, pairs, distances)).toBe(2);
+    expect(counted.reads()).toEqual({ distances: 0, meta: 1 });
+  });
+
   it('does not count a route list that was fetched, nor one that failed less than a day ago', async () => {
     uex.routes = [{ destId: 12, gm: 59 }];
     await ensureDistances(deps, 85, []);
-    expect(await countDistanceRequests(deps, 85, [[85, 100]])).toBe(1);
+    expect(await countDistanceRequests(deps, 85, [[85, 100]], await known())).toBe(1);
     uex.failRoutes = true;
     await ensureDistances(deps, 86, []);
-    expect(await countDistanceRequests(deps, 86, [[86, 100]])).toBe(1);
+    expect(await countDistanceRequests(deps, 86, [[86, 100]], await known())).toBe(1);
     clock = NOW + 86401;
-    expect(await countDistanceRequests(deps, 86, [[86, 100]])).toBe(2);
+    expect(await countDistanceRequests(deps, 86, [[86, 100]], await known())).toBe(2);
   });
 
   it('counts at most twenty pairs', async () => {
     const pairs = Array.from({ length: 30 }, (_, i) => [85, 100 + i] as [number, number]);
-    expect(await countDistanceRequests(deps, 85, pairs)).toBe(21);
+    expect(await countDistanceRequests(deps, 85, pairs, await known())).toBe(21);
   });
 });

@@ -223,10 +223,15 @@ function pairsToAsk(distances: Map<string, number | null>, pairs: Array<[number,
   return missing;
 }
 
-/** How many UEX requests `ensureDistances(d, originId, pairs)` would make now, at most; asks UEX nothing. */
-export async function countDistanceRequests(d: SyncDeps, originId: number, pairs: Array<[number, number]>): Promise<number> {
+/**
+ * How many UEX requests `ensureDistances(d, originId, pairs)` would make now, at most, if the cache held
+ * `distances`. Asks UEX nothing and reads only the one meta row of the route list; the caller has the table.
+ */
+export async function countDistanceRequests(
+  d: SyncDeps, originId: number, pairs: Array<[number, number]>, distances: Map<string, number | null>,
+): Promise<number> {
   const routes = await routesAreDue(d, originId, d.now());
-  return (routes ? 1 : 0) + pairsToAsk(await loadDistances(d.db), pairs).length;
+  return (routes ? 1 : 0) + pairsToAsk(distances, pairs).length;
 }
 
 /**
@@ -249,7 +254,7 @@ export interface DistanceProgress {
  * single-pair requests for the pairs that are still unknown. Never throws because of UEX; returns the cache.
  *
  * `onProgress` is called with the plan before the first request and after every request; the last call is complete
- * (`done === total`). It must not throw: what was found is stored only at the end.
+ * (`done === total`). A callback that throws is logged and ignored, so what was fetched is never lost.
  */
 export async function ensureDistances(
   d: SyncDeps,
@@ -261,26 +266,35 @@ export async function ensureDistances(
   const now = d.now();
 
   const routesDue = await routesAreDue(d, originId, now);
-  let distances = await loadDistances(db);
+  // The table is read once: the route list is merged into this copy, as it is stored.
+  const distances = await loadDistances(db);
   let missing = pairsToAsk(distances, pairs);
   let done = 0;
   let total = (routesDue ? 1 : 0) + missing.length;
-  onProgress?.({ done, total });
+  const report = (): void => {
+    try {
+      onProgress?.({ done, total });
+    } catch (err) {
+      log.warn('sync', 'progress callback failed', { originId, reason: reason(err) });
+    }
+  };
+  report();
 
   if (routesDue) {
     const routes = await attempt(d, 'routes request', { originId }, () => uex.distancesFrom(originId));
     if (routes.ok) {
       await putDistances(db, routes.value.map(({ destId, gm }) => ({ a: originId, b: destId, gm })));
+      // `putDistances` keeps no row of a terminal with itself either.
+      for (const { destId, gm } of routes.value) if (destId !== originId) distances.set(distKey(originId, destId), gm);
       log.info('sync', 'routes stored', { originId, destinations: routes.value.length });
     }
     // A failure is remembered too, so a stalling hub is not asked again at every call.
     await setMeta(db, metaRoutesFetched(originId), routes.ok ? ROUTES_FETCHED : String(now));
 
-    distances = await loadDistances(db);
     missing = pairsToAsk(distances, pairs);
     done = 1;
     total = done + missing.length;
-    onProgress?.({ done, total });
+    report();
   }
 
   const found: Array<{ a: number; b: number; gm: number | null }> = [];
@@ -291,12 +305,12 @@ export async function ensureDistances(
       // A failure is most likely the network, not this pair: do not wait for the next timeouts.
       log.warn('sync', 'distance requests stopped after a failure', { originId, asked: found.length + 1, planned: missing.length });
       total = done;
-      onProgress?.({ done, total });
+      report();
       break;
     }
     found.push({ a, b, gm: answer.value });
     distances.set(distKey(a, b), answer.value);
-    onProgress?.({ done, total });
+    report();
   }
   await putDistances(db, found);
   log.info('sync', 'distances ensured', { originId, pairs: pairs.length, requested: found.length, planned: missing.length });
