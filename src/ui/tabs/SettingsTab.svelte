@@ -6,11 +6,11 @@
 
   type NumberKey =
     | 'scuCapacity' | 'budget' | 'hotMin' | 'warmMin' | 'coolingMin' | 'quantumSpeedKkms'
-    | 'overheadMin' | 'overheadEmptyMin' | 'topN' | 'refillFullMin' | 'panelWidth';
+    | 'overheadMin' | 'overheadEmptyMin' | 'topN' | 'refillFullMin' | 'panelWidth' | 'idleCollapseSec';
   type TriggerKey = 'hotkeyPanel' | 'hotkeyDepart' | 'hotkeyArrive';
 
   const TRIGGERS: ReadonlyArray<{ key: TriggerKey; name: TriggerName; label: string }> = [
-    { key: 'hotkeyPanel', name: 'panel', label: 'Открыть и закрыть панель' },
+    { key: 'hotkeyPanel', name: 'panel', label: 'Развернуть и свернуть окно' },
     { key: 'hotkeyDepart', name: 'depart', label: 'Отметка «Взлетел»' },
     { key: 'hotkeyArrive', name: 'arrive', label: 'Отметка «Прилетел»' },
   ];
@@ -171,17 +171,17 @@
       </div>
     </div>
   {/each}
-  <p class="hint">Например F8 или Ctrl+Alt+T. Пустое поле: клавиша не назначена, панель открывает плашка.</p>
+  <p class="hint">Например F8 или Ctrl+Alt+T. Пустое поле: клавиша не назначена, окно разворачивается кликом по мини-строке.</p>
 
   <h3>Окно</h3>
   <div class="row">
-    <label for="set-corner">Плашка в углу</label>
+    <label for="set-corner">Угол экрана</label>
     <div class="control">
       <select
         id="set-corner"
         class="sc-input"
         value={app.settings.stripCorner}
-        onchange={(event) => settle('stripCorner', () => app.updateSetting('stripCorner', event.currentTarget.value as Settings['stripCorner']))}
+        onchange={(event) => settle('stripCorner', () => app.setCorner(event.currentTarget.value as Settings['stripCorner']))}
       >
         {#each CORNERS as corner (corner.id)}
           <option value={corner.id}>{corner.label}</option>
@@ -189,7 +189,9 @@
       </select>
     </div>
   </div>
-  {@render numberField('panelWidth', 'Ширина панели, px')}
+  {@render numberField('panelWidth', 'Ширина окна, px (380–640)')}
+  {@render numberField('idleCollapseSec', 'Сворачивать через, с', { placeholder: '0 — не сворачивать' })}
+  <p class="hint">Окно само сворачивается в мини-строку, когда курсор ушёл с него и прошло это время. 0 — не сворачивать.</p>
   <div class="row">
     <label for="set-opacity">Прозрачность: {Math.round(app.settings.opacity * 100)}%</label>
     <div class="control">
@@ -205,7 +207,7 @@
     </div>
   </div>
   <div class="row">
-    <label for="set-show-strip">Показывать плашку</label>
+    <label for="set-show-strip">Показывать мини-строку</label>
     <div class="control">
       <input
         id="set-show-strip"
@@ -216,7 +218,7 @@
     </div>
   </div>
   {#if !app.settings.showStrip}
-    <p class="hint">Без плашки панель открывается через значок в трее или назначенную клавишу.</p>
+    <p class="hint">Без мини-строки свёрнутое окно скрыто: оно открывается через значок в трее или назначенную клавишу.</p>
   {/if}
 
   <h3>Журнал</h3>

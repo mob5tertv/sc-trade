@@ -1,41 +1,36 @@
 import { invoke } from '@tauri-apps/api/core';
+import { currentMonitor, getCurrentWindow, primaryMonitor } from '@tauri-apps/api/window';
 import {
-  currentMonitor,
-  getCurrentWindow,
-  PhysicalPosition,
-  PhysicalSize,
-  primaryMonitor,
-} from '@tauri-apps/api/window';
-import {
-  panelRect,
-  panelSideFor,
-  stripRect,
+  anchoredRect,
+  maxContentSize,
   toPhysicalRect,
   type Corner,
+  type Offset,
   type Rect,
   type Size,
 } from '../core/layout';
 import type { Logger } from '../data/logger';
 
-export type WindowMode = 'strip' | 'panel';
+// The one overlay window. It is as big as its content, anchored to a corner of the primary monitor (the anchor
+// corner stays where it is while the size changes), and it never takes the keyboard focus from the game by itself: buttons are clicked with the mouse while the
+// game stays the active window. The keyboard is taken only for the time a text field is edited
+// (`takeKeyboard`) and handed back afterwards (`giveKeyboard`). Every failure is logged and rethrown, so
+// the caller can keep its own state consistent.
 
-/** The panel opens on the side of the strip, so there is no panel side here. */
+export type WindowMode = 'mini' | 'expanded';
+
 export interface WindowLayout {
-  panelWidth: number;
-  stripCorner: Corner;
-  showStrip: boolean;
+  /** The anchor: a corner of the monitor and the distances of the window from that corner's two edges. */
+  corner: Corner;
+  offset: Offset;
+  /** Whether the collapsed window (the mini bar) is shown; off, it is hidden and the tray or a key opens it. */
+  showMini: boolean;
   /** Applied as the CSS custom property `--overlay-opacity` on the document root. */
   opacity: number;
 }
 
-export interface SetModeOptions {
-  /**
-   * Whether collapsing to the strip hands the keyboard focus back to the game (default `true`).
-   * Pass `false` when the player has already moved on, e.g. clicked the game: the panel lost the
-   * focus by itself and the game must not be pulled back by force.
-   */
-  restoreFocus?: boolean;
-}
+/** What the window holds for the moment between the first show and the first measurement of the content. */
+const FIRST_CONTENT: Size = { width: 240, height: 26 };
 
 interface MonitorGeometry {
   /** Monitor size in logical pixels. */
@@ -80,22 +75,50 @@ async function monitorGeometry(log: Logger): Promise<MonitorGeometry> {
   };
 }
 
-/**
- * Puts the window on `rect` (logical pixels of `monitor`). The rect is converted to physical
- * pixels with the scale of the TARGET monitor: logical sizes and positions would be converted with
- * the scale of the monitor the window is on right now, which is wrong when the two differ.
- * The position goes first: moving to a monitor with another scale makes Windows resize the window,
- * and the size set afterwards is the one that stays.
- */
-async function place(rect: Rect, monitor: MonitorGeometry): Promise<void> {
-  const win = getCurrentWindow();
-  const physical = toPhysicalRect(rect, monitor.origin, monitor.scaleFactor);
-  await win.setPosition(new PhysicalPosition(physical.x, physical.y));
-  await win.setSize(new PhysicalSize(physical.width, physical.height));
-}
-
 function applyOpacity(opacity: number): void {
   document.documentElement.style.setProperty('--overlay-opacity', String(opacity));
+}
+
+/** The interface cannot be taller or wider than this: past it the content scrolls instead of the window growing. */
+function applyMaxSize(max: Size): void {
+  const style = document.documentElement.style;
+  style.setProperty('--sc-max-w', `${max.width}px`);
+  style.setProperty('--sc-max-h', `${max.height}px`);
+}
+
+const sameRect = (a: Rect, b: Rect): boolean =>
+  a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+
+/** Where the window stands now, in physical pixels of the desktop; `null` until it was placed. */
+let placed: Rect | null = null;
+/** The same place in logical pixels of the monitor, and the monitor it was worked out for (a drag starts from here). */
+let placedLogical: { rect: Rect; monitor: MonitorGeometry } | null = null;
+
+/**
+ * Puts the window, sized to `content` (CSS pixels), into the corner of the monitor. Position and size
+ * are set by ONE call in physical pixels (`place_window`), so there is no frame in which the window has
+ * already moved and not yet grown. A rect that is already there is not set again.
+ */
+async function placeContent(
+  content: Size,
+  layout: WindowLayout,
+  monitor: MonitorGeometry,
+  log: Logger,
+): Promise<void> {
+  // nothing is laid out yet (the content has no size): there is nothing to place
+  if (!(content.width > 0) || !(content.height > 0)) return;
+  const rect = anchoredRect(monitor.size, layout.corner, content, layout.offset);
+  const physical = toPhysicalRect(rect, monitor.origin, monitor.scaleFactor);
+  if (placed !== null && sameRect(placed, physical)) {
+    placedLogical = { rect, monitor };
+    return;
+  }
+  await invoke('place_window', { x: physical.x, y: physical.y, width: physical.width, height: physical.height });
+  placed = physical;
+  placedLogical = { rect, monitor };
+  log.info('window', 'window placed', {
+    corner: layout.corner, offset: layout.offset, content, rect, physical, scale: monitor.scaleFactor,
+  });
 }
 
 /**
@@ -110,70 +133,141 @@ export function watchFocus(getMode: () => WindowMode, log: Logger, onLost?: () =
 }
 
 /**
- * Switches the single overlay window between its two states.
- * - `panel`: remembers the game window, takes clicks, fills the side of the monitor where the strip
- *   stands, takes the focus.
- * - `strip`: a small clickable badge in a corner that never takes the focus (or hidden when
- *   `showStrip` is off); the focus goes back to the game unless `options.restoreFocus` is `false`.
- * The geometry comes from the primary monitor.
- * Failures are logged and rethrown so the caller can keep its own state consistent.
+ * The first show. The window does not take the focus (not even now), takes the clicks, stays out of the
+ * taskbar, and stands in its corner with a small first size; `fitWindow` sets the real size as soon as
+ * the content is measured. With `showMini` off the window is prepared and stays hidden.
+ * Returns the largest size the content may have (the monitor minus the margins).
  */
-export async function setMode(
-  mode: WindowMode,
-  layout: WindowLayout,
-  log: Logger,
-  options: SetModeOptions = {},
-): Promise<void> {
-  log.info('window', 'set mode', { mode, layout });
+export async function showWindow(layout: WindowLayout, log: Logger): Promise<Size> {
+  log.info('window', 'show window', { layout });
   try {
     applyOpacity(layout.opacity);
     const win = getCurrentWindow();
-    const monitor = await monitorGeometry(log);
-    const { size, origin } = monitor;
-    const monitorInfo = { source: monitor.source, name: monitor.name, size, origin, scale: monitor.scaleFactor };
-
-    if (mode === 'panel') {
-      await invoke('remember_foreground');
-      await win.setFocusable(true);
-      await win.setIgnoreCursorEvents(false);
-      const side = panelSideFor(layout.stripCorner);
-      const rect = panelRect(size, side, layout.panelWidth);
-      await place(rect, monitor);
-      await win.show();
-      // `skipTaskbar` from the config is applied once, while the window is still hidden.
-      await win.setSkipTaskbar(true);
-      await win.setFocus();
-      // Only what was requested; the real focus changes are logged by `watchFocus`.
-      log.info('window', 'panel shown, focus requested', { side, rect, monitor: monitorInfo });
-      // Windows may refuse the focus (e.g. when a key opened the panel while the game had the focus).
-      if (!(await win.isFocused())) {
-        log.warn('window', 'panel did not get the focus', { side, monitor: monitorInfo });
-      }
-      return;
-    }
-
-    // The strip must never take the keyboard focus from the game, not even on its first show.
     await win.setFocusable(false);
-    if (layout.showStrip) {
-      const rect = stripRect(size, layout.stripCorner);
-      // The strip is a button: it must receive the click.
-      await win.setIgnoreCursorEvents(false);
-      await place(rect, monitor);
-      await win.show();
-      await win.setSkipTaskbar(true);
-      log.info('window', 'strip shown, clickable, not focusable', { rect, monitor: monitorInfo });
-    } else {
-      await win.hide();
-      log.info('window', 'strip disabled, window hidden', { monitor: monitorInfo });
-    }
-    if (options.restoreFocus ?? true) {
-      const restored = await invoke<boolean>('restore_foreground');
-      log.info('window', 'focus handed back to the game', { restored });
-    } else {
-      log.info('window', 'focus left where the player put it');
-    }
+    await win.setIgnoreCursorEvents(false);
+    await win.setSkipTaskbar(true);
+    const monitor = await monitorGeometry(log);
+    const max = maxContentSize(monitor.size, layout.offset);
+    applyMaxSize(max);
+    placed = null;
+    await placeContent(FIRST_CONTENT, layout, monitor, log);
+    if (layout.showMini) await win.show();
+    log.info('window', layout.showMini ? 'window shown, clickable, not focusable' : 'mini bar is off, window stays hidden', {
+      max,
+      monitor: { source: monitor.source, name: monitor.name, size: monitor.size, origin: monitor.origin, scale: monitor.scaleFactor },
+    });
+    return max;
   } catch (err) {
-    log.error('window', 'set mode failed', { mode, err });
+    log.error('window', 'show window failed', { err });
+    throw err;
+  }
+}
+
+/**
+ * Sets the window to the size of its content (CSS pixels) at its anchor on the primary monitor. The
+ * anchor, the opacity and the largest size are applied each time, so a change of any of them goes
+ * through here. The same rectangle is not set a second time.
+ */
+export async function fitWindow(content: Size, layout: WindowLayout, log: Logger): Promise<void> {
+  try {
+    applyOpacity(layout.opacity);
+    const monitor = await monitorGeometry(log);
+    applyMaxSize(maxContentSize(monitor.size, layout.offset));
+    await placeContent(content, layout, monitor, log);
+  } catch (err) {
+    log.error('window', 'cannot fit the window', { content, err });
+    throw err;
+  }
+}
+
+/**
+ * The window as it stands now, in logical pixels of the primary monitor, with the size of that monitor:
+ * what a drag starts from. `null` until the window has been placed.
+ */
+export function windowGeometry(): { rect: Rect; monitor: Size } | null {
+  return placedLogical === null ? null : { rect: { ...placedLogical.rect }, monitor: { ...placedLogical.monitor.size } };
+}
+
+/**
+ * Moves the window to `rect` (logical pixels of the monitor) with ONE `place_window`, keeping its size. This
+ * is the drag: it is called up to once per frame, so a success is not logged; a failure is.
+ */
+export async function moveWindow(rect: Rect, log: Logger): Promise<void> {
+  if (placedLogical === null) return;
+  const { monitor } = placedLogical;
+  const physical = toPhysicalRect(rect, monitor.origin, monitor.scaleFactor);
+  if (placed !== null && sameRect(placed, physical)) return; // e.g. the pointer keeps pushing against the edge of the monitor
+  try {
+    await invoke('place_window', { x: physical.x, y: physical.y, width: physical.width, height: physical.height });
+  } catch (err) {
+    log.error('window', 'cannot move the window', { rect, err });
+    throw err;
+  }
+  placed = physical;
+  placedLogical = { rect: { ...rect }, monitor };
+}
+
+/** Shows or hides the window; showing never takes the focus (the window is not focusable). */
+export async function setWindowVisible(visible: boolean, log: Logger): Promise<void> {
+  try {
+    const win = getCurrentWindow();
+    if (visible) await win.show();
+    else await win.hide();
+    log.info('window', visible ? 'window shown' : 'window hidden');
+  } catch (err) {
+    log.error('window', 'cannot change the visibility', { visible, err });
+    throw err;
+  }
+}
+
+/**
+ * The player needs the keyboard (a text field is clicked): remembers the window that has the focus (the
+ * game), makes the overlay focusable and focuses it. Windows may refuse the focus, e.g. when a key
+ * opened the window while the game had it.
+ */
+export async function takeKeyboard(log: Logger): Promise<void> {
+  try {
+    const win = getCurrentWindow();
+    await invoke('remember_foreground');
+    await win.setFocusable(true);
+    await win.setFocus();
+    const focused = await win.isFocused();
+    if (focused) log.info('window', 'keyboard taken', { focused });
+    else log.warn('window', 'keyboard taken, but Windows did not give the window the focus', { focused });
+  } catch (err) {
+    log.error('window', 'cannot take the keyboard', { err });
+    // The window may already be focusable; with no holder behind it a plain click would activate it and take the focus
+    // from the game. Best effort: if this fails too there is nothing more to do.
+    await getCurrentWindow().setFocusable(false).catch(() => undefined);
+    throw err;
+  }
+}
+
+/**
+ * Whether the window really has the focus now (Windows' answer, not ours). A failure to ask is taken as "yes": the
+ * caller drops its holders only when it KNOWS the focus is gone.
+ */
+export async function isWindowFocused(log: Logger): Promise<boolean> {
+  try {
+    return await getCurrentWindow().isFocused();
+  } catch (err) {
+    log.warn('window', 'cannot ask whether the window has the focus', { err });
+    return true;
+  }
+}
+
+/**
+ * The keyboard is not needed any more: the window stops being focusable and, when `restore` is set,
+ * the remembered window gets the focus back. Pass `restore: false` when the player has already moved on
+ * (clicked the game): the focus is where he put it and is not pulled anywhere by force.
+ */
+export async function giveKeyboard(log: Logger, restore: boolean): Promise<void> {
+  try {
+    await getCurrentWindow().setFocusable(false);
+    const restored = restore ? await invoke<boolean>('restore_foreground') : null;
+    log.info('window', 'keyboard given', { restore, restored });
+  } catch (err) {
+    log.error('window', 'cannot give the keyboard back', { restore, err });
     throw err;
   }
 }

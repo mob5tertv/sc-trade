@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { panelRect, stripRect, toPhysicalRect, type Rect } from '../../src/core/layout';
+import { anchoredRect, toPhysicalRect, type Rect } from '../../src/core/layout';
 import {
   DEFAULT_MONITOR, formatMonitor, logicalSize, parseMonitor, toLogicalRect,
 } from '../../src/preview/monitor';
@@ -67,10 +67,10 @@ describe('toLogicalRect', () => {
     const size = logicalSize(monitor);
     const tolerance = 0.5 / monitor.scale + 1e-9;
     const rects: Array<[string, Rect]> = [
-      ['strip top-right', stripRect(size, 'top-right')],
-      ['strip bottom-left', stripRect(size, 'bottom-left')],
-      ['panel right', panelRect(size, 'right', 470)],
-      ['panel left', panelRect(size, 'left', 470)],
+      ['mini bar top-right', anchoredRect(size, 'top-right', { width: 310, height: 26 })],
+      ['mini bar bottom-left', anchoredRect(size, 'bottom-left', { width: 310, height: 26 })],
+      ['expanded top-right', anchoredRect(size, 'top-right', { width: 440, height: 612 })],
+      ['expanded bottom-left', anchoredRect(size, 'bottom-left', { width: 440, height: 612 })],
     ];
 
     it.each(rects)('converges with toPhysicalRect for %s', (_name, rect) => {
@@ -81,11 +81,14 @@ describe('toLogicalRect', () => {
       expect(Math.abs(back.height - rect.height)).toBeLessThanOrEqual(2 * tolerance);
     });
 
-    it('keeps a panel glued to the right edge of the desktop', () => {
-      const panel = toLogicalRect(toPhysicalRect(panelRect(size, 'right', 470), origin, monitor.scale), origin, monitor.scale);
-      expect(panel.x + panel.width).toBeCloseTo(size.width, 6);
-      expect(panel.y).toBe(0);
-      expect(panel.height).toBeCloseTo(size.height, 6);
+    it('keeps a window glued to the corner of the desktop when there is no margin', () => {
+      const corner = toLogicalRect(
+        toPhysicalRect(anchoredRect(size, 'bottom-right', { width: 440, height: 612 }, { dx: 0, dy: 0 }), origin, monitor.scale),
+        origin,
+        monitor.scale,
+      );
+      expect(corner.x + corner.width).toBeCloseTo(size.width, 6);
+      expect(corner.y + corner.height).toBeCloseTo(size.height, 6);
     });
   });
 });

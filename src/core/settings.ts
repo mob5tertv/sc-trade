@@ -9,10 +9,26 @@ export interface Settings {
   sort: 'uecPerHour' | 'roi'; nearby: boolean;
   /** Optional trigger keys, e.g. 'F8' or 'Ctrl+Alt+T'; '' means not assigned. */
   hotkeyPanel: string; hotkeyDepart: string; hotkeyArrive: string;
-  /** The panel opens on the side of the strip, so there is no separate panel-side setting. */
+  /** Width of the expanded window in px; its height follows its content. */
   panelWidth: number;
+  /**
+   * Where the window stands, mini bar and expanded view alike: the anchor corner of the monitor, and the
+   * distances (logical px) of the window from that corner's two edges. The player drags the window; the
+   * anchor corner of the window stays fixed while its size changes.
+   */
   stripCorner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-  opacity: number; showStrip: boolean; logLevel: 'debug' | 'info' | 'warn' | 'error';
+  windowDx: number;
+  windowDy: number;
+  /** The grip does not move a locked window. */
+  windowLocked: boolean;
+  /** Seconds without activity before the expanded window folds into the mini bar by itself; 0 = never. */
+  idleCollapseSec: number;
+  /** Ids of the sections that are open in the expanded window, separated by commas. */
+  openSections: string;
+  opacity: number;
+  /** "Show the mini bar": off, the collapsed window is hidden and the tray or a key opens it. */
+  showStrip: boolean;
+  logLevel: 'debug' | 'info' | 'warn' | 'error';
   serverChangedAt: number | null; currentTerminalId: number | null; targetTerminalId: number | null;
 }
 export const DEFAULT_SETTINGS: Settings = {
@@ -22,7 +38,8 @@ export const DEFAULT_SETTINGS: Settings = {
   quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, topN: 5,
   sort: 'uecPerHour', nearby: false,
   hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '',
-  panelWidth: 470, stripCorner: 'top-right',
+  panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
+  idleCollapseSec: 40, openSections: 'terminal,options,settings:ship',
   opacity: 0.92, showStrip: true, logLevel: 'debug',
   serverChangedAt: null, currentTerminalId: null, targetTerminalId: null,
 };

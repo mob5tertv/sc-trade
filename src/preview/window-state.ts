@@ -32,6 +32,8 @@ export interface PreviewWindow {
   snapshot(): WindowSnapshot;
   setSize(size: Dimension): void;
   setPosition(position: Point): void;
+  /** `place_window`: position and size change together, in one report (never a frame with only one of them). */
+  place(rect: Point & Dimension): void;
   show(): void;
   hide(): void;
   close(): void;
@@ -48,13 +50,13 @@ export interface PreviewWindow {
   pressInside(): void;
 }
 
-/** The window as `tauri.conf.json` creates it: hidden, 520x32, off the taskbar. */
+/** The window as `tauri.conf.json` creates it: hidden, 240x26, off the taskbar. */
 export function createPreviewWindow(options: PreviewWindowOptions = {}): PreviewWindow {
   const focus = createFocusModel();
   let visible = false;
   let closed = false;
   let position: Point = { x: 0, y: 0 };
-  let size: Dimension = { width: 520, height: 32 };
+  let size: Dimension = { width: 240, height: 26 };
   let ignoreCursorEvents = false;
   let skipTaskbar = true;
 
@@ -83,6 +85,10 @@ export function createPreviewWindow(options: PreviewWindowOptions = {}): Preview
     snapshot,
     setSize: (next) => apply(() => { size = { width: next.width, height: next.height }; }),
     setPosition: (next) => apply(() => { position = { x: next.x, y: next.y }; }),
+    place: (rect) => apply(() => {
+      position = { x: rect.x, y: rect.y };
+      size = { width: rect.width, height: rect.height };
+    }),
     // a shown window is activated, unless it cannot take the focus
     show: () => apply(() => {
       if (closed) return null;

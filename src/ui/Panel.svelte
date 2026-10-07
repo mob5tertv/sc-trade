@@ -1,81 +1,47 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import Header from './Header.svelte';
   import { app, type Tab } from './state.svelte';
   import SettingsTab from './tabs/SettingsTab.svelte';
   import TerminalTab from './tabs/TerminalTab.svelte';
-  import { createHeldKeyGuard } from './vm/held-keys';
+  import WindowGrip from './WindowGrip.svelte';
 
   const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
     { id: 'terminal', label: 'Терминал' },
     { id: 'run', label: 'Рейс' },
     { id: 'routes', label: 'Маршруты' },
-    { id: 'settings', label: 'Настройки' },
   ];
-
-  let header = $state<ReturnType<typeof Header>>();
-
-  // The player opens the panel with a click while still holding a key of the game (`F` shows its
-  // cursor), and Windows keeps repeating that key into the panel. A key types only after it was
-  // pressed again inside the window; `Esc` and the other keys pressed fresh work as usual.
-  const heldKeys = createHeldKeyGuard();
-  let heldKeyLogged = false;
-
-  function forgetHeldKeys(): void {
-    heldKeys.reset();
-    heldKeyLogged = false;
-  }
-
-  // Capture phase on the window: it runs before the input, the search list and the Esc handler of the panel.
-  function onKeydownCapture(event: KeyboardEvent): void {
-    if (!heldKeys.shouldSwallow(event)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (!heldKeyLogged) {
-      heldKeyLogged = true;
-      app.log.debug('ui', 'held key ignored');
-    }
-  }
-
-  const onKeyupCapture = (event: KeyboardEvent): void => heldKeys.released(event.code);
-
-  onMount(() => {
-    forgetHeldKeys();
-    window.addEventListener('keydown', onKeydownCapture, true);
-    window.addEventListener('keyup', onKeyupCapture, true);
-    // the window got the focus again (the player came back to it): keys held by then are not ours
-    window.addEventListener('focus', forgetHeldKeys);
-
-    // Lets typing start right away when the panel opens: the location search takes the cursor.
-    header?.focusSearch();
-
-    return () => {
-      window.removeEventListener('keydown', onKeydownCapture, true);
-      window.removeEventListener('keyup', onKeyupCapture, true);
-      window.removeEventListener('focus', forgetHeldKeys);
-    };
-  });
 </script>
 
 <main>
-  <Header bind:this={header} onClose={() => app.closePanel('close button')} />
-
-  <div class="tabs" role="tablist" aria-label="Вкладки">
-    {#each TABS as tab (tab.id)}
-      <button
-        class="tab"
-        class:selected={app.tab === tab.id}
-        type="button"
-        role="tab"
-        id="tab-{tab.id}"
-        aria-selected={app.tab === tab.id}
-        aria-controls="tabpanel"
-        onclick={() => app.setTab(tab.id)}
-      >
-        {tab.label}
+  {#if app.view === 'settings'}
+    <div class="settings-head">
+      <WindowGrip />
+      <button class="sc-btn" type="button" onclick={() => app.closeSettings()}>← Назад</button>
+      <strong>Настройки</strong>
+      <button class="sc-btn sc-btn--ghost sc-btn--icon close" type="button" aria-label="Свернуть" title="Свернуть" onclick={() => app.collapse('close button')}>
+        ×
       </button>
-    {/each}
-  </div>
+    </div>
+  {:else}
+    <Header onClose={() => app.collapse('close button')} />
+
+    <div class="tabs" role="tablist" aria-label="Вкладки">
+      {#each TABS as tab (tab.id)}
+        <button
+          class="tab"
+          class:selected={app.tab === tab.id}
+          type="button"
+          role="tab"
+          id="tab-{tab.id}"
+          aria-selected={app.tab === tab.id}
+          aria-controls="tabpanel"
+          onclick={() => app.setTab(tab.id)}
+        >
+          {tab.label}
+        </button>
+      {/each}
+    </div>
+  {/if}
 
   {#if app.notice !== null}
     <div class="notice" class:error={app.notice.kind === 'error'} role="status">
@@ -86,8 +52,9 @@
     </div>
   {/if}
 
-  <div class="content" id="tabpanel" role="tabpanel" aria-labelledby="tab-{app.tab}">
-    {#if app.tab === 'settings'}
+  <!-- the header stands still; when the content is taller than the window allows, this area scrolls -->
+  <div class="content" id="tabpanel" role={app.view === 'settings' ? undefined : 'tabpanel'} aria-labelledby={app.view === 'settings' ? undefined : `tab-${app.tab}`}>
+    {#if app.view === 'settings'}
       <SettingsTab />
     {:else if app.tab === 'terminal'}
       <TerminalTab />
@@ -100,18 +67,33 @@
 </main>
 
 <style>
+  /* As tall as its content, but never taller than the root allows: then only `.content` shrinks and scrolls. */
   main {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
-    width: 100vw;
-    height: 100vh;
+    min-height: 0;
     background: var(--sc-bg);
     border-left: 1px solid var(--sc-border);
     border-right: 1px solid var(--sc-border);
   }
 
+  .settings-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--sc-gap);
+    padding: var(--sc-gap) calc(var(--sc-gap) * 1.5);
+    border-bottom: 1px solid var(--sc-border);
+  }
+
+  .settings-head .close {
+    margin-left: auto;
+  }
+
   .tabs {
     display: flex;
+    flex: none;
     gap: 2px;
     padding: 0 var(--sc-gap);
     border-bottom: 1px solid var(--sc-border);
@@ -139,6 +121,7 @@
 
   .notice {
     display: flex;
+    flex: none;
     align-items: center;
     justify-content: space-between;
     gap: var(--sc-gap);
@@ -151,9 +134,9 @@
     color: var(--sc-bad);
   }
 
-  /* the content scrolls vertically inside the panel, never sideways */
+  /* the content scrolls vertically inside the window, never sideways */
   .content {
-    flex: 1;
+    flex: 0 1 auto;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;

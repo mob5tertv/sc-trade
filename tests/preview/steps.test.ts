@@ -49,6 +49,18 @@ describe('parseSteps', () => {
     ]);
   });
 
+  it('reads a drag: the selector of the grip and the shift of the mouse', () => {
+    expect(parseSteps('drag:[data-drag]:-300,200;drag:.grip:5,0')).toEqual([
+      { kind: 'drag', selector: '[data-drag]', dx: -300, dy: 200, source: 'drag:[data-drag]:-300,200' },
+      { kind: 'drag', selector: '.grip', dx: 5, dy: 0, source: 'drag:.grip:5,0' },
+    ]);
+  });
+
+  it('takes the last colon of a drag as the start of the shift, so a selector may have colons', () => {
+    expect(parseSteps('drag:button:not(.x):10,-20')).toMatchObject([{ kind: 'drag', selector: 'button:not(.x)', dx: 10, dy: -20 }]);
+    expect(parseSteps(' drag: .grip : 1 , 2 ')).toMatchObject([{ kind: 'drag', selector: '.grip', dx: 1, dy: 2 }]);
+  });
+
   it('allows an empty list', () => {
     expect(parseSteps('')).toEqual([]);
     expect(parseSteps(undefined)).toEqual([]);
@@ -68,6 +80,12 @@ describe('parseSteps', () => {
     ['leave:now', 'leave'],
     ['game:now', 'game'],
     ['press:Hyperspace', 'Hyperspace'],
+    ['drag', 'drag'],
+    ['drag:', 'drag'],
+    ['drag:.grip', 'shift'],
+    ['drag:.grip:5', 'shift'],
+    ['drag:.grip:a,b', 'shift'],
+    ['drag::5,5', 'selector'],
   ])('rejects %j and says what is missing', (text, mention) => {
     expect(() => parseSteps(text)).toThrow(mention);
   });

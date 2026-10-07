@@ -8,13 +8,16 @@ import { debug, error, info } from '@tauri-apps/plugin-log';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import Database from '@tauri-apps/plugin-sql';
 import { afterEach, describe, expect, it } from 'vitest';
-import { panelRect, stripRect, toPhysicalRect } from '../../src/core/layout';
+import { anchoredRect, maxContentSize, toPhysicalRect } from '../../src/core/layout';
 import { createLogger, memorySink } from '../../src/data/logger';
 import { openTauriDb } from '../../src/platform/tauri-db';
 import { tauriFetchJson } from '../../src/platform/tauri-http';
 import { applyLogLevel } from '../../src/platform/tauri-logger';
 import { bindTriggers } from '../../src/platform/triggers';
-import { setMode, watchFocus, type WindowLayout } from '../../src/platform/window';
+import {
+  fitWindow, giveKeyboard, isWindowFocused, moveWindow, setWindowVisible, showWindow, takeKeyboard, watchFocus,
+  windowGeometry, type WindowLayout,
+} from '../../src/platform/window';
 import { logicalSize, parseMonitor } from '../../src/preview/monitor';
 import { startPreviewHarness, type PreviewHarness } from '../helpers/preview-fixtures';
 
@@ -30,7 +33,7 @@ afterEach(() => {
   harness = undefined;
 });
 
-const layout: WindowLayout = { panelWidth: 470, stripCorner: 'top-right', showStrip: true, opacity: 0.9 };
+const layout: WindowLayout = { corner: 'top-right', offset: { dx: 16, dy: 16 }, showMini: true, opacity: 0.9 };
 const logger = () => createLogger(memorySink());
 
 describe('commands nobody mocks', () => {
@@ -113,32 +116,149 @@ describe('the window', () => {
     expect(monitor?.workArea.size.height).toBe(1440);
   });
 
+  it('places the window by one command that changes the position and the size together', async () => {
+    const { win, logged } = start();
+    await invoke('place_window', { x: 1450, y: 20, width: 470, height: 300 });
+    expect(win.snapshot()).toMatchObject({ position: { x: 1450, y: 20 }, size: { width: 470, height: 300 } });
+    expect(logged.filter((line) => line.includes('place_window'))).toHaveLength(1);
+  });
+
+  it('refuses to place a window with no area, like the Rust side', async () => {
+    const { win } = start();
+    await expect(invoke('place_window', { x: 0, y: 0, width: 0, height: 26 })).rejects.toThrow('0x26');
+    await expect(invoke('place_window', { x: 0, y: 0, width: 440, height: -1 })).rejects.toThrow('440x-1');
+    expect(win.snapshot().size).toEqual({ width: 240, height: 26 });
+  });
+
   it.each(['1920x1080@1', '2560x1440@1', '2560x1440@1.5', '3840x2160@1.25'])(
-    'puts the real window layer where toPhysicalRect says, on %s',
+    'puts the real window layer where anchoredRect and toPhysicalRect say, on %s',
     async (text) => {
       const monitor = parseMonitor(text);
       const { win } = start({ monitor });
       const size = logicalSize(monitor);
+      const physical = (corner: 'top-right' | 'bottom-left', content: { width: number; height: number }) =>
+        toPhysicalRect(anchoredRect(size, corner, content), { x: 0, y: 0 }, monitor.scale);
 
-      await setMode('panel', layout, logger());
-      const panel = toPhysicalRect(panelRect(size, 'right', 470), { x: 0, y: 0 }, monitor.scale);
+      expect(await showWindow(layout, logger())).toEqual(maxContentSize(size));
+      // the first show: clickable, out of the taskbar, and the window never takes the focus
       expect(win.snapshot()).toMatchObject({
-        visible: true, focusable: true, ignoreCursorEvents: false,
-        position: { x: panel.x, y: panel.y }, size: { width: panel.width, height: panel.height },
+        visible: true, focusable: false, ignoreCursorEvents: false, skipTaskbar: true, keyboard: 'game',
       });
 
-      await setMode('strip', layout, logger());
-      const strip = toPhysicalRect(stripRect(size, 'top-right'), { x: 0, y: 0 }, monitor.scale);
+      const expanded = physical('top-right', { width: 440, height: 612 });
+      await fitWindow({ width: 440, height: 612 }, layout, logger());
       expect(win.snapshot()).toMatchObject({
         visible: true, focusable: false,
-        position: { x: strip.x, y: strip.y }, size: { width: strip.width, height: strip.height },
+        position: { x: expanded.x, y: expanded.y }, size: { width: expanded.width, height: expanded.height },
+      });
+
+      const mini = physical('bottom-left', { width: 310, height: 26 });
+      await fitWindow({ width: 310, height: 26 }, { ...layout, corner: 'bottom-left' }, logger());
+      expect(win.snapshot()).toMatchObject({
+        position: { x: mini.x, y: mini.y }, size: { width: mini.width, height: mini.height },
       });
     },
   );
 
-  it('hides the window when the strip is off', async () => {
+  it('stands at the anchor: the corner and the offsets from it, and the corner stays while the size changes', async () => {
+    const monitor = parseMonitor('2560x1440@1.5');
+    const { win } = start({ monitor });
+    const size = logicalSize(monitor);
+    const anchor: WindowLayout = { corner: 'bottom-left', offset: { dx: 100, dy: 50 }, showMini: true, opacity: 0.9 };
+    await showWindow(anchor, logger());
+    for (const content of [{ width: 310, height: 26 }, { width: 440, height: 600 }]) {
+      await fitWindow(content, anchor, logger());
+      const wanted = toPhysicalRect(anchoredRect(size, 'bottom-left', content, { dx: 100, dy: 50 }), { x: 0, y: 0 }, monitor.scale);
+      expect(win.snapshot()).toMatchObject({
+        position: { x: wanted.x, y: wanted.y }, size: { width: wanted.width, height: wanted.height },
+      });
+      // the left edge and the bottom edge are the fixed ones
+      expect(win.snapshot().position.x).toBe(150);
+      expect(win.snapshot().position.y + win.snapshot().size.height).toBe(1440 - 75);
+    }
+  });
+
+  it('knows where the window stands, in logical pixels of the monitor', async () => {
+    const monitor = parseMonitor('2560x1440@1.5');
+    start({ monitor });
+    expect(await showWindow(layout, logger())).toEqual(maxContentSize(logicalSize(monitor)));
+    await fitWindow({ width: 440, height: 300 }, layout, logger());
+    expect(windowGeometry()).toEqual({
+      rect: anchoredRect(logicalSize(monitor), 'top-right', { width: 440, height: 300 }),
+      monitor: logicalSize(monitor),
+    });
+  });
+
+  it('moves the window by one command, keeps the size, and does not write a line to the log of the app', async () => {
+    const monitor = parseMonitor('2560x1440@1.5');
+    const { win, logged } = start({ monitor });
+    const sink = memorySink();
+    const log = createLogger(sink);
+    await showWindow(layout, log);
+    await fitWindow({ width: 440, height: 300 }, layout, log);
+    const placed = () => logged.filter((line) => line.includes('place_window')).length;
+    const before = { lines: sink.lines.length, placed: placed() };
+
+    await moveWindow({ x: 100, y: 200, width: 440, height: 300 }, log);
+    const moved = toPhysicalRect({ x: 100, y: 200, width: 440, height: 300 }, { x: 0, y: 0 }, monitor.scale);
+    expect(win.snapshot()).toMatchObject({ position: { x: moved.x, y: moved.y }, size: { width: moved.width, height: moved.height } });
+    expect(placed()).toBe(before.placed + 1);
+    expect(sink.lines.length).toBe(before.lines);
+    expect(windowGeometry()?.rect).toEqual({ x: 100, y: 200, width: 440, height: 300 });
+
+    // what stands there is not set a second time
+    await moveWindow({ x: 100, y: 200, width: 440, height: 300 }, log);
+    expect(placed()).toBe(before.placed + 1);
+  });
+
+  it('stays with the game while it is moved: moving takes neither the focus nor the keyboard', async () => {
+    const { win, focusEvents } = start();
+    await showWindow(layout, logger());
+    await fitWindow({ width: 440, height: 300 }, layout, logger());
+    await moveWindow({ x: 300, y: 300, width: 440, height: 300 }, logger());
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, gameRemembered: 0, focusReturnedToGame: 0 });
+    expect(focusEvents).toEqual([]);
+  });
+
+  it('cuts content that is bigger than the monitor down to the largest content size', async () => {
+    const monitor = parseMonitor('1920x1080@1');
+    const { win } = start({ monitor });
+    await showWindow(layout, logger());
+    await fitWindow({ width: 5000, height: 4000 }, layout, logger());
+    expect(win.snapshot()).toMatchObject({ position: { x: 16, y: 16 }, size: { width: 1888, height: 1048 } });
+  });
+
+  it('does not set the same rectangle twice, and does not place content that has no size', async () => {
+    const { logged } = start();
+    await showWindow(layout, logger());
+    const placed = () => logged.filter((line) => line.includes('place_window')).length;
+    const afterShow = placed();
+    await fitWindow({ width: 440, height: 300 }, layout, logger());
+    expect(placed()).toBe(afterShow + 1);
+    await fitWindow({ width: 440, height: 300 }, layout, logger());
+    await fitWindow({ width: 440, height: 300 }, { ...layout, opacity: 0.5 }, logger());
+    expect(placed()).toBe(afterShow + 1);
+    await fitWindow({ width: 0, height: 0 }, layout, logger());
+    expect(placed()).toBe(afterShow + 1);
+    await fitWindow({ width: 440, height: 301 }, layout, logger());
+    expect(placed()).toBe(afterShow + 2);
+  });
+
+  it('says in the log of the app where it put the window', async () => {
+    start();
+    const sink = memorySink();
+    await showWindow(layout, createLogger(sink));
+    await fitWindow({ width: 440, height: 300 }, layout, createLogger(sink));
+    expect(sink.lines.some((l) => l.line.startsWith('[window] window placed') && l.line.includes('"physical"'))).toBe(true);
+  });
+
+  it('leaves the window hidden when the mini bar is off, and shows and hides it on request', async () => {
     const { win } = start();
-    await setMode('strip', { ...layout, showStrip: false }, logger());
+    await showWindow({ ...layout, showMini: false }, logger());
+    expect(win.snapshot()).toMatchObject({ visible: false, focusable: false });
+    await setWindowVisible(true, logger());
+    expect(win.snapshot().visible).toBe(true);
+    await setWindowVisible(false, logger());
     expect(win.snapshot().visible).toBe(false);
   });
 
@@ -150,25 +270,74 @@ describe('the window', () => {
 });
 
 describe('the keyboard focus', () => {
-  it('goes to the panel when it opens and back to the game when the strip returns', async () => {
+  it('stays with the game when the window is shown and fitted: only taking the keyboard changes that', async () => {
     const { win, focusEvents } = start();
-    await setMode('strip', layout, logger()); // startup: nothing remembered yet, nothing to give back
-    expect(win.snapshot()).toMatchObject({ keyboard: 'game', gameRemembered: 0, focusReturnedToGame: 0 });
+    await showWindow(layout, logger());
+    await fitWindow({ width: 440, height: 300 }, layout, logger());
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, gameRemembered: 0, focusReturnedToGame: 0 });
+    expect(focusEvents).toEqual([]);
+  });
 
-    await setMode('panel', layout, logger());
-    expect(win.snapshot()).toMatchObject({ keyboard: 'overlay', gameRemembered: 1 });
+  it('goes to the window when it takes the keyboard and back to the game when it gives it back', async () => {
+    const { win, focusEvents } = start();
+    await showWindow(layout, logger());
+
+    await takeKeyboard(logger());
+    expect(win.snapshot()).toMatchObject({ keyboard: 'overlay', focusable: true, gameRemembered: 1 });
     expect(await invoke('plugin:window|is_focused', { label: 'main' })).toBe(true);
 
-    await setMode('strip', layout, logger());
-    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusReturnedToGame: 1 });
+    await giveKeyboard(logger(), true);
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, focusReturnedToGame: 1 });
     expect(focusEvents).toEqual([true, false]);
+  });
+
+  it('a take that fails after the window became focusable makes it not focusable again: a plain click must not activate it', async () => {
+    const { win } = start();
+    await showWindow(layout, logger());
+    win.setFocus = () => {
+      throw new Error('Windows refused');
+    };
+    await expect(takeKeyboard(logger())).rejects.toThrow('Windows refused');
+    expect(win.snapshot()).toMatchObject({ focusable: false, keyboard: 'game' });
+  });
+
+  it('answers whether the window really has the focus', async () => {
+    const { win } = start();
+    await showWindow(layout, logger());
+    expect(await isWindowFocused(logger())).toBe(false);
+    await takeKeyboard(logger());
+    expect(await isWindowFocused(logger())).toBe(true);
+    win.clickGame();
+    expect(await isWindowFocused(logger())).toBe(false);
+  });
+
+  it('does not hand the focus back when the player has already moved on', async () => {
+    const { win } = start();
+    await showWindow(layout, logger());
+    await takeKeyboard(logger());
+    win.clickGame(); // the player clicked the game: it has the focus already
+    await giveKeyboard(logger(), false);
+    expect(win.snapshot()).toMatchObject({ keyboard: 'game', focusable: false, gameRemembered: 1, focusReturnedToGame: 0 });
+  });
+
+  it('logs every take and give, with whether the focus went back', async () => {
+    start();
+    const sink = memorySink();
+    const log = createLogger(sink);
+    await showWindow(layout, log);
+    await takeKeyboard(log);
+    await giveKeyboard(log, true);
+    const lines = sink.lines.map((l) => l.line);
+    expect(lines.some((l) => l.startsWith('[window] keyboard taken'))).toBe(true);
+    expect(lines.some((l) => l.startsWith('[window] keyboard given') && l.includes('"restore":true') && l.includes('"restored":true'))).toBe(true);
   });
 
   it('is reported to the app through the same event Tauri uses', async () => {
     const { win } = start();
     const seen: boolean[] = [];
-    const stop = await watchFocus(() => 'panel', logger(), () => seen.push(false));
-    await setMode('panel', layout, logger());
+    const stop = await watchFocus(() => 'expanded', logger(), () => seen.push(false));
+    await showWindow(layout, logger());
+    await takeKeyboard(logger());
     win.clickGame();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(seen).toEqual([false]);

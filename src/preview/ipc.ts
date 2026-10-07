@@ -190,6 +190,14 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
       case 'set_log_level':
         log('info', `[preview] Rust log level set to ${String(args.level)}`);
         return null;
+      case 'place_window': {
+        // src-tauri/src/place.rs: one SetWindowPos for the position and the size, in physical pixels
+        const rect = { x: num(args.x, 'x'), y: num(args.y, 'y'), width: num(args.width, 'width'), height: num(args.height, 'height') };
+        if (rect.width < 1 || rect.height < 1) throw new Error(`cannot place a window of ${rect.width}x${rect.height}`);
+        win.place(rect);
+        log('debug', `[preview] place_window ${rect.x},${rect.y} ${rect.width}x${rect.height}`);
+        return null;
+      }
       case 'remember_foreground':
         win.rememberForeground();
         return null;

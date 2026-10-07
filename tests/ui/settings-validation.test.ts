@@ -55,11 +55,33 @@ describe('validateSetting: numbers', () => {
     expect(validateSetting('opacity', 1.01, S)).not.toBeNull();
   });
 
-  it('keeps the panel width between 360 and 900', () => {
-    expect(validateSetting('panelWidth', 359, S)).not.toBeNull();
-    expect(validateSetting('panelWidth', 360, S)).toBeNull();
-    expect(validateSetting('panelWidth', 900, S)).toBeNull();
-    expect(validateSetting('panelWidth', 901, S)).not.toBeNull();
+  it('keeps the panel width between 380 and 640', () => {
+    expect(validateSetting('panelWidth', 379, S)).not.toBeNull();
+    expect(validateSetting('panelWidth', 380, S)).toBeNull();
+    expect(validateSetting('panelWidth', 440, S)).toBeNull();
+    expect(validateSetting('panelWidth', 640, S)).toBeNull();
+    expect(validateSetting('panelWidth', 641, S)).not.toBeNull();
+    expect(validateSetting('panelWidth', NaN, S)).not.toBeNull();
+  });
+
+  it('names the panel width limits in the message', () => {
+    expect(validateSetting('panelWidth', 100, S)).toMatch(/380/);
+    expect(validateSetting('panelWidth', 100, S)).toMatch(/640/);
+  });
+
+  it('wants the idle collapse time to be a whole number of seconds, 0 for never', () => {
+    expect(validateSetting('idleCollapseSec', 0, S)).toBeNull();
+    expect(validateSetting('idleCollapseSec', 1, S)).toBeNull();
+    expect(validateSetting('idleCollapseSec', 40, S)).toBeNull();
+    expect(validateSetting('idleCollapseSec', 3600, S)).toBeNull();
+    expect(validateSetting('idleCollapseSec', -1, S)).not.toBeNull();
+    expect(validateSetting('idleCollapseSec', 2.5, S)).not.toBeNull();
+    expect(validateSetting('idleCollapseSec', NaN, S)).not.toBeNull();
+    expect(validateSetting('idleCollapseSec', Infinity, S)).not.toBeNull();
+  });
+
+  it('says in the idle collapse message that 0 turns it off', () => {
+    expect(validateSetting('idleCollapseSec', -1, S)).toMatch(/0/);
   });
 
   it('wants a whole non-negative SCU capacity', () => {
@@ -128,6 +150,42 @@ describe('validateSetting: trigger keys', () => {
 
   it('leaves the key syntax to the keyboard layer', () => {
     expect(validateSetting('hotkeyPanel', 'Banana', S)).toBeNull();
+  });
+});
+
+describe('validateSetting: where the window stands', () => {
+  it('wants the offsets from the corner to be whole pixels from 0', () => {
+    for (const key of ['windowDx', 'windowDy'] as const) {
+      expect(validateSetting(key, 0, S), key).toBeNull();
+      expect(validateSetting(key, 16, S), key).toBeNull();
+      expect(validateSetting(key, 960, S), key).toBeNull();
+      expect(validateSetting(key, -1, S), key).not.toBeNull();
+      expect(validateSetting(key, 2.5, S), key).not.toBeNull();
+      expect(validateSetting(key, NaN, S), key).not.toBeNull();
+    }
+  });
+
+  it('does not refuse an offset only because it would push the window off a monitor: that is cut when it is placed', () => {
+    expect(validateSetting('windowDx', 100_000, S)).toBeNull();
+    expect(validateSetting('windowDy', 100_000, S)).toBeNull();
+  });
+
+  it('wants the lock to be a yes or a no', () => {
+    expect(validateSetting('windowLocked', true, S)).toBeNull();
+    expect(validateSetting('windowLocked', false, S)).toBeNull();
+    expect(validateSetting('windowLocked', 1 as unknown as boolean, S)).not.toBeNull();
+  });
+});
+
+describe('validateSetting: open sections', () => {
+  it('takes any text, the empty one included (nothing is open)', () => {
+    expect(validateSetting('openSections', '', S)).toBeNull();
+    expect(validateSetting('openSections', 'terminal,options', S)).toBeNull();
+  });
+
+  it('refuses what is not a text', () => {
+    expect(validateSetting('openSections', 5 as unknown as string, S)).not.toBeNull();
+    expect(validateSetting('openSections', null as unknown as string, S)).not.toBeNull();
   });
 });
 
