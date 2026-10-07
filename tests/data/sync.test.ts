@@ -466,7 +466,7 @@ describe('the limit of requests (HTTP 429) in the other series', () => {
     expect(warnings().some((l) => l.line.includes('vehicles sync stopped') && l.line.includes('limit') && l.line.includes('429'))).toBe(true);
   });
 
-  it('does not ask the pairs when the route list meets the limit, and still remembers the attempt', async () => {
+  it('does not ask the pairs when the route list meets the limit', async () => {
     uex.failRoutes = true;
     failRoutesAs(uex, rateLimit);
     const points: DistanceProgress[] = [];
@@ -478,8 +478,27 @@ describe('the limit of requests (HTTP 429) in the other series', () => {
     expect(d.size).toBe(0);
     expect(points.at(-1)).toEqual({ done: 1, total: 1 });
     expect(warnings().some((l) => l.line.includes('distance requests stopped') && l.line.includes('429'))).toBe(true);
+  });
+
+  it('does not remember the limit as a dead hub: the route list is asked again at the next call, not after a day', async () => {
+    uex.failRoutes = true;
+    failRoutesAs(uex, rateLimit);
     await ensureDistances(deps, 85, [[85, 1]]);
-    expect(uex.routeCalls).toEqual([85]); // not asked again within a day
+    expect(await getMeta(db, 'routes_fetched:85')).toBeNull();                 // no "do not ask again for 24 h" mark
+
+    uex.failRoutes = false;                                                    // the limit is over
+    uex.routes = [{ destId: 1, gm: 42 }];
+    const d = await ensureDistances(deps, 85, [[85, 1]]);
+
+    expect(uex.routeCalls).toEqual([85, 85]);
+    expect(d.get(distKey(85, 1))).toBe(42);
+    expect(await getMeta(db, 'routes_fetched:85')).toBe('ok');
+  });
+
+  it('still remembers a route list that stalled: a hub whose list is too big is not asked again for a day', async () => {
+    uex.failRoutes = true;
+    await ensureDistances(deps, 85, []);
+    expect(await getMeta(db, 'routes_fetched:85')).toBe(String(NOW));
   });
 
   it('says that it was the limit when a pair request stops the series', async () => {

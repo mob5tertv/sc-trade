@@ -371,7 +371,8 @@ export interface DistanceProgress {
  * Makes the distance cache as complete as it can cheaply be for `pairs`: one `distancesFrom(originId)` request
  * (never repeated once it succeeded, not repeated for a day after a failure: hub terminals may stall), then at most twenty
  * single-pair requests for the pairs that are still unknown (the first failure stops them; and when the route list is answered
- * with "too many requests" (429) there are none). Never throws because of UEX; returns the cache.
+ * with "too many requests" (429) there are none, and the attempt is not remembered: a limit is over in a moment, it says nothing
+ * about the hub). Never throws because of UEX; returns the cache.
  *
  * `onProgress` is called with the plan before the first request and after every request; the last call is complete
  * (`done === total`). A callback that throws is logged and ignored, so what was fetched is never lost.
@@ -408,11 +409,12 @@ export async function ensureDistances(
       for (const { destId, gm } of routes.value) if (destId !== originId) distances.set(distKey(originId, destId), gm);
       log.info('sync', 'routes stored', { originId, destinations: routes.value.length });
     }
-    // A failure is remembered too, so a stalling hub is not asked again at every call.
-    await setMeta(db, metaRoutesFetched(originId), routes.ok ? ROUTES_FETCHED : String(now));
+    // A failure is remembered too, so a stalling hub is not asked again at every call. "Too many requests" is not a failure
+    // of this hub: it is over in a moment, and the hub must not be written off for a day because of it.
+    const limited = !routes.ok && isRateLimit(routes.error);
+    if (!limited) await setMeta(db, metaRoutesFetched(originId), routes.ok ? ROUTES_FETCHED : String(now));
 
     // A stalled route list falls back to the small pair requests; "too many requests" does not: UEX asked to wait.
-    const limited = !routes.ok && isRateLimit(routes.error);
     if (limited) log.warn('sync', `distance requests stopped: ${LIMIT_REACHED}`, { originId, planned: missing.length });
     missing = limited ? [] : pairsToAsk(distances, pairs);
     done = 1;
