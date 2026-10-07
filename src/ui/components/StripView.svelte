@@ -14,58 +14,60 @@
 
   const showMarks = $derived(flash === null && model.kind === 'run' && (onDepart !== undefined || onArrive !== undefined));
 
-  // The second line of a run: where it goes and what it is expected to bring. Parts that are not known are left out.
-  const secondLine = $derived(
-    model.kind === 'run' ? [model.target === null ? 'цель не выбрана' : `→ ${model.target}`, model.expect, model.rate].filter(Boolean).join(' · ') : '',
-  );
+  // the line shows 'ждём 6 900', the tooltip the range as well ('ждём 6 900 (6 400–7 100)')
+  const expect = $derived(model.kind === 'run' ? model.expectShort : null);
 
-  // Everything the strip knows, for the tooltip: the lines are cut to fit 260 × 36 px.
-  const full = $derived(flash ?? (model.kind === 'idle' ? model.location : `${model.timer} ${model.cargo}\n${secondLine}`));
+  // Everything the strip knows, for the tooltip: the line cuts a long cargo.
+  const full = $derived(
+    flash ??
+      (model.kind === 'idle'
+        ? model.location
+        : [model.timer, model.cargo, model.target === null ? 'цель не выбрана' : `→ ${model.target}`, model.expect, model.rate].filter(Boolean).join(' · ')),
+  );
 </script>
 
-<div class="strip" class:marks={showMarks}>
+<div class="strip">
   <button type="button" class="open" title={full} onclick={() => onOpen()}>
     {#if flash !== null}
-      <span class="line flash" aria-live="polite">{flash}</span>
+      <span class="part flash" aria-live="polite">{flash}</span>
     {:else if model.kind === 'idle'}
-      <span class="line location">{model.location}</span>
+      <span class="part mark">SC</span>
+      <span class="part location">{model.location}</span>
     {:else}
-      <span class="line"><span class="timer">{model.timer}</span> {model.cargo}</span>
-      <span class="line second">{secondLine}</span>
+      <span class="part timer">{model.timer}</span>
+      <span class="part cargo">{model.cargo}</span>
+      <span class="part" class:muted={model.target === null}>{model.target === null ? 'цель не выбрана' : `→ ${model.target}`}</span>
+      {#if expect}<span class="part">{expect}</span>{/if}
+      {#if model.rate}<span class="part rate">{model.rate}</span>{/if}
     {/if}
   </button>
   {#if showMarks}
-    <div class="marks-box">
-      {#if onDepart}<button type="button" onclick={() => onDepart?.()}>Взлетел</button>{/if}
-      {#if onArrive}<button type="button" onclick={() => onArrive?.()}>Прилетел</button>{/if}
+    <div class="marks">
+      {#if onDepart}<button type="button" class="sc-btn sc-btn--act" onclick={() => onDepart?.()}>Взлетел</button>{/if}
+      {#if onArrive}<button type="button" class="sc-btn sc-btn--act" onclick={() => onArrive?.()}>Прилетел</button>{/if}
     </div>
   {/if}
 </div>
 
 <style>
+  /* one line, as wide as what it says, and never wider than 520 px: a long cargo is cut; the glass and the frame
+     belong to the window around it (`.sc-frame`), so that the glass is painted once */
   .strip {
-    position: relative;
-    box-sizing: border-box;
-    width: 100%;
-    height: 100%;
+    display: flex;
+    align-items: stretch;
+    width: max-content;
+    max-width: 520px;
+    height: var(--sc-mini-h);
     overflow: hidden;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    background: var(--sc-bg);
     color: var(--sc-text);
-    font-size: var(--sc-font-sm);
   }
 
-  /* The badge is one big button; the two marks lie over its right edge and take only their own clicks. */
   .open {
-    position: absolute;
-    inset: 0;
     display: flex;
-    flex-direction: column;
-    justify-content: center;
-    box-sizing: border-box;
-    width: 100%;
-    padding: 0 8px;
+    flex: 0 1 auto;
+    align-items: stretch;
+    min-width: 0;
+    padding: 0;
     border: 0;
     background: transparent;
     color: inherit;
@@ -74,75 +76,69 @@
     cursor: pointer;
   }
 
-  .marks .open {
-    padding-right: 74px;
-  }
-
   .open:hover {
     background: var(--sc-surface-2);
   }
 
   .open:focus-visible,
-  .marks-box button:focus-visible {
-    outline: 2px solid var(--sc-accent);
-    outline-offset: -2px;
+  .marks :global(.sc-btn:focus-visible) {
+    outline: 1px solid var(--sc-accent);
+    outline-offset: -1px;
   }
 
-  .line {
-    display: block;
-    overflow: hidden;
-    line-height: 15px;
-    text-overflow: ellipsis;
+  /* the parts are told apart by a hairline, not by gaps */
+  .part {
+    display: flex;
+    flex: none;
+    align-items: center;
+    padding: 0 var(--sc-pad-x);
     white-space: nowrap;
   }
 
-  .location {
-    font-size: var(--sc-font);
+  .part + .part {
+    border-left: 1px solid var(--sc-border);
   }
 
-  .flash {
-    font-size: var(--sc-font);
+  .cargo {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    display: block;
+    line-height: var(--sc-mini-h);
+    text-overflow: ellipsis;
+  }
+
+  .mark {
+    color: var(--sc-accent);
     font-weight: 600;
+    letter-spacing: 0.08em;
   }
 
   .timer {
-    font-family: var(--sc-mono);
-    font-variant-numeric: tabular-nums;
+    color: var(--sc-accent);
     font-weight: 600;
   }
 
-  .second {
+  .rate {
+    color: var(--sc-good);
+  }
+
+  .muted {
     color: var(--sc-muted);
   }
 
-  .marks-box {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
+  .flash {
+    color: var(--sc-accent);
+    font-weight: 600;
+  }
+
+  .marks {
     display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 2px;
-    padding: 0 4px;
-    pointer-events: none;
-  }
-
-  .marks-box button {
-    height: 16px;
-    padding: 0 6px;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    background: var(--sc-surface);
-    color: var(--sc-text);
-    font: inherit;
-    line-height: 1;
-    white-space: nowrap;
-    cursor: pointer;
-    pointer-events: auto;
-  }
-
-  .marks-box button:hover {
-    background: var(--sc-surface-2);
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    /* the right edge is the cut corner of the window: the last button keeps clear of it */
+    padding: 0 8px 0 4px;
+    border-left: 1px solid var(--sc-border);
   }
 </style>

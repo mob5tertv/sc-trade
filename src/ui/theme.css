@@ -1,35 +1,67 @@
 /*
- * The look of the overlay: dark, slightly translucent, dense, readable at a glance.
- * Every colour, gap and type size comes from the custom properties below (UI contract).
- * `--overlay-opacity` is set on the document root by the window layer (platform/window.ts) from the
- * user's setting, so `--sc-bg` always carries it.
+ * The look of the overlay: cold dark glass, hairlines, cut corners, one cyan accent (spec 14.7). Dense: one row is
+ * one line. Every colour, size and type setting comes from the custom properties below (UI contract); components
+ * never hard-code them.
+ * `--overlay-opacity` is set on the document root by the window layer (platform/window.ts) from the user's
+ * setting, so `--sc-bg` always carries it. `--sc-max-h` and `--sc-max-w` belong to the window layer, not here.
  */
 :root {
   color-scheme: dark;
 
-  --sc-bg: rgb(16 18 24 / var(--overlay-opacity, 0.92));
-  --sc-surface: rgb(255 255 255 / 0.07);
-  --sc-surface-2: rgb(255 255 255 / 0.14);
-  --sc-border: rgb(255 255 255 / 0.16);
-  --sc-text: #e8ebf2;
-  --sc-muted: #98a1b3;
-  --sc-accent: #5aa9ff;
-  --sc-good: #4cd38a;
+  /* glass: the window, with the opacity of the player; the solid twin is for what the system draws (drop-downs) */
+  --sc-bg: rgb(7 18 27 / var(--overlay-opacity, 0.92));
+  --sc-bg-solid: #07121b;
+  --sc-surface: #0b1c27; /* a section header, an expanded row */
+  --sc-surface-2: #0f2733; /* the row under the cursor, the selected row, row separators */
+  --sc-border: #1d4654; /* hairlines inside the window */
+  --sc-frame: #2b8fa8; /* the frame of the window, main buttons and fields */
+  --sc-text: #d6eef5;
+  --sc-label: #8fb7c4; /* titles of sections, heads of columns */
+  --sc-muted: #82a8b6; /* was #6f95a3 in the mockup: raised to hold 4.5:1 on the real glass over a white scene from 0.85 opacity up */
+  --sc-accent: #3fd0f0;
+  --sc-good: #3ee08f;
   --sc-bad: #ff6b6b;
-  --sc-warn: #ffb454;
+  --sc-warn: #ffb347;
 
-  /* temperature of a price: hot, warm, cooling, cold (the cold colour is also the UEX badge) */
-  --sc-hot: #ff6b4a;
-  --sc-warm: #ffa94d;
-  --sc-cooling: #6ec1ff;
-  --sc-cold: #8b95a8;
+  /* temperature of a price: hot, warm, cooling, cold (the cold colour is also the UEX mark) */
+  --sc-hot: #ff6a3d;
+  --sc-warm: #ffb347;
+  --sc-cooling: #58c7f3;
+  --sc-cold: #6b8591;
 
-  --sc-radius: 6px;
-  --sc-gap: 8px;
-  --sc-font: 13px;
-  --sc-font-sm: 11.5px;
-  --sc-mono: ui-monospace, 'Cascadia Mono', 'Consolas', 'Liberation Mono', monospace;
-  --sc-font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* how good a trip is, by ROI (thresholds in `vm/roi-tier.ts`): a bar at the edge of an option and its ROI number */
+  --sc-roi-great: #3ee08f;
+  --sc-roi-good: #86c24f;
+  --sc-roi-ok: #ffb347;
+  --sc-roi-poor: #82a8b6;
+  --sc-roi-loss: #ff5d5d;
+
+  /* shape: flat, no radius; the window and the main buttons have two cut corners */
+  --sc-radius: 0;
+  --sc-cut: 9px;
+  --sc-gap: 6px;
+  --sc-pad-x: 8px;
+
+  /* heights: one row is one line */
+  --sc-row-h: 22px; /* a row of a table */
+  --sc-head-h: 24px; /* the header of a section */
+  --sc-bar-h: 28px; /* the header of the window */
+  --sc-mini-h: 26px; /* the mini line */
+  --sc-ctl-h: 22px; /* a field or a button inside a row */
+
+  --sc-font: 12.5px;
+  --sc-font-sm: 11px;
+  /* Bahnschrift comes with Windows 10/11: technical, has Cyrillic, tabular digits. The narrow face is asked for by its own
+     family name: `font-stretch: 88%` does not narrow it in the Chromium of the window (only 87.5% and below do), and
+     `Bahnschrift Condensed` is the very same face here. 13% narrower than regular, Cyrillic at 12.5px stays clear. */
+  --sc-font-family: 'Bahnschrift SemiCondensed', Bahnschrift, 'Segoe UI', system-ui, sans-serif;
+  --sc-mono: 'Bahnschrift SemiCondensed', Bahnschrift, 'Segoe UI', system-ui, sans-serif;
+
+  /* the one shape of a cut: the top-left and the bottom-right corner */
+  --sc-cut-path: polygon(
+    var(--sc-cut) 0, 100% 0, 100% calc(100% - var(--sc-cut)), calc(100% - var(--sc-cut)) 100%, 0 100%, 0 var(--sc-cut)
+  );
+  --sc-reveal-ms: 120ms;
 }
 
 *,
@@ -43,30 +75,55 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  /* the window is transparent: only the strip and the panel paint a background */
+  /* the window is transparent: only the mini line and the window frame paint a background */
   background: transparent;
   color: var(--sc-text);
-  font: var(--sc-font) / 1.35 var(--sc-font-family);
+  font: var(--sc-font) / 1.3 var(--sc-font-family);
+  font-variant-numeric: tabular-nums;
 }
 
 #app {
   height: 100%;
 }
 
-:focus-visible {
-  outline: 2px solid var(--sc-accent);
-  outline-offset: 1px;
+::selection {
+  background: var(--sc-frame);
+  color: var(--sc-text);
 }
 
-/* a thin scrollbar that does not eat the width of the panel */
+:focus-visible {
+  outline: 1px solid var(--sc-accent);
+  outline-offset: -1px;
+}
+
+/* a thin scrollbar that does not eat the width of the window */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--sc-border) transparent;
 }
 
-/* Controls of the application shell (header, tabs, settings). */
+/* ---- the frame of the window --------------------------------------------------------------------------
+ * ONE element: the glass is its own background at the opacity of the player (`--sc-bg`) and nothing else is painted
+ * under it, so the game shows through as much as the player chose. Only a ring of 1px is drawn in the colour of the
+ * frame: the border along the straight sides, and a line of 1px along each of the two cut corners (a piece of
+ * gradient in the corner square, just inside the cut). The next task puts it on the root of the window:
+ * <div class="sc-frame">…</div>.
+ */
+.sc-frame {
+  border: 1px solid var(--sc-frame);
+  background:
+    linear-gradient(135deg, transparent 50%, var(--sc-frame) 50%, var(--sc-frame) calc(50% + 1px), transparent calc(50% + 1px))
+      top left / var(--sc-cut) var(--sc-cut) no-repeat border-box,
+    linear-gradient(135deg, transparent calc(50% - 1px), var(--sc-frame) calc(50% - 1px), var(--sc-frame) 50%, transparent 50%)
+      bottom right / var(--sc-cut) var(--sc-cut) no-repeat border-box,
+    var(--sc-bg) border-box;
+  clip-path: var(--sc-cut-path);
+}
+
+/* ---- controls -------------------------------------------------------------------------------------------- */
+
 .sc-btn {
-  height: 28px;
+  height: var(--sc-ctl-h);
   padding: 0 10px;
   border: 1px solid var(--sc-border);
   border-radius: var(--sc-radius);
@@ -86,25 +143,61 @@ body {
   cursor: default;
 }
 
+/* the main button of a block: a frame in the colour of the window and two cut corners (a line along each cut) */
+.sc-btn--primary {
+  --cut: calc(var(--sc-cut) * 0.6);
+  --line: var(--sc-frame);
+  border-color: var(--line);
+  background:
+    linear-gradient(135deg, transparent 50%, var(--line) 50%, var(--line) calc(50% + 1px), transparent calc(50% + 1px))
+      top left / var(--cut) var(--cut) no-repeat border-box,
+    linear-gradient(135deg, transparent calc(50% - 1px), var(--line) calc(50% - 1px), var(--line) 50%, transparent 50%)
+      bottom right / var(--cut) var(--cut) no-repeat border-box,
+    var(--sc-surface-2) border-box;
+  color: var(--sc-accent);
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+}
+
+.sc-btn--primary:hover:not(:disabled) {
+  background-color: var(--sc-surface);
+}
+
+/* the last attempt of the button failed (a write that was refused): the line of the button turns red */
+.sc-btn--primary[data-failed] {
+  --line: var(--sc-bad);
+}
+
+/* an action inside a row: flat, a frame line, the accent for the text */
+.sc-btn--act {
+  padding: 0 8px;
+  border-color: var(--sc-frame);
+  background: var(--sc-surface-2);
+  color: var(--sc-accent);
+}
+
+.sc-btn--act:hover:not(:disabled) {
+  background: var(--sc-border);
+}
+
 .sc-btn--ghost {
   border-color: transparent;
   background: transparent;
 }
 
 .sc-btn--icon {
-  width: 28px;
+  width: var(--sc-bar-h);
   padding: 0;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
 }
 
 .sc-input {
   width: 100%;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--sc-border);
+  height: var(--sc-ctl-h);
+  padding: 0 6px;
+  border: 1px solid var(--sc-frame);
   border-radius: var(--sc-radius);
-  background: var(--sc-surface);
+  background: var(--sc-bg-solid);
   color: var(--sc-text);
   font: inherit;
 }
@@ -113,18 +206,87 @@ body {
   color: var(--sc-muted);
 }
 
+.sc-input:focus-visible {
+  border-color: var(--sc-accent);
+  outline: 0;
+}
+
 .sc-input[aria-invalid='true'] {
   border-color: var(--sc-bad);
 }
 
 /* the drop-down list of a select is drawn by the system: keep it readable on the dark theme */
 .sc-input option {
-  background: #1b1e27;
+  background: var(--sc-bg-solid);
   color: var(--sc-text);
 }
 
+/* a number: tabular digits, to the right, so that columns line up */
 .sc-num {
-  font-family: var(--sc-mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+/* a switch of two or three positions; the chosen one carries `aria-pressed="true"` (or `.is-on`) */
+.sc-seg {
+  display: inline-flex;
+  height: var(--sc-ctl-h);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--sc-radius);
+}
+
+.sc-seg > * {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--sc-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.sc-seg > * + * {
+  border-left: 1px solid var(--sc-border);
+}
+
+.sc-seg > *:hover {
+  color: var(--sc-text);
+}
+
+.sc-seg > [aria-pressed='true'],
+.sc-seg > .is-on {
+  background: var(--sc-surface-2);
+  color: var(--sc-accent);
+}
+
+/* small caps with spacing: titles of sections, heads of columns */
+.sc-label {
+  color: var(--sc-label);
+  font-size: var(--sc-font-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* what slides in: an expanded row, the content of a section. Only opacity and a shift: the layout stays put. */
+.sc-reveal {
+  animation: sc-reveal var(--sc-reveal-ms) ease-out;
+}
+
+@keyframes sc-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-reveal {
+    animation: none;
+  }
 }

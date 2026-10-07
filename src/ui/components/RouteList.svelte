@@ -2,7 +2,7 @@
   import type { RouteOption } from '../../core/routes';
   import type { Reference } from '../../core/types';
   import { routeOptionRow } from '../vm/route-rows';
-  import type { RouteMode } from '../vm/route-rows';
+  import type { RouteMode, RouteOptionRow, UexRangeOf } from '../vm/route-rows';
   import TempBadge from './TempBadge.svelte';
 
   interface Props {
@@ -14,131 +14,291 @@
     mode: RouteMode;
     showCommodity: boolean;
     emptyText: string;
+    /** Set: the expanded row has a "Цель" button that calls it. */
     onTarget?: (option: RouteOption) => void;
+    /**
+     * The viewed terminal. A trip whose own end is another terminal (bought elsewhere on the planet) shows both its
+     * ends; without it every row shows both.
+     */
+    anchorTerminalId?: number | null;
+    /** The terminal of the current target: the option that leads there carries the word "цель". */
+    targetTerminalId?: number | null;
+    /**
+     * The range UEX knows for a side of a terminal. It stands in «Мин–макс» beside a price of mine, as a reference;
+     * without it such a price has no range.
+     */
+    uexRange?: UexRangeOf;
   }
-  let { options, reference, runCounts, mode, showCommodity, emptyText, onTarget }: Props = $props();
+  let {
+    options, reference, runCounts, mode, showCommodity, emptyText, onTarget, anchorTerminalId = null, targetTerminalId = null, uexRange,
+  }: Props = $props();
 
-  const rows = $derived(options.map(option => ({ option, row: routeOptionRow(option, reference, mode, runCounts) })));
+  const rows = $derived(
+    options.map(option => ({ option, row: routeOptionRow(option, reference, mode, runCounts, { anchorTerminalId, targetTerminalId, uexRange }) })),
+  );
+  // the best rate is the one number of the list that is told apart by colour on its own, apart from the ROI tiers
+  const bestRate = $derived.by(() => {
+    let best: { key: string; rate: number } | null = null;
+    for (const { option, row } of rows) {
+      if (option.uecPerHour !== null && (best === null || option.uecPerHour > best.rate)) best = { key: row.key, rate: option.uecPerHour };
+    }
+    return best?.key ?? null;
+  });
+
+  // One row is expanded at a time; the click on it again takes it back.
+  let expandedKey = $state<string | null>(null);
+  const toggle = (key: string): void => {
+    expandedKey = expandedKey === key ? null : key;
+  };
+
+  const trip = (row: RouteOptionRow): string => (row.bothEnds ? `${row.origin} → ${row.dest}` : row.terminal);
 </script>
+
+{#snippet price(label: string, view: RouteOptionRow['buy'])}
+  <div class="fact">
+    <span class="sc-label">{label}</span>
+    <span class="inline">
+      <span class="sc-num">{view.price}</span>
+      {#if view.range}<span class="muted sc-num" title="Диапазон цен">{view.range}</span>{/if}
+      <TempBadge text={view.badge.text} kind={view.badge.kind} />
+    </span>
+  </div>
+{/snippet}
 
 {#if rows.length === 0}
   <p class="empty">{emptyText}</p>
 {:else}
-  <ul class="list">
+  <div class="list" role="table" aria-label="Варианты">
+    <div class="grid head sc-label" role="row">
+      <span role="columnheader">{mode === 'to' ? 'Откуда' : 'Куда'}</span>
+      <span role="columnheader" class="r price-head">Цена</span>
+      <span role="columnheader" class="r">Мин–макс</span>
+      <span role="columnheader" class="r">ROI</span>
+      <span role="columnheader" class="r">UEC/ч</span>
+    </div>
     {#each rows as { option, row } (row.key)}
-      <li class="item">
-        <div class="head">
-          <span class="terminal" title={row.terminal}>{row.terminal}</span>
-          {#if showCommodity}<span class="code">{row.commodity}</span>{/if}
-          {#if onTarget}
-            <button type="button" title="Сделать целью рейса" onclick={() => onTarget?.(option)}>Цель</button>
-          {/if}
-        </div>
-        <div class="price">
-          <span class="num strong">{row.price.price}</span>
-          {#if row.price.range}<span class="num muted" title="Диапазон цен">({row.price.range})</span>{/if}
-          <TempBadge text={row.price.badge.text} kind={row.price.badge.kind} />
-          <span class="muted trip" title={row.timeTitle ?? undefined}>{row.distance} · {row.time}</span>
-        </div>
-        <div class="metrics">
-          <span><span class="muted">ROI</span> <span class="num">{row.roi}</span></span>
-          <span title="UEC в час"><span class="num">{row.rate}</span></span>
-          <span title="Прибыль при худшем исходе цен">
-            <span class="muted">худш.</span> <span class="num" class:loss={row.worstLoss}>{row.worst}</span>
+      {@const expanded = expandedKey === row.key}
+      <div class="row tier-{row.tier}" class:expanded role="row">
+        <button type="button" class="grid line" aria-expanded={expanded} onclick={() => toggle(row.key)}>
+          <span class="where" title={trip(row)}>
+            {#if showCommodity}<span class="code">{row.commodity}</span>{/if}
+            <span class="end">{row.bothEnds ? row.origin : row.terminal}</span>
+            {#if row.bothEnds}<span class="arrow">→</span><span class="end">{row.dest}</span>{/if}
+            {#if row.isTarget}<span class="goal" title="Цель рейса">цель</span>{/if}
           </span>
-          <span class="num">{row.qty}</span>
-          {#if row.runs > 0}<span class="muted">твоих рейсов {row.runs}</span>{/if}
-        </div>
-      </li>
+          <span class="cell sc-num">
+            <span class="digits">{row.price.price}</span>
+            <TempBadge compact text={row.price.badge.text} kind={row.price.badge.kind} />
+          </span>
+          <span class="range sc-num" title={row.price.range === null ? undefined : 'Диапазон цен'}>{row.price.range ?? '—'}</span>
+          <span class="roi sc-num" title="Прибыль к вложенному">{row.roi}</span>
+          <span class="rate sc-num" class:best={row.key === bestRate} title="UEC в час">{row.rate}</span>
+        </button>
+        {#if expanded}
+          <div class="detail sc-reveal">
+            <div class="facts">
+              <div class="fact"><span class="sc-label">Объём</span><span class="sc-num">{row.qty}</span></div>
+              <div class="fact"><span class="sc-label">Вложение</span><span class="sc-num">{row.invested}</span></div>
+              <div class="fact"><span class="sc-label">Прибыль</span><span class="sc-num" class:loss={row.profitLoss}>{row.profit}</span></div>
+              <div class="fact" title="Прибыль при худшем исходе цен"><span class="sc-label">Худший</span><span class="sc-num" class:loss={row.worstLoss}>{row.worst}</span></div>
+            </div>
+            <div class="prices">
+              {@render price('Купить', row.buy)}
+              {@render price('Продать', row.sell)}
+            </div>
+            <div class="foot">
+              <span class="inline" title={row.timeTitle ?? undefined}><span class="sc-label">Время</span><span class="sc-num">{row.time}</span></span>
+              <span class="inline" title="Сколько раз ты уже возил это"><span class="sc-label">Рейсов</span><span class="sc-num">{row.runs}</span></span>
+              <span class="inline" title="Расстояние"><span class="sc-label">Путь</span><span class="sc-num">{row.distance}</span></span>
+              <span class="spacer"></span>
+              {#if onTarget}
+                <button type="button" class="sc-btn sc-btn--act" disabled={row.isTarget} title={row.isTarget ? 'Уже цель рейса' : 'Сделать целью рейса'} onclick={() => onTarget?.(option)}>Цель</button>
+              {/if}
+            </div>
+          </div>
+        {/if}
+      </div>
     {/each}
-  </ul>
+  </div>
 {/if}
 
 <style>
-  .list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .item {
-    padding: 4px 6px;
-    border-bottom: 1px solid var(--sc-border);
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px 64px 36px 40px;
+    column-gap: 4px;
+    align-items: center;
+    padding: 0 var(--sc-pad-x);
   }
 
   .head {
-    display: flex;
-    align-items: center;
-    gap: var(--sc-gap);
-    min-height: 28px;
+    height: 18px;
+    border-bottom: 1px solid var(--sc-border);
+    color: var(--sc-muted);
+    white-space: nowrap;
   }
 
-  .terminal {
-    flex: 1;
+  .r {
+    text-align: right;
+  }
+
+  /* the number stands left of its 6 px mark: the caption stands over the number */
+  .price-head {
+    padding-right: 10px;
+  }
+
+  /* the bar at the edge of a row and its ROI number: how good the trip is, by one colour */
+  .tier-great { --tier: var(--sc-roi-great); }
+  .tier-good { --tier: var(--sc-roi-good); }
+  .tier-ok { --tier: var(--sc-roi-ok); }
+  .tier-poor { --tier: var(--sc-roi-poor); }
+  .tier-loss { --tier: var(--sc-roi-loss); }
+
+  .row {
+    border-bottom: 1px solid var(--sc-surface-2);
+    border-left: 3px solid var(--tier);
+  }
+
+  .row .grid {
+    padding-left: calc(var(--sc-pad-x) - 3px);
+  }
+
+  .line {
+    width: 100%;
+    height: calc(var(--sc-row-h) - 1px);
+    border: 0;
+    background: transparent;
+    color: var(--sc-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .line:hover,
+  .row.expanded .line {
+    background: var(--sc-surface-2);
+  }
+
+  .where {
+    display: flex;
+    gap: 5px;
     min-width: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
-    font-weight: 600;
   }
 
   .code {
     flex: none;
-    font-family: var(--sc-mono);
+    color: var(--sc-label);
+    font-weight: 600;
   }
 
-  .head button {
+  .end {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .arrow {
     flex: none;
-    height: 26px;
-    padding: 0 8px;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    background: transparent;
-    color: var(--sc-text);
-    font: inherit;
+    color: var(--sc-muted);
+  }
+
+  .goal {
+    flex: none;
+    color: var(--sc-good);
     font-size: var(--sc-font-sm);
-    cursor: pointer;
   }
 
-  .head button:hover {
-    background: var(--sc-surface-2);
-  }
-
-  .head button:focus-visible {
-    outline: 2px solid var(--sc-accent);
-    outline-offset: 1px;
-  }
-
-  .price,
-  .metrics {
+  .cell {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 2px 8px;
-    min-height: 22px;
+    justify-content: flex-end;
+    gap: 4px;
+    min-width: 0;
   }
 
-  .metrics {
-    font-size: var(--sc-font-sm);
-  }
-
-  .trip {
-    margin-left: auto;
-    font-size: var(--sc-font-sm);
+  .digits,
+  .range,
+  .roi,
+  .rate {
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .num {
-    font-family: var(--sc-mono);
-    font-variant-numeric: tabular-nums;
+  .range {
+    color: var(--sc-muted);
+    font-size: var(--sc-font-sm);
   }
 
-  .strong {
+  .roi {
+    color: var(--tier);
     font-weight: 600;
+  }
+
+  .rate.best {
+    color: var(--sc-good);
+  }
+
+  /* what a click on a row opens under it */
+  .detail {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 4px var(--sc-pad-x) 5px calc(var(--sc-pad-x) - 3px);
+    background: var(--sc-surface);
+  }
+
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--sc-gap);
+  }
+
+  .fact {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .fact .sc-num {
+    text-align: left;
+  }
+
+  .prices {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sc-gap);
+  }
+
+  .prices .inline {
+    height: 18px;
+  }
+
+  .foot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: var(--sc-ctl-h);
+  }
+
+  .inline {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .spacer {
+    flex: 1;
   }
 
   .muted {
     color: var(--sc-muted);
+    font-size: var(--sc-font-sm);
   }
 
   .loss {
@@ -147,7 +307,9 @@
 
   .empty {
     margin: 0;
-    padding: var(--sc-gap);
+    padding: 0 var(--sc-pad-x);
+    height: var(--sc-row-h);
     color: var(--sc-muted);
+    line-height: var(--sc-row-h);
   }
 </style>

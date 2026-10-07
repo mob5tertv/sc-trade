@@ -20,123 +20,126 @@
 </script>
 
 <section class="card" aria-label="Продать здесь или лететь дальше: {commodityCode}">
-  <h3 class="title">Продать здесь или лететь дальше <span class="code">{commodityCode}</span></h3>
-
-  <div class="here">
-    <span class="caption">Здесь сейчас</span>
-    <span class="num">{hereRow.qty}</span>
-    <span class="num" class:good={!hereRow.loss} class:loss={hereRow.loss} title="Прибыль, если продать здесь">{hereRow.profit}</span>
-    <span><span class="muted">ROI</span> <span class="num">{hereRow.roi}</span></span>
-    <span class="num" title="UEC в час за время, что прошло с начала рейса">{hereRow.rate}</span>
+  <div class="here" title="Продать весь груз здесь и сейчас">
+    <span class="caption">Здесь <span class="code">{commodityCode}</span></span>
+    <span class="sc-num qty">{hereRow.qty}</span>
+    <span class="item" title="Прибыль, если продать здесь">
+      <span class="sc-label">Прибыль</span>
+      <span class="sc-num" class:good={!hereRow.loss} class:loss={hereRow.loss}>{hereRow.profit}</span>
+    </span>
+    <span class="item" title="Прибыль к вложенному"><span class="sc-label">ROI</span><span class="sc-num">{hereRow.roi}</span></span>
+    <span class="sc-num" title="UEC в час за время, что прошло с начала рейса">{hereRow.rate}</span>
   </div>
 
   {#if rows.length === 0}
-    <p class="muted none">Других покупателей этого товара не нашлось.</p>
+    <p class="none">Других покупателей нет</p>
   {:else}
-    <ul class="alts">
+    <div class="table" role="table" aria-label="Другие покупатели">
+      <div class="grid head sc-label" role="row">
+        <span role="columnheader">Куда</span>
+        <span role="columnheader" class="r">Цена</span>
+        <span role="columnheader" class="r" title="Ожидаемая прибыль всего рейса">Прибыль</span>
+        <span role="columnheader" class="r" title="UEC в час всего рейса при ожидаемой цене">Ждём</span>
+        <span role="columnheader" class="r" title="UEC в час всего рейса при худшей цене диапазона">Худш.</span>
+        <span role="columnheader" class="r" title="Сколько лететь отсюда">Лететь</span>
+      </div>
       {#each rows as row (row.key)}
-        <li class="alt">
-          <div class="line">
-            <span class="terminal" title={row.terminal}>{row.terminal}</span>
-            <span class="num strong">{row.price.price}</span>
-            {#if row.price.range}<span class="num muted" title="Диапазон цен">({row.price.range})</span>{/if}
-            <TempBadge text={row.price.badge.text} kind={row.price.badge.kind} />
-          </div>
-          <div class="line small">
-            <span title="Ожидаемая прибыль всего рейса, если продать там">
-              <span class="num" class:good={!row.loss} class:loss={row.loss}>{row.profit}</span>
-            </span>
-            <span title="UEC в час всего рейса при ожидаемой цене"><span class="muted">ждём</span> <span class="num">{row.expectedRate}</span></span>
-            <span title="UEC в час всего рейса при худшей цене диапазона"><span class="muted">худш.</span> <span class="num">{row.worstRate}</span></span>
-            <span class="flight" title="Сколько лететь отсюда"><span class="muted">лететь</span> <span class="num">{row.extra}</span></span>
-          </div>
-        </li>
+        <div class="grid line" role="row">
+          <span class="terminal" title={row.terminal}>{row.terminal}</span>
+          <span class="cell sc-num" title={row.price.range ? `Диапазон цен ${row.price.range}` : undefined}>
+            <span>{row.price.price}</span>
+            <TempBadge compact text={row.price.badge.text} kind={row.price.badge.kind} />
+          </span>
+          <span class="sc-num" class:good={!row.loss} class:loss={row.loss}>{row.profit}</span>
+          <span class="sc-num">{row.expectedRate}</span>
+          <span class="sc-num">{row.worstRate}</span>
+          <span class="sc-num">{row.extra}</span>
+        </div>
       {/each}
-    </ul>
+    </div>
   {/if}
 </section>
 
 <style>
   .card {
-    padding: 4px 6px 6px;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    background: var(--sc-surface);
-  }
-
-  .title {
-    margin: 0;
-    min-height: 24px;
-    font-size: var(--sc-font);
-    font-weight: 600;
-    line-height: 24px;
-  }
-
-  .code {
-    margin-left: 4px;
-    font-family: var(--sc-mono);
-  }
-
-  .here,
-  .line {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 2px 10px;
-    min-height: 24px;
+    padding: 0;
   }
 
   .here {
-    border-bottom: 1px solid var(--sc-border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: var(--sc-row-h);
+    padding: 0 var(--sc-pad-x);
+    background: var(--sc-surface);
+    white-space: nowrap;
   }
 
   .caption {
+    flex: none;
     font-weight: 600;
   }
 
-  .alts {
-    margin: 0;
-    padding: 0;
-    list-style: none;
+  .qty {
+    color: var(--sc-muted);
   }
 
-  .alt {
-    padding: 2px 0;
-    border-bottom: 1px solid var(--sc-border);
+  .item {
+    display: flex;
+    gap: 5px;
   }
 
-  .alt:last-child {
-    border-bottom: 0;
-  }
-
-  .terminal {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 600;
-  }
-
-  .small {
-    font-size: var(--sc-font-sm);
-  }
-
-  .flight {
+  .here > :last-child {
     margin-left: auto;
   }
 
-  .num {
-    font-family: var(--sc-mono);
-    font-variant-numeric: tabular-nums;
+  .code {
+    color: var(--sc-label);
   }
 
-  .strong {
-    font-weight: 600;
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 62px 62px 52px 56px 44px;
+    column-gap: var(--sc-gap);
+    align-items: center;
+    padding: 0 var(--sc-pad-x);
   }
 
-  .muted {
+  .head {
+    height: 18px;
+    border-bottom: 1px solid var(--sc-border);
     color: var(--sc-muted);
+    white-space: nowrap;
+  }
+
+  .r {
+    text-align: right;
+  }
+
+  .line {
+    height: var(--sc-row-h);
+    border-bottom: 1px solid var(--sc-surface-2);
+  }
+
+  .here .sc-num,
+  .line .sc-num {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .terminal {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cell {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    min-width: 0;
   }
 
   .good {
@@ -148,6 +151,10 @@
   }
 
   .none {
-    margin: 4px 0 0;
+    margin: 0;
+    padding: 0 var(--sc-pad-x);
+    height: var(--sc-row-h);
+    color: var(--sc-muted);
+    line-height: var(--sc-row-h);
   }
 </style>

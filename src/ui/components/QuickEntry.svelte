@@ -9,18 +9,13 @@
   type Rejection = 'no-terminal' | 'no-commodity' | 'bad-price' | 'bad-scu';
 
   interface Props {
-    /** The viewed terminal: the price is written for it. */
+    /** The viewed terminal: the price is written for it. The location is picked in the header of the window, not here. */
     terminalId: number | null;
-    /** Its name; the location field shows it as the ghost of a value until another terminal is picked. */
-    terminalName: string | null;
-    terminalItems: Searchable[];
     commodityItems: Searchable[];
     /** What the viewed terminal trades: those commodities come first in the search. */
     boostIds: Set<number>;
     /** The side a commodity starts with at the viewed terminal. */
     sideFor: (commodityId: number) => Side;
-    /** Another terminal was picked: it becomes the viewed one. */
-    onPickTerminal: (terminalId: number) => void;
     /** Writes the price; answers the sentence to show when it was not saved, `null` when it was. */
     onSave: (entry: PriceEntry) => Promise<string | null>;
     /** Enter was pressed with something missing or unreadable (nothing was saved). */
@@ -28,7 +23,7 @@
     /** `onSave` threw instead of answering: the player sees a short sentence, the details belong in the log. */
     onFailure?: (err: unknown, entry: PriceEntry) => void;
   }
-  let { terminalId, terminalName, terminalItems, commodityItems, boostIds, sideFor, onPickTerminal, onSave, onReject, onFailure }: Props = $props();
+  let { terminalId, commodityItems, boostIds, sideFor, onSave, onReject, onFailure }: Props = $props();
 
   const uid = $props.id();
   const groupName = `side-${uid}`;
@@ -40,10 +35,15 @@
   let scuText = $state('');
   let badPrice = $state(false);
   let badScu = $state(false);
+  let badCommodity = $state(false);
+  /** The write was refused, or there is nowhere to write to: the button of the line is marked. */
+  let badSave = $state(false);
   let busy = $state(false);
+  // What happened, for the screen reader and for the tooltip of the field that is marked. It takes no room on the screen:
+  // between the entry line and the table nothing appears or disappears, so a saved price shifts nothing.
   let status = $state<{ text: string; kind: 'ok' | 'error' } | null>(null);
+  const problem = $derived(status !== null && status.kind === 'error' ? status.text : null);
 
-  let locationBox = $state<ReturnType<typeof SearchBox>>();
   let commodityBox = $state<ReturnType<typeof SearchBox>>();
   let priceInput = $state<HTMLInputElement>();
   let scuInput = $state<HTMLInputElement>();
@@ -51,16 +51,13 @@
   const chosen = $derived(commodityId === null ? undefined : commodityItems.find((c) => c.id === commodityId));
   const side = $derived<Side>(pickedSide ?? (commodityId === null ? 'buy' : sideFor(commodityId)));
 
-  function pickTerminal(id: number): void {
-    onPickTerminal(id);
-    commodityBox?.focus();
-  }
-
   // Enter in the commodity field takes the first match, and the player goes on with the price.
   function pickCommodity(id: number): void {
     commodityId = id;
     pickedSide = null;
     status = null;
+    badCommodity = false;
+    badSave = false;
     priceInput?.focus();
   }
 
@@ -71,14 +68,17 @@
 
   async function save(): Promise<void> {
     if (busy) return;
+    badSave = false;
+    badCommodity = false;
     // Enter on an empty line is not an entry
     if (commodityId === null && priceText.trim() === '' && scuText.trim() === '') return;
     if (terminalId === null) {
-      reject('no-terminal', 'Сначала выбери локацию.');
-      locationBox?.focus();
+      badSave = true;
+      reject('no-terminal', 'Сначала выбери локацию в шапке окна.');
       return;
     }
     if (commodityId === null) {
+      badCommodity = true;
       reject('no-commodity', 'Выбери товар: три буквы кода или названия и Enter.');
       commodityBox?.focus();
       return;
@@ -115,6 +115,7 @@
     if (failure !== null) {
       // what was typed stays, so that it can be saved again
       status = { text: failure, kind: 'error' };
+      badSave = true;
       return;
     }
     status = {
@@ -147,44 +148,37 @@
     void save();
   }}
 >
-  <SearchBox
-    bind:this={locationBox}
-    items={terminalItems}
-    placeholder={terminalName ?? 'Локация: три буквы и Enter'}
-    label="Локация, для которой записывается цена"
-    onPick={pickTerminal}
-  />
-
   <div class="line">
     <SearchBox
       bind:this={commodityBox}
       items={commodityItems}
       {boostIds}
-      placeholder="Товар: три буквы и Enter"
-      label="Товар"
+      placeholder="Товар"
+      label="Товар: три буквы кода или названия и Enter"
+      value={chosen ? `${chosen.code} ${chosen.name}` : undefined}
+      invalid={badCommodity}
+      title={badCommodity && problem !== null ? problem : undefined}
       onPick={pickCommodity}
     />
-    <div class="sides" role="radiogroup" aria-label="Сторона">
-      <label class="side" title="Цена, по которой здесь можно купить">
+    <div class="sc-seg" role="radiogroup" aria-label="Сторона">
+      <label class="side" class:is-on={side === 'buy'} title="Цена, по которой здесь можно купить">
         <input type="radio" name={groupName} checked={side === 'buy'} onchange={() => (pickedSide = 'buy')} />
-        <span>Купить</span>
+        <span>Куп.</span>
       </label>
-      <label class="side" title="Цена, по которой здесь можно продать">
+      <label class="side" class:is-on={side === 'sell'} title="Цена, по которой здесь можно продать">
         <input type="radio" name={groupName} checked={side === 'sell'} onchange={() => (pickedSide = 'sell')} />
-        <span>Продать</span>
+        <span>Прод.</span>
       </label>
     </div>
-  </div>
-
-  <div class="line numbers">
     <input
       bind:this={priceInput}
       bind:value={priceText}
-      class="sc-input sc-num"
+      class="sc-input sc-num in-price"
       type="text"
       inputmode="numeric"
       autocomplete="off"
-      placeholder="Цена, UEC за SCU"
+      placeholder="Цена"
+      title={badPrice && problem !== null ? problem : 'Цена, UEC за SCU'}
       aria-label="Цена, UEC за SCU"
       aria-invalid={badPrice ? 'true' : undefined}
       oninput={() => (badPrice = false)}
@@ -193,64 +187,65 @@
     <input
       bind:this={scuInput}
       bind:value={scuText}
-      class="sc-input sc-num"
+      class="sc-input sc-num in-scu"
       type="text"
       inputmode="numeric"
       autocomplete="off"
-      placeholder="SCU, если видно"
+      placeholder="SCU"
+      title={badScu && problem !== null ? problem : 'Количество, SCU (можно не вводить)'}
       aria-label="Количество, SCU (можно не вводить)"
       aria-invalid={badScu ? 'true' : undefined}
       oninput={() => (badScu = false)}
       onkeydown={(event) => onFieldKeydown(event, scuText, () => { scuText = ''; badScu = false; })}
     />
-    <button class="sc-btn" type="submit" disabled={busy}>Записать</button>
+    <button
+      class="sc-btn sc-btn--primary"
+      type="submit"
+      disabled={busy}
+      data-failed={badSave ? '' : undefined}
+      title={badSave && problem !== null ? problem : undefined}
+    >Записать</button>
   </div>
 
-  <p class="status" class:error={status?.kind === 'error'} role="status" aria-live="polite">
-    {#if status !== null}
-      {#if chosen && status.kind === 'error'}<span><span class="code">{chosen.code}</span> ·</span> {/if}{status.text}
-    {:else if chosen}
-      <span class="code">{chosen.code}</span> {chosen.name}
-    {:else}
-      <span class="muted">Товар → цена → SCU → Enter. Любую локацию можно выбрать выше.</span>
-    {/if}
-  </p>
+  <!-- for the screen reader only: the line has no room for a message, a mark and a tooltip say what went wrong -->
+  <p class="sr-only" role="status" aria-live="polite">{status === null ? '' : `${chosen && status.kind === 'error' ? `${chosen.code}: ` : ''}${status.text}`}</p>
 </form>
 
 <style>
   .quick {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: var(--sc-gap) calc(var(--sc-gap) * 1.5);
+    position: relative;
+    padding: 4px var(--sc-pad-x);
     border-bottom: 1px solid var(--sc-border);
   }
 
   .line {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--sc-gap);
-  }
-
-  .line.numbers {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  }
-
-  .sides {
     display: flex;
-    height: 28px;
-    overflow: hidden;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
+    align-items: center;
+    gap: 4px;
+    height: var(--sc-ctl-h);
+  }
+
+  .line > :global(.box) {
+    flex: 1;
+    min-width: 90px;
+  }
+
+  .in-price {
+    flex: none;
+    width: 66px;
+  }
+
+  .in-scu {
+    flex: none;
+    width: 48px;
+  }
+
+  .line > :global(.sc-btn) {
+    flex: none;
   }
 
   .side {
     position: relative;
-    display: flex;
-    align-items: center;
-    padding: 0 10px;
-    color: var(--sc-muted);
-    cursor: pointer;
   }
 
   /* the radio covers its label: the keyboard and the mouse use the same control, which draws no mark of its own */
@@ -262,35 +257,20 @@
     cursor: pointer;
   }
 
-  .side:has(input:checked) {
-    background: var(--sc-surface-2);
-    color: var(--sc-text);
-  }
-
   .side:has(input:focus-visible) {
-    outline: 2px solid var(--sc-accent);
-    outline-offset: -2px;
+    outline: 1px solid var(--sc-accent);
+    outline-offset: -1px;
   }
 
-  .status {
-    min-height: 18px;
-    margin: 0;
+  /* read by the screen reader, takes no place on the screen */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
     overflow: hidden;
-    font-size: var(--sc-font-sm);
-    text-overflow: ellipsis;
+    clip-path: inset(50%);
     white-space: nowrap;
-  }
-
-  .status.error {
-    color: var(--sc-bad);
-  }
-
-  .code {
-    font-family: var(--sc-mono);
-    font-weight: 600;
-  }
-
-  .muted {
-    color: var(--sc-muted);
   }
 </style>

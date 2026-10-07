@@ -41,79 +41,70 @@
 </script>
 
 <section class="card" aria-label="Текущий рейс">
-  <div class="top">
-    <h3 class="title">Текущий рейс</h3>
-    <span class="timer" title="Время с начала рейса">{timer}</span>
-  </div>
+  {#if confirming}
+    <div class="confirm" role="alertdialog" aria-label="Груз потерян?" tabindex="-1" onkeydown={onKeydown}>
+      <p class="ask">Рейс будет закрыт как потерянный, груз спишется. Продолжить?</p>
+      <div class="buttons">
+        <button type="button" class="sc-btn sc-btn--act danger" onclick={confirmLost}>Да, груз потерян</button>
+        <button type="button" class="sc-btn sc-btn--act" bind:this={cancelButton} onclick={() => (confirming = false)}>Отмена</button>
+      </div>
+    </div>
+  {:else}
+    <div class="top">
+      <span class="timer" title="Время с начала рейса">{timer}</span>
+      <span class="spacer"></span>
+      <button type="button" class="sc-btn sc-btn--act" onclick={() => onDepart()}>Взлетел</button>
+      <button type="button" class="sc-btn sc-btn--act" onclick={() => onArrive()}>Прилетел</button>
+      <button type="button" class="sc-btn sc-btn--act danger" onclick={() => (confirming = true)}>Груз потерян</button>
+    </div>
+  {/if}
 
   {#if cargo.length === 0}
-    <p class="muted empty">В трюме пусто.</p>
+    <p class="empty">В трюме пусто</p>
   {:else}
     <ul class="cargo">
       {#each cargo as line}
         <li class="line">
           <span class="code">{line.code}</span>
-          <span class="num">{line.scu} SCU</span>
-          <span class="muted" title="Средневзвешенная цена закупки">по <span class="num">{formatUec(line.avgBuyPrice)}</span></span>
+          <span class="sc-num">{line.scu} SCU</span>
+          <span class="muted sc-num" title="Средневзвешенная цена закупки">по {formatUec(line.avgBuyPrice)}</span>
         </li>
       {/each}
     </ul>
   {/if}
 
   <dl class="totals">
-    <div><dt>Вложено</dt><dd class="num">{formatUec(totals.invested)}</dd></div>
-    <div><dt>Выручка</dt><dd class="num">{formatUec(totals.revenue)}</dd></div>
+    <div><dt class="sc-label">Вложено</dt><dd class="sc-num">{formatUec(totals.invested)}</dd></div>
+    <div><dt class="sc-label">Выручка</dt><dd class="sc-num">{formatUec(totals.revenue)}</dd></div>
     <div>
-      <dt>Прибыль</dt>
-      <dd class="num" class:good={totals.profit > 0} class:loss={totals.profit < 0}>{formatUec(totals.profit)}</dd>
+      <dt class="sc-label">Прибыль</dt>
+      <dd class="sc-num" class:good={totals.profit > 0} class:loss={totals.profit < 0}>{formatUec(totals.profit)}</dd>
     </div>
-    <div><dt>ROI</dt><dd class="num">{roi}</dd></div>
-    <div><dt>UEC/ч</dt><dd class="num">{rate}</dd></div>
+    <div><dt class="sc-label">ROI</dt><dd class="sc-num">{roi}</dd></div>
+    <div><dt class="sc-label">UEC/ч</dt><dd class="sc-num">{rate}</dd></div>
   </dl>
-
-  {#if confirming}
-    <div class="confirm" role="alertdialog" aria-label="Груз потерян?" tabindex="-1" onkeydown={onKeydown}>
-      <p class="ask">Рейс будет закрыт как потерянный, груз спишется. Продолжить?</p>
-      <div class="buttons">
-        <button type="button" class="danger" onclick={confirmLost}>Да, груз потерян</button>
-        <button type="button" bind:this={cancelButton} onclick={() => (confirming = false)}>Отмена</button>
-      </div>
-    </div>
-  {:else}
-    <div class="buttons">
-      <button type="button" onclick={() => onDepart()}>Взлетел</button>
-      <button type="button" onclick={() => onArrive()}>Прилетел</button>
-      <button type="button" class="danger lost" onclick={() => (confirming = true)}>Груз потерян</button>
-    </div>
-  {/if}
 </section>
 
 <style>
   .card {
-    padding: 4px 8px 8px;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    background: var(--sc-surface);
+    padding: 0 var(--sc-pad-x);
   }
 
   .top {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    min-height: 28px;
-  }
-
-  .title {
-    margin: 0;
-    font-size: var(--sc-font);
-    font-weight: 600;
+    gap: 4px;
+    height: calc(var(--sc-ctl-h) + 6px);
   }
 
   .timer {
-    font-family: var(--sc-mono);
-    font-variant-numeric: tabular-nums;
-    font-size: calc(var(--sc-font) * 1.4);
+    color: var(--sc-accent);
+    font-size: 15px;
     font-weight: 600;
+  }
+
+  .spacer {
+    flex: 1;
   }
 
   .cargo {
@@ -123,23 +114,31 @@
   }
 
   .line {
-    display: flex;
-    align-items: baseline;
+    display: grid;
+    grid-template-columns: 52px 84px minmax(0, 1fr);
+    align-items: center;
     gap: var(--sc-gap);
-    min-height: 24px;
+    height: var(--sc-row-h);
+    border-top: 1px solid var(--sc-surface-2);
   }
 
   .code {
-    min-width: 48px;
-    font-family: var(--sc-mono);
     font-weight: 600;
+  }
+
+  .line .sc-num {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .totals {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
-    gap: 4px var(--sc-gap);
-    margin: 6px 0;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: var(--sc-gap);
+    margin: 0;
+    padding: 3px 0 4px;
+    border-top: 1px solid var(--sc-border);
   }
 
   .totals div {
@@ -147,29 +146,29 @@
   }
 
   dt {
-    color: var(--sc-muted);
-    font-size: var(--sc-font-sm);
-  }
-
-  dd {
-    margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .num {
-    font-family: var(--sc-mono);
-    font-variant-numeric: tabular-nums;
+  dd {
+    margin: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .muted {
     color: var(--sc-muted);
+    text-align: left;
   }
 
   .empty {
     margin: 0;
-    min-height: 24px;
+    height: var(--sc-row-h);
+    color: var(--sc-muted);
+    line-height: var(--sc-row-h);
   }
 
   .good {
@@ -180,50 +179,21 @@
     color: var(--sc-bad);
   }
 
-  .buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  button {
-    height: 28px;
-    padding: 0 10px;
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    background: transparent;
-    color: var(--sc-text);
-    font: inherit;
-    font-size: var(--sc-font-sm);
-    white-space: nowrap;
-    cursor: pointer;
-  }
-
-  button:hover {
-    background: var(--sc-surface-2);
-  }
-
-  button:focus-visible {
-    outline: 2px solid var(--sc-accent);
-    outline-offset: 1px;
-  }
-
   .danger {
     border-color: var(--sc-bad);
     color: var(--sc-bad);
   }
 
-  .lost {
-    margin-left: auto;
-  }
-
   .confirm {
-    padding: 6px;
-    border: 1px solid var(--sc-bad);
-    border-radius: var(--sc-radius);
+    padding: 6px 0;
   }
 
   .ask {
     margin: 0 0 6px;
+  }
+
+  .buttons {
+    display: flex;
+    gap: 4px;
   }
 </style>

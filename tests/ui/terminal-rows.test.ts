@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { badgeText, terminalRows } from '../../src/ui/vm/terminal-rows';
+import { badgeText, cellScu, sideCounts, terminalRows, uexRangeOf } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
 import { obs, px, ref } from '../helpers/factories';
@@ -12,13 +12,37 @@ describe('terminalRows', () => {
     expect(rows.map(r => r.code)).toEqual(['GOLD', 'TUNG']);
     expect(rows[0].buy).toEqual({
       own: 6120, ownScu: 340, ownScuBase: null, ownScuRate: 'none', hint: null, hintScu: null, badge: { text: 'моя · 2 мин', kind: 'hot' },
-      uexRange: null, ownLast: null, warn: false,
+      uexRange: null, range: { low: 5900, high: 6200 }, ownLast: null, warn: false,
     });
     expect(rows[0].sell).toBeNull();
     expect(rows[1].buy).toEqual({
       own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 3980, hintScu: 410, badge: { text: 'UEX · 1 ч', kind: 'uex' },
-      uexRange: null, ownLast: null, warn: false,
+      uexRange: null, range: null, ownLast: null, warn: false,
     });
+  });
+
+  it('gives the range UEX knows for a cell, next to my own price and to a UEX one alike', () => {
+    // Gold: my own hot price 6120; the UEX week says 5900-6200
+    expect(terminalRows(market, ref, 1, ctx)[0].buy?.range).toEqual({ low: 5900, high: 6200 });
+    // the same range stands next to a hint, whether UEX or my cold value gave the price
+    const cold = terminalRows(withOwnBuy(market, 1, 10, 6120, NOW - 5 * 3600), ref, 1, ctx)[0].buy;
+    expect(cold).toMatchObject({ own: null, hint: 6000, range: { low: 5900, high: 6200 } });
+  });
+
+  it('has no range when UEX has none: a flat price, no statistics, or no UEX row at all', () => {
+    const flat = terminalRows(market, ref, 1, ctx)[1].buy; // Tungsten: 3980 flat
+    expect(flat?.range).toBeNull();
+    const noStats = buildMarket([px(1, 10, { buy: { avgWeek: 6500 } })], []); // the week has an average but no bounds
+    expect(terminalRows(noStats, ref, 1, ctx)[0].buy?.range).toBeNull();
+    const ownOnly = buildMarket([], [obs({ ts: NOW - 60, terminalId: 1, commodityId: 10, side: 'buy', price: 6100 })]);
+    expect(terminalRows(ownOnly, ref, 1, ctx)[0].buy?.range).toBeNull();
+  });
+
+  it('takes the range of the side the cell is on', () => {
+    const m = buildMarket([px(1, 10, { buy: { avgWeek: 6000, minWeek: 5900, maxWeek: 6200 }, sell: { avgWeek: 6500, minWeek: 6300, maxWeek: 6900 } })], []);
+    const [row] = terminalRows(m, ref, 1, ctx);
+    expect(row.buy?.range).toEqual({ low: 5900, high: 6200 });
+    expect(row.sell?.range).toEqual({ low: 6300, high: 6900 });
   });
 
   it('shows the estimated stock with its base when the timer has moved it', () => {
@@ -60,7 +84,7 @@ describe('terminalRows', () => {
     );
     expect(terminalRows(m, ref, 1, ctx)[0].buy).toEqual({
       own: null, ownScu: 130, ownScuBase: { scu: 40, age: '20 мин' }, ownScuRate: 'default', hint: 6000, hintScu: null,
-      badge: { text: 'UEX · 1 ч', kind: 'uex' }, uexRange: null, ownLast: { price: 6120, age: '5 ч' }, warn: false,
+      badge: { text: 'UEX · 1 ч', kind: 'uex' }, uexRange: null, range: { low: 5900, high: 6200 }, ownLast: { price: 6120, age: '5 ч' }, warn: false,
     });
   });
 
@@ -174,7 +198,7 @@ describe('terminalRows', () => {
     expect(row.buy).toMatchObject({ own: 6100, ownScu: 200 });
     expect(row.sell).toEqual({
       own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 6500, hintScu: 90, badge: { text: 'UEX · 2 ч', kind: 'uex' },
-      uexRange: null, ownLast: null, warn: false,
+      uexRange: null, range: null, ownLast: null, warn: false,
     });
   });
 
@@ -182,7 +206,7 @@ describe('terminalRows', () => {
     const m = buildMarket([], [obs({ ts: NOW - 5 * 3600, terminalId: 1, commodityId: 10, side: 'buy', price: 6120, scu: 340 })]);
     expect(terminalRows(m, ref, 1, ctx)[0].buy).toEqual({
       own: null, ownScu: null, ownScuBase: null, ownScuRate: null, hint: 6120, hintScu: null, badge: { text: 'моя · 5 ч', kind: 'cold' },
-      uexRange: null, ownLast: null, warn: false,
+      uexRange: null, range: null, ownLast: null, warn: false,
     });
   });
 
@@ -207,5 +231,92 @@ describe('terminalRows', () => {
     expect(terminalRows(withUexRange(base, 1, 10, 100, 300, 'sell'), ref, 1, ctx)[0].sell!.warn).toBe(true);
     // a wild UEX-derived hint is only a hint: nothing to warn about
     expect(terminalRows(withUexRange(market, 1, 30, 10, 20), ref, 1, ctx)[1].buy).toMatchObject({ own: null, warn: false });
+  });
+});
+
+describe('uexRangeOf', () => {
+  it('is the range UEX knows for a side of a terminal, whatever my diary says there', () => {
+    expect(uexRangeOf(market, 1, 10, 'buy', ctx)).toEqual({ low: 5900, high: 6200 }); // Gold: my own hot price, UEX week 5900–6200
+    expect(uexRangeOf(withOwnBuy(market, 1, 10, 6120, NOW - 5 * 3600), 1, 10, 'buy', ctx)).toEqual({ low: 5900, high: 6200 });
+  });
+
+  it('is null for a flat price, a side UEX knows nothing about and a place without a UEX row', () => {
+    expect(uexRangeOf(market, 1, 30, 'buy', ctx)).toBeNull(); // Tungsten 3980 flat
+    expect(uexRangeOf(market, 1, 10, 'sell', ctx)).toBeNull(); // nobody buys Gold here according to UEX
+    expect(uexRangeOf(market, 4, 10, 'buy', ctx)).toBeNull(); // no row for terminal 4
+  });
+});
+
+describe('sideCounts', () => {
+  it('counts the rows that have each side: what can be bought here and what can be sold here', () => {
+    const m = buildMarket(
+      [
+        px(1, 10, { buy: { avgWeek: 6000 }, dateModified: NOW - 3600 }),
+        px(1, 20, { sell: { avgWeek: 9000 }, dateModified: NOW - 3600 }),
+        px(1, 30, { buy: { avgWeek: 3000 }, sell: { avgWeek: 3500 }, dateModified: NOW - 3600 }),
+      ],
+      [],
+    );
+    expect(sideCounts(terminalRows(m, ref, 1, ctx))).toEqual({ buy: 2, sell: 2 });
+  });
+
+  it('counts a side that only my diary knows', () => {
+    const m = buildMarket([], [obs({ ts: NOW - 60, terminalId: 1, commodityId: 10, side: 'sell', price: 6800 })]);
+    expect(sideCounts(terminalRows(m, ref, 1, ctx))).toEqual({ buy: 0, sell: 1 });
+  });
+
+  it('is zero and zero without rows', () => {
+    expect(sideCounts([])).toEqual({ buy: 0, sell: 0 });
+  });
+});
+
+describe('cellScu', () => {
+  const nb = (s: string) => s.replace(/ /g, String.fromCharCode(0xa0));
+  const buyOf = (m: Parameters<typeof terminalRows>[0], index = 0) => terminalRows(m, ref, 1, ctx)[index].buy;
+
+  it('shows the quantity I measured at the seller as my own', () => {
+    expect(cellScu(buyOf(market), 'buy')).toEqual({ text: '340', own: true, estimated: false, title: 'Остаток у продавца по твоему замеру, SCU' });
+  });
+
+  it('shows a UEX quantity as a hint, not as mine', () => {
+    expect(cellScu(buyOf(market, 1), 'buy')).toEqual({ text: '410', own: false, estimated: false, title: 'Остаток у продавца по данным UEX, SCU' });
+  });
+
+  it('shows the stock moved by the refill timer as an estimate and says so', () => {
+    expect(cellScu(buyOf(marketWithStock), 'buy')).toEqual({
+      text: '130', own: true, estimated: true, title: 'Оценка по таймеру пополнения: сколько там сейчас',
+    });
+  });
+
+  it('groups thousands like every other number', () => {
+    const m = buildMarket([px(1, 10, { buy: { avgWeek: 6000 }, scuBuy: 1245 })], []);
+    expect(cellScu(buyOf(m), 'buy')?.text).toBe(nb('1 245'));
+  });
+
+  it('shows a known empty stock as 0', () => {
+    const m = buildMarket([], [obs({ ts: NOW - 60, terminalId: 1, commodityId: 10, side: 'buy', price: 6100, scu: 0 })]);
+    expect(cellScu(buyOf(m), 'buy')).toMatchObject({ text: '0', own: true });
+  });
+
+  it("shows the buyer's inventory on the sell side", () => {
+    const m = buildMarket([px(1, 10, { sell: { avgWeek: 6500 }, scuSell: 90, dateModified: NOW - 7200 })], []);
+    expect(cellScu(terminalRows(m, ref, 1, ctx)[0].sell, 'sell')).toEqual({
+      text: '90', own: false, estimated: false, title: 'Склад у покупателя по данным UEX, SCU',
+    });
+  });
+
+  it('takes the quantity of the side it is asked for, whatever the other side of the row holds', () => {
+    const m = buildMarket(
+      [px(1, 10, { buy: { avgWeek: 6000 }, sell: { avgWeek: 6500 }, scuBuy: 200, scuSell: 90, dateModified: NOW - 7200 })], [],
+    );
+    const [row] = terminalRows(m, ref, 1, ctx);
+    expect(cellScu(row.buy, 'buy')?.text).toBe('200');
+    expect(cellScu(row.sell, 'sell')?.text).toBe('90');
+  });
+
+  it('is null for a cell without a quantity, and for no cell', () => {
+    const m = buildMarket([px(1, 10, { buy: { avgWeek: 6000 }, dateModified: NOW - 7200 })], []);
+    expect(cellScu(buyOf(m), 'buy')).toBeNull();
+    expect(cellScu(null, 'sell')).toBeNull();
   });
 });

@@ -26,8 +26,18 @@ describe('stripModel', () => {
     // 96 SCU Gold bought at 6120 at terminal 1, 872 s ago; target 2: UEX 6900 (6400–7100); 1–2: 59 Gm
     expect(stripModel(active, market, ref, toTarget2, ctx)).toEqual({
       kind: 'run', timer: '14:32', cargo: 'GOLD 96 SCU', target: 'TDD Area 18',
-      expect: `ждём 6${NBSP}900 (6${NBSP}400–7${NBSP}100)`, rate: '≈ 266k/ч',     // 96×780 = 74 880 per max(872, 1015) s
+      expect: `ждём 6${NBSP}900 (6${NBSP}400–7${NBSP}100)`, expectShort: `ждём 6${NBSP}900`, rate: '≈ 266k/ч',     // 96×780 = 74 880 per max(872, 1015) s
     });
+  });
+  it('gives the expectation without its range as a short form for the one-line strip', () => {
+    // a plain price and a range of the same price are both just "ждём <price>"
+    expect(stripModel(active, withOwnSell(market, 2, 10, 6840, NOW - 60), ref, toTarget2, ctx))
+      .toMatchObject({ expect: `ждём 6${NBSP}840`, expectShort: `ждём 6${NBSP}840` });
+    expect(stripModel(active, withUexSell(market, 2, GOLD, 6900, 6900, 7100), ref, toTarget2, ctx))
+      .toMatchObject({ expect: `ждём 6${NBSP}900 (6${NBSP}900–7${NBSP}100)`, expectShort: `ждём 6${NBSP}900` });
+    // no price at the target: no expectation of either form
+    expect(stripModel(active, market, ref, { ...s, targetTerminalId: null }, ctx)).toMatchObject({ expect: null, expectShort: null });
+    expect(stripModel(active, market, ref, { ...s, targetTerminalId: 3 }, ctx)).toMatchObject({ expect: null, expectShort: null });
   });
   it('collapses the range for an own price and omits unknown parts', () => {
     expect(stripModel(active, withOwnSell(market, 2, 10, 6840, NOW - 60), ref, toTarget2, ctx))

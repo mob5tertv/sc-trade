@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDistance, routeOptionRow, sellAlternativeRow, sellHereRow } from '../../src/ui/vm/route-rows';
+import { formatDistance, formatRoi, routeOptionRow, sellAlternativeRow, sellHereRow } from '../../src/ui/vm/route-rows';
 import type { RouteOption } from '../../src/core/routes';
 import type { SellAlternative, SellHere } from '../../src/core/sell';
 import type { Estimate } from '../../src/core/types';
@@ -36,6 +36,39 @@ describe('formatDistance', () => {
   });
 });
 
+describe('formatRoi', () => {
+  it('rounds to whole percents', () => {
+    expect([0.42, 0.22, 0.1275, 0.5, 1.234].map(formatRoi)).toEqual(['42%', '22%', '13%', '50%', '123%']);
+    expect(formatRoi(-0.04)).toBe('-4%');
+  });
+
+  it('keeps one decimal only below 10% and only when the decimal is not zero', () => {
+    expect(formatRoi(0.025)).toBe('2,5%');
+    expect(formatRoi(0.0951)).toBe('9,5%');
+    expect(formatRoi(-0.025)).toBe('-2,5%');
+    expect(formatRoi(0.09)).toBe('9%');
+    expect(formatRoi(0.0904)).toBe('9%'); // the decimal rounds to zero
+    expect(formatRoi(0.0996)).toBe('10%'); // rounds up to ten: whole from there on
+    expect(formatRoi(0.1)).toBe('10%');
+    expect(formatRoi(0.105)).toBe('11%');
+  });
+
+  it('writes zero as 0%, never as a negative zero', () => {
+    expect(formatRoi(0)).toBe('0%');
+    expect(formatRoi(-0.0003)).toBe('0%');
+  });
+
+  it('uses the comma of Russian numbers', () => {
+    expect(formatRoi(0.031)).toBe('3,1%');
+  });
+
+  it('shows a dash for what is not a number', () => {
+    expect(formatRoi(Number.NaN)).toBe('—');
+    expect(formatRoi(Number.POSITIVE_INFINITY)).toBe('—');
+    expect(formatRoi(Number.NEGATIVE_INFINITY)).toBe('—');
+  });
+});
+
 describe('routeOptionRow', () => {
   it('names the destination and shows its sale price when the trips start here', () => {
     expect(routeOptionRow(option(), ref, 'from', new Map())).toEqual({
@@ -43,7 +76,11 @@ describe('routeOptionRow', () => {
       distance: '59 Гм', time: '17:35', timeTitle: 'оценка по расстоянию',
       runs: 0,
       price: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
-      roi: '12,8%', rate: '256k/ч', worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
+      roi: '13%', rate: '256k', worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
+      origin: 'ARC-L1', dest: 'TDD Area 18', bothEnds: true, isTarget: false, tier: 'ok',
+      invested: nb('587 520'), profit: nb('74 880'), profitLoss: false,
+      buy: { price: nb('6 120'), range: null, badge: { text: 'моя · 40 мин', kind: 'hot' } },
+      sell: { price: nb('6 900'), range: `${nb('6 400')}–${nb('7 100')}`, badge: { text: 'UEX · 2 д', kind: 'uex' } },
     });
   });
 
@@ -87,6 +124,100 @@ describe('routeOptionRow', () => {
     expect(routeOptionRow(option({ destId: 3 }), named, 'from', new Map()).terminal).toBe('Long name');
     expect(routeOptionRow(option({ destId: 777 }), ref, 'from', new Map()).terminal).toBe('#777');
     expect(routeOptionRow(option({ commodityId: 999 }), ref, 'from', new Map()).commodity).toBe('#999');
+  });
+});
+
+describe('routeOptionRow: the UEX range next to my own price', () => {
+  // my own hot purchase price at the origin (ARC-L1) has no range of its own; UEX knows 5 900–6 200 for that place
+  const uexRange = (terminalId: number, commodityId: number, side: string) =>
+    terminalId === 1 && commodityId === 10 && side === 'buy' ? { low: 5900, high: 6200 } : null;
+
+  it('shows the range UEX knows for the place beside my own price, and marks the price as mine', () => {
+    const row = routeOptionRow(option(), ref, 'to', new Map(), { uexRange });
+    expect(row.price).toEqual({ price: nb('6 120'), range: `${nb('5 900')}–${nb('6 200')}`, badge: { text: 'моя · 40 мин', kind: 'hot' } });
+    expect(row.buy.range).toBe(`${nb('5 900')}–${nb('6 200')}`);
+  });
+
+  it('asks UEX for the right place, commodity and side, and only for a price that is mine', () => {
+    const asked: unknown[] = [];
+    routeOptionRow(option(), ref, 'from', new Map(), { uexRange: (t, c, s) => { asked.push([t, c, s]); return null; } });
+    expect(asked).toContainEqual([1, 10, 'buy']); // the purchase of the trip: my own price at the origin
+    expect(asked).not.toContainEqual([2, 10, 'sell']); // the sale price is UEX's own and carries its range already
+  });
+
+  it('leaves a UEX price with its own range and shows nothing for a place UEX knows no range for', () => {
+    expect(routeOptionRow(option(), ref, 'from', new Map(), { uexRange }).price.range).toBe(`${nb('6 400')}–${nb('7 100')}`);
+    expect(routeOptionRow(option(), ref, 'to', new Map(), { uexRange: () => null }).price.range).toBeNull();
+    expect(routeOptionRow(option(), ref, 'to', new Map()).price.range).toBeNull(); // no lookup given: as before
+  });
+});
+
+describe('routeOptionRow: both ends and the target', () => {
+  it('names both ends of the trip in trip order, whatever the mode', () => {
+    for (const mode of ['from', 'to'] as const) {
+      expect(routeOptionRow(option(), ref, mode, new Map())).toMatchObject({ origin: 'ARC-L1', dest: 'TDD Area 18' });
+    }
+  });
+
+  it('asks for both ends when the purchase terminal is not the viewed one (trips from here)', () => {
+    const row = (anchorTerminalId: number | null | undefined) => routeOptionRow(option(), ref, 'from', new Map(), { anchorTerminalId }).bothEnds;
+    expect(row(1)).toBe(false); // bought right here
+    expect(row(5)).toBe(true); // "и рядом": bought at another terminal of the planet
+    // nothing to compare with: the trip is shown with both ends, never without its purchase point
+    expect(row(null)).toBe(true);
+    expect(row(undefined)).toBe(true);
+  });
+
+  it('asks for both ends when the sale terminal is not the viewed one (trips to here)', () => {
+    const row = (anchorTerminalId: number | null) => routeOptionRow(option(), ref, 'to', new Map(), { anchorTerminalId }).bothEnds;
+    expect(row(2)).toBe(false); // sold right here
+    expect(row(9)).toBe(true);
+    expect(row(null)).toBe(true);
+  });
+
+  it('marks the option whose other end is the target the "Цель" button would set', () => {
+    const target = (mode: 'from' | 'to', targetTerminalId: number | null | undefined) =>
+      routeOptionRow(option(), ref, mode, new Map(), { targetTerminalId }).isTarget;
+    expect(target('from', 2)).toBe(true); // the destination is the target of a trip from here
+    expect(target('from', 1)).toBe(false); // the origin is not
+    expect(target('to', 1)).toBe(true); // the origin is the target of a trip to here
+    expect(target('to', 2)).toBe(false);
+    expect(target('from', null)).toBe(false);
+    expect(target('from', undefined)).toBe(false);
+  });
+
+  it('puts the row into the ROI tier of its option', () => {
+    const tier = (roi: number) => routeOptionRow(option({ roi }), ref, 'from', new Map()).tier;
+    expect([0.6, 0.2, 0.1, 0.01, -0.02].map(tier)).toEqual(['great', 'good', 'ok', 'poor', 'loss']);
+  });
+
+  it('colours the ROI by the number that is shown, not by the one that was rounded away', () => {
+    const shown = (roi: number) => {
+      const row = routeOptionRow(option({ roi }), ref, 'from', new Map());
+      return [row.roi, row.tier];
+    };
+    expect(shown(0.2996)).toEqual(['30%', 'great']); // 29,96% reads 30%: the colour of 30%
+    expect(shown(0.296)).toEqual(['30%', 'great']);
+    expect(shown(0.2949)).toEqual(['29%', 'good']);
+    expect(shown(0.1496)).toEqual(['15%', 'good']);
+    expect(shown(0.0496)).toEqual(['5%', 'ok']);
+    expect(shown(0.0449)).toEqual(['4,5%', 'poor']);
+    expect(shown(-0.0003)).toEqual(['0%', 'poor']); // -0,03% reads 0%: not the colour of a loss
+    expect(shown(-0.0004)).toEqual(['0%', 'poor']);
+    expect(shown(-0.0051)).toEqual(['-0,5%', 'loss']);
+  });
+
+  it('shows a dash, in the quiet tier, for a ROI that is not a number', () => {
+    for (const roi of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(routeOptionRow(option({ roi }), ref, 'from', new Map())).toMatchObject({ roi: '—', tier: 'poor' });
+    }
+  });
+
+  it('adds up the money of the whole trip for the expanded row', () => {
+    const row = routeOptionRow(option({ qty: 10, profit: -300 }), ref, 'from', new Map());
+    expect(row).toMatchObject({ invested: nb('61 200'), profit: nb('-300'), profitLoss: true });
+    expect(row.buy.badge).toEqual({ text: 'моя · 40 мин', kind: 'hot' });
+    expect(row.sell.price).toBe(nb('6 900'));
   });
 });
 

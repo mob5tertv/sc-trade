@@ -8,85 +8,72 @@
 </script>
 
 {#if rows.length === 0}
-  <p class="empty">Рейсов пока нет.</p>
+  <p class="empty">Рейсов пока нет</p>
 {:else}
-  <ul class="list">
+  <div class="table" role="table" aria-label="История рейсов">
+    <div class="grid head sc-label" role="row">
+      <span role="columnheader">Когда</span>
+      <span role="columnheader">Рейс</span>
+      <span role="columnheader" class="r">Прибыль</span>
+      <span role="columnheader" class="r">ROI</span>
+      <span role="columnheader" class="r">Время</span>
+      <span role="columnheader" class="r">UEC/ч</span>
+    </div>
     {#each rows as row (row.runId)}
-      <li class="item">
-        <div class="head">
-          <span class="when num">{row.when}</span>
-          <span class="title" title={row.title}>{row.title}</span>
-          <span class="status {row.status}">{STATUS[row.status]}</span>
-        </div>
-        <div class="metrics num">
-          <span class="profit" class:loss={isLoss(row.profit)} title="Прибыль">{row.profit}</span>
-          <span title="ROI">{row.roi}</span>
-          <span title="Длительность">{row.duration}</span>
-          <span title="UEC в час">{row.rate}</span>
-        </div>
-      </li>
+      <div class="grid line" role="row" title={STATUS[row.status]}>
+        <span class="when sc-num">{row.when}</span>
+        <span class="title {row.status}" title="{row.title} · {STATUS[row.status]}">{row.title}</span>
+        <span class="sc-num profit" class:loss={isLoss(row.profit)} title="Прибыль">{row.profit}</span>
+        <span class="sc-num" title="ROI">{row.roi}</span>
+        <span class="sc-num" title="Длительность">{row.duration}</span>
+        <span class="sc-num" title="UEC в час">{row.rate}</span>
+      </div>
     {/each}
-  </ul>
+  </div>
 {/if}
 
 <style>
-  .list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .item {
-    padding: 2px 6px;
-    border-bottom: 1px solid var(--sc-border);
+  .grid {
+    display: grid;
+    grid-template-columns: 60px minmax(0, 1fr) 58px 46px 44px 50px;
+    column-gap: 4px;
+    align-items: center;
+    padding: 0 var(--sc-pad-x);
   }
 
   .head {
-    display: grid;
-    grid-template-columns: 84px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--sc-gap);
-    min-height: 26px;
+    height: 18px;
+    border-bottom: 1px solid var(--sc-border);
+    color: var(--sc-muted);
+    white-space: nowrap;
+  }
+
+  .r {
+    text-align: right;
+  }
+
+  .line {
+    height: var(--sc-row-h);
+    border-bottom: 1px solid var(--sc-surface-2);
+  }
+
+  .line span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .when {
     color: var(--sc-muted);
-    font-size: var(--sc-font-sm);
+    text-align: left;
   }
 
-  .title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .status {
-    font-size: var(--sc-font-sm);
-    color: var(--sc-muted);
-  }
-
-  .status.active {
+  .title.active {
     color: var(--sc-accent);
   }
 
-  .status.lost {
+  .title.lost {
     color: var(--sc-bad);
-  }
-
-  .metrics {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: var(--sc-gap);
-    min-height: 22px;
-    padding-left: 92px;
-    font-size: var(--sc-font-sm);
-    text-align: right;
-  }
-
-  .metrics span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .profit {
@@ -97,14 +84,11 @@
     color: var(--sc-bad);
   }
 
-  .num {
-    font-family: var(--sc-mono);
-    font-variant-numeric: tabular-nums;
-  }
-
   .empty {
     margin: 0;
-    padding: var(--sc-gap);
+    padding: 0 var(--sc-pad-x);
+    height: var(--sc-row-h);
     color: var(--sc-muted);
+    line-height: var(--sc-row-h);
   }
 </style>
