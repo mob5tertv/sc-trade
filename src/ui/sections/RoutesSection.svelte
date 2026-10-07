@@ -23,7 +23,11 @@
   {/if}
 {/snippet}
 
-<Section title="Мои маршруты" summary={stats.summary} {open} onToggle={() => void app.toggleSection(SECTION)} {actions} scroll>
+<!--
+  The summary is what a folded section says. Open, the list under the header says it (its first row is the best route),
+  and the switch takes the room the summary would be cut in.
+-->
+<Section title="Мои маршруты" summary={open ? undefined : stats.summary} {open} onToggle={() => void app.toggleSection(SECTION)} {actions} scroll>
   {#if view === 'routes'}
     <RoutesTable rows={stats.routes} />
   {:else if view === 'history'}

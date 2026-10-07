@@ -25,7 +25,7 @@ export type StatsView = 'routes' | 'history' | 'sessions';
 export const STATS_VIEWS: ReadonlyArray<{ id: StatsView; label: string; title: string }> = [
   { id: 'routes', label: 'Маршруты', title: 'Мои маршруты по UEC в час' },
   { id: 'history', label: 'История', title: 'Все рейсы, новые сверху' },
-  { id: 'sessions', label: 'Сессии', title: 'Время в игре без пауз дольше двух часов' },
+  { id: 'sessions', label: 'Сессии', title: 'Пауза между записями дольше двух часов начинает новую сессию' },
 ];
 
 const NO_FINISHED_RUNS = 'пока нет завершённых рейсов';

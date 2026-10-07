@@ -1,6 +1,16 @@
+import type { Settings } from '../../src/core/settings';
+import type { Reference } from '../../src/core/types';
 import type { Db } from '../../src/data/db';
+import { createLogger, memorySink } from '../../src/data/logger';
 import { addRunEvent, closeRun, startRun } from '../../src/data/repo/runs';
-import { migratedDb } from './test-db';
+import { loadSettings } from '../../src/data/repo/settings';
+import { loadReference } from '../../src/data/repo/uex-cache';
+import type { SuggestDeps } from '../../src/data/suggest';
+import { createUexClient } from '../../src/data/uex-client';
+import { prepareAnyDataset } from '../../src/preview/prepare';
+import { loadHistory } from '../../src/ui/stats-history';
+import { figuresOf } from '../../src/ui/vm/stats-view';
+import { migratedDb, testDb } from './test-db';
 
 // Fixtures of the statistics wiring (task 16b + 17c): a database with runs and no diary at all, and databases that fail.
 
@@ -36,4 +46,28 @@ export function failingOn(inner: Db, prefix: string): Db {
     select: <T>(sql: string, params?: unknown[]) => (sql.startsWith(prefix) ? Promise.reject(new Error('disk image is malformed')) : inner.select<T>(sql, params)),
     execute: (sql, params) => inner.execute(sql, params),
   };
+}
+
+// ---------------------------------------------------------------------------
+// The preview datasets of the section ("stats", "no-runs"), read the way the application reads them.
+// ---------------------------------------------------------------------------
+
+/** The moment the preview data of the statistics is made and read. */
+export const STATS_NOW = 1_800_000_000;
+
+export interface StatsData { db: Db; reference: Reference; settings: Settings; deps: SuggestDeps }
+
+/**
+ * A dataset in Node: a real SQLite database filled by the real seed, with a UEX client that is offline (the datasets
+ * hold every distance). The medians of the player's own runs are in the dependencies, as `app.suggestDeps()` gives them.
+ */
+export async function statsData(dataset: 'stats' | 'no-runs' | 'no-records' | 'window', now: number = STATS_NOW): Promise<StatsData> {
+  const db = testDb();
+  await prepareAnyDataset(db, dataset, now);
+  const log = createLogger(memorySink());
+  const reference = await loadReference(db);
+  const settings = await loadSettings(db, log);
+  const uex = createUexClient(async () => { throw new Error('offline'); }, log);
+  const ownMedian = figuresOf(await loadHistory(db)).ownMedian;
+  return { db, reference, settings, deps: { db, uex, log, now: () => now, reference, settings, ownMedian } };
 }
