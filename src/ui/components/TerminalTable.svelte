@@ -284,9 +284,10 @@
 {/if}
 
 <style>
-  /* The columns, named once for the head and for the rows. Measured on the real texts (the gallery audit): a seven-digit price
-     is 47 px, a six-digit spread of «Мин–макс» 73 px, a five-digit stock with its «≈» 41 px, a ROI of three digits 29 px;
-     what is left goes to the names (180 px: «Recycled Material Composite» with its code is 172 px) */
+  /* The columns, named once for the head and for the rows. Measured on the real texts (the gallery state `roi-long`): a
+     seven-digit price is 47 px, a spread of four-digit numbers in «Мин–макс» 52 px (a six-digit one is about 73 by its
+     digits), a stock of four digits with its «≈» 35 px, the ROI «990%» 26 px. What is left goes to the names: 180 px, where
+     the longest there is, «RMC Recycled Material Composite», takes 168 */
   .table {
     /* the number and its 6 px mark (62 px) and the slot of the triangle with the gap before the number */
     --col-price: calc(62px + var(--sc-trend-w) + 4px);

@@ -96,7 +96,7 @@
 
   // A row that crosses the threshold because a price was entered flashes once. "Because a price was entered" is known
   // here and nowhere else: the entry is run between two looks at the ROI of the table, and the rows that were below the
-  // threshold before and are not now are the ones to flash. A table that was opened or switched flashes nothing.
+  // threshold before and are at or above it now are the ones to flash. A table that was opened or switched flashes nothing.
   const PULSE_MS = 1300;
   const NO_PULSE: ReadonlySet<number> = new Set();
   let pulse = $state.raw<ReadonlySet<number>>(NO_PULSE);
