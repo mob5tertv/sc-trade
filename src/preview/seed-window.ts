@@ -2,6 +2,8 @@ import { estimate } from '../core/estimate';
 import { DEFAULT_SETTINGS } from '../core/settings';
 import type { Commodity, UexPrice, UexSideStats } from '../core/types';
 import type { Db } from '../data/db';
+import { createLogger } from '../data/logger';
+import { addObservation } from '../data/repo/diary';
 import { loadReference, loadUexPrices, saveReference, upsertPrices } from '../data/repo/uex-cache';
 import { loadMarket } from '../data/suggest';
 
@@ -12,6 +14,8 @@ import { loadMarket } from '../data/suggest';
 //  - Area 18 trades two dozen commodities, so that a table has to scroll;
 //  - Seraphim Station is a terminal nothing is known about.
 // Everything else is the default dataset: the player, the history, the other terminals.
+
+const quiet = createLogger({ write() {} });
 
 const HUR_L1 = 3;
 const AREA_18 = 5;
@@ -77,14 +81,30 @@ async function writeLadder(db: Db, now: number): Promise<void> {
   }
   const wanted = new Map(LADDER.map((step) => [`${step.destId}:${idOf(step.code)}`, step.roi]));
 
+  /** What the place pays for the commodity so that the trip has the ROI of its step (a trip that is not on the ladder loses). */
+  const payment = (terminalId: number, commodityId: number, ask: number): number => {
+    const roi = wanted.get(`${terminalId}:${commodityId}`) ?? NO_TRIP - 1;
+    return Math.round((ask * (1 + roi)) / 5) * 5;
+  };
+
   const changed: UexPrice[] = [];
   for (const row of await loadUexPrices(db)) {
     const ask = asked.get(row.commodityId);
     if (row.terminalId === HUR_L1 || ask === undefined || row.sell.avgWeek <= 0) continue;
-    const roi = wanted.get(`${row.terminalId}:${row.commodityId}`) ?? NO_TRIP - 1;
-    changed.push({ ...row, sell: around(Math.round((ask * (1 + roi)) / 5) * 5) });
+    changed.push({ ...row, sell: around(payment(row.terminalId, row.commodityId, ask)) });
   }
   await upsertPrices(db, [], changed, now);
+
+  // A price of the player's own beats the UEX one while it is not cold, and the default dataset has such sale prices
+  // at some of these places. The player has "seen the price again": a fresh reading of what the step says, so the
+  // reading before it stays as the previous one (the mark of a price that moved is there to be seen in the list).
+  for (const own of market.own.values()) {
+    const ask = asked.get(own.commodityId);
+    if (own.side !== 'sell' || own.terminalId === HUR_L1 || ask === undefined) continue;
+    const price = payment(own.terminalId, own.commodityId, ask);
+    if (price === own.price) continue;
+    await addObservation(db, quiet, { ts: now - 20, terminalId: own.terminalId, commodityId: own.commodityId, side: 'sell', price, scu: own.scu });
+  }
 }
 
 /** Area 18 trades two dozen more commodities: it sells the first few of them and buys the rest. */
