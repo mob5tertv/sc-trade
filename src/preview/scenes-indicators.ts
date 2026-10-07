@@ -139,6 +139,21 @@ export const INDICATOR_SCENES: readonly Scene[] = [
     },
   },
   {
+    // the clock jumps two hours and two minutes forward: the last record of the session is older than the pause that splits
+    // sessions, and the segment goes away by the one-second clock alone (no read of the database: the log has one
+    // `statistics loaded`, from the start, and one for each of the two trades)
+    name: 'session-mini-expires',
+    title: 'Мини-строка: после перерыва в два часа сегмент сессии исчезает сам, база не читается',
+    dataset: 'default',
+    act: async (app) => {
+      await flyStims(app, GAIN);
+      const realNow = Date.now.bind(Date);
+      Date.now = () => realNow() + (2 * 3600 + 120) * 1000;
+      await until('the session to end', () => app.strip.kind === 'idle' && app.strip.session === null);
+      await pause(100);
+    },
+  },
+  {
     name: 'session-summary-plus',
     title: 'Свёрнутые «Мои маршруты»: «сессия +1 242 000 · …/ч», затем лучший маршрут',
     dataset: 'window',
@@ -157,10 +172,23 @@ export const INDICATOR_SCENES: readonly Scene[] = [
     },
   },
   {
-    // the latest session holds the run that is going and no finished run: no figure, the summary is the best route alone
-    name: 'session-summary-none',
-    title: 'Свёрнутые «Мои маршруты»: в сессии только идущий рейс, сводка как была (лучший маршрут)',
+    // the diary of prices of the last nine hours is one session, and the three runs of the `stats` dataset are in it (one lost): -174 000 over the whole stretch
+    name: 'session-summary-long',
+    title: 'Свёрнутые «Мои маршруты»: сессия длиной в девять часов с тремя рейсами, один потерян',
     dataset: 'stats',
+    act: (app) => app.expand('preview'),
+  },
+  {
+    // the session is there (the player has written prices) but no run has ended in it: no segment, the line is the location alone
+    name: 'session-mini-none',
+    title: 'Мини-строка без рейса: в сессии есть цены, но ни одного завершённого рейса, сегмента нет',
+    dataset: 'default',
+  },
+  {
+    // nothing at all: no run, no price of his own: the summary says there are no routes yet and says nothing of a session
+    name: 'session-summary-none',
+    title: 'Свёрнутые «Мои маршруты»: ни записей, ни рейсов, сводка «пока нет завершённых рейсов»',
+    dataset: 'no-records',
     act: (app) => app.expand('preview'),
   },
 ];
