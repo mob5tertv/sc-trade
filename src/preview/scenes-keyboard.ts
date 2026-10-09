@@ -219,6 +219,32 @@ function expectForm(when: string, wanted: { asks: boolean; written: number; erro
   if (wanted.error !== undefined && says.error !== wanted.error) throw new Error(`${when}: the refusal is ${JSON.stringify(says.error)}, not ${JSON.stringify(wanted.error)}`);
 }
 
+// ---- one Esc ---------------------------------------------------------------------------------------------------------
+
+/** The lines of the log that say `Esc` gave the keyboard back. */
+const escapeLines = (): string[] => (window.__preview?.log ?? []).filter((line) => line.includes('[ui] escape: the keyboard goes back'));
+
+/** A key goes down in `target`, as the page hears it. `repeat`: the key was down already and Windows repeats it. */
+function keyDown(target: HTMLElement, key: string, repeat = false): void {
+  target.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, repeat, bubbles: true, cancelable: true }));
+}
+
+const LOCATION = 'header .location input';
+
+/**
+ * ONE press of Esc in `field`, and the keyboard is the game's: the scene fails where a second press would be needed. It waits a
+ * moment after the keyboard went, so that whatever the blur of the return may have started (a save of a cell that is left) is in
+ * the log by the time the scene looks. With the real key: `--do "…;press:Escape;eval:window.__keys()"` of the picture command.
+ */
+async function oneEscape(app: SceneApp, where: string, field: HTMLElement): Promise<void> {
+  const before = escapeLines().length;
+  keyDown(field, 'Escape');
+  await until(`the keyboard to go back to the game after ONE Esc ${where}`, () => !app.keyboardHeld, 1000);
+  await pause(300);
+  expectKeyboard(app, `after one Esc ${where}`, { held: false, owner: 'game', cursor: null });
+  if (escapeLines().length !== before + 1) throw new Error(`the log must say once that Esc gave the keyboard back ${where}, and it says so ${escapeLines().length - before} times`);
+}
+
 /** Opens the form of a purchase of ALUM, which has only a price of UEX at HUR-L1: the keyboard is with the window, the cursor in the quantity. */
 async function openForeignPurchase(app: SceneApp): Promise<void> {
   await app.expand('preview');
@@ -635,6 +661,142 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       await confirmTrade();
       await until('the income to be written', () => tradesWritten().length === 1);
       if (!tradesWritten()[0].includes('[run] income')) throw new Error(`what was written is not an income: ${tradesWritten()[0]}`);
+    },
+  },
+  {
+    // The sign of the header says «Esc — в игру», and one press must be enough wherever the cursor stands. The row uses Esc itself (it
+    // drops the draft and stops the key), so the order is what the scene pins: the row first, the keyboard after it. The other way
+    // round the blur of the return would save the very price Esc was pressed to drop: there must be no `record price` in the log.
+    // With the real keys: `--scene entry-ready --do "hover:.expand .in-price;click:.expand .in-price;type:2400;press:Escape;wait:400;eval:window.__keys()"`.
+    name: 'esc-row',
+    title: 'Строка таблицы: цена набрана, ОДИН Esc — черновик отброшен, ничего не записано, клавиатура у игры',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      withText('.table button.line', 'MEDS').click();
+      await pause(100);
+      const price = await clickField('.expand .in-price', 1);
+      const saved = price.value;
+      typeInto('.expand .in-price', '2400');
+      await pause(60);
+      expectKeyboard(app, 'with a price typed into the row', { held: true, owner: 'overlay', cursor: 'in-price', text: '2400' });
+      await oneEscape(app, 'in the row', price);
+      if (pricesWritten().length !== 0) throw new Error(`Esc was pressed to drop the price, and it was written: ${pricesWritten()[0]}`);
+      if (price.value !== saved) throw new Error(`the draft is still in the field: "${price.value}", not "${saved}"`);
+      if (document.querySelector('.expand') === null) throw new Error('the open row was folded by Esc');
+    },
+  },
+  {
+    // The line of the quick entry with a commodity picked and a price typed. Esc in the price takes the price back, as it always did,
+    // and the keyboard goes with the same press. What is left is a line that is not finished (the commodity): nothing is written.
+    name: 'esc-quick',
+    title: 'Быстрый ввод: товар выбран, цена набрана, ОДИН Esc — цена стёрта, товар остался, ничего не записано, клавиатура у игры',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      await pressButton(element('button.entry'));
+      await until('the cursor in the commodity field of the quick entry', cursorIn(QUICK_COMMODITY));
+      const commodity = input(QUICK_COMMODITY);
+      typeInto(QUICK_COMMODITY, 'sti');
+      await pause(60);
+      keyDown(commodity, 'Enter');
+      await until('the cursor in the price of the quick entry', cursorIn('.quick .in-price'));
+      const picked = commodity.value;
+      typeInto('.quick .in-price', '2400');
+      await pause(60);
+      await oneEscape(app, 'in the price of the quick entry', input('.quick .in-price'));
+      if (pricesWritten().length !== 0) throw new Error(`nothing was confirmed, and a price was written: ${pricesWritten()[0]}`);
+      if (input('.quick .in-price').value !== '') throw new Error(`Esc did not take the price back: "${input('.quick .in-price').value}"`);
+      if (commodity.value !== picked || picked === '') throw new Error(`the picked commodity is gone from its field: "${commodity.value}", not "${picked}"`);
+    },
+  },
+  {
+    name: 'esc-search',
+    title: 'Поле локации с открытым списком: ОДИН Esc — список закрыт, запрос сброшен, клавиатура у игры',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      const box = input(LOCATION);
+      const shown = box.value;
+      await hoverAndPress(LOCATION);
+      await until('the cursor in the location box', cursorIn(LOCATION));
+      typeInto(LOCATION, 'arc');
+      await pause(60);
+      if (document.querySelector('header .location .list') === null) throw new Error('the scene needs the list of the location box open');
+      await oneEscape(app, 'in the location box', box);
+      if (document.querySelector('header .location .list') !== null) throw new Error('the list of the location box is still open');
+      if (box.value !== shown || shown === '') throw new Error(`the query is still in the box: "${box.value}", not "${shown}"`);
+    },
+  },
+  {
+    // the form of a trade lets Esc go on, so it always was one press: the scene keeps it so
+    name: 'esc-trade',
+    title: 'Форма сделки: количество набрано, ОДИН Esc — форма закрыта, ничего не записано, клавиатура у игры',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      withText('.table button.line', 'MEDS').click();
+      await pause(100);
+      await pressButton(withText('.expand button', 'Купил'));
+      await until('the cursor in the quantity of the trade form', cursorIn('form.trade .in-scu'));
+      typeInto('form.trade .in-scu', '50');
+      await pause(60);
+      await oneEscape(app, 'in the form of a trade', input('form.trade .in-scu'));
+      if (document.querySelector('form.trade') !== null) throw new Error('the form of the trade is still open');
+      if (tradesWritten().length !== 0) throw new Error(`nothing was confirmed, and a trade was written: ${tradesWritten()[0]}`);
+      if (pricesWritten().length !== 0) throw new Error(`nothing was confirmed, and a price was written: ${pricesWritten()[0]}`);
+    },
+  },
+  {
+    // A field of the settings is saved when it is left, and the return of the keyboard takes the cursor out of it: Esc used to SAVE
+    // the number. Now it takes the number back first, like the row of the table. With the real keys (the browser sends `change` when
+    // a field that was typed into is left): `--scene esc-settings --do "click:#set-budget;type:5;press:Escape;wait:400;eval:window.__keys()"`.
+    name: 'esc-settings',
+    title: 'Настройки: в «Бюджет» (90000) набрано другое число, ОДИН Esc — в поле снова 90000, ничего не сохранено, клавиатура у игры',
+    dataset: 'default',
+    act: async (app) => {
+      await app.updateSetting('budget', 90000);
+      await app.expand('preview');
+      app.openSettings();
+      await pause(100);
+      watchKeys(app);
+      const changes = settingChanges().length;
+      const budget = await clickField('#set-budget', 1);
+      if (budget.value !== '90000') throw new Error(`the scene needs 90000 in the budget field, and it holds "${budget.value}"`);
+      typeInto('#set-budget', '12345');
+      await pause(60);
+      await oneEscape(app, 'in a field of the settings', budget);
+      if (budget.value !== '90000') throw new Error(`Esc did not take the number back: the field holds "${budget.value}", not "90000"`);
+      if (settingChanges().length !== changes) throw new Error(`Esc was pressed to take the number back, and a setting was written: ${settingChanges().at(-1)}`);
+      if (app.settings.budget !== 90000) throw new Error(`the budget is ${app.settings.budget}, not 90000`);
+    },
+  },
+  {
+    // What did not change. A key of the game that is still down when the window takes the keyboard is not a press: its repeats are
+    // swallowed before anything hears them, Esc among them. And Esc with the keyboard at the game is nobody's business.
+    name: 'esc-guard',
+    title: 'Esc, удержанный с игры (повтор без нажатия), клавиатуру не отдаёт; свежий Esc отдаёт; Esc без клавиатуры у окна ничего не делает',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      withText('.table button.line', 'MEDS').click();
+      await pause(100);
+      const price = await clickField('.expand .in-price', 1);
+      keyDown(price, 'Escape', true);
+      await pause(500);
+      expectKeyboard(app, 'after a repeat of an Esc that was never pressed in the window', { held: true, owner: 'overlay', cursor: 'in-price' });
+      if (escapeLines().length !== 0) throw new Error('a key of the game that was still held down gave the keyboard back');
+      await oneEscape(app, 'pressed anew', price);
+      keyDown(document.body, 'Escape');
+      await pause(500);
+      expectKeyboard(app, 'after an Esc with the keyboard at the game', { held: false, owner: 'game', cursor: null });
+      if (escapeLines().length !== 1) throw new Error(`an Esc pressed while the game had the keyboard was answered: ${escapeLines().at(-1)}`);
+      if (document.querySelector('.expand') === null) throw new Error('the open row was folded by Esc');
     },
   },
 ];

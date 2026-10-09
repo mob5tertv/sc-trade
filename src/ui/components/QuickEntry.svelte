@@ -136,7 +136,8 @@
     commodityBox?.focus();
   }
 
-  // Esc takes back what was typed into the field; with nothing typed it goes on and closes the panel.
+  // Esc takes back what was typed into the field. The same press gives the keyboard back to the game, whatever is done here
+  // (ui/keyboard.ts): the line stays as it is then, with the commodity that was picked, and nothing is written.
   function onFieldKeydown(event: KeyboardEvent, text: string, clear: () => void): void {
     if (event.key !== 'Escape' || text === '') return;
     event.preventDefault();

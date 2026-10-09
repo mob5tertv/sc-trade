@@ -1,8 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { pressBringsCursor, pressSelectsAll } from '../../src/ui/keyboard';
+import { escapeGivesBack, pressBringsCursor, pressSelectsAll } from '../../src/ui/keyboard';
 
 // The decisions of the DOM side of the keyboard rules that need no DOM. The listeners themselves run in the preview
 // (`src/preview/scenes-keyboard.ts`), against a real browser.
+
+describe('escapeGivesBack: does this key give the keyboard back to the game', () => {
+  it('Esc does, while the window holds the keyboard', () => {
+    expect(escapeGivesBack({ key: 'Escape', keyboardHeld: true })).toBe(true);
+  });
+
+  it('whatever the field made of the key: the rule is not told, so a field that used Esc itself cannot keep the keyboard', () => {
+    // the row of the table stops the key, the search box and the quick entry stop it and take its default away
+    const used = { key: 'Escape', keyboardHeld: true, defaultPrevented: true, propagationStopped: true };
+    expect(escapeGivesBack(used)).toBe(true);
+  });
+
+  it('Esc with the keyboard at the game is nobody\'s business', () => {
+    expect(escapeGivesBack({ key: 'Escape', keyboardHeld: false })).toBe(false);
+  });
+
+  it('no other key does', () => {
+    for (const key of ['Enter', 'Tab', 'Backspace', 'Delete', 'Esc', 'escape', 'a', '1', 'F8']) {
+      expect(escapeGivesBack({ key, keyboardHeld: true }), key).toBe(false);
+    }
+  });
+});
 
 describe('pressBringsCursor: is this press the one that brings a number field the cursor', () => {
   it('is, when the field has no cursor yet', () => {

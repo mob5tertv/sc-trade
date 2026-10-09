@@ -185,6 +185,14 @@
       aria-invalid={errors[key] ? 'true' : undefined}
       oninput={(event) => typed(key, event)}
       onchange={() => commitNumber(key)}
+      onkeydown={(event) => {
+        // Esc takes back what was typed, like a row of the table: the saved number stands in the field again, and a refusal goes with
+        // the text it was about. The keyboard goes back to the game after that (ui/keyboard.ts), and the blur it causes finds nothing to save.
+        if (event.key === 'Escape' && drafts[key] !== undefined) {
+          delete drafts[key];
+          errors[key] = null;
+        }
+      }}
     />
   </div>
   {#if errors[key]}<p class="error" role="alert">{errors[key]}</p>{/if}
