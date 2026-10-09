@@ -73,6 +73,10 @@ describe('the site with a GA4 id', () => {
       // and they stand next to each other, nothing between them
       expect(banner).toMatch(/<\/button>\s*<button[^>]*data-consent-decline/);
       expect(html).toMatch(/<script defer src="[^"]*assets\/js\/consent\.js[^"]*"><\/script>/);
+      // a visitor with a keyboard meets the question first: it stands right after the skip link, before the header
+      expect(html, page).toMatch(/<a class="skip" href="#main">[^<]*<\/a>\s*<section class="consent"/);
+      expect(html.indexOf('<section class="consent"')).toBeLessThan(html.indexOf('<header class="site-header">'));
+      expect(html.match(/<section class="consent"/g)).toHaveLength(1);
       expect(/<footer[\s\S]*<\/footer>/.exec(html)?.[0]).toMatch(/<button[^>]*data-consent-open[^>]*hidden[^>]*>/);
     }
   });

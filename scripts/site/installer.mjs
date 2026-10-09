@@ -9,11 +9,13 @@ import { basename } from 'node:path';
  */
 
 /**
+ * Reads the installer once: what the pages say about it, and the very bytes that were measured. The site hands out
+ * these bytes, not a later copy of the file, so the sum on the page and the file cannot differ.
  * @param {string} file the installer, as `npm run tauri build` wrote it
  * @param {string} version the version of package.json
- * @returns {InstallerInfo}
+ * @returns {{ info: InstallerInfo, bytes: Buffer }}
  */
-export function installerInfo(file, version) {
+export function readInstaller(file, version) {
   if (!existsSync(file) || !statSync(file).isFile()) throw new Error(`the installer ${file} does not exist`);
   const name = basename(file);
   // the version must stand in the name as a whole: "1.1.0" is not in "11.1.0" and not in "1.1.01"
@@ -22,7 +24,20 @@ export function installerInfo(file, version) {
     throw new Error(`the installer "${name}" is not version ${version} (package.json)`);
   }
   const bytes = readFileSync(file);
-  return { source: file, fileName: `SC-Trade-${version}-setup.exe`, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+  return {
+    info: { source: file, fileName: `SC-Trade-${version}-setup.exe`, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') },
+    bytes,
+  };
+}
+
+/**
+ * What the pages say about the installer.
+ * @param {string} file
+ * @param {string} version
+ * @returns {InstallerInfo}
+ */
+export function installerInfo(file, version) {
+  return readInstaller(file, version).info;
 }
 
 /**

@@ -225,12 +225,10 @@ a.lang__item:hover {
   color: var(--accent);
 }
 
-/* the menu of a narrow screen works without a script: a checkbox opens the list */
+/* the menu of a narrow screen works without a script: a checkbox opens the list. On a wide screen there is no
+   folded menu, and the checkbox is not there at all: a keyboard must not stop at something that cannot be seen. */
 .menu-toggle {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
+  display: none;
 }
 
 .menu-button {
@@ -240,6 +238,14 @@ a.lang__item:hover {
 @media (max-width: 1019.98px) {
   .site-header__inner {
     gap: 12px;
+  }
+
+  .menu-toggle {
+    display: block;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
   }
 
   .menu-button {

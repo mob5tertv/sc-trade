@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { bitrateCap, clipWindow, ffmpegCommands, makeHeroVideo, probeArguments, TARGET, videoFilter } from '../../scripts/site/video.mjs';
 import { build, tempDir } from './helpers';
@@ -130,5 +130,69 @@ describe.runIf(process.env.SITE_VIDEO_E2E === '1')('ffmpeg itself, on a syntheti
     const hero = /<section[^>]*\sid="top"[\s\S]*?<\/section>/.exec(site.read('index.html'))?.[0] ?? '';
     expect(hero).toMatch(/<video[^>]*\sautoplay[^>]*\smuted[^>]*\sloop[^>]*\splaysinline[^>]*\sposter="assets\/video\/hero\.jpg\?v=/);
     expect(site.files).toEqual(expect.arrayContaining(['assets/video/hero.webm', 'assets/video/hero.mp4', 'assets/video/hero.jpg']));
+  });
+});
+
+describe('the three files of the video are put in place together or not at all', () => {
+  const NAMES = ['hero.jpg', 'hero.mp4', 'hero.webm'];
+  const clip = () => {
+    const file = join(tempDir(), 'clip.mp4');
+    writeFileSync(file, 'a file that stands in for a recording');
+    return file;
+  };
+  /** A stand-in for ffprobe and ffmpeg: the clip is 15 s long, a file is written where ffmpeg would write it, and one of them may fail. */
+  const runner = (failOn?: string) => (program: string, args: string[]) => {
+    if (program === 'ffprobe') return '15.000000\n';
+    const output = args.at(-1) ?? '';
+    if (failOn !== undefined && output.endsWith(failOn)) throw new Error('ffmpeg failed (exit code 1):\nUnknown encoder');
+    writeFileSync(output, `new ${basename(output)}`);
+    return '';
+  };
+  /** A folder of the site with a video that was made earlier. */
+  const withOldVideo = () => {
+    const dir = join(tempDir(), 'video');
+    mkdirSync(dir, { recursive: true });
+    for (const name of NAMES) writeFileSync(join(dir, name), `old ${name}`);
+    return dir;
+  };
+
+  it('replaces all three when all three were made', () => {
+    const outDir = withOldVideo();
+    const result = makeHeroVideo({ input: clip(), outDir, run: runner() });
+    expect(result.files.map((made) => made.file).sort()).toEqual(NAMES);
+    expect(readdirSync(outDir).sort()).toEqual(NAMES);
+    for (const name of NAMES) expect(readFileSync(join(outDir, name), 'utf8')).toBe(`new ${name}`);
+  });
+
+  it.each(['hero.webm', 'hero.mp4', 'hero.jpg'])('keeps the old three when %s could not be made, and leaves nothing half-made in the folder', (failOn) => {
+    const outDir = withOldVideo();
+    expect(() => makeHeroVideo({ input: clip(), outDir, run: runner(failOn) })).toThrow(/ffmpeg failed/);
+    expect(readdirSync(outDir).sort()).toEqual(NAMES);
+    for (const name of NAMES) expect(readFileSync(join(outDir, name), 'utf8'), name).toBe(`old ${name}`);
+  });
+
+  it('puts nothing into a folder that had no video when the run fails: the build would refuse a part of a video', () => {
+    const outDir = join(tempDir(), 'video');
+    expect(() => makeHeroVideo({ input: clip(), outDir, run: runner('hero.mp4') })).toThrow(/ffmpeg failed/);
+    expect(existsSync(outDir) ? readdirSync(outDir) : []).toEqual([]);
+  });
+
+  it('puts the old three back when one of them cannot be replaced (a file held open by a player)', () => {
+    const outDir = withOldVideo();
+    // what stands in for a file that cannot be moved aside: its place aside is taken by a folder that is not empty
+    mkdirSync(join(outDir, 'hero.mp4.old'));
+    writeFileSync(join(outDir, 'hero.mp4.old', 'in the way'), '');
+    expect(() => makeHeroVideo({ input: clip(), outDir, run: runner() })).toThrow();
+    expect(readdirSync(outDir).sort()).toEqual([...NAMES, 'hero.mp4.old'].sort());
+    for (const name of NAMES) expect(readFileSync(join(outDir, name), 'utf8'), name).toBe(`old ${name}`);
+  });
+
+  it('encodes outside the folder of the site: ffmpeg is never pointed at the files that are in use', () => {
+    const outDir = withOldVideo();
+    const outputs: string[] = [];
+    const run = runner();
+    makeHeroVideo({ input: clip(), outDir, run: (program, args) => (program === 'ffmpeg' && outputs.push(args.at(-1) ?? ''), run(program, args)) });
+    expect(outputs).toHaveLength(3);
+    for (const output of outputs) expect(output.startsWith(outDir), output).toBe(false);
   });
 });

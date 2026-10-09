@@ -1,5 +1,5 @@
     <a class="skip" href="#main">{{t.nav.skip}}</a>
-    <header class="site-header">
+{{! the question about analytics stands right after the skip link: a visitor with a keyboard meets it first (it is drawn at the bottom edge) }}{{#if flags.analytics}}{{> consent}}{{/if}}    <header class="site-header">
       <div class="site-header__inner">
         <a class="brand" href="{{links.home}}" aria-label="{{t.nav.home}}">
           <img class="brand__mark" src="{{asset "assets/icon.svg"}}" width="26" height="26" alt="">

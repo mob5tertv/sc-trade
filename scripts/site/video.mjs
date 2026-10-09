@@ -7,9 +7,12 @@
 // before the video plays and instead of it on a narrow screen). 1920 x 1080, no sound, 12 to 20 seconds, each video
 // 6 MB at most. The picture is blurred HERE (--blur, default 8; 0 switches it off): a blurred video is several times
 // smaller than a sharp one, and a blur filter in the browser would cost every visitor's processor instead.
-// The next `npm run site:build` finds the files and puts the video on the page. What to record: site/VIDEO.md.
+// The files are encoded in a temporary folder and put into site/assets/video/ together, only when all three are made:
+// a run that fails leaves the folder as it was. The next `npm run site:build` finds the files and puts the video on
+// the page. What to record: site/VIDEO.md.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -90,20 +93,61 @@ export function probeArguments(/** @type {string} */ input) {
   return ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', input];
 }
 
-/** Runs a program of ffmpeg; a failure is an error with what the program said. */
-function run(/** @type {string} */ program, /** @type {string[]} */ args) {
+/**
+ * Runs a program of ffmpeg and gives what it printed; a failure is an error with what the program said.
+ * @type {(program: string, args: string[]) => string}
+ */
+function runProgram(program, args) {
   const result = spawnSync(program, args, { encoding: 'utf8', windowsHide: true });
   if (result.error) throw new Error(`${program} could not be started (${result.error.message}): install ffmpeg and make sure it is on the PATH`);
   if (result.status !== 0) throw new Error(`${program} failed (exit code ${result.status}):\n${result.stderr.trim()}`);
   return result.stdout;
 }
 
+/** The three files of the video, in the order they are made. */
+const FILES = ['hero.webm', 'hero.mp4', 'hero.jpg'];
+
 /**
- * Makes hero.webm, hero.mp4 and hero.jpg in `outDir` from a clip.
- * @param {{ input: string, outDir: string, blur?: number, start?: number, duration?: number, minSeconds?: number }} options
+ * Puts the new files (`<name>.part`, already in the folder) in the place of the old ones, all of them or none: the
+ * old ones are moved aside first, and put back when anything fails — a file held open by a player cannot be moved,
+ * and the site must not be left with a new video next to an old still frame.
+ * @param {string} dir
+ */
+function putInPlace(dir) {
+  /** @type {string[]} */
+  const aside = [];
+  /** @type {string[]} */
+  const placed = [];
+  try {
+    for (const name of FILES) {
+      if (!existsSync(join(dir, name))) continue;
+      renameSync(join(dir, name), join(dir, `${name}.old`));
+      aside.push(name);
+    }
+    for (const name of FILES) {
+      renameSync(join(dir, `${name}.part`), join(dir, name));
+      placed.push(name);
+    }
+  } catch (err) {
+    for (const name of placed) rmSync(join(dir, name), { force: true });
+    for (const name of aside) renameSync(join(dir, `${name}.old`), join(dir, name));
+    throw err;
+  }
+  for (const name of aside) rmSync(join(dir, `${name}.old`), { force: true });
+}
+
+/**
+ * Makes hero.webm, hero.mp4 and hero.jpg in `outDir` from a clip. The files are encoded in a temporary folder and
+ * reach `outDir` only when all three are made: a run that fails leaves the folder exactly as it was, so the build
+ * never meets a new video with an old still frame, or a part of a video.
+ * @param {{
+ *   input: string, outDir: string, blur?: number, start?: number, duration?: number, minSeconds?: number,
+ *   run?: (program: string, args: string[]) => string,
+ * }} options `run` starts ffprobe and ffmpeg (the tests put a stand-in there)
  * @returns {{ start: number, seconds: number, blur: number, files: Array<{ file: string, bytes: number }> }}
  */
 export function makeHeroVideo(options) {
+  const run = options.run ?? runProgram;
   const input = resolve(options.input);
   if (!existsSync(input) || !statSync(input).isFile()) throw new Error(`the clip ${input} does not exist`);
   const blur = options.blur ?? TARGET.blur;
@@ -112,24 +156,41 @@ export function makeHeroVideo(options) {
   const sourceSeconds = Number(run('ffprobe', probeArguments(input)).trim());
   if (!(sourceSeconds > 0)) throw new Error(`ffprobe could not tell how long ${input} is: is it a video?`);
   const window = clipWindow(sourceSeconds, { start: options.start, duration: options.duration, minSeconds: options.minSeconds });
-  mkdirSync(options.outDir, { recursive: true });
 
-  let kbps = bitrateCap(window.seconds, TARGET.maxBytes);
-  for (const kind of /** @type {const} */ (['webm', 'mp4'])) {
-    for (let attempt = 1; ; attempt++) {
-      const commands = ffmpegCommands({ input, outDir: options.outDir, ...window, blur, kbps });
-      run('ffmpeg', commands[kind]);
-      const bytes = statSync(join(options.outDir, `hero.${kind}`)).size;
-      if (bytes <= TARGET.maxBytes) break;
-      if (attempt === ATTEMPTS) {
-        throw new Error(`hero.${kind} is ${(bytes / 1024 / 1024).toFixed(1)} MB after ${ATTEMPTS} attempts, over the limit of 6 MB: blur it more (--blur) or make it shorter (--duration)`);
+  const work = mkdtempSync(join(tmpdir(), 'sc-trade-video-'));
+  /** @type {string[]} */
+  const parts = [];
+  try {
+    let kbps = bitrateCap(window.seconds, TARGET.maxBytes);
+    for (const kind of /** @type {const} */ (['webm', 'mp4'])) {
+      for (let attempt = 1; ; attempt++) {
+        run('ffmpeg', ffmpegCommands({ input, outDir: work, ...window, blur, kbps })[kind]);
+        const bytes = statSync(join(work, `hero.${kind}`)).size;
+        if (bytes <= TARGET.maxBytes) break;
+        if (attempt === ATTEMPTS) {
+          throw new Error(`hero.${kind} is ${(bytes / 1024 / 1024).toFixed(1)} MB after ${ATTEMPTS} attempts, over the limit of 6 MB: blur it more (--blur) or make it shorter (--duration)`);
+        }
+        kbps = Math.floor(kbps * 0.8);
       }
-      kbps = Math.floor(kbps * 0.8);
     }
-  }
-  run('ffmpeg', ffmpegCommands({ input, outDir: options.outDir, ...window, blur, kbps }).poster);
+    run('ffmpeg', ffmpegCommands({ input, outDir: work, ...window, blur, kbps }).poster);
+    const files = FILES.map((file) => ({ file, bytes: statSync(join(work, file)).size }));
 
-  return { ...window, blur, files: ['hero.webm', 'hero.mp4', 'hero.jpg'].map((file) => ({ file, bytes: statSync(join(options.outDir, file)).size })) };
+    // all three are made. They are copied next to their places first (the temporary folder may be on another disk),
+    // then put in place together.
+    mkdirSync(options.outDir, { recursive: true });
+    for (const file of FILES) {
+      parts.push(join(options.outDir, `${file}.part`));
+      copyFileSync(join(work, file), join(options.outDir, `${file}.part`));
+    }
+    putInPlace(options.outDir);
+    return { ...window, blur, files };
+  } catch (err) {
+    for (const part of parts) rmSync(part, { force: true });
+    throw err;
+  } finally {
+    rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
 }
 
 const USAGE = `usage: npm run site:video -- <clip> [--blur N] [--start S] [--duration D]

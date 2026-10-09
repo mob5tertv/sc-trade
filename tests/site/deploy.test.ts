@@ -35,6 +35,15 @@ describe('where the site is uploaded (site/deploy.local.json)', () => {
     expect(() => readTarget({ ...target, colour: 'blue' })).toThrow(/"colour"/);
   });
 
+  it('refuses an IPv6 address, which `user@host` cannot carry, and says what to put there instead', () => {
+    for (const host of ['2001:db8::1', '[2001:db8::1]', '::1', 'fe80::1%eth0']) {
+      expect(() => readTarget({ ...target, host }), host).toThrow(/"host" is an IPv6 address.*the host name of the server or its IPv4 address/);
+    }
+    // an IPv4 address and a name are taken as before
+    expect(readTarget({ ...target, host: '203.0.113.7' }).host).toBe('203.0.113.7');
+    expect(readTarget({ ...target, host: 'vps-1.example.test' }).host).toBe('vps-1.example.test');
+  });
+
   it('refuses a folder that is not a full path of its own on the server', () => {
     for (const path of ['www', '/', '/var', '/var/www/../../etc', '/var/www/my site', '/var/www/x"y', '~/site']) {
       expect(() => readTarget({ ...target, path }), path).toThrow(/"path"/);
@@ -45,7 +54,7 @@ describe('where the site is uploaded (site/deploy.local.json)', () => {
     const example = JSON.parse(readFileSync(join(siteDir, 'deploy.example.json'), 'utf8'));
     expect(readTarget(example)).toEqual({ host: 'server.example', user: 'deploy', path: '/var/www/sc-trade.space', port: 22 });
     const ignored = readFileSync(resolve(projectRoot, '.gitignore'), 'utf8').split(/\r?\n/);
-    for (const line of ['site/dist/', 'site/dist-deploy/', 'site/deploy.local.json']) expect(ignored).toContain(line);
+    for (const line of ['site/dist/', 'site/dist.building/', 'site/dist-deploy/', 'site/deploy.local.json']) expect(ignored).toContain(line);
   });
 });
 

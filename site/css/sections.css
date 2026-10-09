@@ -269,14 +269,17 @@
   clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
 }
 
-.support__link:hover,
-.support__link:focus-visible {
+.support__link:hover {
   --edge: var(--accent);
   color: var(--text);
 }
 
+/* the cut corners would cut an outline off: the ring of the focus is drawn inside the plate, and only the focus has it */
 .support__link:focus-visible {
+  --edge: var(--accent);
+  color: var(--text);
   outline: 0;
+  box-shadow: inset 0 0 0 3px var(--accent);
 }
 
 .support__name {

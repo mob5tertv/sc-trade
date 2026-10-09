@@ -6,14 +6,17 @@
 //
 //   npm run site:check [-- --out <folder>] [--no-video] [--installer <file>]
 //
-// The pictures go to .superpowers/site-check/ (not in the repository). The script ends with "all passed" or with the
-// list of what is wrong and exit code 1. The browser is cut off from the network (chrome.mjs): the only addresses a
-// page may ask for are files and the stand-in server.
+// The pictures go to .superpowers/site-check/ (not in the repository), or to the folder `--out` names. Whatever
+// folder that is, the script only writes its own pictures there and, before a run, removes its own pictures of the
+// run before: no other file is touched, and the folder itself is never removed.
+//
+// The script ends with "all passed" or with the list of what is wrong and exit code 1. The browser is cut off from
+// the network (chrome.mjs): the only addresses a page may ask for are files and the stand-in server.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { extname, join, relative, resolve } from 'node:path';
+import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { launchBrowser, pageSocketUrl } from '../preview/browser.mjs';
@@ -40,6 +43,54 @@ const TILE = { [DESKTOP.name]: 2000, [PHONE.name]: 1500 };
 const GA4_ID = 'G-TEST123456';
 const MIN_CONTRAST = 7;
 
+// ---- the pictures and their folder ----------------------------------------------------------------------------
+
+/**
+ * What a picture shows: the last part of its name. Every picture the script writes is named
+ * `<width>-<language>-<what>.png`, with `-<n>` before `.png` when a tall section is cut into tiles, or `1440-404.png`.
+ */
+const SHOWN = [
+  '1-hero', '1-hero-whole', ...SECTIONS.map((id, index) => `${index + 2}-${id}`), '8-footer', '9-data', 'menu', 'hero-other-font', 'lightbox',
+  'form-error', 'form-success', 'hero-no-installer', 'download-no-installer', 'consent', 'footer-change-choice', 'hero-white-video',
+  'focus-support', 'focus-gallery',
+];
+const NOT_FOUND_PICTURE = `${DESKTOP.name}-404`;
+const OWN_PICTURES = new Set([NOT_FOUND_PICTURE, ...[DESKTOP, PHONE].flatMap((viewport) => LANGS.flatMap(({ lang }) => SHOWN.map((what) => `${viewport.name}-${lang}-${what}`)))]);
+
+/** Whether a file name is the name of a picture this script writes. */
+export function isOwnPicture(/** @type {string} */ name) {
+  if (!name.endsWith('.png')) return false;
+  const stem = name.slice(0, -'.png'.length);
+  if (OWN_PICTURES.has(stem)) return true;
+  const tile = /^(.+)-\d+$/.exec(stem);
+  return tile !== null && tile[1] !== NOT_FOUND_PICTURE && OWN_PICTURES.has(tile[1]);
+}
+
+/**
+ * Makes the folder of the pictures ready: makes it when it is not there, and removes from it the pictures of the run
+ * before — files in the folder itself that carry the names of this script — and nothing else. The folder may be
+ * anyone's (`--out`): it is never removed, and no other file and no folder inside it is touched.
+ * @param {string} out
+ * @returns {string[]} the names of the old pictures that were removed
+ */
+export function preparePictureFolder(out) {
+  if (existsSync(out) && !statSync(out).isDirectory()) throw new Error(`--out ${out} is a file, not a folder: name a folder for the pictures`);
+  mkdirSync(out, { recursive: true });
+  const old = readdirSync(out, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && isOwnPicture(entry.name))
+    .map((entry) => entry.name)
+    .sort();
+  for (const name of old) rmSync(join(out, name));
+  return old;
+}
+
+/** Writes one picture. Only the names of this script are ever written: the folder may hold other people's files. */
+function writePicture(/** @type {string} */ file, /** @type {Buffer} */ bytes) {
+  if (!isOwnPicture(basename(file))) throw new Error(`"${basename(file)}" is not the name of a picture of this script: add it to the list of names first`);
+  writeFileSync(file, bytes);
+  pictures.push(file);
+}
+
 const sleep = (/** @type {number} */ ms) => new Promise((done) => setTimeout(done, ms));
 
 /** @type {string[]} */
@@ -56,6 +107,14 @@ async function evaluate(/** @type {Cdp} */ cdp, /** @type {string} */ expression
   const { result, exceptionDetails } = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
   if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text);
   return result.value;
+}
+
+/** One press of Tab, through the input of the browser, as from a keyboard. */
+async function pressTab(/** @type {Cdp} */ cdp) {
+  const key = { key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 };
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...key });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...key });
+  await sleep(40);
 }
 
 /** Waits until `expression` is true in the page. */
@@ -93,18 +152,15 @@ async function open(browser, url, viewport, options = {}) {
 /** @param {Cdp} cdp @param {string} file @param {{ x: number, y: number, width: number, height: number }} clip in CSS pixels of the page */
 async function capture(cdp, file, clip) {
   const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', clip: { ...clip, scale: 1 }, captureBeyondViewport: true });
-  mkdirSync(resolve(file, '..'), { recursive: true });
   const bytes = Buffer.from(data, 'base64');
-  writeFileSync(file, bytes);
-  pictures.push(file);
+  writePicture(file, bytes);
   return bytes;
 }
 
 /** A picture of the screen as it is now, wherever the page is scrolled to: what lies over the page (a dialog) is in it, in its place. */
 async function captureVisible(/** @type {Cdp} */ cdp, /** @type {string} */ file) {
   const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
-  writeFileSync(file, Buffer.from(data, 'base64'));
-  pictures.push(file);
+  writePicture(file, Buffer.from(data, 'base64'));
 }
 
 /** A picture of what the visitor sees without scrolling. */
@@ -209,6 +265,19 @@ async function checkHeroContrast(/** @type {Cdp} */ cdp, /** @type {Viewport} */
 const TYPES = /** @type {Record<string, string>} */ ({ '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg' });
 
 /**
+ * The file of a built site that the path of a request names, a folder being its index page; `null` when the path
+ * leads out of the site (the folder next to it whose name begins the same, `dist-deploy`, is outside too).
+ * @param {string} dist
+ * @param {string} path the path of the request, decoded, with its leading slash
+ * @returns {string | null}
+ */
+export function servedFile(dist, path) {
+  const root = resolve(dist);
+  const file = resolve(root, `.${path.endsWith('/') ? `${path}index.html` : path}`);
+  return file.startsWith(root + sep) ? file : null;
+}
+
+/**
  * Serves a built site from this computer and answers the feedback form with whatever `reply` holds at the moment.
  * @param {string} dist
  */
@@ -233,8 +302,8 @@ async function startStandIn(dist) {
       });
       return;
     }
-    const file = join(dist, path.endsWith('/') ? `${path}index.html` : path);
-    if (!file.startsWith(dist) || !existsSync(file) || !statSync(file).isFile()) {
+    const file = servedFile(dist, path);
+    if (file === null || !existsSync(file) || !statSync(file).isFile()) {
       response.writeHead(404);
       return void response.end();
     }
@@ -256,6 +325,9 @@ async function lookAtPages(browser, dist, out) {
     for (const viewport of [DESKTOP, PHONE]) {
       const name = (/** @type {string} */ what) => join(out, `${viewport.name}-${lang}-${what}.png`);
       await open(browser, address(home), viewport);
+      // the switch of the folded menu is a thing of the narrow layout: on a wide screen a keyboard must not stop at it
+      const toggle = await evaluate(cdp, `getComputedStyle(document.querySelector('#menu-toggle')).display`);
+      if ((toggle === 'none') !== (viewport === DESKTOP)) problems.push(`${home} ${viewport.name}: the switch of the menu has display "${toggle}"`);
       await captureScreen(cdp, name('1-hero'), viewport);
       await checkHeroContrast(cdp, viewport, `${lang} ${viewport.name}, still background`);
       if (viewport === PHONE) await captureElement(cdp, '.hero', name('1-hero-whole'), viewport);
@@ -271,6 +343,17 @@ async function lookAtPages(browser, dist, out) {
       }
     }
   }
+  // a plate or a picture that has the focus shows it by a ring drawn inside it. One Tab first: the page then knows
+  // that the visitor uses the keyboard, and shows the focus the way it does for the keys.
+  await open(browser, address('index.html'), DESKTOP);
+  await pressTab(cdp);
+  for (const [what, selector] of [['support', '.support__link'], ['gallery', '[data-gallery] a']]) {
+    const ring = await evaluate(cdp, `(() => { const el = document.querySelector(${JSON.stringify(selector)}); el.focus(); el.scrollIntoView({ block: 'center', behavior: 'instant' }); return getComputedStyle(el).boxShadow; })()`);
+    if (!/inset/.test(ring)) problems.push(`${selector} shows no ring when it has the focus (box-shadow: ${ring})`);
+    await sleep(80);
+    await captureVisible(cdp, join(out, `${DESKTOP.name}-ru-focus-${what}.png`));
+  }
+
   await open(browser, address('404.html'), DESKTOP);
   await captureScreen(cdp, join(out, '1440-404.png'), DESKTOP);
 
@@ -331,6 +414,13 @@ async function lookAtConsent(browser, dist, out) {
       await evaluate(cdp, `localStorage.clear()`);
       await open(browser, pathToFileURL(join(dist, home)).href, viewport);
       if (await evaluate(cdp, `document.querySelector('[data-consent]').hidden`)) problems.push(`${home} ${viewport.name}: the banner is not shown to a visitor who has not answered`);
+      // a visitor with a keyboard meets the question first: Tab from the top of the page goes to the skip link, then into the banner
+      await pressTab(cdp);
+      await pressTab(cdp);
+      if (!(await evaluate(cdp, `document.activeElement !== null && document.activeElement.closest('[data-consent]') !== null`))) {
+        problems.push(`${home} ${viewport.name}: the second Tab from the top of the page does not land in the question about analytics`);
+      }
+      await evaluate(cdp, `(document.activeElement && document.activeElement.blur(), scrollTo(0, 0))`);
       await captureScreen(cdp, join(out, `${viewport.name}-${lang}-consent.png`), viewport);
       const sizes = await evaluate(cdp, `['allow', 'decline'].map((kind) => { const r = document.querySelector('[data-consent-' + kind + ']').getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })`);
       if (sizes[0][0] !== sizes[1][0] || sizes[0][1] !== sizes[1][1]) problems.push(`${home} ${viewport.name}: "Allow" and "Decline" are not the same size (${JSON.stringify(sizes)})`);
@@ -448,8 +538,13 @@ async function main() {
   const { values } = parseArgs({ options: { out: { type: 'string' }, installer: { type: 'string' }, 'no-video': { type: 'boolean' }, help: { type: 'boolean' } } });
   if (values.help) return console.log('usage: npm run site:check [-- --out <folder>] [--no-video] [--installer <file>]');
   const out = resolve(values.out ?? join(projectRoot, '.superpowers', 'site-check'));
-  rmSync(out, { recursive: true, force: true });
-  mkdirSync(out, { recursive: true });
+  try {
+    preparePictureFolder(out);
+  } catch (err) {
+    // a folder that cannot be used is the caller's to fix: the sentence is enough, without the trace of the script
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
   const { version } = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
   const work = mkdtempSync(join(tmpdir(), 'sc-trade-site-check-'));
 
@@ -458,7 +553,9 @@ async function main() {
   if (values.installer === undefined) writeFileSync(installer, Buffer.alloc(4_920_458, 'stand-in '));
   const site = (/** @type {string} */ name, /** @type {Partial<import('./build.mjs').BuildOptions>} */ options = {}) => {
     const dir = join(work, name);
-    buildSite({ version, installer, outDir: join(dir, 'dist'), deployDir: join(dir, 'dist-deploy'), videoDir: join(work, 'no-video'), ...options });
+    // the pages are looked at without analytics, whatever id the settings carry; the build for the banner sets a made-up id of its own
+    const withoutAnalytics = (/** @type {import('./config.mjs').SiteConfig} */ config) => void (config.analytics.ga4Id = '');
+    buildSite({ version, installer, outDir: join(dir, 'dist'), deployDir: join(dir, 'dist-deploy'), videoDir: join(work, 'no-video'), patchConfig: withoutAnalytics, ...options });
     return join(dir, 'dist');
   };
 

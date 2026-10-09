@@ -17,12 +17,20 @@ const good = () => ({
 });
 
 describe('the settings of the site (site/site.config.json)', () => {
-  it('are what the user gave', () => {
-    expect(loadConfig(siteDir)).toEqual(good());
+  it('are what the user gave: the author, the year, the domain, the links, the address of the form, the server', () => {
+    // the id of the analytics is the user's to fill in, and later tasks add keys of their own: neither is pinned here
+    const { analytics: _analytics, ...given } = good();
+    expect(loadConfig(siteDir)).toMatchObject(given);
+    expect(loadConfig(siteDir).analytics.ga4Id).toMatch(/^(G-[A-Z0-9]{4,20})?$/);
   });
 
   it('pass the check as they are', () => {
     expect(() => validateConfig(good())).not.toThrow();
+  });
+
+  it('pass the check with keys this build does not know (a later task adds its own)', () => {
+    const more = { ...good(), feedback: { endpoint: '/api/feedback', maxMessages: 5 }, admin: { path: '/admin/' } };
+    expect(() => validateConfig(more)).not.toThrow();
   });
 
   it('fail with a clear phrase when the author is empty', () => {

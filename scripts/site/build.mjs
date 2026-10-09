@@ -9,13 +9,13 @@
 // The build stops with a phrase that says what to fix when the installer is missing or is of another version, when
 // the author or the Twitch link is empty, and when the dictionaries do not have the same keys.
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { bundleScripts } from './bundle.mjs';
 import { assertSameKeys, LANGUAGES, loadDictionaries, projectRoot, readJson, siteDir as defaultSiteDir, validateConfig } from './config.mjs';
-import { formatSize, installerInfo } from './installer.mjs';
+import { formatSize, readInstaller } from './installer.mjs';
 import { contentSecurityPolicy, styleHash } from './server-config.mjs';
 import { fillPlaceholders, render } from './template.mjs';
 
@@ -124,7 +124,9 @@ export function buildSite(options) {
   const dictionaries = loadDictionaries(siteDir);
   options.patchDictionaries?.(dictionaries);
   assertSameKeys(dictionaries);
-  const installer = options.installer === null ? null : installerInfo(resolve(options.installer), options.version);
+  // the installer is read once: the bytes measured here are the bytes written into the site below
+  const read = options.installer === null ? null : readInstaller(resolve(options.installer), options.version);
+  const installer = read === null ? null : read.info;
   const analytics = config.analytics.ga4Id !== '';
 
   const videoDir = options.videoDir ?? join(siteDir, 'assets', 'video');
@@ -159,10 +161,9 @@ export function buildSite(options) {
     write('assets/js/site.js', bundleScripts(sources(MAIN_SCRIPTS)));
     if (analytics) write('assets/js/consent.js', bundleScripts(sources(CONSENT_SCRIPTS)));
 
-    if (installer !== null) {
-      mkdirSync(join(work, 'download'), { recursive: true });
-      copyFileSync(installer.source, join(work, 'download', installer.fileName));
-      write('download/SHA256SUMS.txt', `${installer.sha256}  ${installer.fileName}\n`);
+    if (read !== null) {
+      write(`download/${read.info.fileName}`, read.bytes);
+      write('download/SHA256SUMS.txt', `${read.info.sha256}  ${read.info.fileName}\n`);
     }
 
     /** The pictures of the application: twice as many pixels as the size they are shown at. */

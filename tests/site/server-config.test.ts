@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig, siteDir } from '../../scripts/site/config.mjs';
 import { contentSecurityPolicy, styleHash } from '../../scripts/site/server-config.mjs';
+import { LIMITS } from '../../site/js/feedback-rules.js';
 import { build, type Built } from './helpers';
 
 const config = loadConfig(siteDir);
@@ -99,11 +100,22 @@ describe('the Caddyfile the build writes', () => {
     expect(withAnalytics).toContain('https://*.google-analytics.com');
   });
 
-  it('lets browsers keep pictures, video, styles and scripts, and makes them ask for the pages again', () => {
+  it('lets browsers keep pictures, video, styles and scripts — but only an answer that is the file itself', () => {
     expect(caddyfile).toMatch(/^\t@assets path \/assets\/\*$/m);
-    expect(caddyfile).toMatch(/^\theader @assets Cache-Control "public, max-age=\d{6,}"$/m);
-    expect(caddyfile).toMatch(/^\t@pages path \/ \/en\/ \*\.html$/m);
+    const block = /^\theader @assets \{\n([\s\S]*?)^\t\}/m.exec(caddyfile)?.[1] ?? '';
+    expect(block).toMatch(/^\t\tCache-Control "public, max-age=\d{6,}"$/m);
+    // set when the file server writes its answer: a 404 under /assets/ goes through the error pages and gets no long cache
+    expect(block).toMatch(/^\t\tdefer$/m);
+    expect(caddyfile).not.toMatch(/^\theader @assets Cache-Control/m);
+  });
+
+  it('makes browsers ask again for the pages and for the list of sums', () => {
+    expect(caddyfile).toMatch(/^\t@pages path \/ \/en\/ \*\.html \/download\/SHA256SUMS\.txt$/m);
     expect(caddyfile).toMatch(/^\theader @pages Cache-Control "no-cache"$/m);
+  });
+
+  it('says that it must be checked by Caddy itself on the server before it is used', () => {
+    expect(caddyfile).toMatch(/^#.*`caddy validate --config \/etc\/caddy\/Caddyfile`/m);
   });
 
   it('hands the installer over as a download, never as a page', () => {
@@ -115,11 +127,20 @@ describe('the Caddyfile the build writes', () => {
     expect(block).toMatch(/^\t\tdefer$/m);
   });
 
-  it('passes /api/* and /admin/* to the service on the server itself, and says that the service comes with the next task', () => {
-    expect(caddyfile).toMatch(/^\t@service path \/api\/\* \/admin\/\*$/m);
-    expect(caddyfile).toMatch(/^\thandle @service \{\n\t\treverse_proxy 127\.0\.0\.1:8787\n\t\}$/m);
+  it('passes /api and /admin, with and without anything after them, to the service on the server itself, and says that the service comes with the next task', () => {
+    expect(caddyfile).toMatch(/^\t@service path \/api \/api\/\* \/admin \/admin\/\*$/m);
+    const block = /^\thandle @service \{\n([\s\S]*?)^\t\}/m.exec(caddyfile)?.[1] ?? '';
+    expect(block).toMatch(/^\t\treverse_proxy 127\.0\.0\.1:8787$/m);
     expect(caddyfile).toMatch(/#.*(task 53|next task)/i);
     expect(config.feedback.endpoint.startsWith('/api/')).toBe(true);
+  });
+
+  it('lets no request bigger than a full message reach the service: three pictures of 5 MB, a log of 2 MB, the text and the envelope', () => {
+    const block = /^\thandle @service \{\n([\s\S]*?)^\t\}/m.exec(caddyfile)?.[1] ?? '';
+    expect(block).toMatch(/^\t\trequest_body \{\n\t\t\tmax_size 24MB\n\t\t\}$/m);
+    // the limit stands in front of the proxy
+    expect(block.indexOf('request_body')).toBeLessThan(block.indexOf('reverse_proxy'));
+    expect(3 * LIMITS.shotBytes + LIMITS.logBytes).toBeLessThan(24 * 1024 * 1024);
   });
 
   it("answers an address that does not exist with the site's own 404 page", () => {

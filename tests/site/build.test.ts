@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
 import { Script } from 'node:vm';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -161,7 +161,7 @@ describe('the build with an installer', () => {
   });
 
   it('has no banner of consent and no trace of Google while ga4Id is empty', () => {
-    expect(config.analytics.ga4Id).toBe('');
+    // every build of the tests is made with an empty id (helpers.ts), whatever id the settings file carries
     expect(site.result.analytics).toBe(false);
     for (const file of site.files.filter(isText)) {
       const content = site.read(file);
@@ -381,5 +381,42 @@ describe('the first screen', () => {
     const hero = css.slice(css.indexOf('.hero {'), css.indexOf('.features {'));
     expect(hero.length).toBeGreaterThan(1000);
     expect(hero).not.toMatch(/animation|@keyframes|transition|url\(|filter:/);
+  });
+});
+
+describe('the tests do not depend on the id the user enters', () => {
+  it('build the site without analytics even when the settings file carries an id, unless a test asks for one', () => {
+    const copy = join(tempDir(), 'site');
+    cpSync(siteDir, copy, { recursive: true, filter: (source) => !/[\\/]site[\\/]dist[^\\/]*([\\/]|$)/.test(source) });
+    const file = join(copy, 'site.config.json');
+    const settings = JSON.parse(readFileSync(file, 'utf8')) as { analytics: { ga4Id: string } };
+    settings.analytics.ga4Id = 'G-USER1234567';
+    writeFileSync(file, JSON.stringify(settings));
+    expect(loadConfig(copy).analytics.ga4Id).toBe('G-USER1234567');
+
+    const site = build({ siteDir: copy });
+    expect(site.result.analytics).toBe(false);
+    expect(site.files).not.toContain('assets/js/consent.js');
+    expect(build({ siteDir: copy, patchConfig: (patched) => void (patched.analytics.ga4Id = 'G-TEST123456') }).result.analytics).toBe(true);
+  });
+});
+
+describe('a visitor with a keyboard', () => {
+  const styles = () => build().read('assets/css/site.css').replace(/\s+/g, ' ');
+  const rule = (css: string, selector: string) => new RegExp(`(?:^|[}/] )${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+
+  it('does not stop at the switch of the menu on a wide screen: it is there only where the menu is folded', () => {
+    const css = styles();
+    expect(rule(css, '.menu-toggle')).toContain('display: none;');
+    expect(css).toMatch(/@media \(max-width: 1019\.98px\) \{(?:[^{}]|\{[^{}]*\})*\.menu-toggle \{ display: block;/);
+  });
+
+  it('sees which support plate and which picture of the gallery has the focus, by a ring the hover does not draw', () => {
+    const css = styles();
+    for (const selector of ['.support__link', '.stage--tile .stage__screen']) {
+      expect(rule(css, `${selector}:focus-visible`), selector).toContain('box-shadow: inset 0 0 0 3px var(--accent);');
+      expect(rule(css, `${selector}:hover`), selector).toContain('--edge: var(--accent);');
+      expect(rule(css, `${selector}:hover`), selector).not.toContain('box-shadow');
+    }
   });
 });

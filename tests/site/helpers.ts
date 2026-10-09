@@ -49,13 +49,21 @@ export interface Built {
   caddyfile: string;
 }
 
-/** Builds the site into a folder of its own. Without `installer` in the options a stand-in installer is made. */
+/**
+ * Builds the site into a folder of its own. Without `installer` in the options a stand-in installer is made.
+ * The id of the analytics is always emptied first, so that no test depends on what the user has put into
+ * site/site.config.json; a test that wants analytics sets an id of its own through `patchConfig`.
+ */
 export function build(options: Partial<BuildOptions> = {}): Built {
   const dir = tempDir();
   const out = join(dir, 'dist');
   const deploy = join(dir, 'dist-deploy');
   const installer = options.installer === undefined ? fakeInstaller(dir) : options.installer;
-  const result = buildSite({ version, now: BUILD_DAY, ...options, outDir: out, deployDir: deploy, installer });
+  const patchConfig: BuildOptions['patchConfig'] = (settings) => {
+    settings.analytics.ga4Id = '';
+    options.patchConfig?.(settings);
+  };
+  const result = buildSite({ version, now: BUILD_DAY, ...options, patchConfig, outDir: out, deployDir: deploy, installer });
   return {
     out,
     deploy,

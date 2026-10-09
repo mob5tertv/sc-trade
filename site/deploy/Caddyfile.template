@@ -25,12 +25,17 @@
 	import security
 
 	# Pictures, video, styles and scripts: the pages name each with ?v=<hash of the file>, so a changed file has a
-	# new address and the old copy in a browser is never used for it.
+	# new address and the old copy in a browser is never used for it. The header is put on when the file itself is
+	# written out ("defer"): an address under /assets/ that does not exist is answered by the error pages below and
+	# gets no long cache.
 	@assets path /assets/*
-	header @assets Cache-Control "public, max-age=2592000"
+	header @assets {
+		Cache-Control "public, max-age=2592000"
+		defer
+	}
 
-	# The pages themselves are asked for again every time.
-	@pages path / /en/ *.html
+	# The pages and the list of sums are asked for again every time.
+	@pages path / /en/ *.html /download/SHA256SUMS.txt
 	header @pages Cache-Control "no-cache"
 
 	# The installer is a download, never something a browser shows. Its name carries the version.
@@ -50,8 +55,13 @@
 
 	# The feedback service: a small Node program on this very server. It comes with the next task (task 53);
 	# until it runs, these addresses answer "502 Bad Gateway" and the form on the page says that sending failed.
-	@service path /api/* /admin/*
+	# No request bigger than a full message is let through to it: three pictures of 5 MB, a log of 2 MB, the text
+	# and the envelope of the form (a bigger one is answered "413", which the page reads as "the file is too big").
+	@service path /api /api/* /admin /admin/*
 	handle @service {
+		request_body {
+			max_size 24MB
+		}
 		reverse_proxy {{service}}
 	}
 

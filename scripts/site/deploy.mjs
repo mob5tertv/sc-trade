@@ -40,8 +40,13 @@ export function readTarget(value) {
     if (!['host', 'user', 'path', 'port'].includes(key)) throw fail(`"${key}" is not a setting of the upload (there are "host", "user", "path", "port")`);
   }
   const { host, user, path = DEFAULT_PATH, port = 22 } = settings;
-  if (typeof host !== 'string' || !/^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|[0-9A-Fa-f:]{3,39})$/.test(host)) {
-    throw fail('"host" must be the name or the address of the server, like server.example or 203.0.113.7');
+  // `user@host` of sftp cannot carry an IPv6 address (its colons are read as something else): better a clear refusal
+  // here than a failure of sftp that does not say why
+  if (typeof host === 'string' && /^\[?[0-9A-Fa-f]*:[0-9A-Fa-f:.]*(%[\w.-]+)?\]?$/.test(host)) {
+    throw fail(`"host" is an IPv6 address (${host}), and the upload cannot use one: put the host name of the server or its IPv4 address there`);
+  }
+  if (typeof host !== 'string' || !/^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/.test(host)) {
+    throw fail('"host" must be the name of the server or its IPv4 address, like server.example or 203.0.113.7');
   }
   if (typeof user !== 'string' || !/^[a-z_][a-z0-9_-]{0,31}$/.test(user)) throw fail('"user" must be a user name of the server, like deploy');
   if (typeof path !== 'string' || !/^(\/[A-Za-z0-9._-]+){2,}$/.test(path) || path.split('/').includes('..')) {
