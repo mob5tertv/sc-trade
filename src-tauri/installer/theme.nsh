@@ -98,12 +98,13 @@
     Push $0
     ; The window and the strip with the buttons under the page.
     !insertmacro SCT_PAINT_DIALOG $HWNDPARENT
-    ; The corner text ("SC Trade 1.1.0"): the muted text of the application. Two controls lie on one another there, and
-    ; Modern UI 2 shows and hides both (1028 under 1256): both get the same pair, whichever is on top.
+    ; The corner text ("SC Trade 1.1.0"): the muted text of the application. Two controls lie on one another there. In stock
+    ; NSIS the text that shows is the one of 1028, a disabled control (Windows draws the text of a disabled control grey,
+    ; whatever colour it is given), and 1256 only blanks the line behind it; Modern UI 2 writes the text into both and
+    ; shows and hides both page by page. Both get the same pair here, and 1028 is enabled below, so that whichever of the two
+    ; shows, it shows the muted text on the glass.
     !insertmacro SCT_PAINT_MUTED $mui.Branding.Background
     !insertmacro SCT_PAINT_MUTED $mui.Branding.Text
-    ; The lower of the two is a disabled control, and Windows draws the text of a disabled control grey whatever colour it
-    ; is given: enabled, it takes ours. (It lies under the other one, which hides it, and the texts are the same.)
     EnableWindow $mui.Branding.Background 1
     ; The three lines (under the header, above the buttons, full width) are etched in the colours of the system, white on
     ; grey: bright hairlines on the glass. Hidden; the two that Modern UI 2 shows and hides page by page are pointed at no

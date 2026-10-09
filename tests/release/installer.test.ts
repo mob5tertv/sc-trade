@@ -16,6 +16,7 @@ interface Nsis {
   installerHooks?: string;
   template?: string;
   startMenuFolder?: string;
+  allowDowngrades?: boolean;
 }
 
 interface Bundle {
@@ -70,8 +71,28 @@ const pictures = [
   { field: 'sidebarImage', width: 164, height: 314, what: 'the side of the welcome and finish pages' },
 ] as const;
 
-/** The theme of the application (src/ui/theme.css): the glass, the frame of the window, the accent. */
-const theme = { glass: '07121b', frame: '2b8fa8', accent: '3fd0f0' };
+const themeCss = readFileSync(resolve(tauriDir, '..', 'src', 'ui', 'theme.css'), 'utf8');
+/** `rrggbb` of a colour custom property of the theme of the application (`--sc-<name>: #rrggbb;`), read from src/ui/theme.css itself. */
+function cssColour(name: string): string {
+  const match = new RegExp(`--sc-${name}:\\s*#([0-9a-fA-F]{6})\\s*;`).exec(themeCss);
+  if (!match) throw new Error(`src/ui/theme.css has no "--sc-${name}: #rrggbb;"`);
+  return match[1].toLowerCase();
+}
+
+/**
+ * The theme of the application, as src/ui/theme.css has it now: the installer has to wear these very colours, so the
+ * tests do not keep a copy of them. `field` and `trough` are the two that the installer takes for the field of the
+ * path and the list (`--sc-surface`) and for the empty part of the progress bar (`--sc-border`).
+ */
+const theme = {
+  glass: cssColour('bg-solid'),
+  text: cssColour('text'),
+  muted: cssColour('muted'),
+  field: cssColour('surface'),
+  trough: cssColour('border'),
+  accent: cssColour('accent'),
+  frame: cssColour('frame'),
+};
 
 /** WCAG contrast ratio of two `rrggbb` colours. */
 function contrast(a: string, b: string): number {
@@ -100,6 +121,27 @@ function codeLines(source: string): string[] {
     .map((line) => line.replace(/\s*;.*$/, '').trim())
     .filter((line) => line !== '');
 }
+
+/** The first word of a line of code, after an optional label (`name:`): the NSIS command, a `${Macro}` or `plug-in::function`. */
+function commandOf(line: string): string {
+  return /^(?:[\w.]+:\s+)?(\S+)/.exec(line)?.[1] ?? '';
+}
+
+/**
+ * What the installer scripts must never do: the commands that write, delete, register, start or restart anything, and
+ * the directives that run something while the script is built. A second net behind the allow-lists of the tests below.
+ */
+const FORBIDDEN_COMMANDS =
+  /^(File|FileOpen|FileWrite\w*|FileSeek|FileRead\w*|WriteReg\w+|DeleteReg\w+|EnumReg\w+|CreateShortCut|CreateDirectory|Delete|RMDir|Rename|CopyFiles|SetOutPath|Exec|ExecWait|ExecShell|ExecShellWait|WriteUninstaller|WriteINIStr|DeleteINI\w+|SetShellVarContext|RegDLL|UnRegDLL|nsExec::\w+|ExecDos::\w+|InstallDirRegKey|SectionSetFlags|SetRegView|Reboot|SetRebootFlag|SetFileAttributes|CallInstDLL|GetTempFileName|BringToFront|Abort|Quit)$/i;
+const FORBIDDEN_DIRECTIVES = /^!(system|execute|packhdr|finalize|uninstfinalize|appendfile|delfile|tempfile|addplugindir|cd|makensis)$/i;
+
+/** What a failing allow-list says. The template is the one file of the installer that runs with real effects on the machine of the user. */
+const MAY_ONLY_PAINT =
+  'the blocks of the template may only paint: colour a control, hide a line, set the title bar, name a macro of theme.nsh. ' +
+  'A command that writes, deletes, registers, starts or calls anything else does not belong in them';
+const MAY_ONLY_CALL =
+  'the scripts of the installer may call into Windows only to paint (SetWindowTheme, DwmSetWindowAttribute; the preview also makes the ' +
+  'check box of the removal page and asks the DPI of its window); a call that touches a file, the registry, a process or the system does not belong in them';
 
 /** Every `!define NAME value` of a script, the quotes of the value stripped. */
 function defines(source: string): Map<string, string> {
@@ -329,6 +371,7 @@ describe('the colours of the welcome and finish pages', () => {
 
   it('read well: the text is light on the dark glass of the theme, as strong as the body text of the application', () => {
     expect(defined('MUI_BGCOLOR')).toBe(theme.glass);
+    expect(defined('MUI_TEXTCOLOR')).toBe(theme.text);
     expect(contrast(defined('MUI_TEXTCOLOR') ?? '000000', defined('MUI_BGCOLOR') ?? 'ffffff')).toBeGreaterThanOrEqual(7);
   });
 
@@ -407,6 +450,57 @@ describe('the template of the installer', () => {
     expect(own.join('\n')).not.toMatch(/!addplugindir|\.dll"/i);
   });
 
+  // The template is the one file that runs with real effects on the machine of the user. What our blocks add to it may only
+  // paint, so every line of code they add has to be one of the four forms below, and nothing else.
+  it('adds only lines that paint: the corner text, the callbacks of the pages, the macros of theme.nsh, the handles of three controls', () => {
+    const added = codeLines(ownLines(template).join('\n'));
+    expect(added.length, 'lines of code that the blocks add (17 today)').toBeGreaterThan(0);
+    const allowed = [
+      /^BrandingText "\$\{PRODUCTNAME\} \$\{VERSION\}"$/,
+      /^!define MUI_PAGE_CUSTOMFUNCTION_SHOW (?:un\.)?SCT\.\w+$/,
+      /^!insertmacro SCT_(?:PAINT|FUNCTIONS)_\w+(?: (?:\$[\w.]+|""|"un\."))*$/,
+      /^GetDlgItem \$[2-4] \$1 \d+$/,
+    ];
+    expect(
+      added.filter((line) => !allowed.some((form) => form.test(line))),
+      MAY_ONLY_PAINT,
+    ).toEqual([]);
+  });
+
+  it('names only macros that theme.nsh defines, and the callbacks of the pages that the macros of theme.nsh make', () => {
+    const defined = new Set(macros(themeSource).keys());
+    const added = codeLines(ownLines(template).join('\n'));
+    for (const line of added) {
+      const macro = /^!insertmacro (SCT_\w+)/.exec(line)?.[1];
+      if (macro !== undefined) expect(defined.has(macro), `${line}: not a macro of theme.nsh`).toBe(true);
+    }
+    const callbacks = added.map((line) => /^!define MUI_PAGE_CUSTOMFUNCTION_SHOW (?:un\.)?(SCT\.\w+)$/.exec(line)?.[1]).filter((name) => name !== undefined);
+    const made = codeLines(themeSource).map((line) => /^Function (?:\$\{UN\})?(SCT\.\w+)$/.exec(line)?.[1]).filter((name) => name !== undefined);
+    for (const callback of callbacks) expect(made, `${callback}: not made by theme.nsh`).toContain(callback);
+  });
+
+  it('replaces one line of the original only, the corner text (every other edit is an addition)', () => {
+    const replaced = template.split('\n').filter((line) => line.startsWith(';upstream|'));
+    expect(replaced, 'lines of the original that a block replaces; the blocks may only paint').toEqual([';upstream| BrandingText "${COPYRIGHT}"']);
+  });
+
+  it('adds no command that writes, deletes, registers, starts or restarts anything, and no call of its own into Windows (second net)', () => {
+    const added = codeLines(ownLines(template).join('\n'));
+    expect(added.filter((line) => FORBIDDEN_COMMANDS.test(commandOf(line)) || FORBIDDEN_DIRECTIVES.test(commandOf(line))), MAY_ONLY_PAINT).toEqual([]);
+    expect(added.filter((line) => /^InstallDir\b|System::Call/i.test(line)), MAY_ONLY_PAINT).toEqual([]);
+  });
+
+  it('would turn the radio button of the question of the second installation grey if downgrades were switched off: they are not', () => {
+    // with `allowDowngrades: false` the template disables the radio "do not uninstall" when an older version is installed, and
+    // Windows draws the text of a disabled control grey whatever colour it is given (the paint macros cannot help)
+    expect(
+      nsis?.allowDowngrades,
+      'bundle.windows.nsis.allowDowngrades is false: the radio button "Do not uninstall" of the "already installed" page is then disabled ' +
+        'when a newer version is installed, and a disabled radio button draws grey text on the dark glass. Give it its own light text ' +
+        '(a custom draw, or leave the button enabled) before turning downgrades off',
+    ).not.toBe(false);
+  });
+
   it('sets the version in the side picture of the welcome and finish pages', () => {
     expect(readInstaller('sidebar.svg')).toContain(`>v${packageVersion}</text>`);
   });
@@ -419,12 +513,15 @@ describe('the theme of the inner pages', () => {
   const colour = (name: string) => (resolveDefines(everything, `\${${name}}`) ?? '').toLowerCase();
   const calls = [...ctlColors('theme.nsh', code['theme.nsh'], everything), ...ctlColors('installer.nsi', code['installer.nsi'], everything)];
 
-  it('takes its colours from the theme of the application', () => {
-    expect(colour('SCT_GLASS')).toBe(theme.glass);
-    expect(colour('SCT_TEXT')).toBe('d6eef5');
-    expect(colour('SCT_MUTED')).toBe('82a8b6');
-    expect(colour('SCT_ACCENT')).toBe(theme.accent);
-    expect(colour('SCT_FRAME')).toBe(theme.frame);
+  it('takes its colours from the theme of the application, as src/ui/theme.css has them now', () => {
+    expect(colour('SCT_GLASS'), '--sc-bg-solid').toBe(theme.glass);
+    expect(colour('SCT_TEXT'), '--sc-text').toBe(theme.text);
+    expect(colour('SCT_MUTED'), '--sc-muted').toBe(theme.muted);
+    expect(colour('SCT_FIELD'), '--sc-surface').toBe(theme.field);
+    expect(colour('SCT_TROUGH'), '--sc-border').toBe(theme.trough);
+    expect(colour('SCT_ACCENT'), '--sc-accent').toBe(theme.accent);
+    expect(colour('SCT_FRAME'), '--sc-frame').toBe(theme.frame);
+    expect(colour('MUI_INSTFILESPAGE_COLORS'), 'the list of the details: text, then background').toBe(`${theme.text} ${theme.field}`);
   });
 
   it('writes the colours that a message takes (BBGGRR numbers) as the same colours as the RRGGBB ones', () => {
@@ -471,10 +568,30 @@ describe('the theme of the inner pages', () => {
     expect(progress).toMatch(/SendMessage \$\{HWND\} 0x2001 0 \$\{SCT_TROUGH_BGR\}/); // PBM_SETBKCOLOR
   });
 
-  it('calls only the two Windows functions that Modern UI 2 and the title bar need: SetWindowTheme and DwmSetWindowAttribute', () => {
-    const targets = code['theme.nsh'].filter((line) => /^System::Call/.test(line)).map((line) => /['"]([\w.]+::\w+)\(/.exec(line)?.[1]);
+  it('calls only the two Windows functions that Modern UI 2 and the title bar need: SetWindowTheme and DwmSetWindowAttribute (in theme.nsh and in the blocks of the template)', () => {
+    const own = codeLines(ownLines(template).join('\n'));
+    const calls = [...code['theme.nsh'], ...own].filter((line) => /System::Call/i.test(line));
+    const targets = calls.map((line) => /^System::Call\s+['"]([\w.]+::\w+)\(/.exec(line)?.[1]);
     expect(targets.length).toBeGreaterThan(0);
-    for (const target of targets) expect(['UXTHEME::SetWindowTheme', 'dwmapi::DwmSetWindowAttribute']).toContain(target);
+    for (const target of targets) expect(['UXTHEME::SetWindowTheme', 'dwmapi::DwmSetWindowAttribute'], MAY_ONLY_CALL).toContain(target);
+  });
+
+  /** The commands that theme.nsh uses today. A new first word is a new kind of thing the theme does: add it here on purpose, after reading what it does. */
+  const THEME_COMMANDS = new Set(['!define', '!macro', '!macroend', '!insertmacro', 'Function', 'FunctionEnd', 'Push', 'Pop', 'SetCtlColors', 'SendMessage', 'ShowWindow', 'EnableWindow', 'GetDlgItem', 'StrCpy', 'System::Call'].map((word) => word.toLowerCase()));
+
+  it('uses only the commands it uses today: it paints, and what it paints with is not a place for anything that has an effect (allow-list)', () => {
+    const refused = code['theme.nsh'].filter((line) => !THEME_COMMANDS.has(commandOf(line).toLowerCase()));
+    expect(refused, `a command that theme.nsh does not use yet: ${MAY_ONLY_CALL}`).toEqual([]);
+  });
+
+  it('is not given a way to run anything either: no forbidden command and no directive that runs at build time (second net)', () => {
+    const words = code['theme.nsh'].map(commandOf);
+    expect(words.filter((word) => FORBIDDEN_COMMANDS.test(word) || FORBIDDEN_DIRECTIVES.test(word))).toEqual([]);
+  });
+
+  it('includes nothing: no !include in theme.nsh, and the hooks file does nothing but include theme.nsh', () => {
+    expect(code['theme.nsh'].filter((line) => /^!include\b/i.test(line))).toEqual([]);
+    expect(codeLines(readInstaller('hooks.nsh'))).toEqual(['!include "${__FILEDIR__}\\theme.nsh"']);
   });
 
   /** What each page paints: the macro, the handle, as the script writes them. */
@@ -600,14 +717,44 @@ describe('the pages-only preview of the installer (preview.nsi)', () => {
   const previewCode = codeLines(preview);
   /** The code of the preview and of the theme it includes: whatever runs in the preview comes from one of the two. */
   const runs = [...previewCode, ...codeLines(themeSource)];
-  /** The first word of a line, after an optional label (`name:`): the NSIS command, a `${Macro}` or `plug-in::function`. */
-  const command = (line: string) => /^(?:[\w.]+:\s+)?(\S+)/.exec(line)?.[1] ?? '';
+  const command = commandOf;
 
   it('exists, and its first lines say in so many words that it is a mock-up and installs nothing', () => {
     expect(preview, 'src-tauri/installer/preview.nsi').not.toBe('');
     const opening = preview.split('\n').slice(0, 12).join('\n').toLowerCase();
     expect(opening).toContain('mock-up');
     expect(opening).toContain('installs nothing');
+  });
+
+  it('says next to that which pages are re-typed copies of the code of the template, and that the real ones may word things differently', () => {
+    const opening = preview.split('\n').slice(0, 24).join('\n').toLowerCase().replace(/\s*\n;\s*/g, ' ');
+    expect(opening).toContain('re-typed');
+    expect(opening).toContain('already installed');
+    expect(opening).toContain('removal');
+    expect(opening).toContain('may differ');
+  });
+
+  /** The commands that preview.nsi uses today (with the functions in it). A new first word is a new thing the mock-up does: add it here on purpose, after reading what it does. */
+  const PREVIEW_COMMANDS = new Set(
+    [
+      '!define', '!else', '!endif', '!ifdef', '!ifndef', '!include', '!insertmacro',
+      'BrandingText', 'Caption', 'DetailPrint', 'InstallDir', 'LangString', 'ManifestDPIAware', 'ManifestDPIAwareness', 'Name', 'OutFile',
+      'Page', 'PageCallbacks', 'PageEx', 'PageExEnd', 'RequestExecutionLevel', 'Section', 'SectionEnd', 'Sleep', 'Unicode', 'UninstallText', 'Var',
+      'VIAddVersionKey', 'VIProductVersion',
+      // the functions: the question of the second installation, the check box of the removal, the function that does nothing
+      'Function', 'FunctionEnd', 'Nop', 'Pop', 'StrCpy', 'IntOp', 'GetDlgItem', 'FindWindow', 'SendMessage', 'System::Call',
+      'nsDialogs::Create', 'nsDialogs::Show', '${NSD_CreateLabel}', '${NSD_CreateRadioButton}', '${NSD_SetFocus}',
+    ].map((word) => word.toLowerCase()),
+  );
+
+  it('uses only the commands it uses today (allow-list): nothing new can be added to the mock-up without a decision', () => {
+    const refused = previewCode.filter((line) => !PREVIEW_COMMANDS.has(commandOf(line).toLowerCase()));
+    expect(refused, 'a command that preview.nsi does not use yet').toEqual([]);
+  });
+
+  it('includes only theme.nsh and the standard headers of NSIS that it includes today', () => {
+    const included = previewCode.filter((line) => /^!include\b/i.test(line)).map((line) => line.replace(/^!include\s+"?([^"]*)"?$/i, '$1'));
+    expect(included, 'what preview.nsi includes, in order').toEqual(['MUI2.nsh', 'LogicLib.nsh', 'theme.nsh']);
   });
 
   it('wears the very same theme as the installer: it includes theme.nsh, and adds no colour of its own', () => {
@@ -629,22 +776,20 @@ describe('the pages-only preview of the installer (preview.nsi)', () => {
   });
 
   it('has no command that installs, writes, deletes, starts or registers anything', () => {
-    const forbidden =
-      /^(File|FileOpen|FileWrite\w*|FileSeek|FileRead\w*|WriteReg\w+|DeleteReg\w+|EnumReg\w+|CreateShortCut|CreateDirectory|Delete|RMDir|Rename|CopyFiles|SetOutPath|Exec|ExecWait|ExecShell|ExecShellWait|WriteUninstaller|WriteINIStr|DeleteINI\w+|SetShellVarContext|RegDLL|UnRegDLL|nsExec::\w+|ExecDos::\w+|InstallDirRegKey|SectionSetFlags|SetRegView)$/i;
-    expect(runs.filter((line) => forbidden.test(command(line))), 'a forbidden command in preview.nsi or theme.nsh').toEqual([]);
+    expect(runs.filter((line) => FORBIDDEN_COMMANDS.test(command(line))), 'a forbidden command in preview.nsi or theme.nsh').toEqual([]);
     // ... and no macro that expands to one of them
     expect(runs.filter((line) => /^\$\{(?:CreateShortcut|File|Exec|Write\w+|Delete\w*|RMDir)\b/i.test(command(line)))).toEqual([]);
   });
 
   it('runs nothing at the time it is built: no !system, !execute, !packhdr, !finalize, !uninstfinalize, !appendfile', () => {
-    expect(runs.filter((line) => /^!(system|execute|packhdr|finalize|uninstfinalize|appendfile|delfile|tempfile|addplugindir)\b/i.test(line))).toEqual([]);
+    expect(runs.filter((line) => FORBIDDEN_DIRECTIVES.test(command(line)))).toEqual([]);
   });
 
   it('calls only the Windows functions that make controls and colour them: no call that touches a file or the registry', () => {
     const targets = runs.filter((line) => /System::Call/.test(line)).map((line) => /['"]([\w.]+::\w+)\(/.exec(line)?.[1]);
     expect(targets.length).toBeGreaterThan(0);
     for (const target of targets) {
-      expect(['UXTHEME::SetWindowTheme', 'dwmapi::DwmSetWindowAttribute', 'user32::GetDpiForWindow', 'user32::CreateWindowEx']).toContain(target);
+      expect(['UXTHEME::SetWindowTheme', 'dwmapi::DwmSetWindowAttribute', 'user32::GetDpiForWindow', 'user32::CreateWindowEx'], MAY_ONLY_CALL).toContain(target);
     }
     expect(runs.filter((line) => /^(\w+)::\w+/.test(line) && !/^System::/.test(line) && !/^nsDialogs::/.test(line)), 'plug-ins other than System and nsDialogs').toEqual([]);
   });

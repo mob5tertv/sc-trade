@@ -9,6 +9,9 @@
 ; the finish page call a function that does nothing.
 ; Like every NSIS program it unpacks its plug-ins (System, nsDialogs) into a folder of its own in %TEMP% while it runs
 ; and removes the folder when it ends.
+; Two of its pages are re-typed copies of code of the template, not that code itself: the "already installed" page (with the
+; wording of the same-version case) and the confirmation of the removal. The real pages come from the template and the
+; language files of Tauri, and their wording and layout may differ from these copies in small ways.
 ;
 ; Two builds of this one script, with the NSIS that Tauri downloads (%LOCALAPPDATA%\tauri\NSIS), from any folder:
 ;   makensis -INPUTCHARSET UTF8 -OUTPUTCHARSET UTF8 -V3 -WX "/DOUTFILE=<folder>\SC-Trade-installer-preview.exe" preview.nsi
