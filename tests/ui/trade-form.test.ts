@@ -6,7 +6,7 @@ import { getActiveRun, listRuns } from '../../src/data/repo/runs';
 import { recordBuy, recordSell } from '../../src/data/trade';
 import { cellEditBase } from '../../src/ui/vm/inputs';
 import {
-  confirmStep, goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, PRICE_CHECK_NOTE, tradeDefaults, tradeLimit, tradeMode,
+  confirmStep, goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, PRICE_CHECK_NOTE, tradeDefaults, tradeEntryField, tradeLimit, tradeMode,
 } from '../../src/ui/vm/trade-form';
 import { bought, GOLD, runOf, sold, TITA } from '../helpers/run-wiring-fixtures';
 import { buyIn as goldBought, sellIn as goldSold, tradeFixture } from '../helpers/trade-fixtures';
@@ -210,6 +210,30 @@ describe('tradeDefaults, an income', () => {
     expect(d).toEqual({ scu: null, price: 6900, priceIsOwn: true });
     const other = tradeDefaults({ side: 'sell', commodityId: GOLD, cell: cell({ hint: 6500 }), cargo: [tita(40)], capacity: 696, budget: null });
     expect(other).toEqual({ scu: null, price: 6500, priceIsOwn: false });
+  });
+});
+
+describe('tradeEntryField: where the cursor goes when «Купил» / «Продал» of the row opens the form', () => {
+  it('a purchase: into the quantity', () => {
+    expect(tradeEntryField('buy', false)).toBe('trade-scu');
+    expect(tradeEntryField('buy', true)).toBe('trade-scu'); // the hold says nothing about a purchase
+  });
+
+  it('a sale of what is in the hold: into the price, for the form holds the whole cargo already', () => {
+    expect(tradeEntryField('sell', true)).toBe('trade-price');
+  });
+
+  it('a sale of goods that are not in the hold (an income): into the quantity, which is empty there', () => {
+    expect(tradeEntryField('sell', false)).toBe('trade-scu');
+  });
+
+  it('on the sell side the cursor is in the quantity exactly when the form starts with an empty one, so nothing typed lands on the price', () => {
+    const row = cell({ hint: 6500 });
+    for (const cargo of [[], [tita(40)], [gold(96)], [gold(96), tita(40)]]) {
+      const inHold = cargo.some((line) => line.commodityId === GOLD);
+      const starts = tradeDefaults({ side: 'sell', commodityId: GOLD, cell: row, cargo, capacity: 696, budget: null });
+      expect(tradeEntryField('sell', inHold) === 'trade-scu').toBe(starts.scu === null);
+    }
   });
 });
 

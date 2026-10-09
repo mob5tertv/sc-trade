@@ -318,8 +318,31 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
     },
   },
   {
+    // the run of the dataset holds MEDS; ARC-L1 (terminal 1) buys it: the form starts with the whole cargo, so the price is what is typed first
     name: 'entry-sell',
-    title: '«Продал» в раскрытой строке: курсор в цене формы, число выделено, клавиатура у окна',
+    title: '«Продал» товара из трюма: количество уже стоит (весь груз), курсор в цене формы, число выделено, клавиатура у окна',
+    dataset: 'run',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      app.setViewTerminal(1);
+      app.setTerminalSide('sell');
+      await pause(60);
+      withText('.table button.line', 'MEDS').click();
+      await pause(100);
+      await pressButton(withText('.expand button', 'Продал'));
+      await until('the cursor in the price of the trade form', cursorIn('form.trade .in-price'));
+      const { text } = keyboardNow(app);
+      expectKeyboard(app, 'after the click on «Продал»', { held: true, owner: 'overlay', cursor: 'trade in-price', selection: `0..${text?.length}` });
+      if (!text) throw new Error('the scene needs a price in the form of the sale, and the field is empty');
+      if (input('form.trade .in-scu').value === '') throw new Error('the scene needs the cargo in the quantity of the form, and the field is empty');
+    },
+  },
+  {
+    // A sale of goods that are not in the hold (an income): the quantity is empty, and it is what the player types first. With the
+    // cursor in the price (selected) the quantity he types would replace the price.
+    name: 'entry-sell-income',
+    title: '«Продал» товара, которого нет в трюме: количество пустое, курсор в количестве; набранное количество не затирает цену',
     dataset: 'default',
     act: async (app) => {
       await app.expand('preview');
@@ -329,10 +352,13 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       element('.table button.line').click();
       await pause(100);
       await pressButton(withText('.expand button', 'Продал'));
-      await until('the cursor in the price of the trade form', cursorIn('form.trade .in-price'));
-      const { text } = keyboardNow(app);
-      expectKeyboard(app, 'after the click on «Продал»', { held: true, owner: 'overlay', cursor: 'trade in-price', selection: `0..${text?.length}` });
-      if (!text) throw new Error('the scene needs a price in the form of the sale, and the field is empty');
+      await until('the cursor in the quantity of the trade form', cursorIn('form.trade .in-scu'));
+      expectKeyboard(app, 'after the click on «Продал»', { held: true, owner: 'overlay', cursor: 'trade in-scu', text: '' });
+      const price = input('form.trade .in-price').value;
+      if (price === '') throw new Error('the scene needs a price in the form of the income, and the field is empty');
+      typeInto('form.trade .in-scu', '10');
+      await pause(60);
+      if (input('form.trade .in-price').value !== price) throw new Error(`the typed quantity changed the price: "${input('form.trade .in-price').value}", not "${price}"`);
     },
   },
   {
@@ -548,7 +574,7 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       element('.table button.line').click();
       await pause(100);
       await pressButton(withText('.expand button', 'Продал'));
-      await until('the cursor in the price of the trade form', cursorIn('form.trade .in-price'));
+      await until('the cursor in the quantity of the trade form', cursorIn('form.trade .in-scu'));
       typeInto('form.trade .in-scu', '10');
       await confirmTrade();
       expectForm('after the first confirmation of the income', { asks: true, written: 0, error: null });

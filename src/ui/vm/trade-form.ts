@@ -80,6 +80,20 @@ export function tradeMode(side: Side, active: RunWithEvents | null, commodityId:
   return cargoOf(active?.events ?? []).some((line) => line.commodityId === commodityId) ? 'sell' : 'income';
 }
 
+/** The two fields of the form by the names its buttons know them by (`data-entry-field` in `TradeDialog`, `data-opens-entry` on the buttons). */
+export type TradeEntryField = 'trade-scu' | 'trade-price';
+
+/**
+ * The field of the form the cursor goes into when «Купил» / «Продал» of the row opens it: the one the player types
+ * into first. A purchase: the quantity. A sale of what is in the hold: the price, for the form holds the whole cargo
+ * already. A sale of goods that are not in the hold (an income): the quantity, which is empty there — with the cursor
+ * in the price, whose number is selected, the quantity he types would replace the price.
+ * `inHold`: the commodity is in the hold of the run (`tradeMode` then says `sell`, and `tradeDefaults` offers the cargo).
+ */
+export function tradeEntryField(side: Side, inHold: boolean): TradeEntryField {
+  return side === 'sell' && inHold ? 'trade-price' : 'trade-scu';
+}
+
 /** The one muted line under the form of an income. */
 export const INCOME_NOTE = 'Нет в трюме — запишется как доход без закупки';
 

@@ -9,6 +9,7 @@
   import type { TerminalSort, TerminalSortKey } from '../vm/terminal-order';
   import { RANGE_HEAD_TITLE, cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
+  import { tradeEntryField } from '../vm/trade-form';
   import TempBadge from './TempBadge.svelte';
   import TrendMark from './TrendMark.svelte';
 
@@ -275,13 +276,14 @@
       {/if}
       <span class="spacer"></span>
       <!-- `data-opens-entry`: the button opens the form of a trade, and the cursor goes into the field of the form with that name
-           (ui/keyboard.ts): the quantity of a purchase, the price of a sale. The row itself and the lookups are plain buttons. -->
+           (ui/keyboard.ts), the one the player types into first (`tradeEntryField`): the quantity of a purchase, the price of a sale
+           of the cargo, the quantity of a sale of goods that are not in the hold. The row itself and the lookups are plain buttons. -->
       {#if side === 'buy'}
         <button type="button" class="sc-btn sc-btn--act" aria-label="Где продать {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где продать</button>
-        <button type="button" class="sc-btn sc-btn--act" aria-label="Купил {row.code}" data-opens-entry="trade-scu" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Купил</button>
+        <button type="button" class="sc-btn sc-btn--act" aria-label="Купил {row.code}" data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>Купил</button>
       {:else}
         <button type="button" class="sc-btn sc-btn--act" aria-label="Где купить {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где купить</button>
-        <button type="button" class="sc-btn sc-btn--act" aria-label="Продал {row.code}" data-opens-entry="trade-price" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Продал</button>
+        <button type="button" class="sc-btn sc-btn--act" aria-label="Продал {row.code}" data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>Продал</button>
       {/if}
     </div>
     <!-- One line, never wrapped. The warning, the plaque and the rate mark keep their size; the texts between them give way
