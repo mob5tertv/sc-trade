@@ -29,15 +29,13 @@ describe('cursorPlace: what has the cursor of the page, as the watchdog reads it
   });
 });
 
+// The rule takes the key and who holds the keyboard, and nothing else: what the field made of the key (a row of the table
+// stops it, a search box and the quick entry stop it and take its default away) is not among what it is told, so no test
+// here can show that such a field does not keep the keyboard. That is shown where the fields are, by the scenes `esc-row`,
+// `esc-quick` and `esc-search`.
 describe('escapeGivesBack: does this key give the keyboard back to the game', () => {
   it('Esc does, while the window holds the keyboard', () => {
     expect(escapeGivesBack({ key: 'Escape', keyboardHeld: true })).toBe(true);
-  });
-
-  it('whatever the field made of the key: the rule is not told, so a field that used Esc itself cannot keep the keyboard', () => {
-    // the row of the table stops the key, the search box and the quick entry stop it and take its default away
-    const used = { key: 'Escape', keyboardHeld: true, defaultPrevented: true, propagationStopped: true };
-    expect(escapeGivesBack(used)).toBe(true);
   });
 
   it('Esc with the keyboard at the game is nobody\'s business', () => {

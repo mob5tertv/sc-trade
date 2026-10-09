@@ -115,7 +115,7 @@
       event.preventDefault();
       pick(chosen.id, event.ctrlKey);
     } else if (event.key === 'Escape' && (open || query !== '' || editing)) {
-      // The first Esc closes the list; the panel collapses only on the next one.
+      // Esc closes the list and drops the query. The same press ends with the keyboard at the game (ui/keyboard.ts); the window stays open.
       event.preventDefault();
       event.stopPropagation();
       reset();

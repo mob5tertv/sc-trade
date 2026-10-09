@@ -47,7 +47,7 @@
     <SearchBox
       {items}
       find={searchTerminals}
-      value={asking ? undefined : header.location ?? undefined}
+      value={asking ? undefined : header.location ?? '' /* never without a value: with no place viewed the box still drops an unpicked query when it is left */}
       title={locationTitle}
       placeholder={locationPlaceholder(asking)}
       label="Локация: три буквы и Enter"
@@ -63,7 +63,9 @@
   {/if}
   <!-- how fresh the prices of UEX are; a click refreshes them now, and while that goes the text is its progress. While the window holds
        the keyboard the same button is the sign «Esc — в игру» (a click gives the keyboard back and refreshes nothing): the indicator stays
-       under it, unseen, so the slot keeps the width of its text, and a refresh that is going keeps going. -->
+       under it, unseen, so the slot keeps the width of its text, and a refresh that is going keeps going. For a few seconds after the
+       keyboard went back by itself the slot is the muted sign «Клавиатура у игры»: it only tells, a click does nothing then, and the
+       button says so (`aria-disabled`). -->
   <button
     class="uex"
     class:sign={face.sign}
@@ -72,6 +74,7 @@
     class:busy={face.busy}
     type="button"
     aria-busy={face.busy}
+    aria-disabled={face.muted ? 'true' : undefined}
     title={face.title}
     onclick={clickSlot}
   >

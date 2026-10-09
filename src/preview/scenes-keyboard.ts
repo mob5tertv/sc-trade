@@ -347,31 +347,36 @@ function expectSettingsSign(app: SceneApp, when: string, wanted: 'held' | 'gone'
 
 /**
  * The slot of the UEX indicator in the header of the main screen. `sign`: the sign of the keyboard that stands in it (its words, whether
- * it is muted, whether it is no wider than the slot); `null` while the slot shows the indicator. `widths`: the slot and the location
- * field beside it, in px, so that a scene can tell that a sign moved nothing.
+ * it is muted, whether it is no wider than the slot); `null` while the slot shows the indicator. `disabled`: the button of the slot says
+ * that a press on it does nothing (`aria-disabled`). `widths`: the slot and the location field beside it, in px, so that a scene can
+ * tell that a sign moved nothing.
  */
-function headerSlot(): { sign: { text: string; muted: boolean; fits: boolean } | null; widths: string } {
+function headerSlot(): { sign: { text: string; muted: boolean; fits: boolean } | null; disabled: boolean; widths: string } {
   const slot = element('header .uex');
   const keys = slot.querySelector('.keys');
   const width = (el: Element): number => el.getBoundingClientRect().width;
   return {
     sign: keys === null ? null : { text: keys.textContent ?? '', muted: slot.classList.contains('gone'), fits: keys.scrollWidth <= Math.ceil(width(slot)) },
+    disabled: slot.getAttribute('aria-disabled') === 'true',
     widths: `${width(slot)} / ${width(element('header .location'))}`,
   };
 }
 
 /** Fails the scene unless the slot of the main header shows the sign `wanted` (`null`: the UEX indicator), and the application says the same. */
 function expectHeaderSign(app: SceneApp, when: string, wanted: 'held' | 'gone' | null): void {
-  const { sign } = headerSlot();
+  const { sign, disabled } = headerSlot();
   const told = keyboardSign(app.keyboardHeld, app.keyboardGoneSign);
   const fail = (): never => {
-    throw new Error(`${when}: the sign must be ${JSON.stringify(wanted)}; the slot of the header shows ${JSON.stringify(sign)}, the application says ${JSON.stringify(told)}`);
+    throw new Error(`${when}: the sign must be ${JSON.stringify(wanted)}; the slot of the header shows ${JSON.stringify(sign)} (aria-disabled: ${disabled}), the application says ${JSON.stringify(told)}`);
   };
   if (told !== wanted) fail();
   if (wanted === null && sign !== null) fail();
   if (wanted === 'held' && !(sign !== null && sign.text === BADGE_TEXT && !sign.muted && sign.fits)) fail();
   // «Клавиатура у игры» only tells: it is muted, and it stands inside the slot «Esc — в игру» stood in
   if (wanted === 'gone' && !(sign !== null && sign.text === GONE_TEXT && sign.muted && sign.fits)) fail();
+  // a press on the slot does nothing only while that sign stands, and the button says so then and at no other time: «Esc — в игру»
+  // gives the keyboard back, the indicator refreshes the prices
+  if (disabled !== (wanted === 'gone')) fail();
 }
 
 /** Opens the settings, puts the cursor into «Вместимость» and lets the keyboard go back by itself: the scene is at the moment the sign appears. */
@@ -1003,8 +1008,10 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
   },
   {
     // A field of the settings is saved when it is left, and the return of the keyboard takes the cursor out of it: Esc used to SAVE
-    // the number. Now it takes the number back first, like the row of the table. With the real keys (the browser sends `change` when
-    // a field that was typed into is left): `--scene esc-settings --do "click:#set-budget;type:5;press:Escape;wait:400;eval:window.__keys()"`.
+    // the number. Now it takes the number back first, like the row of the table. The typing of a scene is not a hand's: the browser
+    // sends `change` when a field a HAND typed into is left, and that event is what saves a setting. So the scene sends it itself
+    // after the Esc, as the browser does at the blur of the return: it must find nothing to save.
+    // With the real keys: `--scene esc-settings --do "click:#set-budget;type:5;press:Escape;wait:400;eval:window.__keys()"`.
     name: 'esc-settings',
     title: 'Настройки: в «Бюджет» (90000) набрано другое число, ОДИН Esc — в поле снова 90000, ничего не сохранено, клавиатура у игры',
     dataset: 'default',
@@ -1021,8 +1028,81 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       await pause(60);
       await oneEscape(app, 'in a field of the settings', budget);
       if (budget.value !== '90000') throw new Error(`Esc did not take the number back: the field holds "${budget.value}", not "90000"`);
+      // the `change` of the browser at the blur of the return
+      budget.dispatchEvent(new Event('change', { bubbles: true }));
+      await pause(300);
       if (settingChanges().length !== changes) throw new Error(`Esc was pressed to take the number back, and a setting was written: ${settingChanges().at(-1)}`);
       if (app.settings.budget !== 90000) throw new Error(`the budget is ${app.settings.budget}, not 90000`);
+      if (budget.value !== '90000') throw new Error(`after the change of the blur the field holds "${budget.value}", not "90000"`);
+      if (budget.getAttribute('aria-invalid') === 'true') throw new Error('the field is marked as refused after Esc');
+    },
+  },
+  {
+    // "A new press is a new intention" holds for the return after Esc too. That return waits for the end of the press of the key; a
+    // press on a FIELD that lands before it (the mouse was on its way already) asks for the keyboard there, and the return is called
+    // off: it would take the cursor out of the field the player has just pressed. Esc has still done its part in the field it was
+    // pressed in (the draft is dropped). A press on what is no field asks for no keyboard: there one Esc ends at the game as always.
+    // The key and the press are sent in one breath here, so nothing can run between them.
+    name: 'esc-new-press',
+    title: 'Esc и тут же клик в другое поле: возврат отменён, курсор в новом поле, клавиатура у окна, черновик отброшен; Esc и клик по обычной кнопке — клавиатура у игры',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      withText('.table button.line', 'MEDS').click();
+      await pause(100);
+      const price = await clickField('.expand .in-price', 1);
+      const saved = price.value;
+      typeInto('.expand .in-price', '2400');
+      await pause(60);
+      const scu = input('.expand .in-scu');
+      keyDown(price, 'Escape');
+      scu.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      scu.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      scu.focus();
+      await pause(700);
+      expectKeyboard(app, 'after Esc and, at once, a press on another field', { held: true, holds: 'held', owner: 'overlay', cursor: 'in-scu', sign: 'held' });
+      if (escapeLines().length !== 0) throw new Error(`the press on a field did not call the return after Esc off: ${escapeLines()[0]}`);
+      if (price.value !== saved) throw new Error(`Esc did not drop the draft: the price holds "${price.value}", not "${saved}"`);
+      if (pricesWritten().length !== 0) throw new Error(`Esc was pressed to drop the price, and it was written: ${pricesWritten()[0]}`);
+      // ...and a press on a plain button
+      const route = element('header button.route');
+      keyDown(scu, 'Escape');
+      route.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      route.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      await until('the keyboard to go back to the game after Esc and a press on a plain button', () => !app.keyboardHeld, 1000);
+      await pause(300);
+      expectKeyboard(app, 'after Esc and, at once, a press on a plain button', { held: false, owner: 'game', cursor: null, sign: null });
+      if (escapeLines().length !== 1) throw new Error(`the log must say once that Esc gave the keyboard back, and it says so ${escapeLines().length} times`);
+      if (pricesWritten().length !== 0) throw new Error(`nothing was confirmed, and a price was written: ${pricesWritten()[0]}`);
+    },
+  },
+  {
+    // The location box on a fresh install shows no place: no terminal is viewed. It must drop a query that was typed and not picked
+    // when the cursor leaves it, like everywhere else; a box with no value to go back to used to keep it. The scene has no dataset
+    // without a place, so it views a terminal the reference does not know: the header has no name to show for it either.
+    name: 'query-left-no-place',
+    title: 'Поле локации без места (как после установки): набран запрос, курсор ушёл в другое поле — запрос сброшен, список закрыт',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      app.setViewTerminal(9999);
+      element('button.entry').click();
+      await pause(100);
+      const box = input(LOCATION);
+      if (box.value !== '') throw new Error(`the scene needs a location box that shows no place, and it shows "${box.value}"`);
+      await hoverAndPress(LOCATION);
+      await until('the cursor in the location box', cursorIn(LOCATION));
+      for (const char of 'arc') typeKey(LOCATION, char);
+      await pause(100);
+      if (document.querySelector('header .location .list') === null) throw new Error('the scene needs the list of the location box open');
+      // the player presses another field: the cursor leaves the box
+      await clickField(QUICK_PRICE, 0);
+      await until('the cursor in the price of the quick entry', cursorIn(QUICK_PRICE));
+      if (box.value !== '') throw new Error(`the query is still in the location box after the cursor left it: "${box.value}"`);
+      if (document.querySelector('header .location .list') !== null) throw new Error('the list of the location box is still open');
+      expectKeyboard(app, 'with the cursor in the price', { held: true, owner: 'overlay', cursor: 'quick in-price' });
     },
   },
   {

@@ -165,7 +165,8 @@
       // a key held down repeats Enter: one press is one "I see this now", not a stream of readings
       if (!e.repeat) commit(commodityId, side, cell, 'enter');
     } else if (e.key === 'Escape' && drafts[key]) {
-      // takes back what was typed; with nothing typed Esc goes on and closes the panel
+      // takes back what was typed. Typed or not, the same press ends with the keyboard at the game (ui/keyboard.ts), after this:
+      // the blur of that return finds no draft to save. The window stays open.
       e.stopPropagation();
       delete drafts[key];
     }

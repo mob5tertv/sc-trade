@@ -22,7 +22,7 @@ import { createTypingMemory, entryText, KEYBOARD_IDLE_MS, keyboardUnused, type E
 //    of the header says «Esc — в игру»), and the window stays open. The field deals with what was typed into it first (the
 //    row of the table drops its draft, a search box closes its list and drops the query, the quick entry empties the field,
 //    the form of a trade closes, a field of the settings takes its saved number back), and only then the cursor is taken out
-//    of it: see `afterEscape`;
+//    of it: see `afterEscape`. A press on a field that lands before that calls the return off (a new press is a new intention);
 //  - a watchdog gives the keyboard back when the field is gone (an answer was sent and the screen was redrawn), and
 //    while the window is armed keeps the remembered window (the one the focus goes back to) up to date. The cursor of the
 //    page on a side of the switch «Куп.» / «Прод.» (it comes there by Tab) is not "the field is gone": a control inside a
@@ -333,6 +333,16 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger, goneByItself:
       giveBack();
     }, 0);
   };
+  /**
+   * The return that Esc has asked for is called off: the player pressed a field (or a button that opens an entry) before it
+   * happened. A new press is a new intention, and this one asks for the keyboard: the return would take the cursor out of
+   * the very field he has pressed. Esc has done its part in the field it was pressed in all the same. A press on what is no
+   * field asks for no keyboard and calls nothing off: there one Esc still ends at the game.
+   */
+  const escapeCalledOff = (): void => {
+    window.clearTimeout(escapeReturn);
+    escapeReturn = undefined;
+  };
 
   // Capture phase on the window: it runs before the field and the search list.
   const onKeyDownCapture = (event: KeyboardEvent): void => {
@@ -503,6 +513,8 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger, goneByItself:
     lastPressAt = pressedAt;
     // the player is back at a field: he need not be told any longer that the keyboard had gone by itself
     goneSignOver();
+    // ...and a return that Esc asked for a moment ago is not what he wants any more
+    escapeCalledOff();
     if (!holds.held) {
       const armed = holds.state === 'armed';
       if (entry === null) log.debug('ui', 'field pressed, the window needs the keyboard', { field: field.id || field.tagName, armed });
@@ -593,7 +605,7 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger, goneByItself:
 
   return () => {
     window.clearInterval(watchdog);
-    window.clearTimeout(escapeReturn);
+    escapeCalledOff();
     goneSignOver();
     stopEntryLook();
     window.removeEventListener('keydown', onKeyDownCapture, true);
