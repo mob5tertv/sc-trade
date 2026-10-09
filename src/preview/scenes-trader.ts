@@ -54,7 +54,38 @@ async function openDataSettings(app: SceneApp): Promise<void> {
   await pause(100);
 }
 
+/** The window at its narrowest (380 px) with only the section "Мои маршруты" open, on the list `view`: what is left of the two ends of a long route. */
+async function openNarrowStats(app: SceneApp, view: 'Маршруты' | 'История'): Promise<void> {
+  await app.updateSetting('panelWidth', 380);
+  await app.expand('preview');
+  await app.toggleSection('terminal');
+  await app.toggleSection('routes');
+  await pause(60);
+  if (view !== 'Маршруты') {
+    const tab = [...document.querySelectorAll<HTMLElement>('.sc-seg button')].find((el) => (el.textContent ?? '').includes(view));
+    if (tab === undefined) throw new Error(`the scene wants the tab "${view}", and there is none`);
+    tab.click();
+    await pause(60);
+  }
+}
+
 export const TRADER_SCENES: readonly Scene[] = [
+  { name: 'stats-routes-narrow', title: 'Мои маршруты: рейтинг маршрутов в самом узком окне (380 px)', dataset: 'stats', act: (app) => openNarrowStats(app, 'Маршруты') },
+  { name: 'stats-history-narrow', title: 'Мои маршруты: история рейсов в самом узком окне (380 px)', dataset: 'stats', act: (app) => openNarrowStats(app, 'История') },
+  {
+    // "Где купить" for HUR-L1 over the data of the run: Tungsten from Admin 4 rests on a stock nobody knows (the «?»), and pays better per hour than
+    // five trips with a known stock that stand above it; with the ROI (`--do "click:.sc-seg[aria-label=Сортировка] button:nth-child(2)"`) it still
+    // stands below every known one. Twelve options are asked for, so that the whole list is on the screen.
+    name: 'options-unknown-stock',
+    title: 'Варианты «Где купить» для HUR-L1: вариант с «?» (запас неизвестен) стоит ниже всех, у кого запас известен, при любой сортировке',
+    dataset: 'run',
+    act: async (app) => {
+      await app.updateSetting('topN', 12);
+      await app.expand('preview');
+      await app.runLookup({ kind: 'to', terminalId: 3, commodityId: null, price: null });
+      await pause(500);
+    },
+  },
   {
     // a run is going: the button asks first, in a line under the header (`--do "click:.quit;wait:200"`)
     name: 'settings-quit-run',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  arrivalAsksWhere, locationFieldTitle, locationPlaceholder, pickEffect, WHERE_ARRIVED_PLACEHOLDER,
+  arrivalAsksWhere, askedInRun, locationFieldTitle, locationPlaceholder, pickEffect, WHERE_ARRIVED_PLACEHOLDER,
 } from '../../src/ui/vm/terminal-pick';
 
 const ARC_L1 = 1;
@@ -37,6 +37,22 @@ describe('arrivalAsksWhere: the field of the location is asked to say where the 
   it('a take-off does not, with a target or without one', () => {
     expect(arrivalAsksWhere('depart', null)).toBe(false);
     expect(arrivalAsksWhere('depart', ARC_L1)).toBe(false);
+  });
+});
+
+describe('askedInRun: the question belongs to the run it was asked in', () => {
+  it('is on while the run that was asked in is the one that goes', () => {
+    expect(askedInRun(7, 7)).toBe(true);
+  });
+
+  it('is off without a question, and without a run', () => {
+    expect(askedInRun(null, 7)).toBe(false);
+    expect(askedInRun(7, null)).toBe(false);
+    expect(askedInRun(null, null)).toBe(false);
+  });
+
+  it('is off in another run: a question that was never answered does not come back in the next run', () => {
+    expect(askedInRun(7, 8)).toBe(false);
   });
 });
 

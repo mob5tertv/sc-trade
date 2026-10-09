@@ -9,8 +9,8 @@
     /** A one-line summary in the header, cut with an ellipsis. */
     summary?: string;
     /**
-     * The same summary in pieces that give way to each other equally, each cut with an ellipsis of its own (`titlePieces`: what is asked, the terminal,
-     * the rest), so that the name of the terminal is not the first thing the line loses. `summary` stays the text of the tooltip.
+     * The same summary in two pieces that give way to each other equally, each cut with an ellipsis of its own (`titlePieces`: what is asked, and the terminal
+     * with what follows it), so that the name of the terminal is not the first thing the line loses. `summary` stays the text of the tooltip.
      */
     summaryPieces?: Piece[];
     /** The tooltip of the header when it has more to say than the title and the summary (where the terminal is, say). */

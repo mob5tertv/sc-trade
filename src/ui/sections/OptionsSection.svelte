@@ -23,7 +23,7 @@
   const open = $derived(app.sectionOpen(SECTION));
   const needsCapacity = $derived(app.settings.scuCapacity <= 0);
   const summary = $derived(optionsSummary({ title: lookup.title, preliminary: lookup.preliminary, progress: lookup.progress }));
-  // what is asked, the terminal and the rest give way to each other equally in the header, each with its own ellipsis: the name of the terminal is not
+  // what is asked, and the terminal with what follows it, give way to each other equally in the header, each with its own ellipsis: the name of the terminal is not
   // the first thing a narrow window loses ('Где купить Gold для TDD Area …')
   const summaryPieces = $derived(
     summary === '' || request === null ? undefined : titlePieces(summary, terminalLabel(app.reference, request.terminalId)),

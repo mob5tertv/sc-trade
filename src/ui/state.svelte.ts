@@ -62,7 +62,7 @@ import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, refreshPl
 import { stripModel, type StripModel } from './vm/strip';
 import { rowRoiMap, type RowRoi } from './vm/row-roi';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
-import { arrivalAsksWhere, pickEffect } from './vm/terminal-pick';
+import { arrivalAsksWhere, askedInRun, pickEffect } from './vm/terminal-pick';
 import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
 import { bindNeeded, boundAfter, withoutErrorsOfEmptyKeys } from './vm/trigger-suspension';
@@ -189,7 +189,7 @@ const CONFIRM_BUSY = 'confirm';
 const TRADE_FAILED = 'Не удалось записать сделку. Подробности в логе.';
 const CLEAR_FAILED = 'Не удалось очистить историю. Подробности в логе.';
 const RUN_READ_FAILED = 'Не удалось прочитать рейс из базы. Подробности в логе.';
-const NO_CURRENT_LOCATION = 'Сначала укажи, где ты находишься: найди локацию в поиске и нажми «Я здесь».';
+const NO_CURRENT_LOCATION = 'Сначала укажи, где ты находишься: выбери локацию в поиске (в рейсе — Ctrl+Enter или «Я здесь»).';
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
 
@@ -314,14 +314,15 @@ class AppState {
    * Change it through `#showTerminal`, which also settles the side of the table.
    */
   viewTerminalId = $state<number | null>(null);
-  /** An arrival was marked with no target and nothing has said where the ship landed since (`askingWhere`). */
-  #arrivedWithoutTarget = $state(false);
+  /** The id of the run an arrival was marked in with no target, and nothing has said where the ship landed since; `null` when there is no such question (`askingWhere`). In memory only. */
+  #askedInRun = $state<number | null>(null);
   /**
    * The field of the location asks "Где прилетел?": an arrival was marked with no target, so nothing tells where the ship has landed, and the
    * next terminal chosen in the field becomes the current location (`pickTerminal`). It ends with that choice, a trade, a take-off, and the
-   * end of the run (it holds only while a run goes on: the end of a run, a lost cargo and a cleared history all leave none).
+   * end of the run. The question belongs to the run it was asked in (`askedInRun`): the end of that run, a lost cargo and a cleared history
+   * leave none, and it cannot come back in another run.
    */
-  askingWhere = $derived(this.#arrivedWithoutTarget && this.activeRun !== null);
+  askingWhere = $derived(askedInRun(this.#askedInRun, this.activeRun?.run.id ?? null));
   phase = $state<Phase>('booting');
   /** One line for the strip while the application starts. */
   bootStatus = $state('Запуск…');
@@ -1175,7 +1176,10 @@ class AppState {
 
   // ---- actions of the player ----------------------------------------------------------------------
 
-  /** The location search of the header: only changes what the Terminal section shows. */
+  /**
+   * Only changes what the Terminal section shows; the current location stays. For whatever merely looks at a terminal (the scenes of the preview
+   * use it). A choice in the field of the location of the header is `pickTerminal`, which may also make it the current location.
+   */
   setViewTerminal(id: number): void {
     this.#log.info('ui', 'view terminal', { terminalId: id });
     this.#showTerminal(id);
@@ -1184,7 +1188,7 @@ class AppState {
   /** "Я здесь": the viewed terminal becomes the current location. */
   async setCurrentTerminal(id: number): Promise<void> {
     if ((await this.#setLocation(id)) === null) {
-      this.#arrivedWithoutTarget = false; // the question "Где прилетел?" is answered
+      this.#askedInRun = null; // the question "Где прилетел?" is answered
       this.#showTerminal(id);
     }
   }
@@ -1199,7 +1203,7 @@ class AppState {
     const askingWhere = this.askingWhere;
     const effect = pickEffect({ runGoing: this.activeRun !== null, ctrl, askingWhere });
     this.#log.info('ui', 'pick terminal', { terminalId: id, effect, ctrl, askingWhere });
-    this.#arrivedWithoutTarget = false;
+    this.#askedInRun = null;
     this.#showTerminal(id);
     if (effect === 'here') await this.#locateAt(id);
   }
@@ -1581,7 +1585,7 @@ class AppState {
       }
       await this.#reloadRun(mayHaveWritten);
       if (failure === null) {
-        this.#arrivedWithoutTarget = false; // a trade says where the ship is: it is the terminal of the trade
+        this.#askedInRun = null; // a trade says where the ship is: it is the terminal of the trade
         await this.#locateAt(input.terminalId);
         if (startsRun) void this.openSection(RUN_SECTION);
       }
@@ -1625,7 +1629,7 @@ class AppState {
       await this.#reloadRun(mayHaveWritten);
       if (income && mayHaveWritten) void stats.reload('income sale');
       if (failure === null) {
-        this.#arrivedWithoutTarget = false; // a trade says where the ship is: it is the terminal of the trade
+        this.#askedInRun = null; // a trade says where the ship is: it is the terminal of the trade
         await this.#locateAt(input.terminalId);
       }
       return failure;
@@ -1659,7 +1663,7 @@ class AppState {
       if (failure === null) {
         const cargoAboard = cargoOf(this.activeRun?.events ?? []).length > 0;
         // an arrival with no target does not know where the ship landed: the field of the location asks (`askingWhere`); a take-off ends the question
-        this.#arrivedWithoutTarget = arrivalAsksWhere(type, this.settings.targetTerminalId);
+        this.#askedInRun = arrivalAsksWhere(type, this.settings.targetTerminalId) ? this.activeRun?.run.id ?? null : null;
         await this.#followTarget(arrivalView(type, this.settings.targetTerminalId, cargoAboard, this.settings.currentTerminalId));
       }
       return failure;
@@ -1690,7 +1694,7 @@ class AppState {
   /** A run is over (the hold was sold or lost): the target of that run goes. Called before the state reads the run that is over. */
   async #runEnded(how: 'done' | 'lost'): Promise<void> {
     this.#log.info('ui', 'run ended, the target is cleared', { how });
-    this.#arrivedWithoutTarget = false;
+    this.#askedInRun = null;
     await this.updateSetting('targetTerminalId', null);
   }
 

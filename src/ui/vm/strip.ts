@@ -127,7 +127,7 @@ export function stripModel(
     target: terminalName(target),
     profit: expected === null ? null : expectedProfitText(expected.profit, true),
     profitLoss: expected !== null && expected.profit < 0,
-    rate: expected?.rate == null ? null : `${formatCompact(expected.rate)}/ч`,
+    rate: expected === null || expected.rate === null ? null : `${formatCompact(expected.rate)}/ч`,
   };
 }
 
@@ -139,14 +139,17 @@ export function outlookText(model: StripModel): string | null {
 
 /**
  * Everything the strip knows, for the tooltip of the line (the line itself cuts a long cargo): the location with the target and the session
- * without a run; the phase with its timer, the whole time of the run, the cargo, the target and the outlook of the run.
+ * without a run; with a run the phase with its timer, the whole time of the run, the target and the outlook of the run on the first line, and then a
+ * line for every commodity of the hold (`cargoTitle`: the quantity, what it was bought for and what it is expected to sell for), so that the expected
+ * price of each is under the cursor anywhere on the line, also with several commodities, where the line itself names none.
  */
 export function stripTitle(model: StripModel): string {
-  const parts = model.kind === 'idle'
-    ? [model.target === null ? model.location : `${model.location} → ${model.target}`, model.session?.line]
-    : [
-      `${model.phaseLabel} ${model.phaseTimer}`, `всего ${model.timer}`, model.cargoLine,
-      model.target === null ? 'цель не выбрана' : `→ ${model.target}`, outlookText(model),
-    ];
-  return parts.filter(Boolean).join(' · ');
+  if (model.kind === 'idle') {
+    return [model.target === null ? model.location : `${model.location} → ${model.target}`, model.session?.line].filter(Boolean).join(' · ');
+  }
+  const head = [
+    `${model.phaseLabel} ${model.phaseTimer}`, `всего ${model.timer}`,
+    model.target === null ? 'цель не выбрана' : `→ ${model.target}`, outlookText(model),
+  ].filter(Boolean).join(' · ');
+  return model.cargoTitle === '' ? head : `${head}\n${model.cargoTitle}`;
 }

@@ -31,7 +31,7 @@
 <Frame name="run" caption="a run with BOTH mark buttons (more than the owner gives): two commodities with what they were bought for, the line whole" width="content">
   <StripView model={data.strip.run} flash={null} onOpen={open} onDepart={open} onArrive={open} />
 </Frame>
-<Frame name="run-arrive" caption="a run: timer · cargo · → target · wait for the price · rate, and the one button of the next mark: the cargo is whole" width="content">
+<Frame name="run-arrive" caption="a run: timer · cargo · → target · the profit expected and the rate, and the one button of the next mark: the cargo is whole" width="content">
   <StripView model={data.strip.run} flash={null} onOpen={open} onArrive={open} />
 </Frame>
 <Frame name="run-bare" caption="a run without mark buttons" width="content">
@@ -55,9 +55,9 @@
 <Frame name="cargo-one-far" caption="the widest line of one commodity: the same with the longest name of a target (Seraphim Station): only the cargo may be cut" width="content">
   <StripView model={{ ...data.strip.cargo.one, target: 'Seraphim Station' }} flash={null} onOpen={open} onDepart={open} />
 </Frame>
-<Frame name="cargo-two" caption="two commodities: no SCU, each with what it was bought for (seven digits)" width="content">
+<Frame name="cargo-two" caption="two commodities: no SCU, each with what it was bought for (seven digits), and no «ждём» (which commodity would it be for? it is in the tooltip, a line for each)" width="content">
   <StripView model={data.strip.cargo.two} flash={null} onOpen={open} onDepart={open} />
 </Frame>
-<Frame name="cargo-three" caption="three commodities with seven-digit prices: the cargo is cut with an ellipsis, the target, the expectation, the rate and the button stay whole" width="content">
+<Frame name="cargo-three" caption="three commodities with seven-digit prices: the cargo is cut with an ellipsis, the target, the profit expected, the rate and the button stay whole" width="content">
   <StripView model={data.strip.cargo.three} flash={null} onOpen={open} onDepart={open} />
 </Frame>

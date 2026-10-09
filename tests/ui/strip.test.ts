@@ -350,12 +350,31 @@ describe('stripModel', () => {
   });
 
   describe('the tooltip of the whole line: everything the line knows, the cargo cut or not', () => {
-    it('says the phase, the whole time, the cargo as the line says it, the target, then the profit and the rate', () => {
+    it('says the phase, the whole time, the target, the profit and the rate, then a line for each commodity of the hold', () => {
       expect(stripTitle(stripModel(active, market, ref, toTarget2, ctx)))
-        .toBe(`ПОГРУЗКА 14:32 · всего 14:32 · GOLD 96 SCU по 6${NBSP}120, ждём 6${NBSP}900 · → TDD Area 18 · ≈ +74${NBSP}880 · 266k/ч`);
+        .toBe(`ПОГРУЗКА 14:32 · всего 14:32 · → TDD Area 18 · ≈ +74${NBSP}880 · 266k/ч\nGOLD 96 SCU · куплено по 6${NBSP}120 · ждём 6${NBSP}900`);
+    });
+    it('with several commodities carries the expected price of every one, so that it is under the cursor anywhere on the line, not only over the cargo', () => {
+      const both = withUexSell(market, 2, TITA, 3000);
+      expect(stripTitle(stripModel(mixedRun, both, ref, toTarget2, ctx))).toBe([
+        `ПОГРУЗКА 14:32 · всего 14:32 · → TDD Area 18 · ≈ +94${NBSP}880 · 337k/ч`,
+        `GOLD 96 SCU · куплено по 6${NBSP}120 · ждём 6${NBSP}900`,
+        `TITA 40 SCU · куплено по 2${NBSP}500 · ждём 3${NBSP}000`,
+      ].join('\n'));
+    });
+    it('leaves "ждём" out of the line of a commodity the target has no price for', () => {
+      expect(stripTitle(stripModel(mixedRun, market, ref, toTarget2, ctx))).toBe([
+        `ПОГРУЗКА 14:32 · всего 14:32 · → TDD Area 18`,
+        `GOLD 96 SCU · куплено по 6${NBSP}120 · ждём 6${NBSP}900`,
+        `TITA 40 SCU · куплено по 2${NBSP}500`,
+      ].join('\n'));
     });
     it('says that the target is not chosen and has no profit to tell', () => {
-      expect(stripTitle(stripModel(active, market, ref, s, ctx))).toBe(`ПОГРУЗКА 14:32 · всего 14:32 · GOLD 96 SCU по 6${NBSP}120 · цель не выбрана`);
+      expect(stripTitle(stripModel(active, market, ref, s, ctx))).toBe(`ПОГРУЗКА 14:32 · всего 14:32 · цель не выбрана\nGOLD 96 SCU · куплено по 6${NBSP}120`);
+    });
+    it('has no lines of commodities when nothing is left in the hold', () => {
+      const soldAll = withEvents(active, ev({ id: 3, runId: 1, ts: NOW - 100, type: 'sell', terminalId: 2, commodityId: GOLD, scu: 96, price: 6900 }));
+      expect(stripTitle(stripModel(soldAll, market, ref, toTarget2, ctx))).not.toContain('\n');
     });
     it('of a line without a run is the location, the target and the session', () => {
       const gain = sessionFigure(currentSession(sessionEndedAgo(10 * MINUTE, 1_240_000), CLOCK));

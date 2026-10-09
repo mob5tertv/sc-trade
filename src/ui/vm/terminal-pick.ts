@@ -27,6 +27,14 @@ export function arrivalAsksWhere(type: 'depart' | 'arrive', targetTerminalId: nu
   return type === 'arrive' && targetTerminalId === null;
 }
 
+/**
+ * The question "Где прилетел?" belongs to the run it was asked in (`askedIn`: its id, `null` without a question): it is on while that run is the
+ * one that goes (`activeId`), and off in another run, so a question that was never answered cannot come back in the next run.
+ */
+export function askedInRun(askedIn: number | null, activeId: number | null): boolean {
+  return askedIn !== null && askedIn === activeId;
+}
+
 const LOCATION_PLACEHOLDER = 'Локация…';
 export const WHERE_ARRIVED_PLACEHOLDER = 'Где прилетел?';
 
