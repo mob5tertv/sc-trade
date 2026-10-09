@@ -12,10 +12,17 @@ const nb = (s: string) => s.replace(/ /g, ' ');
 
 describe('routeRows', () => {
   it('formats a route row', () => {
-    expect(routeRows(routeStats([R1, withMarks(R2, 300, 1000, 500)]), ref)[0]).toEqual({
+    const stats = routeStats([R1, withMarks(R2, 300, 1000, 500)]);
+    expect(routeRows(stats, ref)[0]).toEqual({
       key: '1>2:10', route: 'ARC-L1 → TDD Area 18', commodity: 'GOLD', runs: 2, time: '35:00',
-      phases: '5:00 · 16:40 · 8:20', profit: nb('545 000'), roi: '12%', rate: '467k',
+      phases: '5:00 · 16:40 · 8:20', profit: nb('545 000'), roi: '12%', rate: '467k', stat: stats[0],
     });
+  });
+
+  it('keeps the statistic a row was made of: the numbers the table is sorted by', () => {
+    const stats = [{ ...stat, destId: 3 }, stat];
+    expect(routeRows(stats, ref).map(r => r.stat)).toEqual(stats);
+    expect(routeRows(stats, ref)[1].stat).toBe(stat);
   });
 
   it('writes the ROI the way the list of options does and the rate without its unit (the caption says UEC/ч)', () => {

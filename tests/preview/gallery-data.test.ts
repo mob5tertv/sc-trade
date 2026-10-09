@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { Db } from '../../src/data/db';
 import { LADDER_ROI, NO_DATA_TERMINAL, VIEWED_TERMINAL, type GalleryData } from '../../src/preview/gallery/data';
 import { routeOptionRow } from '../../src/ui/vm/route-rows';
+import { DEFAULT_ROUTE_SORT, FIRST_DIR, ROUTE_SORT_KEYS, sortRoutes, type RouteSort } from '../../src/ui/vm/route-sort';
 import { roiTier } from '../../src/ui/vm/roi-tier';
 import { sideCounts } from '../../src/ui/vm/terminal-rows';
 import { galleryWithDiary, priceMoves } from '../helpers/price-trend-fixtures';
@@ -263,6 +264,19 @@ describe('the gallery run, mini line and history', () => {
     if (data.strip.noTarget.kind !== 'run') throw new Error('expected a run');
     expect(data.strip.noTarget).toMatchObject({ target: null, expect: null, rate: null });
     expect(data.strip.noTarget.cargoTitle).not.toContain('ждём');
+  });
+
+  it('has routes that a sort puts in a different order by every column, one of them at a loss', () => {
+    expect(data.routeStats.length).toBeGreaterThanOrEqual(5);
+    const first = (sort: RouteSort): string => sortRoutes(data.routeStats, sort)[0].key;
+    const firsts = new Set(ROUTE_SORT_KEYS.map((key) => first({ key, dir: FIRST_DIR[key] })));
+    expect(firsts.size).toBeGreaterThanOrEqual(3);
+    // the time puts another route on top than the ROI does, and the rate another than the time
+    expect(first({ key: 'time', dir: 'asc' })).not.toBe(first({ key: 'roi', dir: 'desc' }));
+    expect(first({ key: 'time', dir: 'asc' })).not.toBe(first(DEFAULT_ROUTE_SORT));
+    // the order of the core is the order of the rate, best first
+    expect(sortRoutes(data.routeStats, DEFAULT_ROUTE_SORT).map((row) => row.key)).toEqual(data.routeStats.map((row) => row.key));
+    expect(data.routeStats.some((row) => row.stat.totalProfit < 0)).toBe(true);
   });
 
   it('has the card of the run, the sale decision and the three lists of the player', () => {

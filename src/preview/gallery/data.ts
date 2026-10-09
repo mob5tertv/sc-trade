@@ -25,6 +25,7 @@ import { defaultSide } from '../../ui/vm/quick-entry';
 import { rowRoiMap } from '../../ui/vm/row-roi';
 import type { RowRoi } from '../../ui/vm/row-roi';
 import { BUY_PRICES, LORVILLE, SELL_PRICES } from '../scenes-roi';
+import { routeRuns } from './route-runs';
 import { runOutlook } from '../../ui/vm/run-outlook';
 import type { RunOutlook } from '../../ui/vm/run-outlook';
 import { phaseLine, runPhases } from '../../ui/vm/run-phase';
@@ -379,7 +380,8 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
 
   const history = historyRows(runs, reference, now);
   const sessionList = sessionRows(sessions(await allRecordTimestamps(db), runs));
-  const stats = routeRows(routeStats(runs), reference);
+  // the dataset has one finished route; the table of routes also gets finished runs of other routes, so that a sort has something to put in order
+  const stats = routeRows(routeStats([...runs, ...routeRuns(now, (code) => commodityByCode(reference, code))]), reference);
 
   // the prices the player saw at the viewed terminal, then its table
   await writePlayerPrices(deps, reference);

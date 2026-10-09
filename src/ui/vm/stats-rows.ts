@@ -31,11 +31,14 @@ export interface RouteRow {
   /** Loading · flight · unloading, or `null` when no run of the route has both marks. */
   phases: string | null;
   profit: string; roi: string; rate: string;
+  /** The statistic the row was made of: the numbers behind the text, which the table is sorted by (`route-sort.ts`). */
+  stat: RouteStat;
 }
 
 /** One row per route statistic, in the given order (`routeStats` sorts them, best rate first). */
 export function routeRows(stats: RouteStat[], ref: Reference): RouteRow[] {
   return stats.map(s => ({
+    stat: s,
     key: `${pairKey(s.originId, s.destId)}:${s.commodityId}`,
     route: routeName(ref, s.originId, s.destId),
     commodity: commodityName(ref, s.commodityId),
