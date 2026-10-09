@@ -288,13 +288,24 @@ export function createFeedback({ settings, store, limiter, now, log }) {
       if (over) return;
       // the limit of the whole body, counted as it is read: what the head of the request said about it is not believed
       if (received > limits.bodyBytes) return fail(new Refusal('file_too_big'));
-      if (!parser.write(chunk)) {
-        req.pause();
-        parser.once('drain', () => req.resume());
+      // whatever a body is made of, the worst it can do is not be the form: an error the parser throws at it is a
+      // refusal of this one request, never the end of the service
+      try {
+        if (!parser.write(chunk)) {
+          req.pause();
+          parser.once('drain', () => req.resume());
+        }
+      } catch {
+        fail(notTheForm());
       }
     });
     req.on('end', () => {
-      if (!over) parser.end();
+      if (over) return;
+      try {
+        parser.end();
+      } catch {
+        fail(notTheForm());
+      }
     });
     req.on('error', () => finish('aborted'));
     // the sender went away before the answer

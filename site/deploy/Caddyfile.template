@@ -2,10 +2,32 @@
 #
 # This file is made by `npm run site:build` from site/deploy/Caddyfile.template: change the template or
 # site/site.config.json, never the built copy (site/dist-deploy/Caddyfile). It is NOT part of site/dist and is never
-# uploaded by `npm run site:deploy`; it is put in place once, when the server is set up.
+# uploaded by `npm run site:deploy`; setup.sh, which lies next to the built copy, puts it in place on the server —
+# after Caddy itself has said that the file is good.
 #
 # Caddy gets the certificate for the domain and sends http:// to https:// by itself: nothing here asks for it.
 # Check a changed file on the server before using it: `caddy validate --config /etc/caddy/Caddyfile`.
+
+# The log of the web server. Errors only, in a file of its own; there is no access log — nothing here writes down
+# who opened which page. When Caddy fails on a request, the entry holds the address the request came from, and not
+# the headers it carried. The page of the site about data promises that this log is kept for 30 days at the most:
+# Caddy alone turns a log over only when it grows big, so it does not turn this one over at all ("roll_disabled",
+# which also makes it open the file for appending), and logrotate does it by the day — the rule lies next to this
+# file (logrotate.conf) and setup.sh puts it in place.
+{
+	log {
+		output file /var/log/caddy/sc-trade-error.log {
+			roll_disabled
+		}
+		format filter {
+			wrap json
+			fields {
+				request>headers delete
+			}
+		}
+		level ERROR
+	}
+}
 
 # The headers every answer carries, the pages of errors too.
 (security) {
@@ -53,10 +75,12 @@
 		error 404
 	}
 
-	# The feedback service: a small Node program on this very server. It comes with the next task (task 53);
-	# until it runs, these addresses answer "502 Bad Gateway" and the form on the page says that sending failed.
+	# The feedback service: a small Node program on this very server (`systemctl status sc-trade-site`). It takes
+	# the messages of the form (/api/feedback) and shows them to the author behind a password (/admin/). While it
+	# is down, these addresses answer "502 Bad Gateway" and the form on the page says that sending failed.
 	# No request bigger than a full message is let through to it: three pictures of 5 MB, a log of 2 MB, the text
-	# and the envelope of the form (a bigger one is answered "413", which the page reads as "the file is too big").
+	# and the envelope of the form. The service has a limit of its own, lower than this one, and answers a body
+	# that is too big itself, with what the page reads as "the file is too big".
 	@service path /api /api/* /admin /admin/*
 	handle @service {
 		request_body {

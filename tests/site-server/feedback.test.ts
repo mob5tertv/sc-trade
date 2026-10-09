@@ -354,6 +354,59 @@ describe('what is not the form of the page is refused', () => {
   });
 });
 
+describe('a body made to break the service', () => {
+  /** A stream of numbers that is the same every time: a test that fails here fails again the same way. */
+  function chance(seed: number) {
+    let state = seed >>> 0;
+    return (below: number) => {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      return state % below;
+    };
+  }
+
+  it('is answered with the JSON of the contract, whatever it is: 400 bodies, each a real form with something broken in it', async () => {
+    const run = await start({ limits: { attemptsPerAddressHour: 100_000, perAddressHour: 100_000, perAddressDay: 100_000, globalHour: 100_000 } });
+    const pick = chance(20261010);
+    const whole = multipart([...fields(run.clock), shot(PNG, 'a.png'), shot(JPEG, 'b.jpg'), logFile()]);
+    const pieces = ['\r\n', '--', `--${whole.type.split('boundary=')[1]}`, 'Content-Disposition: form-data; name="', 'filename="', '"', ';', '\u0000', 'Content-Type: ', '\r\n\r\n', 'multipart/mixed; boundary=x', '=?utf-8?B?', "filename*=UTF-8''%", '\\', 'ÿþ'];
+    const statuses = new Map<number, number>();
+    for (let n = 0; n < 400; n++) {
+      let body = Buffer.from(whole.body);
+      for (let changes = 1 + pick(4); changes > 0; changes--) {
+        const at = pick(body.length);
+        const kind = pick(6);
+        if (kind === 0) body[at] = pick(256);
+        else if (kind === 1) body = body.subarray(0, at);
+        else if (kind === 2) body = Buffer.concat([body.subarray(0, at), body.subarray(at + 1 + pick(40))]);
+        else if (kind === 3) body = Buffer.concat([body.subarray(0, at), Buffer.from(pieces[pick(pieces.length)], 'latin1'), body.subarray(at)]);
+        else if (kind === 4) body = Buffer.concat([body.subarray(0, at), body.subarray(pick(body.length), body.length)]);
+        else body = Buffer.concat([body, body.subarray(at)]);
+        if (body.length === 0) break;
+      }
+      const type = pick(20) === 0 ? ['multipart/form-data; boundary=', 'multipart/form-data; boundary="', 'multipart/form-data;boundary=é', `${whole.type}; charset=x`][pick(4)] : whole.type;
+      const reply = await request(run.port, { method: 'POST', path: '/api/feedback', headers: { 'Content-Type': type, Origin: ORIGIN, 'X-Forwarded-For': SENDER }, body });
+      statuses.set(reply.status, (statuses.get(reply.status) ?? 0) + 1);
+      expect(reply.headers['content-type'], `body ${n}`).toBe('application/json; charset=utf-8');
+      expect(reply.headers['set-cookie']).toBeUndefined();
+      const answer = reply.json as { ok?: unknown; error?: unknown };
+      if (reply.status === 200) expect(answer).toEqual(OK);
+      else {
+        expect(reply.status).toBeGreaterThanOrEqual(400);
+        expect(answer.ok).toBe(false);
+        expect(['too_short', 'too_long', 'too_many_files', 'file_too_big', 'bad_file_type', 'spam', 'server']).toContain(answer.error);
+      }
+    }
+    // most of them were refused, in more than one way; the service is still there and takes a good message
+    expect([...statuses.keys()].filter((status) => status >= 400).length).toBeGreaterThanOrEqual(2);
+    expect((await send(run, fields(run.clock))).json).toEqual(OK);
+    await until(() => tmpOf(run.dir).length === 0);
+    // whatever was kept is a whole message under names of the service, and no line of the log is an error of the code
+    for (const file of listFiles(run.dir)) expect(file).toMatch(/^(messages\/[0-9a-f]{32}\.json|files\/[0-9a-f]{32}\/[0-9a-f]{32}\.(png|jpg|txt))$/);
+    // (a refusal says why in one of four words; any other word would be an error of the system or of the code)
+    expect(run.lines.filter((line) => / error | why=(?!(form|type|trap|fast)$)/.test(line))).toEqual([]);
+  }, 60_000);
+});
+
 describe('the name a sender gives a file never reaches the disk', () => {
   it('is kept as text only: slashes, dots, zero bytes and length change nothing about where a file is put', async () => {
     const outer = tempDir();

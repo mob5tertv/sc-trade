@@ -27,7 +27,8 @@ afterAll(() => {
       expect(path).toMatch(/^\/admin\/(login|logout)$/);
       expect(cookie).toMatch(new RegExp(`^${COOKIE}=[A-Za-z0-9_-]*; Path=/admin; Max-Age=\\d+; HttpOnly; Secure; SameSite=Strict$`));
     }
-    if (String(reply.headers['content-type']).startsWith('text/html')) expectCleanPage(reply.text, path);
+    // (an answer to HEAD has the head of a page and no page)
+    if (String(reply.headers['content-type']).startsWith('text/html') && reply.text !== '') expectCleanPage(reply.text, path);
   }
 });
 
@@ -424,6 +425,45 @@ describe('one message', () => {
     }
     expect((await admin(run, `/admin/m/${record.id}`, { cookie })).status).toBe(200);
   });
+});
+
+describe('an address made to break the author’s page', () => {
+  it('is answered with a page that is not found or a redirect to the login — never with an error, never with a file', async () => {
+    const run = await start();
+    const record = await visitor(run, { message: 'SECRET-TEXT that only the author may read.' }, [shot()]);
+    const cookie = await login(run);
+    // a stream of numbers that is the same every time
+    let state = 20261010;
+    const pick = (below: number) => {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      return state % below;
+    };
+    const pieces = ['/', '//', '.', '..', '%2e%2e', '%2f', '%5c', '%00', '%0d%0a', '?', '&', '=', ';', '~', '*', 'm', 'file', 'delete', 'login', 'logout', 'assets', 'admin.css', 'messages', 'files', 'tmp', record.id, record.id.slice(0, 16), record.files[0].stored, '1', '0', '-1', '99', 'config.json', 'etc', 'passwd', 'C:', '@', '+', ',', "'", '(', ')', '!', '$'];
+    const methods = ['GET', 'GET', 'GET', 'HEAD', 'POST', 'PUT', 'DELETE'];
+    for (let n = 0; n < 300; n++) {
+      const path = `/admin/${Array.from({ length: 1 + pick(7) }, () => pieces[pick(pieces.length)]).join(pick(3) === 0 ? '' : '/')}`;
+      const method = methods[pick(methods.length)];
+      for (const session of [cookie, undefined]) {
+        const reply = await admin(run, path, { method, cookie: session, ...(method === 'POST' ? { form: { csrf: 'x', confirm: 'yes' } } : {}) });
+        const where = `${method} ${path} ${session === undefined ? 'without' : 'with'} a session`;
+        expect(reply.status, where).toBeLessThan(500);
+        if (session === undefined) {
+          // without a session: the login page, its style sheet, or the way to the login — and not a word of a message
+          expect([200, 303, 401, 403, 405, 413, 415, 429]).toContain(reply.status);
+          expect(reply.text, where).not.toContain('SECRET-TEXT');
+          if (reply.status === 200) expect(path.split('?')[0], where).toMatch(/^\/admin\/(login|assets\/admin\.css)$/);
+        } else {
+          expect([200, 303, 400, 401, 403, 404, 405, 413, 415, 429], where).toContain(reply.status);
+          // a page or a file comes only from an address of the exact shape of one
+          if (reply.status === 200) expect(path.split('?')[0], where).toMatch(new RegExp(`^/admin/(|assets/admin\\.css|m/${record.id}|m/${record.id}/file/1)$`));
+        }
+      }
+    }
+    // nothing was deleted or changed by all of it, and no line of the log is an error
+    expect(stored(run.dir)).toHaveLength(1);
+    expect(listFiles(run.dir)).toHaveLength(2);
+    expect(run.lines.filter((line) => / error /.test(line))).toEqual([]);
+  }, 60_000);
 });
 
 describe('a file of a message', () => {

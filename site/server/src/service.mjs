@@ -44,6 +44,8 @@ export function createService({ settings, now = Date.now, log = console.log }) {
   };
 
   const server = createServer({ maxHeaderSize: 16 * 1024 }, (req, res) => {
+    // a line that breaks while an answer is being written is the sender's trouble, never a reason for the service to stop
+    res.on('error', () => {});
     try {
       route(req, res);
     } catch (err) {
