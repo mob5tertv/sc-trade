@@ -11,9 +11,30 @@
 // is remembered by its FIELD (`createTypingMemory`): what stood there before, what he typed, wherever the cursor has
 // gone since. While any of it still waits the keyboard stays, however long. When in doubt it stays: the worst case is
 // the keyboard staying with the window until `Esc`, as it always did.
+//
+// THE ONE EXCEPTION, a ruling and not a hole (task 54, on the word of a player): a QUERY that is typed into a search box
+// and not picked is a search, not an entry. It does not hold the keyboard. «Я записал цену и сразу пошёл в корабль, нажал
+// W: буква встала в пустой „Товар“, выпал список, и клавиатура не вернётся сама никогда»: after the same time without a
+// key the keyboard goes now, and the box, having lost the cursor, drops the query (the location of the header shows its
+// place again, «Товар» of the quick entry is empty again). This is the only place where the return loses something that
+// was typed, and nothing else may be added to it without a ruling of its own. What is PICKED in a search box is no query:
+// the commodity picked in the quick entry is the player's entry and holds as before, also while a new query is typed over
+// it. A search box says itself what is picked in it, and the rules are told that and never the query (`entryText`).
 
 /** How long the window keeps a keyboard that is not used, in milliseconds. The one place this limit is written. */
 export const KEYBOARD_IDLE_MS = 15_000;
+
+/**
+ * What a field holds as far as these rules go: what the memory is told to have stood in it, to have been typed into it and
+ * to stand in it now. `shown` is the text in the field. `picked`: the field is a search box, and this is what is picked in
+ * it, the text the box shows when nothing is typed over it (empty: nothing is picked); `null`: the field is no search box.
+ *
+ * A search box holds its pick, whatever is typed over it: THE EXCEPTION above. So a query never differs from what stood
+ * in the box before it was typed, and nothing of it waits; a pick does, where a pick is an entry (in a form).
+ */
+export function entryText(shown: string, picked: string | null): string {
+  return picked ?? shown;
+}
 
 /** The field that has the cursor, as far as the rule needs it. */
 export interface EditedField {

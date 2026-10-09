@@ -147,6 +147,9 @@
 </script>
 
 <!-- `data-entry-field`: the button that opens the line («+ цена») puts the cursor into its first field, the commodity (ui/keyboard.ts) -->
+<!-- The commodity box has a value at all times, an empty one while no commodity is picked: a search box with a value to go back to drops
+     what was typed and not picked when it is left. A query is a search, not an entry: it keeps no keyboard (vm/keyboard-idle.ts), and when
+     the keyboard has gone back to the game by itself no stray letter is left in «Товар». -->
 <form
   class="quick"
   aria-label="Быстрый ввод цены"
@@ -163,7 +166,7 @@
       {boostIds}
       placeholder="Товар"
       label="Товар: три буквы кода или названия и Enter"
-      value={chosen ? `${chosen.code} ${chosen.name}` : undefined}
+      value={chosen ? `${chosen.code} ${chosen.name}` : ''}
       invalid={badCommodity}
       title={badCommodity && problem !== null ? problem : undefined}
       onPick={pickCommodity}

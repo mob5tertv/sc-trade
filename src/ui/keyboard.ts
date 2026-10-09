@@ -1,7 +1,7 @@
 import type { Logger } from '../data/logger';
 import { createHeldKeyGuard } from './vm/held-keys';
 import type { KeyboardHolds } from './vm/keyboard-holds';
-import { createTypingMemory, KEYBOARD_IDLE_MS, keyboardUnused, type EditedField, type FieldPlace } from './vm/keyboard-idle';
+import { createTypingMemory, entryText, KEYBOARD_IDLE_MS, keyboardUnused, type EditedField, type FieldPlace } from './vm/keyboard-idle';
 
 // The DOM side of the keyboard rules. The overlay never takes the keyboard from the game by itself; it
 // does so only while the player edits a text field. Everything else (who holds the keyboard, what taking
@@ -26,7 +26,9 @@ import { createTypingMemory, KEYBOARD_IDLE_MS, keyboardUnused, type EditedField,
 //  - the same watchdog gives the keyboard back, the way `Esc` does, when it is held and not used: no key for a while and
 //    nothing that the player entered and did not confirm, in whatever field (the rule and its invariant are
 //    `vm/keyboard-idle.ts`; here the fields are told to its memory: what stood in a field before it was typed into, what
-//    was typed, Enter and Esc, a field that is left, and where the page says those save: `CELL_MARK`, `SAVES_ON_LEAVE_MARK`);
+//    was typed, Enter and Esc, a field that is left, and where the page says those save: `CELL_MARK`, `SAVES_ON_LEAVE_MARK`).
+//    Of a search box the memory is told what is picked in it, never the query typed over it (`PICKED_MARK`): a query is a
+//    search, not an entry, and keeps no keyboard;
 //  - the guard against a game key that is still held down.
 
 /** The holder name of a text field being edited. */
@@ -113,9 +115,21 @@ function numberFieldAt(target: EventTarget | null): HTMLInputElement | null {
 /** A field that holds text the player types: every field but a select, whose choice is applied at once and is never "typed and not saved". */
 const holdsTypedText = (field: Element | null): boolean => isEditable(field) && !(field instanceof HTMLSelectElement);
 
-/** What stands in a field; a list holds a choice, not a text. */
+/**
+ * The mark by which a search box says, on its field, what is PICKED in it: the text the box shows when nothing is typed
+ * over it (empty: nothing is picked). For the rules of the unused keyboard the box holds that and nothing else: what is
+ * typed over it is a query, a search and not an entry, and does not keep the keyboard at the window (`entryText` and the
+ * exception in the header of `vm/keyboard-idle.ts`). `SearchBox.svelte` writes it, and `tests/ui/keyboard-marks.test.ts`
+ * fails when it is gone from there.
+ */
+export const PICKED_MARK = 'data-picked';
+
+/**
+ * What a field holds for the rules of the unused keyboard: the text that stands in it; of a search box, what is picked in
+ * it (`PICKED_MARK`), never the query. A list holds a choice, not a text.
+ */
 function textOf(field: Element): string {
-  if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) return field.value;
+  if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) return entryText(field.value, field.getAttribute(PICKED_MARK));
   return holdsTypedText(field) ? (field.textContent ?? '') : '';
 }
 

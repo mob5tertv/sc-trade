@@ -231,6 +231,14 @@ function keyDown(target: HTMLElement, key: string, repeat = false): void {
 
 const LOCATION = 'header .location input';
 
+/** One key of the keyboard typed into a field: the key goes down, its letter lands at the end of the text, the field hears `input`. */
+function typeKey(selector: string, char: string): void {
+  const field = input(selector);
+  keyDown(field, char);
+  field.value += char;
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 /**
  * ONE press of Esc in `field`, and the keyboard is the game's: the scene fails where a second press would be needed. It waits a
  * moment after the keyboard went, so that whatever the blur of the return may have started (a save of a cell that is left) is in
@@ -578,6 +586,103 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       expectKeyboard(app, `${(KEYBOARD_IDLE_MS + 1500) / 1000} s after the commodity was picked`, { held: true, owner: 'overlay', cursor: 'quick in-price', text: '' });
       if (commodity.value !== picked) throw new Error(`the picked commodity is gone from its field: "${commodity.value}", not "${picked}"`);
       if (wentBackLines().length !== 0) throw new Error('the log says the keyboard went back by itself, over a line of the quick entry that is not saved');
+      if (pricesWritten().length !== 0) throw new Error(`nothing was confirmed, and a price was written: ${pricesWritten()[0]}`);
+    },
+  },
+  {
+    // The word of a player after version 1.1: «я записал цену и сразу пошёл в корабль, нажал W: буква встала в пустой „Товар“, выпал
+    // список, и клавиатура не вернётся сама никогда». A query that is typed and not picked is a search, not an entry (the one exception
+    // to the invariant, `vm/keyboard-idle.ts`): it does not hold the keyboard, and the box drops it when the cursor is taken out.
+    // With the real keys: `--scene entry-ready --do "hover:button.entry;click:button.entry;type:ste;press:Enter;type:2400;press:Enter;
+    // wait:2000;type:w;wait:16500;eval:window.__keys()"`.
+    name: 'keyboard-idle-stray',
+    title: 'Быстрый ввод: цена записана, случайная W в пустом «Товаре» (список выпал), 16,5 с тишины: клавиатура сама вернулась игре, запрос сброшен',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      await pressButton(element('button.entry'));
+      await until('the cursor in the commodity field of the quick entry', cursorIn(QUICK_COMMODITY));
+      const commodity = input(QUICK_COMMODITY);
+      typeInto(QUICK_COMMODITY, 'sti');
+      await pause(60);
+      keyDown(commodity, 'Enter');
+      await until('the cursor in the price of the quick entry', cursorIn('.quick .in-price'));
+      typeInto('.quick .in-price', '2400');
+      const form = element('form.quick');
+      if (!(form instanceof HTMLFormElement)) throw new Error('the quick entry is not a form');
+      form.requestSubmit();
+      await until('the price to be written', () => pricesWritten().length === 1);
+      await until('the cursor back in the empty commodity field', () => cursorIn(QUICK_COMMODITY)() && commodity.value === '');
+      typeKey(QUICK_COMMODITY, 'w');
+      await pause(100);
+      if (document.querySelector('.quick .list') === null) throw new Error('the scene needs the list of the commodity box open over the stray key');
+      expectKeyboard(app, 'with the stray key in the commodity box', { held: true, owner: 'overlay', cursor: 'quick combobox', text: 'w' });
+      await pause(KEYBOARD_IDLE_MS - 1500);
+      expectKeyboard(app, 'a second and a half before the limit', { held: true, owner: 'overlay', cursor: 'quick combobox', text: 'w' });
+      await until('the keyboard to go back to the game by itself, over a query that nobody picked', () => !app.keyboardHeld, 3000);
+      await pause(200);
+      expectKeyboard(app, `${KEYBOARD_IDLE_MS / 1000} s after the stray key`, { held: false, owner: 'game', cursor: null });
+      if (commodity.value !== '') throw new Error(`the query is still in the commodity box: "${commodity.value}"`);
+      if (document.querySelector('.quick .list') !== null) throw new Error('the list of the commodity box is still open');
+      if (wentBackLines().length !== 1) throw new Error(`the log must say once that the keyboard went back by itself, and it says so ${wentBackLines().length} times`);
+      if (pricesWritten().length !== 1) throw new Error(`one price was confirmed, and ${pricesWritten().length} were written`);
+    },
+  },
+  {
+    // the same rule in the other search box, the location of the header: the query goes, the viewed place stays
+    name: 'keyboard-idle-query',
+    title: 'Поле локации: набран запрос, список открыт, ничего не выбрано, 16,5 с тишины: клавиатура сама вернулась игре, в поле снова название места',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      const box = input(LOCATION);
+      const shown = box.value;
+      const viewed = app.viewTerminalId;
+      await hoverAndPress(LOCATION);
+      await until('the cursor in the location box', cursorIn(LOCATION));
+      for (const char of 'arc') typeKey(LOCATION, char);
+      await pause(100);
+      if (document.querySelector('header .location .list') === null) throw new Error('the scene needs the list of the location box open');
+      expectKeyboard(app, 'with a query in the location box', { held: true, owner: 'overlay', text: 'arc' });
+      await pause(KEYBOARD_IDLE_MS - 1500);
+      expectKeyboard(app, 'a second and a half before the limit', { held: true, owner: 'overlay', text: 'arc' });
+      await until('the keyboard to go back to the game by itself, over a query that nobody picked', () => !app.keyboardHeld, 3000);
+      await pause(200);
+      expectKeyboard(app, `${KEYBOARD_IDLE_MS / 1000} s after the last letter of the query`, { held: false, owner: 'game', cursor: null });
+      if (box.value !== shown || shown === '') throw new Error(`the query is still in the location box: "${box.value}", not "${shown}"`);
+      if (document.querySelector('header .location .list') !== null) throw new Error('the list of the location box is still open');
+      if (app.viewTerminalId !== viewed) throw new Error(`nothing was picked, and the viewed terminal changed from ${viewed} to ${app.viewTerminalId}`);
+      if (wentBackLines().length !== 1) throw new Error(`the log must say once that the keyboard went back by itself, and it says so ${wentBackLines().length} times`);
+    },
+  },
+  {
+    // ...and what the exception does NOT cover. A commodity is picked, the cursor comes back into its box and a stray key lands there:
+    // the box shows the query, but the pick still stands behind it (the box shows it again when it is left). The pick is the player's
+    // entry and holds the keyboard; Esc drops the query and the commodity is there.
+    name: 'keyboard-idle-over-pick',
+    title: 'Быстрый ввод: товар выбран, поверх него в «Товаре» набрана буква, 16,5 с тишины: клавиатура осталась у окна — выбранный товар под запросом держит',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      await pressButton(element('button.entry'));
+      await until('the cursor in the commodity field of the quick entry', cursorIn(QUICK_COMMODITY));
+      const commodity = input(QUICK_COMMODITY);
+      typeInto(QUICK_COMMODITY, 'sti');
+      await pause(60);
+      keyDown(commodity, 'Enter');
+      await until('the cursor in the price of the quick entry', cursorIn('.quick .in-price'));
+      const picked = commodity.value;
+      if (picked === '' || picked === 'sti') throw new Error(`Enter picked no commodity: the field holds "${picked}"`);
+      await clickField(QUICK_COMMODITY, 0);
+      typeKey(QUICK_COMMODITY, 'w');
+      await pause(KEYBOARD_IDLE_MS + 1500);
+      expectKeyboard(app, `${(KEYBOARD_IDLE_MS + 1500) / 1000} s after a letter was typed over the picked commodity`, { held: true, owner: 'overlay', cursor: 'quick combobox', text: 'w' });
+      if (wentBackLines().length !== 0) throw new Error('the log says the keyboard went back by itself, over a commodity that is picked and not saved');
+      await oneEscape(app, 'in the commodity box', commodity);
+      if (commodity.value !== picked) throw new Error(`the picked commodity is gone from its field: "${commodity.value}", not "${picked}"`);
       if (pricesWritten().length !== 0) throw new Error(`nothing was confirmed, and a price was written: ${pricesWritten()[0]}`);
     },
   },

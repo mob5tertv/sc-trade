@@ -135,9 +135,12 @@
 </script>
 
 <div class="box">
+  <!-- `data-picked`: what is picked in the box, the text it shows when nothing is typed over it (empty: nothing is picked). The keyboard
+       rules read it (ui/keyboard.ts): for them the box holds its pick, and what is typed over it is a query, which keeps no keyboard. -->
   <input
     bind:this={input}
     value={shown}
+    data-picked={value ?? ''}
     class="sc-input"
     class:has-value={!editing && value !== undefined}
     class:asking

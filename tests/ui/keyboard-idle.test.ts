@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createTypingMemory, isUnconfirmed, KEYBOARD_IDLE_MS, keyboardUnused, settlesTyping,
+  createTypingMemory, entryText, isUnconfirmed, KEYBOARD_IDLE_MS, keyboardUnused, settlesTyping,
   type EditedField, type FieldPlace, type TypedText,
 } from '../../src/ui/vm/keyboard-idle';
 
@@ -10,7 +10,11 @@ const ROW: FieldPlace = { inForm: false, commits: true, cell: '3:1:buy' };
 const SETTINGS: FieldPlace = { inForm: false, commits: true, cell: null };
 /** A field of a form (the quick entry, the form of a trade): Enter submits the form, leaving the field does nothing. */
 const FORM: FieldPlace = { inForm: true, commits: false, cell: null };
-/** A field the rules know nothing about (the location box): the page says nothing of when it is saved. */
+/**
+ * A field outside a form of which the page says nothing about when it is saved. The location box of the header stands so,
+ * and it is a search box: the rules are told its pick, not what is typed into it (`entryText`). A field added without any
+ * mark would stand so too, with its text.
+ */
 const ELSEWHERE: FieldPlace = { inForm: false, commits: false, cell: null };
 
 /** The field with the cursor: a number stands in it, it is not marked as refused and it is no open list, unless said. */
@@ -387,18 +391,19 @@ describe('createTypingMemory: what was typed where, and whether it still waits',
     expect(goesBack(memory.read(page({ capacity: '500', budget: '90000' })))).toBe(true);
   });
 
-  it('trace O: a query that matches nothing, Enter in the location box: nobody said that box is saved by Enter, so the keyboard stays', () => {
+  it('trace O: a text that nothing saves, Enter in a field of which the page says nothing: nobody said that field is saved by Enter, so the keyboard stays', () => {
+    // (the location box stood so before task 54; it is a search box now, and its query is told to nobody: see below)
     const memory = createTypingMemory<string>();
-    memory.begins('location', 'HUR-L1');
-    memory.typed('location', 'zzz', ELSEWHERE);
-    memory.key('location', 'Enter', ELSEWHERE);
-    expect(goesBack(memory.read(page({ location: 'zzz' })), 16_500, 'zzz')).toBe(false);
-    memory.key('location', 'Escape', ELSEWHERE);
-    memory.left('location', ELSEWHERE);
-    expect(goesBack(memory.read(page({ location: 'zzz' })), 60_000, 'zzz')).toBe(false);
+    memory.begins('note', 'HUR-L1');
+    memory.typed('note', 'zzz', ELSEWHERE);
+    memory.key('note', 'Enter', ELSEWHERE);
+    expect(goesBack(memory.read(page({ note: 'zzz' })), 16_500, 'zzz')).toBe(false);
+    memory.key('note', 'Escape', ELSEWHERE);
+    memory.left('note', ELSEWHERE);
+    expect(goesBack(memory.read(page({ note: 'zzz' })), 60_000, 'zzz')).toBe(false);
   });
 
-  it('a text the program replaced outside a form (a place picked from the list) counts no more, even if the same letters stand there again later', () => {
+  it('a text the program replaced outside a form counts no more, even if the same letters stand there again later', () => {
     const memory = createTypingMemory<string>();
     memory.begins('location', 'HUR-L1');
     memory.typed('location', 'mic', ELSEWHERE);
@@ -424,5 +429,134 @@ describe('createTypingMemory: what was typed where, and whether it still waits',
     memory.key('price', 'Enter', ROW);
     memory.typed('price', '24005', ROW);
     expect(goesBack(memory.read(page({ price: '24005' })))).toBe(false);
+  });
+});
+
+describe('entryText: what a field holds as far as the rules go', () => {
+  it('is the text that stands in it, for a field that is no search box', () => {
+    expect(entryText('2400', null)).toBe('2400');
+    expect(entryText('', null)).toBe('');
+  });
+
+  it('is the pick of a search box, whatever is typed over it: a query is a search, not an entry', () => {
+    expect(entryText('w', '')).toBe(''); // a stray key in the empty «Товар»
+    expect(entryText('arc', 'HUR-L1')).toBe('HUR-L1'); // a query over the viewed location
+    expect(entryText('STIM Stims', 'STIM Stims')).toBe('STIM Stims'); // nothing typed: the box shows its pick
+    expect(entryText('', 'STIM Stims')).toBe('STIM Stims'); // the query was deleted: the pick is still behind it
+  });
+});
+
+// THE EXCEPTION to the invariant (task 54, on the word of a player): a query typed into a search box and not picked is a
+// search, not an entry. It does not hold the keyboard, and the box drops it when the cursor is taken out. The walks below
+// tell the memory what the page tells it: of a search box, its pick (`entryText`), in every call.
+describe('a search box: the query does not hold the keyboard, the pick does', () => {
+  /** A search box as the page shows it: what stands in it now, and what is picked in it. */
+  interface Box { shown: string; picked: string }
+  const told = (box: Box): string => entryText(box.shown, box.picked);
+
+  /** Whether the keyboard goes back `afterMs` after the last key; the cursor stands in the search box `cursor`. */
+  const goesBack = (typed: TypedText[], cursor: Box, afterMs = 16_500) => keyboardUnused({
+    now: afterMs, lastKeyAt: 0, takenAt: 0, field: { text: told(cursor), refused: false, choosing: false }, typed,
+  });
+  /** The page: what each field holds for the rules now. */
+  const page = (texts: Record<string, string>) => (name: string) => ({ text: name in texts ? texts[name] : null, refused: false });
+
+  it('the stray key: a price was saved, W lands in the empty «Товар» and its list drops open: fifteen seconds later the keyboard is the game\'s', () => {
+    const memory = createTypingMemory<string>();
+    const empty: Box = { shown: '', picked: '' };
+    const stray: Box = { shown: 'w', picked: '' };
+    memory.begins('quick-commodity', told(empty)); // the form put the cursor back into «Товар» after the save
+    memory.typed('quick-commodity', told(stray), FORM);
+    const now = page({ 'quick-commodity': told(stray), 'quick-price': '', 'quick-scu': '' });
+    expect(goesBack(memory.read(now), stray, KEYBOARD_IDLE_MS - 1)).toBe(false); // not a moment earlier
+    expect(goesBack(memory.read(now), stray, KEYBOARD_IDLE_MS)).toBe(true);
+    expect(goesBack(memory.read(now), stray)).toBe(true);
+  });
+
+  it('a commodity that is PICKED holds, as it did: the pick is an entry', () => {
+    const memory = createTypingMemory<string>();
+    memory.begins('quick-commodity', told({ shown: '', picked: '' }));
+    memory.typed('quick-commodity', told({ shown: 'sti', picked: '' }), FORM);
+    memory.key('quick-commodity', 'Enter', FORM); // the list puts «STIM Stims» into the box, the cursor goes to the price
+    const picked: Box = { shown: 'STIM Stims', picked: 'STIM Stims' };
+    const now = page({ 'quick-commodity': told(picked), 'quick-price': '', 'quick-scu': '' });
+    expect(goesBack(memory.read(now), picked)).toBe(false);
+    expect(goesBack(memory.read(now), picked, 3_600_000)).toBe(false);
+  });
+
+  it('a query typed OVER a picked commodity: the pick still stands behind it (the box shows it again when it is left), and holds', () => {
+    const memory = createTypingMemory<string>();
+    memory.begins('quick-commodity', told({ shown: '', picked: '' }));
+    memory.typed('quick-commodity', told({ shown: 'sti', picked: '' }), FORM);
+    // picked; the cursor came back into the box and a stray key landed in it
+    const over: Box = { shown: 'w', picked: 'STIM Stims' };
+    memory.begins('quick-commodity', told({ shown: 'STIM Stims', picked: 'STIM Stims' }));
+    memory.typed('quick-commodity', told(over), FORM);
+    expect(goesBack(memory.read(page({ 'quick-commodity': told(over), 'quick-price': '' })), over)).toBe(false);
+  });
+
+  it('a commodity typed out letter for letter as the list writes it, and then picked, holds like any pick', () => {
+    const memory = createTypingMemory<string>();
+    memory.begins('quick-commodity', told({ shown: '', picked: '' }));
+    memory.typed('quick-commodity', told({ shown: 'STIM Stims', picked: '' }), FORM);
+    // still a query: the letters are the same as a pick would show, and nothing is picked
+    expect(goesBack(memory.read(page({ 'quick-commodity': told({ shown: 'STIM Stims', picked: '' }) })), { shown: 'STIM Stims', picked: '' })).toBe(true);
+    const picked: Box = { shown: 'STIM Stims', picked: 'STIM Stims' };
+    expect(goesBack(memory.read(page({ 'quick-commodity': told(picked) })), picked)).toBe(false);
+  });
+
+  it('after the save the form empties the box: nothing waits, and the next stray key does not hold either', () => {
+    const memory = createTypingMemory<string>();
+    memory.begins('quick-commodity', told({ shown: '', picked: '' }));
+    memory.typed('quick-commodity', told({ shown: 'sti', picked: '' }), FORM);
+    memory.begins('quick-price', '');
+    memory.typed('quick-price', '2900', FORM);
+    const filled = page({ 'quick-commodity': told({ shown: 'STIM Stims', picked: 'STIM Stims' }), 'quick-price': '2900' });
+    expect(goesBack(memory.read(filled), { shown: 'STIM Stims', picked: 'STIM Stims' })).toBe(false);
+    // saved: every field is empty again, the cursor is in «Товар»
+    const empty: Box = { shown: '', picked: '' };
+    expect(goesBack(memory.read(page({ 'quick-commodity': told(empty), 'quick-price': '' })), empty)).toBe(true);
+    const stray: Box = { shown: 'w', picked: '' };
+    memory.typed('quick-commodity', told(stray), FORM);
+    expect(goesBack(memory.read(page({ 'quick-commodity': told(stray), 'quick-price': '' })), stray)).toBe(true);
+  });
+
+  it('a price typed next to a query still holds: only the query is nobody\'s entry', () => {
+    const memory = createTypingMemory<string>();
+    const stray: Box = { shown: 'w', picked: '' };
+    memory.begins('quick-price', '');
+    memory.typed('quick-price', '2900', FORM);
+    memory.begins('quick-commodity', told({ shown: '', picked: '' }));
+    memory.typed('quick-commodity', told(stray), FORM);
+    expect(goesBack(memory.read(page({ 'quick-commodity': told(stray), 'quick-price': '2900' })), stray)).toBe(false);
+  });
+
+  it('the location box: a query that is not picked does not hold, with Enter that matched nothing or without', () => {
+    const memory = createTypingMemory<string>();
+    const query: Box = { shown: 'zzz', picked: 'HUR-L1' };
+    memory.begins('location', told({ shown: 'HUR-L1', picked: 'HUR-L1' }));
+    memory.typed('location', told(query), ELSEWHERE);
+    expect(goesBack(memory.read(page({ location: told(query) })), query, KEYBOARD_IDLE_MS - 1)).toBe(false);
+    expect(goesBack(memory.read(page({ location: told(query) })), query)).toBe(true);
+    memory.key('location', 'Enter', ELSEWHERE);
+    expect(goesBack(memory.read(page({ location: told(query) })), query)).toBe(true);
+  });
+
+  it('the location box that asks «Где прилетел?» shows no place: a query in it does not hold either', () => {
+    const memory = createTypingMemory<string>();
+    const query: Box = { shown: 'arc', picked: '' };
+    memory.begins('location', told({ shown: '', picked: '' }));
+    memory.typed('location', told(query), ELSEWHERE);
+    expect(goesBack(memory.read(page({ location: told(query) })), query)).toBe(true);
+  });
+
+  it('a query in the location box does not let go of what waits elsewhere: a price typed into the row still holds', () => {
+    const memory = createTypingMemory<string>();
+    const query: Box = { shown: 'arc', picked: 'HUR-L1' };
+    memory.begins('price', '2350');
+    memory.typed('price', '2400', ROW);
+    memory.begins('location', told({ shown: 'HUR-L1', picked: 'HUR-L1' }));
+    memory.typed('location', told(query), ELSEWHERE);
+    expect(goesBack(memory.read(page({ price: '2400', location: told(query) })), query)).toBe(false);
   });
 });
