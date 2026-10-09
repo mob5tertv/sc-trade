@@ -98,7 +98,7 @@
     Push $0
     ; The window and the strip with the buttons under the page.
     !insertmacro SCT_PAINT_DIALOG $HWNDPARENT
-    ; The corner text ("SC Trade 1.1.0"): the muted text of the application. Two controls lie on one another there. In stock
+    ; The corner text ("SC Trade 1.1.1"): the muted text of the application. Two controls lie on one another there. In stock
     ; NSIS the text that shows is the one of 1028, a disabled control (Windows draws the text of a disabled control grey,
     ; whatever colour it is given), and 1256 only blanks the line behind it; Modern UI 2 writes the text into both and
     ; shows and hides both page by page. Both get the same pair here, and 1028 is enabled below, so that whichever of the two
