@@ -28,7 +28,7 @@
   import { clickedTerminalSort, type TerminalSortKey } from '../vm/terminal-order';
   import { selectedCommodity, type RowPick } from '../vm/terminal-side';
   import {
-    goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, tradeDefaults, tradeMode, type TradeDefaults, type TradeMode,
+    goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, tradeDefaults, tradeLimit, tradeMode, type TradeDefaults, type TradeMode,
   } from '../vm/trade-form';
 
   const SECTION = 'terminal';
@@ -167,6 +167,13 @@
   let tradeFormCount = 0;
   const tradeFor = $derived(tradeState === null ? null : tradeState.commodityId);
   const tradeOpen = $derived(tradeState !== null);
+  // The largest quantity the service takes for the open form, by the hold as it is now: a quantity above it is refused by the
+  // service as before, and the form asks nothing about a price that is not mine before that refusal (`confirmStep`).
+  const tradeMaxScu = $derived(
+    tradeState === null
+      ? null
+      : tradeLimit({ mode: tradeState.mode, commodityId: tradeState.commodityId, cargo, capacity: app.settings.scuCapacity }),
+  );
 
   /** Closes the open form; with `id` only that opening (it may be gone already, and another one open). */
   function closeTrade(why: string, id?: number): void {
@@ -233,6 +240,16 @@
     const { terminalId, side: formSide, commodityId, mode } = tradeState;
     app.log.info('ui', 'trade form rejected', { terminalId, side: formSide, commodityId, mode, fields: rejectedFields(fields) });
   }
+
+  // The form was confirmed with a price that is not mine and that nobody touched: nothing was written, the form asks to check it.
+  // A refusal of an earlier confirmation is answered by now (the quantity was put right, or the form would not ask): it goes, as it
+  // does when a write starts, so that the question does not stand next to a refusal that is no longer true.
+  function tradePriceCheck(): void {
+    if (tradeState === null) return;
+    const { terminalId, side: formSide, commodityId, mode } = tradeState;
+    app.log.info('ui', 'trade form asks to check a price that is not mine', { terminalId, side: formSide, commodityId, mode });
+    if (tradeState.error !== null) tradeState = { ...tradeState, error: null };
+  }
 </script>
 
 {#snippet actions()}
@@ -277,11 +294,13 @@
       defaultScu={tradeState.defaults.scu}
       defaultPrice={tradeState.defaults.price}
       defaultPriceIsOwn={tradeState.defaults.priceIsOwn}
+      maxScu={tradeMaxScu}
       note={tradeState.mode === 'income' ? INCOME_NOTE : null}
       error={tradeState.error}
       onConfirm={(trade) => void confirmTrade(trade)}
       onCancel={() => closeTrade('cancelled')}
       onReject={tradeRejected}
+      onPriceCheck={tradePriceCheck}
     />
   {/if}
 {/snippet}

@@ -94,3 +94,46 @@ export function goodsCameAboard(mode: TradeMode, active: RunWithEvents | null, c
 
 /** What the notice line says when `goodsCameAboard`. */
 export const GOODS_ABOARD_NOTICE = 'Этот товар уже в трюме — нажми «Продал» ещё раз';
+
+/**
+ * The largest quantity the service takes for the form, as far as the screen knows: for a sale from the run what the hold
+ * has of the commodity, for a purchase the free space of the hold (every commodity counted, never below zero). `null`:
+ * nothing limits it, which is an income (it is checked against no hold) and a purchase while the ship is not set.
+ * The same counts as in the service (`recordSell`, `recordBuy`), which stays the one that refuses and says why.
+ */
+export function tradeLimit(i: { mode: TradeMode; commodityId: number; cargo: CargoLine[]; capacity: number }): number | null {
+  if (i.mode === 'income') return null;
+  if (i.mode === 'sell') return i.cargo.find((line) => line.commodityId === i.commodityId)?.scu ?? 0;
+  if (i.capacity <= 0) return null;
+  return Math.max(0, i.capacity - i.cargo.reduce((sum, line) => sum + line.scu, 0));
+}
+
+/** What a confirmation of the form does: it writes the trade, or it writes nothing and asks the player to look at the price. */
+export type ConfirmStep = 'write' | 'check-price';
+
+export interface Confirmation {
+  /** The price the form started with is mine and not cold (`TradeDefaults.priceIsOwn`), or the form started with none (the player typed it). */
+  priceIsOwn: boolean;
+  /** The player typed into the price field, whatever he typed: the very same number is a number he put there. */
+  priceTouched: boolean;
+  /** The form has asked about the price already: this is the confirmation that follows. */
+  asked: boolean;
+  /** The quantity is one the service takes, as far as the screen knows (`tradeLimit`). */
+  fits: boolean;
+}
+
+/**
+ * A price that is not mine (the one of UEX, or mine gone cold) and that the player did not touch is not written by one press of
+ * Enter: the first confirmation asks him to check it (`PRICE_CHECK_NOTE`, the cursor goes into the price), the second one
+ * writes. A price of mine, or one he put his hand to, is written at once. The same for a purchase, a sale and an income.
+ *
+ * The refusals come first. The numbers the form itself refuses never get here. A quantity the service is going to refuse
+ * (more than the hold has, more than its free space) is sent to the service as before, which writes nothing and says why;
+ * the question about the price is not spent on it and is asked once the quantity is right.
+ */
+export function confirmStep(c: Confirmation): ConfirmStep {
+  return c.priceIsOwn || c.priceTouched || c.asked || !c.fits ? 'write' : 'check-price';
+}
+
+/** The line under the form after the confirmation that only asked. */
+export const PRICE_CHECK_NOTE = 'Цена справочная — проверь её и подтверди ещё раз';

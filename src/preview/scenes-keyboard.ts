@@ -1,4 +1,5 @@
 import { KEYBOARD_IDLE_MS } from '../ui/vm/keyboard-idle';
+import { PRICE_CHECK_NOTE } from '../ui/vm/trade-form';
 import type { Scene, SceneApp } from './scenes';
 
 // The scenes of the keyboard: the player's ways to it, through the real listeners of `ui/keyboard.ts` and the strict
@@ -175,6 +176,52 @@ const askedCount = (): number => (window.__preview?.log ?? []).filter((line) => 
 
 const QUICK_COMMODITY = '.quick .box input';
 const cursorIn = (selector: string) => (): boolean => document.activeElement !== null && document.activeElement === document.querySelector(selector);
+
+// ---- the form of a trade and a price that is not mine ------------------------------------------------------------------
+
+/** Types `text` into a field the way the keys do: the text, and the `input` event the form hears. */
+function typeInto(selector: string, text: string): void {
+  const field = input(selector);
+  field.value = text;
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** A confirmation of the form of a trade from the keyboard: Enter in the field that has the cursor submits the form. */
+async function confirmTrade(): Promise<void> {
+  const form = element('form.trade');
+  if (!(form instanceof HTMLFormElement)) throw new Error('the form of a trade is not a form');
+  form.requestSubmit();
+  await pause(200);
+}
+
+/** The trades the service has written so far (its own lines in the log). */
+const tradesWritten = (): string[] => (window.__preview?.log ?? []).filter((line) => /\[run\] (buy|sell|income) /.test(line));
+
+/** What the form says under its fields: the question about the price, and the refusal of the service. */
+const formSays = (): { check: string | null; error: string | null } => ({
+  check: document.querySelector('form.trade .check')?.textContent?.trim() ?? null,
+  error: document.querySelector('form.trade [role="alert"]')?.textContent?.trim() ?? null,
+});
+
+/** Fails the scene unless the form asks about the price (or does not), and unless `written` trades were written. */
+function expectForm(when: string, wanted: { asks: boolean; written: number; error?: string | null }): void {
+  const says = formSays();
+  const asks = says.check === PRICE_CHECK_NOTE;
+  if (says.check !== null && !asks) throw new Error(`${when}: the form asks in other words than it should: "${says.check}"`);
+  if (asks !== wanted.asks) throw new Error(`${when}: the form ${asks ? 'asks' : 'does not ask'} to check the price (${JSON.stringify(says)})`);
+  if (tradesWritten().length !== wanted.written) throw new Error(`${when}: ${tradesWritten().length} trades are written, not ${wanted.written}`);
+  if (wanted.error !== undefined && says.error !== wanted.error) throw new Error(`${when}: the refusal is ${JSON.stringify(says.error)}, not ${JSON.stringify(wanted.error)}`);
+}
+
+/** Opens the form of a purchase of ALUM, which has only a price of UEX at HUR-L1: the keyboard is with the window, the cursor in the quantity. */
+async function openForeignPurchase(app: SceneApp): Promise<void> {
+  await app.expand('preview');
+  watchKeys(app);
+  withText('.table button.line', 'ALUM').click();
+  await pause(100);
+  await pressButton(withText('.expand button', 'Купил'));
+  await until('the cursor in the quantity of the trade form', cursorIn('form.trade .in-scu'));
+}
 
 export const KEYBOARD_SCENES: readonly Scene[] = [
   {
@@ -377,6 +424,88 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       if (document.querySelector('.expand') === null) throw new Error('the open row was folded when the keyboard went back');
       const said = (window.__preview?.log ?? []).filter((line) => line.includes('[ui] the keyboard was not used'));
       if (said.length !== 1) throw new Error(`the log must say once that the keyboard went back by itself, and it says so ${said.length} times`);
+    },
+  },
+  {
+    // ALUM has only a price of UEX at HUR-L1, and nobody touched it in the form: Enter writes nothing. The form asks, in one line, and
+    // the cursor stands in the price with the number selected. With the real keys and the button of the form:
+    // `--scene trade-buy-foreign --do "hover:form.trade [type=submit];click:form.trade [type=submit];eval:document.querySelector('form.trade .check').textContent"`.
+    name: 'trade-check-price',
+    title: '«Купил» с ценой UEX, первое подтверждение: ничего не записано, под формой «Цена справочная — проверь её и подтверди ещё раз», курсор в цене',
+    dataset: 'default',
+    act: async (app) => {
+      await openForeignPurchase(app);
+      await confirmTrade();
+      expectForm('after the first confirmation', { asks: true, written: 0, error: null });
+      const { text } = keyboardNow(app);
+      expectKeyboard(app, 'after the first confirmation', { held: true, owner: 'overlay', cursor: 'trade in-price', selection: `0..${text?.length}` });
+      if (!input('form.trade .in-price').classList.contains('foreign')) throw new Error('the price was only selected, and it does not look like a price that is not mine any more');
+    },
+  },
+  {
+    name: 'trade-check-price-written',
+    title: '«Купил» с ценой UEX, второе подтверждение: покупка записана по этой цене, форма закрыта',
+    dataset: 'default',
+    act: async (app) => {
+      await openForeignPurchase(app);
+      await confirmTrade();
+      expectForm('after the first confirmation', { asks: true, written: 0 });
+      await confirmTrade();
+      await until('the purchase to be written', () => tradesWritten().length === 1);
+      await until('the form to close', () => document.querySelector('form.trade') === null);
+      if (app.activeRun === null) throw new Error('the second confirmation wrote no purchase');
+    },
+  },
+  {
+    // the same number typed over the price of UEX is a number the player put there: it is written by the first confirmation
+    name: 'trade-check-price-touched',
+    title: '«Купил» с ценой UEX, цену набрали заново (ту же): покупка записана с первого подтверждения',
+    dataset: 'default',
+    act: async (app) => {
+      await openForeignPurchase(app);
+      typeInto('form.trade .in-price', input('form.trade .in-price').value);
+      await confirmTrade();
+      await until('the purchase to be written', () => tradesWritten().length === 1);
+      if (document.querySelector('form.trade') !== null) throw new Error('the form is still open after the purchase was written');
+    },
+  },
+  {
+    // The refusals come before the question: more than the hold takes is refused by the service as before, and nothing is said about
+    // the price. With the quantity put right the form asks, and the confirmation after that writes.
+    name: 'trade-check-price-hold',
+    title: '«Купил» с ценой UEX и количеством больше трюма: сначала отказ «Свободно только 696 SCU», вопрос о цене — после исправления количества',
+    dataset: 'default',
+    act: async (app) => {
+      await openForeignPurchase(app);
+      typeInto('form.trade .in-scu', '700');
+      await confirmTrade();
+      await until('the refusal of the service', () => formSays().error !== null);
+      expectForm('with more than the hold takes', { asks: false, written: 0, error: 'Свободно только 696 SCU' });
+      typeInto('form.trade .in-scu', '100');
+      await confirmTrade();
+      expectForm('with the quantity put right', { asks: true, written: 0, error: null });
+    },
+  },
+  {
+    // a sale of goods that are not in the hold (an income) at a price of UEX: the same rule
+    name: 'trade-check-price-income',
+    title: '«Продал» без закупки с ценой UEX: первое подтверждение спрашивает о цене, второе записывает доход',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      app.setTerminalSide('sell');
+      await pause(60);
+      element('.table button.line').click();
+      await pause(100);
+      await pressButton(withText('.expand button', 'Продал'));
+      await until('the cursor in the price of the trade form', cursorIn('form.trade .in-price'));
+      typeInto('form.trade .in-scu', '10');
+      await confirmTrade();
+      expectForm('after the first confirmation of the income', { asks: true, written: 0, error: null });
+      await confirmTrade();
+      await until('the income to be written', () => tradesWritten().length === 1);
+      if (!tradesWritten()[0].includes('[run] income')) throw new Error(`what was written is not an income: ${tradesWritten()[0]}`);
     },
   },
 ];
