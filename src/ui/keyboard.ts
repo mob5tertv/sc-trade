@@ -9,6 +9,9 @@ import type { KeyboardHolds } from './vm/keyboard-holds';
 //    pointer leaving the field makes it not activatable again;
 //  - a press on a text field takes the keyboard first and puts the cursor into the field afterwards; when Windows
 //    refuses the take, nobody holds the keyboard and the cursor is taken out of the field again;
+//  - a button that opens an entry (`data-opens-entry`: «+ цена», «Купил», «Продал») is a field for all of the above: the
+//    pointer over it arms the window, the player's press on it takes the keyboard, and the cursor goes into the field of
+//    the entry once that field is there. What counts as a field or as such a button is decided in one place, `takerAt`;
 //  - a press on anything else is told to the holds: right after the pointer left a field it may have activated the window;
 //  - a number field (`data-select-on-focus`) that gets the cursor has its whole number selected, so that typing replaces
 //    it; a click on a field that has the cursor already puts the caret where the click was;
@@ -21,9 +24,15 @@ import type { KeyboardHolds } from './vm/keyboard-holds';
 /** The holder name of a text field being edited. */
 const FIELD = 'field';
 const WATCHDOG_MS = 400;
-/** A press on a field gets this long to move the cursor into it before the watchdog may judge. */
+/**
+ * A press on a field gets this long to move the cursor into it before the watchdog may judge; a press on a button that
+ * opens an entry gets as long for the field of the entry to appear.
+ */
 const PRESS_GRACE_MS = 1000;
+/** How often the field of an entry is looked for after a press on its button. */
+const ENTRY_LOOK_MS = 30;
 
+const FIELDS = 'input, textarea, select, [contenteditable]';
 const NOT_TEXT_INPUTS: ReadonlySet<string> = new Set(['checkbox', 'radio', 'range', 'button']);
 
 /** A field the player types into or picks from with the keyboard: a text input, a textarea, a select, an editable element. */
@@ -36,11 +45,48 @@ export function isEditable(element: Element | null): boolean {
 
 /** The text field at `target` (what a pointer event hit): the field itself or the one its label belongs to; `null` when there is none. */
 function fieldAt(target: EventTarget | null): HTMLElement | null {
-  const hit = target instanceof Element ? target.closest('input, textarea, select, [contenteditable], label') : null;
+  const hit = target instanceof Element ? target.closest(`${FIELDS}, label`) : null;
   // A click on the text of a label puts the focus into the control it belongs to (the settings screen is full of
   // them): that is a click on the field, and it needs the keyboard like one.
   const field = hit instanceof HTMLLabelElement ? hit.control : hit;
   return field instanceof HTMLElement && isEditable(field) ? field : null;
+}
+
+/**
+ * The attribute of a button that opens an entry, with the name of the entry: «+ цена» (while the quick entry is closed),
+ * «Купил» and «Продал» of an open row. The field the cursor goes into carries the same name in `data-entry-field`, on
+ * itself or on an element around it (then the first field inside is meant).
+ */
+const OPENS_ENTRY = 'data-opens-entry';
+const ENTRY_FIELD = 'data-entry-field';
+
+/** What takes the keyboard when the player presses it: a text field, or a button that opens an entry. */
+interface Taker {
+  element: HTMLElement;
+  /** The name of the entry the button opens; `null` for a text field. */
+  entry: string | null;
+}
+
+/**
+ * The field or the entry button at `target` (what a pointer event hit); `null` for anything else: a plain button, a row,
+ * the glass. The one place that says what the keyboard rules treat as a field.
+ */
+function takerAt(target: EventTarget | null): Taker | null {
+  const field = fieldAt(target);
+  if (field !== null) return { element: field, entry: null };
+  const button = target instanceof Element ? target.closest(`[${OPENS_ENTRY}]`) : null;
+  const entry = button?.getAttribute(OPENS_ENTRY) ?? '';
+  return button instanceof HTMLElement && entry !== '' ? { element: button, entry } : null;
+}
+
+/** The field of the entry `name`, the one the cursor goes into; `null` while the entry is not on the screen. */
+function entryField(name: string): HTMLElement | null {
+  for (const marked of document.querySelectorAll<HTMLElement>(`[${ENTRY_FIELD}]`)) {
+    if (marked.getAttribute(ENTRY_FIELD) !== name) continue;
+    if (isEditable(marked)) return marked;
+    for (const inner of marked.querySelectorAll<HTMLElement>(FIELDS)) if (isEditable(inner)) return inner;
+  }
+  return null;
 }
 
 /**
@@ -112,22 +158,63 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   };
   const onKeyUpCapture = (event: KeyboardEvent): void => heldKeys.released(event.code);
 
-  /** The text field the pointer is over; `null` when it is over none, or not over the window at all. */
+  /** What the pointer was last seen on, whatever it is; `null` when it is not over the window. */
+  let under: Element | null = null;
+  /** The text field or the entry button the pointer is over; `null` when it is over neither, or not over the window at all. */
   let hovered: HTMLElement | null = null;
   /**
-   * Tells the holds whether the pointer is over a field. They are told every time, and they ignore what they know
-   * already (from one field straight to another nothing changes): the state tells them too, when the window is folded
-   * or hidden, so what was said here last is not what they know.
+   * Tells the holds whether the pointer is over a field (an entry button is one for them). They are told every time, and
+   * they ignore what they know already (from one field straight to another nothing changes): the state tells them too,
+   * when the window is folded or hidden, so what was said here last is not what they know.
    */
   const pointerAt = (field: HTMLElement | null): void => {
     hovered = field;
     void quietly(holds.pointerOverField(field !== null));
   };
+  /** The pointer is on `target` now. */
+  const pointerOn = (target: EventTarget | null): void => {
+    under = target instanceof Element ? target : null;
+    pointerAt(takerAt(under)?.element ?? null);
+  };
 
-  const onPointerOver = (event: PointerEvent): void => pointerAt(fieldAt(event.target));
+  const onPointerOver = (event: PointerEvent): void => pointerOn(event.target);
   // the pointer left the window altogether (inside the window the next `pointerover` says where it is)
   const onPointerOut = (event: PointerEvent): void => {
-    if (event.relatedTarget === null) pointerAt(null);
+    if (event.relatedTarget === null) pointerOn(null);
+  };
+
+  /** The look for the field of an entry whose button was pressed; one at a time. */
+  let entryLook: number | undefined;
+  const stopEntryLook = (): void => {
+    window.clearInterval(entryLook);
+    entryLook = undefined;
+  };
+  /**
+   * The button of the entry `entry` was pressed at `pressedAt` and the window holds the keyboard: the cursor goes into the
+   * field of the entry as soon as it is on the screen (the click that opens the entry comes after the press, and the entry
+   * is drawn after the click). A number field selects its number when it gets the cursor (`onFocusIn`). An entry that does
+   * not open within the grace of the press gets no cursor; the watchdog then gives the keyboard back, as it does whenever
+   * no field is being edited.
+   *
+   * The first look is never made here, at once: this may still be the press itself (the keyboard was held already, so
+   * nothing had to be waited for), and the browser gives the focus to the pressed button when it carries the press out,
+   * right after its listeners. A cursor put into a field that is on the screen already would be taken out of it again.
+   */
+  const cursorIntoEntry = (entry: string, pressedAt: number): void => {
+    stopEntryLook();
+    entryLook = window.setInterval(() => {
+      // the keyboard went away meanwhile (`Esc`, a click on the game): the cursor does not follow it
+      if (!holds.held) return stopEntryLook();
+      const field = entryField(entry);
+      if (field !== null) {
+        stopEntryLook();
+        field.focus();
+        log.debug('ui', 'the cursor goes into the entry', { entry });
+      } else if (performance.now() - pressedAt >= PRESS_GRACE_MS) {
+        stopEntryLook();
+        log.debug('ui', 'the entry did not open: there is no field to put the cursor into', { entry });
+      }
+    }, ENTRY_LOOK_MS);
   };
 
   /** The number field the mouse button went down on, and whether that press is the one that brings it the cursor. */
@@ -159,15 +246,17 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   };
 
   const onPointerDown = (event: PointerEvent): void => {
-    const field = fieldAt(event.target);
-    const number = numberFieldAt(field);
+    // a new press is a new intention: the cursor does not go into the entry of an earlier press behind it
+    stopEntryLook();
+    const taker = takerAt(event.target);
+    const number = numberFieldAt(taker?.element ?? null);
     // read before the hold: it is this press that makes the window hold the keyboard
     pressedNumber = number === null
       ? null
       : { field: number, broughtCursor: pressBringsCursor({ focused: document.activeElement === number, keyboardHeld: holds.held }) };
-    if (field === null) {
+    if (taker === null) {
       // whatever was seen last, the pointer is over no field now
-      pointerAt(null);
+      pointerOn(event.target);
       void holds.pressOutsideField().then(
         (stray) => {
           if (stray === 'handed back') {
@@ -180,9 +269,13 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
       );
       return;
     }
-    lastPressAt = performance.now();
+    const { element: field, entry } = taker;
+    const pressedAt = performance.now();
+    lastPressAt = pressedAt;
     if (!holds.held) {
-      log.debug('ui', 'field pressed, the window needs the keyboard', { field: field.id || field.tagName, armed: holds.state === 'armed' });
+      const armed = holds.state === 'armed';
+      if (entry === null) log.debug('ui', 'field pressed, the window needs the keyboard', { field: field.id || field.tagName, armed });
+      else log.debug('ui', 'entry button pressed, the window needs the keyboard', { entry, armed });
     }
     void holds
       .hold(FIELD)
@@ -191,6 +284,12 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
         () => false, // the take failed; the window layer has logged it
       )
       .then((taken) => {
+        if (entry !== null) {
+          // Not taken: the click opens the entry all the same, with no cursor in it, and the keys go to the game; nobody
+          // holds the keyboard, so the next press (on the button, or on a field of the entry) takes it the usual way.
+          if (taken) cursorIntoEntry(entry, pressedAt);
+          return;
+        }
         if (taken) {
           if (field.isConnected) field.focus();
           return;
@@ -202,7 +301,7 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
       });
     // A press with no pointer seen over the field before it (touch, a pen): it is over the field now. Told after the
     // hold, so that the hold is not kept waiting for an arm of its own.
-    pointerAt(field);
+    pointerOn(event.target);
   };
 
   // Bubble phase: a field or a search list that used Esc itself (closed its list, dropped a draft) comes first.
@@ -215,8 +314,11 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
 
   // The field may vanish with a redraw (an answer was sent): there is no event for that, so look.
   const watchdog = window.setInterval(() => {
-    // the same goes for the field under the pointer (the window was folded): the pointer is over no field then
-    if (hovered !== null && !hovered.isConnected) pointerAt(null);
+    // The same goes for what is under the pointer, which changes with no move of the pointer: the field is gone (the
+    // window was folded), or the button the pointer rests on has stopped opening an entry (the entry is open now, the
+    // button closes it) or opens one again.
+    const resting = under !== null && under.isConnected ? (takerAt(under)?.element ?? null) : null;
+    if (resting !== hovered) pointerAt(resting);
     // While the pointer rests on a field the window that gets the focus back is the one remembered when the pointer
     // came; the foreground may have changed since. Quiet: no line unless it did.
     if (holds.state === 'armed') void quietly(holds.refreshRemembered());
@@ -243,6 +345,7 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
 
   return () => {
     window.clearInterval(watchdog);
+    stopEntryLook();
     window.removeEventListener('keydown', onKeyDownCapture, true);
     window.removeEventListener('keyup', onKeyUpCapture, true);
     window.removeEventListener('focus', resetHeldKeys);

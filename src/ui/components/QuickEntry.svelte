@@ -145,9 +145,11 @@
   }
 </script>
 
+<!-- `data-entry-field`: the button that opens the line («+ цена») puts the cursor into its first field, the commodity (ui/keyboard.ts) -->
 <form
   class="quick"
   aria-label="Быстрый ввод цены"
+  data-entry-field="quick"
   onsubmit={(event) => {
     event.preventDefault();
     void save();

@@ -274,12 +274,14 @@
         <span class="unit" title={side === 'sell' ? 'Столько уже лежит на складе у покупателя, а не сколько он готов купить' : undefined}>SCU</span>
       {/if}
       <span class="spacer"></span>
+      <!-- `data-opens-entry`: the button opens the form of a trade, and the cursor goes into the field of the form with that name
+           (ui/keyboard.ts): the quantity of a purchase, the price of a sale. The row itself and the lookups are plain buttons. -->
       {#if side === 'buy'}
         <button type="button" class="sc-btn sc-btn--act" aria-label="Где продать {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где продать</button>
-        <button type="button" class="sc-btn sc-btn--act" aria-label="Купил {row.code}" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Купил</button>
+        <button type="button" class="sc-btn sc-btn--act" aria-label="Купил {row.code}" data-opens-entry="trade-scu" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Купил</button>
       {:else}
         <button type="button" class="sc-btn sc-btn--act" aria-label="Где купить {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где купить</button>
-        <button type="button" class="sc-btn sc-btn--act" aria-label="Продал {row.code}" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Продал</button>
+        <button type="button" class="sc-btn sc-btn--act" aria-label="Продал {row.code}" data-opens-entry="trade-price" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Продал</button>
       {/if}
     </div>
     <!-- One line, never wrapped. The warning, the plaque and the rate mark keep their size; the texts between them give way

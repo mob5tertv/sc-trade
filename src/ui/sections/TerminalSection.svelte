@@ -244,11 +244,14 @@
     <button type="button" class="sc-btn sc-btn--act sc-btn--icon search" aria-label={searchTitle} title={searchTitle} onclick={searchAll}>
       <Icon name="search" />
     </button>
+    <!-- `data-opens-entry`: while the quick entry is closed the button opens it, and the cursor goes into its commodity field
+         (ui/keyboard.ts: such a button takes the keyboard like a field). Open, the button closes it and is a plain button. -->
     <button
       type="button"
       class="sc-btn sc-btn--act entry"
       aria-pressed={entryOpen}
       title="Ввести цену, которую ты видишь в игре"
+      data-opens-entry={entryOpen ? undefined : 'quick'}
       onclick={() => void app.toggleSection(ENTRY)}
     >+ цена</button>
   {/if}
