@@ -52,9 +52,20 @@ describe('captureKey: what is written', () => {
     }
   });
 
-  it('writes Ctrl+Pause as Pause: the browser calls the key «Cancel» then', () => {
-    expect(captureKey(press('Cancel', 'Pause', CTRL))).toEqual(set('Ctrl+Pause'));
-    expect(captureKey(press('Cancel', 'Pause'))).toEqual(set('Pause'));
+  it('writes Pause alone, and with Alt or Shift', () => {
+    expect(captureKey(press('Pause', 'Pause'))).toEqual(set('Pause'));
+    expect(captureKey(press('Pause', 'Pause', ALT))).toEqual(set('Alt+Pause'));
+    expect(captureKey(press('Pause', 'Pause', SHIFT))).toEqual(set('Shift+Pause'));
+    expect(captureKey(press('Pause', 'Pause', { altKey: true, shiftKey: true }))).toEqual(set('Alt+Shift+Pause'));
+  });
+
+  it('refuses Pause with Ctrl: Windows reports Ctrl+Pause as another virtual key (the browser calls it «Cancel»), so the bound key would never fire', () => {
+    for (const mods of [CTRL, { ctrlKey: true, altKey: true }, { ctrlKey: true, shiftKey: true }]) {
+      const reason = reasonOf(captureKey(press('Cancel', 'Pause', mods)));
+      expect(reason).toContain('Pause');
+      expect(reason).toContain('Ctrl');
+      expect(captureKey(press('Pause', 'Pause', mods)).kind).toBe('refuse');
+    }
   });
 
   it('writes a letter or a digit with Ctrl or Alt, as a capital letter', () => {
@@ -174,7 +185,7 @@ describe('captureKey: what is not written, because the Rust check would refuse i
   it('lists what is suitable in the refusal of an unknown key', () => {
     const reason = reasonOf(captureKey(press(' ', 'Space')));
     expect(reason.startsWith(NOT_SUITABLE)).toBe(true);
-    for (const word of ['F1–F24', 'ScrollLock', 'Pause', 'Insert', 'Home', 'End', 'PageUp', 'PageDown', 'Ctrl или Alt']) expect(reason, word).toContain(word);
+    for (const word of ['F1–F24, кроме F5, F11 и F12', 'ScrollLock', 'Pause', 'Insert', 'Home', 'End', 'PageUp', 'PageDown', 'Ctrl или Alt']) expect(reason, word).toContain(word);
   });
 
   it('refuses the keys of the numeric pad: they are other keys than those of the main row, and the check does not know them', () => {
@@ -197,6 +208,13 @@ describe('captureKey: what is not written, because the Rust check would refuse i
     expect(captureKey(press('R', 'KeyR', { ctrlKey: true, shiftKey: true })).kind).toBe('refuse');
     // Alt+R and Ctrl+Alt+R reload nothing
     expect(captureKey(press('r', 'KeyR', ALT))).toEqual(set('Alt+R'));
+  });
+
+  it('refuses Ctrl+R and Ctrl+Shift+R only: with Alt the press is not a reload', () => {
+    expect(captureKey(press('r', 'KeyR', { ctrlKey: true, altKey: true }))).toEqual(set('Ctrl+Alt+R'));
+    expect(captureKey(press('R', 'KeyR', { ctrlKey: true, altKey: true, shiftKey: true }))).toEqual(set('Ctrl+Alt+Shift+R'));
+    expect(captureKey(press('r', 'KeyR', CTRL)).kind).toBe('refuse');
+    expect(captureKey(press('R', 'KeyR', { ctrlKey: true, shiftKey: true })).kind).toBe('refuse');
   });
 
   it('says every refusal in the same beginning, so that the field can show it as one kind of message', () => {

@@ -62,6 +62,7 @@ import { rowRoiMap, type RowRoi } from './vm/row-roi';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
 import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
+import { bindNeeded } from './vm/trigger-suspension';
 import { uexErrorText } from './vm/uex-error';
 import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 
@@ -1077,8 +1078,11 @@ class AppState {
     return this.#triggerQueue(async () => {
       if (this.#triggersSuspended) return;
       const s = this.settings;
+      const keys = { panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive };
+      if (!bindNeeded(keys, this.#triggersBound)) return; // no key saved and nothing bound: "no keys" has nothing to change
+      this.#triggersBound = Object.values(keys).some((key) => key.trim() !== '');
       const outcome = await bindTriggers(
-        { panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive },
+        keys,
         {
           panel: () => void this.toggleMode(),
           depart: () => void this.mark('depart'),
@@ -1101,6 +1105,8 @@ class AppState {
   }
 
   #triggersSuspended = false;
+  /** The last set of keys that went to the Rust side had a key in it: a hook may be installed. Nothing saved and nothing bound asks for no call (`bindNeeded`). */
+  #triggersBound = false;
 
   /**
    * A key field of the settings has the focus: the hook is taken out (an empty set goes through the same queue), so that pressing an
@@ -1110,6 +1116,9 @@ class AppState {
   suspendTriggers(): Promise<void> {
     this.#triggersSuspended = true;
     return this.#triggerQueue(async () => {
+      const s = this.settings;
+      if (!bindNeeded({ panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive }, this.#triggersBound)) return;
+      this.#triggersBound = false;
       const none = () => undefined;
       await bindTriggers({ panel: '', depart: '', arrive: '' }, { panel: none, depart: none, arrive: none }, this.#log);
     });
@@ -1690,7 +1699,7 @@ class AppState {
       await getCurrentWindow().close();
     } catch (err) {
       this.#log.error('ui', 'cannot quit', { err });
-      this.notify('Не удалось выйти. Закройте приложение через значок в трее.', 'error');
+      this.notify('Не удалось выйти. Закрой приложение через значок в трее.', 'error');
     }
   }
 

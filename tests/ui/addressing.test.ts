@@ -11,12 +11,6 @@ import { DEFAULT_SETTINGS } from '../../src/core/settings';
 
 const PLURAL_IMPERATIVE = /(?<![А-Яа-яЁё])[А-Яа-яЁё]+(?:ите|йте|ьте)(?![А-Яа-яЁё])/g;
 
-/**
- * Files not scanned. `state.svelte.ts` was being changed by another task when this test was written; its one sentence in «вы»
- * ('Закройте приложение через значок в трее', when the exit failed) is for that task to put right, after which the entry can go.
- */
-const NOT_SCANNED = new Set(['src/ui/state.svelte.ts']);
-
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name).replace(/\\/g, '/');
@@ -44,7 +38,6 @@ describe('the texts speak to the player as «ты»', () => {
   it('finds no verb of the imperative plural in the sources of the interface, the data layer and the platform layer', () => {
     const found: string[] = [];
     for (const file of ['src/ui', 'src/data', 'src/platform'].flatMap(sources)) {
-      if (NOT_SCANNED.has(file)) continue;
       for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
         for (const word of line.match(PLURAL_IMPERATIVE) ?? []) found.push(`${file}: ${word}`);
       }

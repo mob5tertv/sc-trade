@@ -78,6 +78,13 @@ function watchKeyboard(app: SceneApp, fake: PriceFake): void {
   });
 }
 
+/** `window.__binds()`: how many times the trigger keys went to the Rust side (`set_trigger_keys`) and how many `bound` lines the log got, counted from now on. */
+function watchBinds(): void {
+  const count = (text: string): number => (window.__preview?.log ?? []).filter((line) => line.includes(text)).length;
+  const [calls0, bound0] = [count('set_trigger_keys'), count('[trigger] bound')];
+  (window as unknown as { __binds: () => unknown }).__binds = () => ({ calls: count('set_trigger_keys') - calls0, bound: count('[trigger] bound') - bound0 });
+}
+
 /** The player presses the location field: the window holds the keyboard. */
 async function holdKeyboard(): Promise<void> {
   await hoverAndPress('header input');
@@ -196,6 +203,35 @@ export const POLISH_SCENES: readonly Scene[] = [
       app.openSettings();
       await pause(60);
       await hoverAndPress('#set-scuCapacity');
+    },
+  },
+  {
+    // No trigger key is assigned (the usual case). A visit to a key field of the settings suspends the keys and, when the focus is gone, applies
+    // them again: with nothing saved and nothing bound that is no call to the Rust side and no line `bound` in the log. `--do "click:#set-hotkeyPanel;
+    // wait:300;click:.title;wait:300;eval:window.__binds()"` prints the number of `set_trigger_keys` calls and of `bound` lines since the start of the scene.
+    name: 'settings-keys-visit',
+    title: 'Настройки → Клавиши, ничего не назначено: заход в поле клавиши и выход из него не обращаются к Rust (ни одного set_trigger_keys)',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      app.openSettings();
+      await app.toggleSection('settings:keys');
+      await pause(100);
+      watchBinds();
+    },
+  },
+  {
+    // A key is assigned: the same visit unbinds it while the field has the focus and binds it again afterwards: two calls, as before
+    name: 'settings-keys-visit-assigned',
+    title: 'Настройки → Клавиши, назначена клавиша панели: заход в поле клавиши снимает её, выход возвращает (два вызова set_trigger_keys)',
+    dataset: 'default',
+    act: async (app) => {
+      await app.updateSetting('hotkeyPanel', 'F8');
+      await app.expand('preview');
+      app.openSettings();
+      await app.toggleSection('settings:keys');
+      await pause(100);
+      watchBinds();
     },
   },
   {

@@ -4,6 +4,7 @@ import type { RouteStat, Session } from '../../core/stats';
 import { pairKey } from '../../core/types';
 import type { Reference, Run, RunEvent, RunWithEvents } from '../../core/types';
 import { formatRoi, perHourBare } from './route-rows';
+import { terminalLabel } from './terminal-name';
 
 // Display rows of the "Мои маршруты" section: the routes, the run history and the session list. Every number is already
 // formatted, the way the list of options formats it: the ROI in `formatRoi`, the rate without its unit (the caption of the
@@ -12,11 +13,11 @@ import { formatRoi, perHourBare } from './route-rows';
 /** Shown instead of a value that does not exist. */
 export const NONE = '—';
 
-// Terminals are known by their nickname, commodities by their code; what the reference lacks (or leaves blank) is shown by id.
-const terminalName = (ref: Reference, id: number): string => ref.terminals.get(id)?.nickname || `#${id}`;
+// Terminals are named as everywhere else (`terminalLabel`: the nickname, else the display name, else the name), commodities by their code;
+// what the reference lacks (or leaves blank) is shown by id.
 const commodityName = (ref: Reference, id: number): string => ref.commodities.get(id)?.code || `#${id}`;
 
-const routeName = (ref: Reference, originId: number, destId: number): string => `${terminalName(ref, originId)} → ${terminalName(ref, destId)}`;
+const routeName = (ref: Reference, originId: number, destId: number): string => `${terminalLabel(ref, originId)} → ${terminalLabel(ref, destId)}`;
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
@@ -107,7 +108,7 @@ function mixedRoute(events: RunEvent[], ref: Reference): string {
   const trades = events.filter(isTrade);
   const from = trades.find(e => e.type === 'buy')?.terminalId ?? null;
   const to = trades.findLast(e => e.type === 'sell')?.terminalId ?? null;
-  const name = (id: number | null): string => (id === null ? NONE : terminalName(ref, id));
+  const name = (id: number | null): string => (id === null ? NONE : terminalLabel(ref, id));
   return `${name(from)} → ${name(to)}`;
 }
 

@@ -3,6 +3,15 @@
 // under the player's hands). So while a key field has the focus the keys are suspended and, when the focus is gone, applied again.
 // This is the decision of when; what suspending and resuming are is the state's (`suspendTriggers`, `resumeTriggers`).
 
+/**
+ * Whether the set of trigger keys has to go to the Rust side at all: it has when a key is saved, or when something is bound still (the key
+ * that was taken off must be unbound, and a set of no keys that follows a set of keys must say so). Nothing saved and nothing bound:
+ * "no keys" would be said again, two calls and two lines of the log for every visit to a key field of the settings.
+ */
+export function bindNeeded(keys: Record<string, string>, somethingBound: boolean): boolean {
+  return somethingBound || Object.values(keys).some((key) => key.trim() !== '');
+}
+
 export interface SuspensionActions {
   suspend(): void;
   resume(): void;

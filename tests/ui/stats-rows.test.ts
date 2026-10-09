@@ -55,9 +55,22 @@ describe('routeRows', () => {
     expect(routeRows([{ ...stat, destId: 888 }], ref)[0].route).toBe('ARC-L1 → #888');
   });
 
-  it('treats an empty label like a missing one', () => {
-    const blank = { ...ref, terminals: new Map([...ref.terminals, [9, { ...ref.terminals.get(1)!, id: 9, nickname: '' }]]) };
-    expect(routeRows([{ ...stat, originId: 9 }], blank)[0].route).toBe('#9 → TDD Area 18');
+  // a terminal is spelled like everywhere else (`terminalName`): the nickname, else the display name, else the name, else its number
+  it('spells a terminal without a nickname by its display name, then its name (task 44: it used to fall back to the number)', () => {
+    const noNickname = { ...ref, terminals: new Map([...ref.terminals, [9, { ...ref.terminals.get(1)!, id: 9, nickname: '' }]]) };
+    expect(routeRows([{ ...stat, originId: 9 }], noNickname)[0].route).toBe('ARC-L1 Wide Forest Station → TDD Area 18');
+    const onlyName = { ...ref, terminals: new Map([...ref.terminals, [9, { ...ref.terminals.get(1)!, id: 9, nickname: '', displayname: '', name: 'Wide Forest' }]]) };
+    expect(routeRows([{ ...stat, originId: 9 }], onlyName)[0].route).toBe('Wide Forest → TDD Area 18');
+  });
+
+  it('names a terminal without any name by its number', () => {
+    const nameless = { ...ref, terminals: new Map([...ref.terminals, [9, { ...ref.terminals.get(1)!, id: 9, nickname: '', displayname: '', name: '' }]]) };
+    expect(routeRows([{ ...stat, originId: 9 }], nameless)[0].route).toBe('#9 → TDD Area 18');
+  });
+
+  it('spells the terminals of the history and of the mixed run the same way', () => {
+    const noNickname = { ...ref, terminals: new Map([...ref.terminals, [1, { ...ref.terminals.get(1)!, nickname: '' }]]) };
+    expect(historyRows([R1], noNickname, NOW)[0].title).toBe('GOLD: ARC-L1 Wide Forest Station → TDD Area 18');
   });
 });
 

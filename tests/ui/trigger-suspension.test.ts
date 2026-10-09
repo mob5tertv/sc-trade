@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { triggerSuspension, type Timers } from '../../src/ui/vm/trigger-suspension';
+import { bindNeeded, triggerSuspension, type Timers } from '../../src/ui/vm/trigger-suspension';
 
 // A clock of the test: a timer is a job that waits until `tick` reaches its time.
 function fakeTimers(): Timers & { tick(ms: number): void; waiting(): number } {
@@ -121,5 +121,24 @@ describe('triggerSuspension: the assigned keys do not fire while a key field has
       suspension.focus();
       expect(calls).toEqual(['suspend', 'resume', 'suspend']);
     });
+  });
+});
+
+describe('bindNeeded (task 44): a call that would only say "no keys" again is left out', () => {
+  const none = { panel: '', depart: '', arrive: '' };
+
+  it('is not needed when no key is saved and nothing was bound: a visit to a key field costs no call', () => {
+    expect(bindNeeded(none, false)).toBe(false);
+    expect(bindNeeded({ panel: '  ', depart: '', arrive: '\t' }, false)).toBe(false);
+  });
+
+  it('is needed while something is bound, even with no key saved any more: the key that was taken off must be unbound', () => {
+    expect(bindNeeded(none, true)).toBe(true);
+  });
+
+  it('is needed when a key is saved, whether anything was bound or not', () => {
+    expect(bindNeeded({ ...none, panel: 'F8' }, false)).toBe(true);
+    expect(bindNeeded({ ...none, arrive: 'Ctrl+Alt+T' }, true)).toBe(true);
+    expect(bindNeeded({ panel: 'F8', depart: 'F9', arrive: 'F10' }, false)).toBe(true);
   });
 });
