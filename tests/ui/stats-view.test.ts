@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { pairKey } from '../../src/core/types';
 import { routeRows } from '../../src/ui/vm/stats-rows';
 import {
-  currentSession, routesSummary, sessionFigure, STATS_VIEWS, figuresOf, EMPTY_FIGURES, EMPTY_HISTORY,
+  currentSession, routesSummary, sessionFigure, STATS_VIEWS, figuresOf, EMPTY_FIGURES, EMPTY_HISTORY, LIST_HEAD_PX, LIST_MAX_HEIGHT, LIST_ROWS,
 } from '../../src/ui/vm/stats-view';
 import { DEFAULT_SESSION_GAP_SEC, routeStats } from '../../src/core/stats';
 import { ref } from '../helpers/factories';
@@ -146,6 +146,12 @@ describe('sessionFigure', () => {
 describe('the lists of the section', () => {
   it('are three, in the order the switch shows them, with Russian names', () => {
     expect(STATS_VIEWS.map((v) => [v.id, v.label])).toEqual([['routes', 'Маршруты'], ['history', 'История'], ['sessions', 'Сессии']]);
+  });
+
+  it('show eight rows before they scroll: the body is the line of heads and eight rows of the height of a row, and no taller', () => {
+    expect(LIST_ROWS).toBe(8);
+    expect(LIST_HEAD_PX).toBe(18);
+    expect(LIST_MAX_HEIGHT).toBe('calc(var(--sc-row-h) * 8 + 18px)');
   });
 });
 

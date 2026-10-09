@@ -7,6 +7,9 @@ import { buildMarket } from '../../src/core/market';
 import { ev, obs, ref } from '../helpers/factories';
 import { active, ctx, GOLD, market, mixedRun, NOW, s, TITA, withOwnSell } from '../helpers/strip-fixtures';
 
+// prices are formatted with a non-breaking space as the thousands separator
+const NBSP = String.fromCharCode(0xa0);
+
 const model = (a: typeof active | null, settings = s, c = ctx) => stripModel(a, market, ref, settings, c);
 
 describe('runSectionKind', () => {
@@ -32,15 +35,21 @@ describe('runHeader', () => {
 
   it('starts with the phase and its own timer, then the cargo; the target stands apart, and is always there', () => {
     expect(header(active, { ...s, targetTerminalId: 2 })).toMatchObject({
-      summary: 'Погрузка 14:32 · GOLD 96 SCU', target: '→ TDD Area 18',
+      summary: `Погрузка 14:32 · GOLD 96 SCU по 6${NBSP}120`, target: '→ TDD Area 18',
     });
-    expect(header(active)).toMatchObject({ summary: 'Погрузка 14:32 · GOLD 96 SCU', target: 'цель не выбрана' });
+    expect(header(active)).toMatchObject({ summary: `Погрузка 14:32 · GOLD 96 SCU по 6${NBSP}120`, target: 'цель не выбрана' });
+  });
+  it('says the cargo in the words of the mini line, with what it was bought for', () => {
+    const mixed = model(mixedRun);
+    if (mixed.kind !== 'run') throw new Error('a run was expected');
+    expect(runHeader(mixed).summary).toBe(`Погрузка 14:32 · ${mixed.cargo}`);
+    expect(mixed.cargo).toBe(`GOLD 96 по 6${NBSP}120, TITA 40 по 2${NBSP}500`);
   });
   it('names the phase that is running, with the whole run in the tooltip', () => {
     // the first purchase was 872 s ago, the take-off 300 s ago
     const inFlight = { run: active.run, events: [...active.events, ev({ id: 9, runId: 1, ts: NOW - 300, type: 'depart' })] };
-    expect(header(inFlight)).toMatchObject({ summary: 'Полёт 5:00 · GOLD 96 SCU' });
-    expect(header(inFlight).title).toBe('Полёт 5:00 · GOLD 96 SCU · цель не выбрана · всего 14:32');
+    expect(header(inFlight)).toMatchObject({ summary: `Полёт 5:00 · GOLD 96 SCU по 6${NBSP}120` });
+    expect(header(inFlight).title).toBe(`Полёт 5:00 · GOLD 96 SCU по 6${NBSP}120 · цель не выбрана · всего 14:32`);
   });
   it('words the plan: the target and nothing else', () => {
     expect(planSummary('ARC-L1')).toBe('цель: ARC-L1');

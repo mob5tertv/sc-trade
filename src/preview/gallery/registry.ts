@@ -24,10 +24,10 @@ const TABLE = {
   section: { title: 'Секция: открыта, закрыта, действия, длинная сводка, прокрутка', component: SectionPage as Component },
   'quick-entry': { title: 'Быстрый ввод: пустой, список поиска, заполнен, ошибка', component: QuickEntryPage as Component },
   'search-box': { title: 'Поиск со значением', component: SearchBoxPage as Component },
-  strip: { title: 'Мини-строка: без рейса, в рейсе, сообщение, длинный груз', component: StripPage as Component },
+  strip: { title: 'Мини-строка: без рейса, в рейсе, сообщение, груз из одного, двух, трёх товаров с ценой закупки, длинный груз', component: StripPage as Component },
   dialog: { title: 'Диалог сделки', component: DialogPage as Component },
   run: { title: 'Карточка рейса и «продать или лететь дальше»', component: RunPage as Component },
-  stats: { title: 'История, сессии, таблица маршрутов', component: StatsPage as Component },
+  stats: { title: 'История, сессии, таблица маршрутов (сортировка), списки в секции: восемь строк и прокрутка', component: StatsPage as Component },
   badge: { title: 'Метки и плашки свежести', component: BadgePage as Component },
 } satisfies Record<GalleryPage, PageEntry>;
 

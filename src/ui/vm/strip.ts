@@ -4,7 +4,7 @@ import { cargoOf } from '../../core/run';
 import type { Settings } from '../../core/settings';
 import type { CargoLine, Estimate, Market, Reference, RunWithEvents, Terminal } from '../../core/types';
 import { nextMarkOf, phaseCaps, runPhases, type RunPhase } from './run-phase';
-import { expectedRun, priceAtTarget } from './run-rate';
+import { expectedRun, priceAtTarget, type PricedLine } from './run-rate';
 import type { SessionFigure } from './stats-view';
 
 export type StripModel =
@@ -23,7 +23,11 @@ export type StripModel =
     phase: RunPhase; phaseLabel: string; phaseTimer: string;
     /** The mark the one button of the line gives; `null` when none (unloading). */
     next: 'depart' | 'arrive' | null;
-    cargo: string; target: string | null;
+    /** What is in the hold and what it was bought for: 'MEDS 120 SCU по 2 115'; with several commodities 'MEDS 120 по 2 115, STIM 80 по 2 810'. */
+    cargo: string;
+    /** The cargo for a tooltip, a line for every commodity: 'MEDS 120 SCU · куплено по 2 115 · ждём 2 351'; empty for an empty hold. */
+    cargoTitle: string;
+    target: string | null;
     /** 'ждём 6 900 (6 400–7 100)': with the range, for a tooltip. */
     expect: string | null;
     /** 'ждём 6 900': the same without the range, for the one-line strip. */
@@ -41,11 +45,19 @@ function locationOf(ref: Reference, terminalId: number | null): string {
   return terminal ? terminalLabel(terminal) : NO_LOCATION;
 }
 
-function cargoText(ref: Reference, cargo: CargoLine[]): string {
-  return cargo.map(({ commodityId, scu }) => {
-    const commodity = ref.commodities.get(commodityId);
-    return `${commodity ? commodity.code || commodity.name : `#${commodityId}`} ${scu} SCU`;
-  }).join(', ');
+const commodityCode = (ref: Reference, commodityId: number): string => {
+  const commodity = ref.commodities.get(commodityId);
+  return commodity ? commodity.code || commodity.name : `#${commodityId}`;
+};
+
+/**
+ * What is in the hold and what each commodity was bought for (the average over its purchases, a whole number):
+ * 'MEDS 120 SCU по 2 115'. With several commodities the word SCU is left out, so that the line does not grow:
+ * 'MEDS 120 по 2 115, STIM 80 по 2 810'.
+ */
+export function cargoText(ref: Reference, cargo: CargoLine[]): string {
+  const unit = cargo.length === 1 ? ' SCU' : '';
+  return cargo.map(({ commodityId, scu, avgBuyPrice }) => `${commodityCode(ref, commodityId)} ${scu}${unit} по ${formatUec(avgBuyPrice)}`).join(', ');
 }
 
 /** 'ждём 6 900 (6 400–7 100)', and its short form 'ждём 6 900'; no brackets when both bounds are the price. */
@@ -56,9 +68,20 @@ function expectTexts(sell: Estimate): { full: string; short: string } {
 }
 
 /**
+ * The whole cargo for a tooltip, a line for every commodity: the quantity, what it was bought for and, where the target
+ * pays a known price for it, what it is expected to sell for there: 'MEDS 120 SCU · куплено по 2 115 · ждём 2 351'.
+ */
+export function cargoTitle(ref: Reference, priced: PricedLine[]): string {
+  return priced.map(({ line, sell }) => [
+    `${commodityCode(ref, line.commodityId)} ${line.scu} SCU`, `куплено по ${formatUec(line.avgBuyPrice)}`, sell && expectTexts(sell).short,
+  ].filter(Boolean).join(' · ')).join('\n');
+}
+
+/**
  * What the small strip shows: the current location (and the target, when one is set) and what the session that is going
- * has earned (`session`) without a run; during a run the phase with its own timer, the cargo, the target terminal, what
- * the first commodity is expected to sell for there and the expected UEC per hour (that line is full: no session in it).
+ * has earned (`session`) without a run; during a run the phase with its own timer, the cargo with what it was bought for, the
+ * target terminal, what the first commodity is expected to sell for there and the expected UEC per hour (that line is full:
+ * no session in it). The tooltip of the cargo has every commodity with its own expectation (`cargoTitle`).
  * The rate is the number of the card of the run, over the whole run (`expectedRun`): none while the time of the run is not
  * known, or while the target pays for only a part of the hold. A target that is unset or missing from the reference leaves
  * the last three out.
@@ -83,13 +106,18 @@ export function stripModel(
     cargo: cargoText(ref, cargo),
   };
 
-  if (!target) return { ...head, target: null, expect: null, expectShort: null, rate: null };
+  if (!target) {
+    const unpriced = cargo.map((line): PricedLine => ({ line, sell: null }));
+    return { ...head, cargoTitle: cargoTitle(ref, unpriced), target: null, expect: null, expectShort: null, rate: null };
+  }
 
-  const firstSell = priceAtTarget(cargo, m, target.id, ctx)[0]?.sell ?? null;
+  const priced = priceAtTarget(cargo, m, target.id, ctx);
+  const firstSell = priced[0]?.sell ?? null;
   const expect = firstSell ? expectTexts(firstSell) : null;
   const rate = expectedRun(active, m, target.id, ctx)?.rate ?? null;
   return {
     ...head,
+    cargoTitle: cargoTitle(ref, priced),
     target: terminalLabel(target),
     expect: expect?.full ?? null, expectShort: expect?.short ?? null,
     rate: rate === null ? null : `≈ ${formatCompact(rate)}/ч`,

@@ -43,7 +43,7 @@
       {/if}
     {:else}
       <span class="part timer" title="Всего: {model.timer}"><span class="phase">{model.phaseLabel}</span>{model.phaseTimer}</span>
-      <span class="part cargo">{model.cargo}</span>
+      <span class="part cargo" title={model.cargoTitle || undefined}>{model.cargo}</span>
       <span class="part" class:muted={model.target === null}>{model.target === null ? 'цель не выбрана' : `→ ${model.target}`}</span>
       {#if expect}<span class="part">{expect}</span>{/if}
       {#if model.rate}<span class="part rate">{model.rate}</span>{/if}
@@ -58,13 +58,14 @@
 </div>
 
 <style>
-  /* one line, as wide as what it says, and never wider than 600 px (the name of the phase takes room the cargo had): a long cargo is cut; the glass and the frame
-     belong to the window around it (`.sc-frame`), so that the glass is painted once */
+  /* one line, as wide as what it says, and never wider than 660 px: a long cargo is cut, nothing else is. The cargo says what each commodity was bought for
+     ('MEDS 120 по 2 115'); measured in the gallery (task 42), the line takes 568 px with two commodities, 623 with five-digit prices and a long name of the target,
+     640 with six-digit prices, and 658 with three commodities; the glass and the frame belong to the window around it (`.sc-frame`), so that the glass is painted once */
   .strip {
     display: flex;
     align-items: stretch;
     width: max-content;
-    max-width: 600px;
+    max-width: 660px;
     height: var(--sc-mini-h);
     overflow: hidden;
     color: var(--sc-text);

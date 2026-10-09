@@ -1,10 +1,30 @@
 <script lang="ts">
+  import { ariaSortOf, type RouteSort, type RouteSortKey } from '../vm/route-sort';
   import type { RouteRow } from '../vm/stats-rows';
 
-  let { rows }: { rows: RouteRow[] } = $props();
+  interface Props {
+    /** The rows in the order they are to be shown: the owner sorts them (`sortRoutes`). */
+    rows: RouteRow[];
+    /** The column the rows are sorted by and the direction; the header of that column carries the arrow. */
+    sort: RouteSort;
+    /** A numeric header was clicked. */
+    onSort: (key: RouteSortKey) => void;
+  }
+  let { rows, sort, onSort }: Props = $props();
 
   const isLoss = (profit: string): boolean => profit.startsWith('-');
 </script>
+
+{#snippet head(key: RouteSortKey, label: string, title: string)}
+  <span role="columnheader" class="r" aria-sort={ariaSortOf(sort, key)}>
+    <button type="button" class="sort" class:on={sort.key === key} {title} onclick={() => onSort(key)}>
+      {#if sort.key === key}
+        <svg class="arrow" viewBox="0 0 5 4" width="5" height="4" aria-hidden="true"><path d={sort.dir === 'asc' ? 'M2.5 0L5 4H0z' : 'M0 0H5L2.5 4z'} /></svg>
+      {/if}
+      {label}
+    </button>
+  </span>
+{/snippet}
 
 {#if rows.length === 0}
   <p class="empty">Заверши первый рейс — здесь появится рейтинг маршрутов</p>
@@ -13,11 +33,11 @@
     <div class="grid head sc-label" role="row">
       <span role="columnheader">Маршрут</span>
       <span role="columnheader">Товар</span>
-      <span role="columnheader" class="r">UEC/ч</span>
-      <span role="columnheader" class="r" title="Число завершённых рейсов">Рейс</span>
-      <span role="columnheader" class="r">Время</span>
-      <span role="columnheader" class="r">Прибыль</span>
-      <span role="columnheader" class="r">ROI</span>
+      {@render head('rate', 'UEC/ч', 'Сортировать по UEC в час')}
+      {@render head('runs', 'Рейс', 'Сортировать по числу завершённых рейсов')}
+      {@render head('time', 'Время', 'Сортировать по медианному времени: быстрые сверху')}
+      {@render head('profit', 'Прибыль', 'Сортировать по суммарной прибыли')}
+      {@render head('roi', 'ROI', 'Сортировать по среднему ROI')}
     </div>
     {#each rows as row (row.key)}
       <div class="grid line" role="row">
@@ -42,15 +62,61 @@
     padding: 0 var(--sc-pad-x);
   }
 
+  /* the line of heads stays at the top of the body while the rows scroll under it; the solid twin of the glass hides them */
   .head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     height: 18px;
     border-bottom: 1px solid var(--sc-border);
+    background: var(--sc-bg-solid);
     color: var(--sc-muted);
     white-space: nowrap;
   }
 
   .r {
     text-align: right;
+  }
+
+  /* A header of a number is a button as tall as the head, so the head keeps its height; the column keeps its width: the
+     label stays at the right edge, where the numbers are, and the arrow of the sorted column takes the room to its left. */
+  .head .r {
+    display: flex;
+    align-self: stretch;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  /* The negative margin takes back the letter-spacing that follows the last letter, so that the label ends where the numbers do; "Рейс" is
+     in a column of 32 px and its arrow has to fit in it too. */
+  .sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    height: 100%;
+    margin-right: -0.08em;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .sort:hover {
+    color: var(--sc-text);
+  }
+
+  .sort.on {
+    color: var(--sc-accent);
+  }
+
+  .arrow {
+    flex: none;
+    fill: currentColor;
   }
 
   .line {
