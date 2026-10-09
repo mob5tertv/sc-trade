@@ -2,7 +2,7 @@ import { formatDuration, formatUec } from '../../core/format';
 import { isIncomeRun, runTotals, simpleRoute } from '../../core/run';
 import type { RouteStat, Session } from '../../core/stats';
 import { pairKey } from '../../core/types';
-import type { Reference, RunEvent, RunWithEvents } from '../../core/types';
+import type { Reference, Run, RunEvent, RunWithEvents } from '../../core/types';
 import { formatRoi, perHourBare } from './route-rows';
 
 // Display rows of the "Мои маршруты" section: the routes, the run history and the session list. Every number is already
@@ -111,15 +111,43 @@ function mixedRoute(events: RunEvent[], ref: Reference): string {
   return `${name(from)} → ${name(to)}`;
 }
 
+/** What a run says of its result, written as the lists write it: the numbers of a row of the history and of the notice of a run that was closed. */
+export interface RunFigures {
+  profit: string;
+  /** The dash when nothing was invested. */
+  roi: string;
+  duration: string;
+  /** The dash when the run took no time. */
+  rate: string;
+  /** What the profit is, to the rounded UEC: a gain, a loss or neither. */
+  tone: 'gain' | 'loss' | 'even';
+}
+
+/**
+ * The figures of a run as of `now` (a run that has an end lasts until it). A sale of goods that were never bought (`isIncomeRun`)
+ * is not a flight: it has no time and no rate, only its profit. Whether the run is over is not decided here: a run that goes on
+ * has these figures too, and the row of the history blanks them (`historyRow`).
+ */
+export function runFigures(run: Run, events: RunEvent[], now: number): RunFigures {
+  const totals = runTotals(run, events, now);
+  const income = isIncomeRun(events);
+  const rounded = Math.round(totals.profit);
+  return {
+    profit: formatUec(totals.profit),
+    roi: totals.roi === null ? NONE : formatRoi(totals.roi),
+    duration: income ? NONE : formatDuration(totals.durationSec),
+    rate: income ? NONE : perHourBare(totals.uecPerHour),
+    tone: rounded > 0 ? 'gain' : rounded < 0 ? 'loss' : 'even',
+  };
+}
+
 /**
  * The row of one run. An active run lasts until `now`; its profit, ROI and rate are dashes: it has not finished, so the
  * money in the hold is not a loss (the profit the run has so far is only what the cargo card shows). A lost run keeps its loss.
- * A sale of goods that were never bought (`isIncomeRun`) is not a flight: it has no time and no rate, only its profit.
  */
 function historyRow({ run, events }: RunWithEvents, ref: Reference, now: number): HistoryRow {
-  const totals = runTotals(run, events, now);
+  const figures = runFigures(run, events, now);
   const going = run.status === 'active';
-  const income = isIncomeRun(events);
   const { title, hint } = runLabel(run.status, events, ref);
   return {
     runId: run.id,
@@ -127,10 +155,10 @@ function historyRow({ run, events }: RunWithEvents, ref: Reference, now: number)
     title,
     hint,
     status: run.status,
-    profit: going ? NONE : formatUec(totals.profit),
-    roi: going || totals.roi === null ? NONE : formatRoi(totals.roi),
-    duration: income ? NONE : formatDuration(totals.durationSec),
-    rate: going || income ? NONE : perHourBare(totals.uecPerHour),
+    profit: going ? NONE : figures.profit,
+    roi: going ? NONE : figures.roi,
+    duration: figures.duration,
+    rate: going ? NONE : figures.rate,
   };
 }
 

@@ -63,6 +63,33 @@ export const POLISH_SCENES: readonly Scene[] = [
     },
   },
   {
+    // The cargo is lost and the window is folded at once: the mini line says it, in the colour of an error, for eight seconds (the other
+    // messages of the line stay three). `--do "wait:6000;eval:window.__flash()"` still has the text, `--do "wait:9000;eval:window.__flash()"` has none.
+    name: 'run-closed-mini',
+    title: 'Груз потерян, окно свёрнуто: мини-строка говорит итог красным, 8 секунд',
+    dataset: 'run',
+    act: async (app) => {
+      (window as unknown as { __flash: () => unknown }).__flash = () => ({ text: app.flash, kind: app.flashKind });
+      await app.expand('preview');
+      await app.loseCargo();
+      await app.collapse('preview');
+    },
+  },
+  {
+    // The sale of the last cargo that makes a profit, the window folded after it: the line says it in the accent colour
+    name: 'run-sold-mini',
+    title: 'Последний груз продан, окно свёрнуто: мини-строка говорит итог рейса',
+    dataset: 'run',
+    act: async (app) => {
+      (window as unknown as { __flash: () => unknown }).__flash = () => ({ text: app.flash, kind: app.flashKind });
+      await app.expand('preview');
+      app.setViewTerminal(ARC_L1);
+      await app.sell({ terminalId: ARC_L1, commodityId: 1, scu: 120, price: 2540, knownScu: 90 });
+      await app.sell({ terminalId: ARC_L1, commodityId: 8, scu: 80, price: 3320 });
+      await app.collapse('preview');
+    },
+  },
+  {
     // ALUM has only a price of UEX at HUR-L1: the form of the purchase starts with it, and the field is muted until it is touched
     // (`--do "eval:..."` reads the class `foreign` of `form.trade .in-price`; typing into the field makes the number the player's)
     name: 'trade-buy-foreign',

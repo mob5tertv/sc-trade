@@ -51,6 +51,7 @@ import { createLatestRequest } from './vm/latest-request';
 import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './vm/lookup';
 import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
+import { closedRunNotice, shownFor } from './vm/run-closed';
 import { markRefusal } from './vm/run-phase';
 import { sameRun } from './vm/same-run';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
@@ -96,7 +97,9 @@ import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 //    writes through the trade service, then reads the active run (and, unless the service refused, the market) again, and only then the next one
 //    starts, so that a double click or a key pressed twice judges the state the first press left. A refusal comes back as
 //    a Russian sentence (the form under a row shows it); marks say it with `flash` (the mini line) and the notice line
-//    (the expanded window). `ask` / `answer` are the one in-flow question of the window (a line under the header);
+//    (the expanded window). A write that closes a run (the last sale, the lost cargo) or writes an income says its result the
+//    same way (`#announceClosed`: 'Рейс закрыт: +73 400 · 369k/ч · ROI 15%'), after the write and before what the trade does next.
+//    `ask` / `answer` are the one in-flow question of the window (a line under the header);
 //  - the window: it is the mini bar (`mini`) or the expanded view (`expanded`), as big as its content and
 //    anchored to a corner. It never takes the keyboard from the game by itself: the keyboard is taken only
 //    through `keyboard.hold(...)` (a text field is edited) and handed back by `release`. The expanded view
@@ -191,6 +194,8 @@ class AppState {
   activeRun = $state.raw<RunWithEvents | null>(null);
   /** A short message of the mini line (3 seconds); in the expanded window the same text goes to the notice line. */
   flash = $state<string | null>(null);
+  /** `error`: the message of the mini line is in the colour of an error (a refused write, a run that closed at a loss). */
+  flashKind = $state<Notice['kind']>('info');
   /** The question under the header that waits for yes or no; `null` when none is asked. */
   confirm = $state.raw<Confirm | null>(null);
   pricesSyncedAt = $state<number | null>(null);
@@ -1341,14 +1346,37 @@ class AppState {
     return TRADE_FAILED;
   }
 
-  /** A short message for the player where he looks now: the mini line for 3 seconds, the notice line in the expanded window. */
-  #say(text: string, kind: Notice['kind'] = 'info'): void {
+  /**
+   * A short message for the player where he looks now: the mini line for 3 seconds, the notice line in the expanded window. The mini
+   * line takes the colour of the message (`kind`). A message with numbers to read (`long`) stays in each of them for no less than
+   * `shownFor` its usual time.
+   */
+  #say(text: string, kind: Notice['kind'] = 'info', long = false): void {
     this.flash = text;
+    this.flashKind = kind;
     clearTimeout(this.#flashTimer);
     this.#flashTimer = setTimeout(() => {
       this.flash = null;
-    }, FLASH_MS);
-    if (this.mode === 'expanded') this.notify(text, kind);
+    }, long ? shownFor(FLASH_MS) : FLASH_MS);
+    if (this.mode === 'expanded') this.notify(text, kind, long ? shownFor(NOTICE_MS) : NOTICE_MS);
+  }
+
+  /**
+   * A run was closed (the sale that emptied the hold, the cargo lost) or an income was written: the result is said at once, in the line
+   * the player looks at, so that it is not found only in the history. The numbers are those of the row of that run (`closedRunNotice`).
+   * Said BEFORE whatever else the trade does after the write, so that a failure of one of those steps (the target that cannot be
+   * cleared, the run that cannot be read) lands on top of it and is never covered by it. It carries three numbers to read, so it
+   * stays no less than eight seconds in the mini line too (`shownFor`).
+   */
+  #announceClosed(closed: RunWithEvents): void {
+    try {
+      const { text, kind } = closedRunNotice(closed);
+      this.#log.info('ui', 'run closed', { runId: closed.run.id, status: closed.run.status });
+      this.#say(text, kind, true);
+    } catch (err) {
+      // the trade IS written: a notice that cannot be made must not turn it into a failure
+      this.#log.error('ui', 'cannot say that the run is closed', { runId: closed.run.id, err });
+    }
   }
 
   /**
@@ -1422,13 +1450,20 @@ class AppState {
       let failure: string | null = null;
       let finished = false;
       let mayHaveWritten = true;
+      /** The run this write closed (the sale that emptied the hold) or wrote (an income): what the notice tells the result of. */
+      let closed: RunWithEvents | null = null;
       try {
-        if (income) await recordIncome(this.#tradeDeps(), input);
-        else finished = (await recordSell(this.#tradeDeps(), input)).finished;
+        if (income) closed = await recordIncome(this.#tradeDeps(), input);
+        else {
+          const sale = await recordSell(this.#tradeDeps(), input);
+          finished = sale.finished;
+          if (finished) closed = sale.run;
+        }
       } catch (err) {
         failure = this.#tradeFailure(what, err, { ...input });
         mayHaveWritten = !(err instanceof TradeError);
       }
+      if (failure === null && closed !== null) this.#announceClosed(closed);
       if (failure === null && finished) await this.#runEnded('done');
       await this.#reloadRun(mayHaveWritten);
       if (income && mayHaveWritten) void stats.reload('income sale');
@@ -1475,13 +1510,15 @@ class AppState {
       this.#log.info('ui', 'lose cargo');
       let failure: string | null = null;
       let mayHaveWritten = true;
+      let closed: RunWithEvents | null = null;
       try {
-        await closeAsLost(this.#tradeDeps());
+        closed = await closeAsLost(this.#tradeDeps());
       } catch (err) {
         failure = this.#tradeFailure('lose cargo', err, {});
         mayHaveWritten = !(err instanceof TradeError);
         this.#say(failure, 'error');
       }
+      if (closed !== null) this.#announceClosed(closed);
       if (failure === null) await this.#runEnded('lost'); // before the run is read again, as after the last sale
       await this.#reloadRun(mayHaveWritten);
       return failure;
@@ -1613,10 +1650,10 @@ class AppState {
   // ---- messages ---------------------------------------------------------------------------------
 
   /** A short Russian message under the header (the line exists only while there is one); it goes away by itself. */
-  notify(text: string, kind: Notice['kind']): void {
+  notify(text: string, kind: Notice['kind'], ms: number = NOTICE_MS): void {
     clearTimeout(this.#noticeTimer);
     this.notice = { text, kind };
-    this.#noticeTimer = setTimeout(() => this.dismissNotice(), NOTICE_MS);
+    this.#noticeTimer = setTimeout(() => this.dismissNotice(), ms);
   }
 
   /** The cross of the notice line: the player puts the message away before its time (the timer does it without a line). */
