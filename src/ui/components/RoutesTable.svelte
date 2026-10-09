@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { LEGEND, legendTitle } from '../vm/legend';
   import { routePieces } from '../vm/route-pieces';
   import { ariaSortOf, type RouteSort, type RouteSortKey } from '../vm/route-sort';
   import type { RouteRow } from '../vm/stats-rows';
@@ -35,7 +36,7 @@
     <div class="grid head sc-label" role="row">
       <span role="columnheader">Маршрут</span>
       <span role="columnheader">Товар</span>
-      {@render head('rate', 'UEC/ч', 'Сортировать по UEC в час')}
+      {@render head('rate', 'UEC/ч', legendTitle(LEGEND.rateRoutes, 'Сортировать по UEC в час'))}
       {@render head('runs', 'Рейс', 'Сортировать по числу завершённых рейсов')}
       {@render head('time', 'Время', 'Сортировать по медианному времени: быстрые сверху')}
       {@render head('profit', 'Прибыль', 'Сортировать по суммарной прибыли')}

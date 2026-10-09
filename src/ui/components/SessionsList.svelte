@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { LEGEND } from '../vm/legend';
   import type { SessionRow } from '../vm/stats-rows';
 
   let { rows }: { rows: SessionRow[] } = $props();
@@ -15,7 +16,7 @@
       <span role="columnheader" class="r">Длит.</span>
       <span role="columnheader" class="r">Рейсов</span>
       <span role="columnheader" class="r">Прибыль</span>
-      <span role="columnheader" class="r">UEC/ч</span>
+      <span role="columnheader" class="r" title={LEGEND.rateSessions}>UEC/ч</span>
     </div>
     {#each rows as row}
       <div class="row line" role="row">

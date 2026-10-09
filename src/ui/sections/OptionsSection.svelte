@@ -5,6 +5,7 @@
   import Section from '../components/Section.svelte';
   import { app } from '../state.svelte';
   import { stats } from '../stats.svelte';
+  import { LEGEND, legendTitle } from '../vm/legend';
   import { lookupEmptyText, lookupTarget } from '../vm/lookup';
   import { optionsSummary } from '../vm/options-summary';
   import { titlePieces } from '../vm/route-pieces';
@@ -47,7 +48,7 @@
       <button type="button" class="sc-btn sc-btn--act" title="Искать по всем товарам точки" onclick={showAllCommodities}>все товары</button>
     {/if}
     <div class="sc-seg" role="group" aria-label="Сортировка">
-      <button type="button" aria-pressed={app.settings.sort === 'uecPerHour'} title="Сначала то, что приносит больше UEC в час" onclick={() => setSort('uecPerHour')}>UEC/ч</button>
+      <button type="button" aria-pressed={app.settings.sort === 'uecPerHour'} title={legendTitle(LEGEND.rateOptions, 'Сначала то, что приносит больше UEC в час')} onclick={() => setSort('uecPerHour')}>UEC/ч</button>
       <button type="button" aria-pressed={app.settings.sort === 'roi'} title="Сначала то, что выгоднее по отношению прибыли к вложенному" onclick={() => setSort('roi')}>ROI</button>
     </div>
     {#if request.kind === 'from'}
@@ -64,6 +65,7 @@
     title="Варианты"
     {summary}
     {summaryPieces}
+    summaryTitle={lookup.preliminary ? legendTitle(`Варианты: ${summary}`, LEGEND.approxOptions) : undefined}
     {open}
     onToggle={() => void app.toggleSection(SECTION)}
     onClose={() => app.closeLookup()}

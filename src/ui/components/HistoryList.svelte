@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { LEGEND } from '../vm/legend';
   import { routePieces } from '../vm/route-pieces';
   import type { HistoryRow } from '../vm/stats-rows';
   import PieceLine from './PieceLine.svelte';
@@ -19,7 +20,7 @@
       <span role="columnheader" class="r">Прибыль</span>
       <span role="columnheader" class="r">ROI</span>
       <span role="columnheader" class="r">Время</span>
-      <span role="columnheader" class="r">UEC/ч</span>
+      <span role="columnheader" class="r" title={LEGEND.rateRoutes}>UEC/ч</span>
     </div>
     {#each rows as row (row.runId)}
       <div class="grid line" role="row" title={STATUS[row.status]}>

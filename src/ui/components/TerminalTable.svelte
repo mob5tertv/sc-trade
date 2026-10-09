@@ -7,7 +7,8 @@
   import type { RoiCell } from '../vm/row-roi';
   import { DEFAULT_TERMINAL_SORT, heldPlaces, holdMark, holdOf, holdOrder, orderRows, terminalAriaSort } from '../vm/terminal-order';
   import type { TerminalSort, TerminalSortKey } from '../vm/terminal-order';
-  import { RANGE_HEAD_TITLE, cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
+  import { LEGEND } from '../vm/legend';
+  import { cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
   import { tradeEntryField } from '../vm/trade-form';
   import TempBadge from './TempBadge.svelte';
@@ -275,7 +276,7 @@
         onblur={e => onBlur(e, row.commodityId, side, cell)}
       />
       {#if estimated && cell.ownScu !== null}
-        <span class="est" title="Оценка по таймеру пополнения: сколько там сейчас">≈ {formatUec(cell.ownScu)}</span>
+        <span class="est" title={LEGEND.approxScu}>≈ {formatUec(cell.ownScu)}</span>
       {:else}
         <span class="unit" title={side === 'sell' ? 'Столько уже лежит на складе у покупателя, а не сколько он готов купить' : undefined}>SCU</span>
       {/if}
@@ -304,9 +305,9 @@
           {@const was = `было ${formatUec(cell.ownScuBase.scu)} · ${cell.ownScuBase.age}`}
           <span class="text muted" title={was}>{was}</span>
           {#if cell.ownScuRate === 'learned'}
-            <span class="rate learned fixed" title="Скорость пополнения выучена по твоим замерам">скорость выучена</span>
+            <span class="rate learned fixed" title={LEGEND.rateLearned}>скорость выучена</span>
           {:else if cell.ownScuRate === 'default'}
-            <span class="rate fixed" title="По твоим замерам скорость пополнения ещё не выучена, взята запасная">скорость запасная</span>
+            <span class="rate fixed" title={LEGEND.rateDefault}>скорость запасная</span>
           {/if}
         {/if}
         {#if cell.ownLast}
@@ -350,7 +351,7 @@
     <div class="grid head sc-label" role="row">
       {@render head('name', 'Товар', 'Порядок по умолчанию: по названию товара')}
       <span role="columnheader" class="r price-head">Цена</span>
-      <span role="columnheader" class="r" title={RANGE_HEAD_TITLE}>Мин–макс</span>
+      <span role="columnheader" class="r" title={LEGEND.range}>Мин–макс</span>
       <span role="columnheader" class="r">SCU</span>
       {@render head('roi', 'ROI', roiTitle)}
     </div>
@@ -384,7 +385,7 @@
                 {#if cell.badge}<TempBadge compact text={cell.badge.text} kind={cell.badge.kind} />{:else}<span class="nomark"></span>{/if}
               </span>
               <span class="range sc-num" data-range={span.kind} title={span.title}>{span.text}</span>
-              <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu === null ? unknownScuTitle(side) : scu.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
+              <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu === null ? unknownScuTitle(side) : scu.estimated ? LEGEND.approxScu : scu.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
             </button>
             {#if best}
               <button

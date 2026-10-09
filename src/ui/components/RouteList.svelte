@@ -3,7 +3,7 @@
   import type { Reference } from '../../core/types';
   import { routeOptionRow } from '../vm/route-rows';
   import type { RouteMode, RouteOptionRow, UexRangeOf } from '../vm/route-rows';
-  import { RANGE_HEAD_TITLE } from '../vm/terminal-rows';
+  import { LEGEND, legendTitle } from '../vm/legend';
   import TempBadge from './TempBadge.svelte';
   import TrendMark from './TrendMark.svelte';
 
@@ -78,9 +78,9 @@
     <div class="grid head sc-label" role="row">
       <span role="columnheader">{mode === 'to' ? 'Откуда' : 'Куда'}</span>
       <span role="columnheader" class="r price-head">Цена</span>
-      <span role="columnheader" class="r" title={RANGE_HEAD_TITLE}>Мин–макс</span>
+      <span role="columnheader" class="r" title={LEGEND.range}>Мин–макс</span>
       <span role="columnheader" class="r">ROI</span>
-      <span role="columnheader" class="r">UEC/ч</span>
+      <span role="columnheader" class="r" title={LEGEND.rateOptions}>UEC/ч</span>
     </div>
     {#each rows as { option, row } (row.key)}
       {@const expanded = expandedKey === row.key}
@@ -108,7 +108,7 @@
               <div class="fact"><span class="sc-label">Объём</span><span class="sc-num">{row.qty}</span></div>
               <div class="fact"><span class="sc-label">Вложение</span><span class="sc-num">{row.invested}</span></div>
               <div class="fact"><span class="sc-label">Прибыль</span><span class="sc-num" class:loss={row.profitLoss}>{row.profit}</span></div>
-              <div class="fact" title="Прибыль при худшем исходе цен"><span class="sc-label">Худший</span><span class="sc-num" class:loss={row.worstLoss}>{row.worst}</span></div>
+              <div class="fact" title={LEGEND.worst}><span class="sc-label">Худший</span><span class="sc-num" class:loss={row.worstLoss}>{row.worst}</span></div>
             </div>
             {#if row.stockNote}<p class="stock-note"><span class="unsure" aria-hidden="true">?</span> {row.stockNote}</p>{/if}
             <div class="prices">
@@ -116,7 +116,7 @@
               {@render price('Продать', row.sell)}
             </div>
             <div class="foot">
-              <span class="inline" title={row.timeTitle ?? undefined}><span class="sc-label">Время</span><span class="sc-num">{row.time}</span></span>
+              <span class="inline" title={legendTitle(LEGEND.time, row.timeTitle)}><span class="sc-label">Время</span><span class="sc-num">{row.time}</span></span>
               <span class="inline" title="Сколько раз ты уже возил это"><span class="sc-label">Рейсов</span><span class="sc-num">{row.runs}</span></span>
               <span class="inline" title="Расстояние"><span class="sc-label">Путь</span><span class="sc-num">{row.distance}</span></span>
               <span class="spacer"></span>
