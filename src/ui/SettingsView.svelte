@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, type Snippet } from 'svelte';
+  import { onDestroy, onMount, type Snippet } from 'svelte';
   import type { Settings } from '../core/settings';
   import type { TriggerName } from '../platform/triggers';
   import Icon from './components/Icon.svelte';
@@ -11,6 +11,7 @@
   import { CLEAR_BUTTONS, historyStatus } from './vm/history-clearing';
   import { captureKey } from './vm/key-capture';
   import { SETTING_HINTS } from './vm/settings-hints';
+  import { triggerSuspension } from './vm/trigger-suspension';
   import { parseNumberText } from './vm/settings-validation';
   import WindowGrip from './WindowGrip.svelte';
 
@@ -21,7 +22,7 @@
 
   // What the field says in its tooltip: how it is filled, what the key does, and that the press still reaches the game (the hook that
   // catches the keys never swallows one).
-  const HOW_TO_FILL = 'Нажми клавишу в этом поле — она запишется. Подходят F1–F24, ScrollLock, Pause, Insert, Home, End, PageUp, PageDown и буква или цифра с Ctrl или Alt; Backspace или Delete снимают клавишу.';
+  const HOW_TO_FILL = 'Нажми клавишу в этом поле — она запишется. Подходят F1–F24, ScrollLock, Pause, Insert, Home, End, PageUp, PageDown и буква или цифра с Ctrl или Alt; Backspace или Delete снимают клавишу. Пока курсор в поле, назначенные клавиши не срабатывают.';
   const TRIGGERS: ReadonlyArray<{ key: TriggerKey; name: TriggerName; label: string; title: string }> = [
     {
       key: 'hotkeyPanel', name: 'panel', label: 'Развернуть и свернуть окно',
@@ -85,6 +86,27 @@
     if (text === undefined) return;
     await settle(key, () => app.updateSetting(key, text.trim()));
   }
+
+  // The assigned keys are global: pressing one in a key field would fire its action. So they are suspended while a key field has the
+  // focus (from one key field to the next they stay so) and applied again when it has gone. A field that goes away with the screen (the
+  // settings closed, the window folded) gives no blur: the screen lets go of the keys when it is destroyed. The focus of the window
+  // itself leaving gives a blur, as Esc and Tab do.
+  const suspension = triggerSuspension({ suspend: () => void app.suspendTriggers(), resume: () => void app.resumeTriggers() });
+  onDestroy(() => suspension.release());
+  // The window itself losing the focus (the player went to the game) is the same: the field is left, and a field that still is the
+  // active element of a window that came back is a key field in hand again.
+  onMount(() => {
+    const left = (): void => suspension.blur();
+    const back = (): void => {
+      if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.triggerKey !== undefined) suspension.focus();
+    };
+    window.addEventListener('blur', left);
+    window.addEventListener('focus', back);
+    return () => {
+      window.removeEventListener('blur', left);
+      window.removeEventListener('focus', back);
+    };
+  });
 
   // What a key field says for a moment about a key it did not write, by field.
   const HINT_MS = 5000;
@@ -227,9 +249,12 @@
         type="text"
         autocomplete="off"
         spellcheck="false"
+        data-trigger-key
         placeholder="нажми клавишу"
         value={drafts[trigger.key] ?? app.settings[trigger.key]}
         aria-invalid={error ? 'true' : undefined}
+        onfocus={() => suspension.focus()}
+        onblur={() => suspension.blur()}
         onkeydown={(event) => captureTrigger(event, trigger.key)}
         oninput={(event) => typed(trigger.key, event)}
         onchange={() => commitTrigger(trigger.key)}
