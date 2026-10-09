@@ -2,11 +2,11 @@ import { estimate } from '../../core/estimate';
 import type { RouteCtx } from '../../core/routes';
 import { cargoOf } from '../../core/run';
 import { sellOrContinue, type SellAlternative, type SellHere } from '../../core/sell';
-import type { CargoLine, Market, Reference, RunWithEvents } from '../../core/types';
+import type { CargoLine, Market, Reference, RunEvent, RunWithEvents } from '../../core/types';
 import { phaseName } from './run-phase';
 import { ratePerHour } from './run-rate';
+import { terminalLabel, type StripModel } from './strip';
 import { isOwnPrice } from './terminal-rows';
-import type { StripModel } from './strip';
 
 // What the "Рейс" section says (spec 14.7, 15c): when it is there, what its header reads, and where the choice
 // "sell here or fly on" is offered. Pure; the section itself is `sections/RunSection.svelte`.
@@ -39,6 +39,33 @@ export function runHeader(model: RunStripModel): RunHeader {
 
 /** The summary of the header while only the target is set. */
 export const planSummary = (target: string): string => `цель: ${target}`;
+
+/** The button of the header that makes the viewed terminal the target of the run: where it points and what it says. */
+export interface TargetOffer {
+  terminalId: number;
+  /** 'Цель: ARC-L1': the button. */
+  label: string;
+  /** What a click does, in a tooltip. */
+  title: string;
+}
+
+/**
+ * The target from the section itself: while a run goes on WITHOUT a target, the terminal that is viewed can be made the target
+ * by one click (the same `setTarget` as the "Цель" button of an option). Not offered at the terminal of the first purchase (the run
+ * is not flying there), without a viewed terminal or one the reference does not know (the strip would show no target for it), and
+ * not when a target is set (the header names it and has its cross). No run, no offer: the plan has its target already.
+ */
+export function targetOffer(active: RunWithEvents | null, targetId: number | null, viewedId: number | null, ref: Reference): TargetOffer | null {
+  if (active === null || targetId !== null || viewedId === null) return null;
+  const terminal = ref.terminals.get(viewedId);
+  if (terminal === undefined) return null;
+  const firstBuy = active.events
+    .filter((e) => e.type === 'buy')
+    .reduce<RunEvent | null>((first, e) => (first === null || e.ts < first.ts || (e.ts === first.ts && e.id < first.id) ? e : first), null);
+  if (firstBuy?.terminalId === viewedId) return null;
+  const name = terminalLabel(terminal);
+  return { terminalId: viewedId, label: `Цель: ${name}`, title: `Сделать целью рейса: ${name}` };
+}
 
 /** The code a commodity is known by; a commodity that left the reference is told by its number. */
 const codeOf = (ref: Reference, commodityId: number): string => {

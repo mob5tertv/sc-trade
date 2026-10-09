@@ -16,7 +16,52 @@ async function click(selector: string, text?: string): Promise<void> {
   await pause(60);
 }
 
+// ids of the preview data: terminals HUR-L1 3, ARC-L1 1; the run of `run-loading` bought at HUR-L1
+const HUR_L1 = 3;
+const ARC_L1 = 1;
+
 export const POLISH_SCENES: readonly Scene[] = [
+  {
+    // A run goes on and its target is taken away; the player looks at ARC-L1, not at the terminal of the purchase: the header of the section
+    // offers it as the target. `--do "click:.offer;wait:400;eval:..."` makes it one (the same `setTarget` as the button of an option).
+    name: 'run-target-offer',
+    title: '«Рейс» без цели, в шапке окна другой терминал (ARC-L1): кнопка «Цель: ARC-L1» вместо «цель не выбрана»',
+    dataset: 'run-loading',
+    act: async (app) => {
+      await app.expand('preview');
+      await app.toggleSection('run');
+      await app.setTarget(null);
+      app.setViewTerminal(ARC_L1);
+      await pause(100);
+    },
+  },
+  {
+    // the narrowest window the settings allow: the name of the terminal is cut before the mark button is pushed out of the header
+    name: 'run-target-offer-narrow',
+    title: '«Рейс» без цели в самом узком окне (380 px): кнопка «Цель: …» и «Взлетел» в одной шапке',
+    dataset: 'run-loading',
+    act: async (app) => {
+      await app.updateSetting('panelWidth', 380);
+      await app.expand('preview');
+      await app.toggleSection('run');
+      await app.setTarget(null);
+      app.setViewTerminal(5);
+      await pause(100);
+    },
+  },
+  {
+    // ...and at the terminal where the cargo was bought the run does not fly there: no offer, the header says «цель не выбрана» as before
+    name: 'run-target-offer-here',
+    title: '«Рейс» без цели, в шапке окна терминал первой покупки (HUR-L1): кнопки нет, «цель не выбрана»',
+    dataset: 'run-loading',
+    act: async (app) => {
+      await app.expand('preview');
+      await app.toggleSection('run');
+      await app.setTarget(null);
+      app.setViewTerminal(HUR_L1);
+      await pause(100);
+    },
+  },
   {
     // ALUM has only a price of UEX at HUR-L1: the form of the purchase starts with it, and the field is muted until it is touched
     // (`--do "eval:..."` reads the class `foreign` of `form.trade .in-price`; typing into the field makes the number the player's)

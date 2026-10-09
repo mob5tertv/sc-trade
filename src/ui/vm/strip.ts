@@ -38,7 +38,7 @@ export type StripModel =
 const NO_LOCATION = 'Локация не выбрана';
 
 // the nickname is what players know a terminal by; UEX leaves it empty on rare rows
-const terminalLabel = (t: Terminal): string => t.nickname || t.displayname || t.name;
+export const terminalLabel = (t: Terminal): string => t.nickname || t.displayname || t.name;
 
 function locationOf(ref: Reference, terminalId: number | null): string {
   const terminal = terminalId === null ? undefined : ref.terminals.get(terminalId);
