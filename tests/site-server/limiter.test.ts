@@ -84,6 +84,8 @@ describe('the limiter', () => {
     expect(marks.mark('b', HOUR)).toBe(true);
     expect(marks.mark('c', HOUR)).toBe(true);
     // no room for a new key; a key that is already there is still counted
+    expect(marks.hasRoom('d')).toBe(false);
+    expect(marks.hasRoom('a')).toBe(true);
     expect(marks.mark('d', HOUR)).toBe(false);
     expect(marks.mark('a', HOUR)).toBe(true);
     expect(marks.size()).toBe(3);

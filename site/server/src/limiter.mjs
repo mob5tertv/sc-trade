@@ -49,6 +49,13 @@ export function createLimiter({ now, maxKeys = MAX_KEYS }) {
       return entry.times.filter((time) => time > since).length;
     },
 
+    /** Could this key be marked right now? `false`: it is not known and there is no room for it. @param {string} key */
+    hasRoom(key) {
+      if (refresh(key) !== undefined) return true;
+      if (marks.size >= maxKeys) prune();
+      return marks.size < maxKeys;
+    },
+
     /**
      * Marks a key now; the mark is forgotten after `ttlMs`, and after a day at the latest.
      * @param {string} key

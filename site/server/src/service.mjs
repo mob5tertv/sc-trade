@@ -3,9 +3,11 @@
 //
 //   POST /api/feedback    a message of the form of the site (feedback.mjs)
 //   /api, /api/           "the service is up"
+//   /admin/…              the author's page, behind a password (admin.mjs)
 //
 // It sends nothing anywhere: it calls no other server and makes no connection of its own. What it is given, it keeps.
 import { createServer } from 'node:http';
+import { createAdmin } from './admin.mjs';
 import { createFeedback } from './feedback.mjs';
 import { answer, errorWord, JSON_HEADERS, splitUrl } from './http.mjs';
 import { createLimiter } from './limiter.mjs';
@@ -30,11 +32,13 @@ export function createService({ settings, now = Date.now, log = console.log }) {
   const store = createStore({ dir: settings.dataDir, now, storageBytes: limits.storageBytes, retentionMs: limits.retentionDays * DAY });
   const limiter = createLimiter({ now });
   const feedback = createFeedback({ settings, store, limiter, now, log: say });
+  const admin = createAdmin({ settings, store, limiter, now, log: say });
 
   /** @param {import('./http.mjs').Request} req @param {import('./http.mjs').Response} res */
   const route = (req, res) => {
-    const { path } = splitUrl(req.url);
+    const { path, query } = splitUrl(req.url);
     if (path === '/api/feedback') return feedback(req, res);
+    if (path === '/admin' || path.startsWith('/admin/')) return void admin(req, res, path, query);
     const up = path === '/api' || path === '/api/';
     answer(req, res, limits.lingerMs, up ? 200 : 404, JSON_HEADERS, up ? UP : NOT_FOUND);
   };

@@ -172,6 +172,8 @@ export interface Reply {
   status: number;
   headers: http.IncomingHttpHeaders;
   text: string;
+  /** The body, byte for byte. */
+  bytes: Buffer;
   /** The body as JSON, or `undefined` when it is not JSON. */
   json: unknown;
 }
@@ -196,14 +198,15 @@ export function request(port: number, options: { method?: string; path: string; 
         const chunks: Buffer[] = [];
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
         res.on('end', () => {
-          const text = Buffer.concat(chunks).toString('utf8');
+          const bytes = Buffer.concat(chunks);
+          const text = bytes.toString('utf8');
           let json: unknown;
           try {
             json = JSON.parse(text);
           } catch {
             json = undefined;
           }
-          resolve({ status: res.statusCode ?? 0, headers: res.headers, text, json });
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, text, bytes, json });
         });
         res.on('error', reject);
       },
@@ -225,6 +228,50 @@ export async function send(run: Running, parts: Part[], headers: Record<string, 
   expect(reply.headers['set-cookie']).toBeUndefined();
   expect(reply.headers['x-content-type-options']).toBe('nosniff');
   return reply;
+}
+
+// ---- the author's page
+
+/** The address the author of the tests comes from. */
+export const AUTHOR = '198.51.100.200';
+
+/** The name of the cookie of the author's page. */
+export const COOKIE = '__Secure-sctrade-admin';
+
+/** A request of the author's page, the way a browser on the site makes it. */
+export function admin(run: Running, path: string, options: { cookie?: string; method?: string; form?: Record<string, string>; headers?: Record<string, string | undefined>; body?: string } = {}): Promise<Reply> {
+  const body = options.body ?? (options.form === undefined ? undefined : new URLSearchParams(options.form).toString());
+  const method = options.method ?? (body === undefined ? 'GET' : 'POST');
+  const all: Record<string, string | undefined> = {
+    'X-Forwarded-For': AUTHOR,
+    ...(options.cookie === undefined ? {} : { Cookie: options.cookie }),
+    ...(method === 'GET' || method === 'HEAD' ? {} : { Origin: ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' }),
+    ...options.headers,
+  };
+  const headers = Object.fromEntries(Object.entries(all).filter((entry): entry is [string, string] => entry[1] !== undefined));
+  return request(run.port, { method, path, headers, body });
+}
+
+/** The cookie an answer sets, as a browser would send it back (`name=value`); `undefined`: none was set. */
+export function cookieOf(reply: Reply): string | undefined {
+  return reply.headers['set-cookie']?.[0]?.split(';')[0];
+}
+
+/** Logs in with the password of the tests; gives the cookie of the session. */
+export async function login(run: Running, headers: Record<string, string | undefined> = {}): Promise<string> {
+  const reply = await admin(run, '/admin/login', { form: { password: PASSWORD }, headers });
+  expect(reply.status).toBe(303);
+  expect(reply.headers.location).toBe('/admin/');
+  const cookie = cookieOf(reply);
+  if (cookie === undefined) throw new Error('the login set no cookie');
+  return cookie;
+}
+
+/** The token a page of the author carries in its forms against requests forged by another site. */
+export function csrfOf(html: string): string {
+  const token = /<input type="hidden" name="csrf" value="([^"]+)">/.exec(html)?.[1];
+  if (token === undefined) throw new Error('the page has no token');
+  return token;
 }
 
 export const OK = { ok: true };
