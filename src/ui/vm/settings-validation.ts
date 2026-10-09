@@ -1,4 +1,5 @@
 import type { Settings } from '../../core/settings';
+import { UI_SCALES } from './ui-scale';
 
 // Checks a setting before it is saved. The answer is a short Russian sentence for the field, or null
 // when the value is fine. Numbers typed by the player arrive through `parseNumberText`.
@@ -73,6 +74,8 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
       return isNumber(v) && v >= PANEL_WIDTH_RANGE.min && v <= PANEL_WIDTH_RANGE.max
         ? null
         : `От ${PANEL_WIDTH_RANGE.min} до ${PANEL_WIDTH_RANGE.max} пикселей`;
+    case 'uiScale':
+      return isNumber(v) && UI_SCALES.includes(v) ? null : 'Авто, 100, 110, 125 или 150 %';
     // an offset that would push the window off the monitor is not refused: the window layer cuts it when it places the window
     case 'windowDx':
     case 'windowDy':

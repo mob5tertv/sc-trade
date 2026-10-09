@@ -64,6 +64,7 @@ import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
 import { bindNeeded, boundAfter, withoutErrorsOfEmptyKeys } from './vm/trigger-suspension';
 import { uexErrorText } from './vm/uex-error';
+import { effectiveScalePct } from './vm/ui-scale';
 import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 
 // The one application state. Everything the screens show lives here, and every action of the player
@@ -264,6 +265,13 @@ class AppState {
 
   // ---- window and screen ------------------------------------------------------------------------
   mode = $state<WindowMode>('mini');
+  /**
+   * The primary monitor in logical pixels as the window layer last placed the window on it; `null` before the first placement. «Авто»
+   * of the scale reads it (and the field of the settings, to say what «Авто» picked). Taken at every fit (`#followMonitorScale`).
+   */
+  scaleMonitor = $state.raw<Size | null>(null);
+  /** The scale the whole interface is zoomed to, in percent: the setting, and for «Авто» what the monitor says. `App.svelte` zooms its root by it. */
+  uiScalePct = $derived(effectiveScalePct(this.settings.uiScale, this.scaleMonitor));
   /** The main screen or the settings (the settings keep the window open: they count as busy). */
   view = $state<View>('main');
   /**
@@ -342,6 +350,8 @@ class AppState {
   #visible = false;
   /** The content of the window as the last measurement said; `null` before the first one. */
   #content: Size | null = null;
+  /** The scale (`uiScalePct`) the interface was zoomed to when `#content` was measured: a content measured at another one is not the size of the window. */
+  #contentScale = 100;
   /** The player is dragging the window: it must not be placed by anything else until the drag ends. */
   #dragging = false;
   /** Unix seconds of the last click or movement over the window, or of the moment it was expanded. */
@@ -729,11 +739,41 @@ class AppState {
    * measurement forces the layout, painting or not) and places the window at that size. A hidden window can be placed.
    */
   async #placeBeforeShow(): Promise<void> {
+    if (await this.#remeasure()) await this.#refit();
+  }
+
+  /**
+   * Waits for Svelte to put the state on the screen, measures the root again and keeps that as the content. The size is on the screen, so it
+   * is the size of the window with the scale: a change of the scale does not resize the root in its own pixels, the observer of `App.svelte`
+   * stays silent, and this is how the window learns of it. `false` when there is nothing to measure (no root yet, nothing laid out).
+   */
+  async #remeasure(): Promise<boolean> {
     await tick();
     const size = this.#measureRoot?.();
-    if (size === undefined || !(size.width > 0) || !(size.height > 0)) return;
+    if (size === undefined || !(size.width > 0) || !(size.height > 0)) return false;
     this.#content = size;
-    await this.#refit();
+    this.#contentScale = this.uiScalePct;
+    return true;
+  }
+
+  /**
+   * «Авто» goes by the monitor the window stands on, which only the window layer knows (it is read at every placement). The monitor of
+   * the last placement is taken before the next one: a change of the monitor or of the scale of Windows reaches the scale of the interface
+   * with the next fit of the window, which is soon enough.
+   */
+  #followMonitorScale(): void {
+    const monitor = windowGeometry()?.monitor ?? null;
+    const known = this.scaleMonitor;
+    if (monitor === null || (known !== null && known.width === monitor.width && known.height === monitor.height)) return;
+    this.scaleMonitor = monitor;
+  }
+
+  /**
+   * The start tells the primary monitor (logical pixels) before the window is first shown, so that «Авто» has its scale on from the first frame
+   * and not one fit later (`boot.ts`; only a reading of the primary monitor is passed, see `monitorToKnow`). The fits go on following the monitor.
+   */
+  knowMonitor(monitor: Size): void {
+    this.scaleMonitor = monitor;
   }
 
   /**
@@ -816,6 +856,7 @@ class AppState {
    */
   fit(content: Size): void {
     this.#content = content;
+    this.#contentScale = this.uiScalePct;
     void this.#refit();
   }
 
@@ -829,7 +870,16 @@ class AppState {
     return this.#fitQueue(async () => {
       if (!this.#windowReady || this.#content === null || this.#dragging) return;
       try {
+        // the content was measured at another scale than the interface has now (the player changed it, or «Авто» found its monitor);
+        // nothing to measure: the stale content is not placed, and the next fit tries again
+        this.#followMonitorScale();
+        if (this.uiScalePct !== this.#contentScale && !(await this.#remeasure())) return;
         await fitWindow(this.#content, this.layout, this.#log);
+        // The fit has read the monitor it placed the window on, which may not be the one the scale was taken from (the first placement, a
+        // monitor or a Windows scale that changed): when that changes the scale, the window is measured and placed once more. Once, not
+        // a loop: this second fit reads the same monitor again, and a monitor that changes yet again is for the next fit.
+        this.#followMonitorScale();
+        if (this.uiScalePct !== this.#contentScale && (await this.#remeasure())) await fitWindow(this.#content, this.layout, this.#log);
       } catch {
         // already logged by the window layer
       }
@@ -1687,8 +1737,10 @@ class AppState {
       case 'windowDx':
       case 'windowDy':
       case 'opacity':
+      case 'uiScale':
         // the corner and the opacity reach the window through the same fit as a change of the content;
-        // the width needs nothing here: the root of the interface changes its size and reports it itself
+        // the width needs nothing here: the root of the interface changes its size and reports it itself.
+        // The scale zooms the root: the fit measures it again (`#refit`) and the window takes the size of the zoomed content
         await this.#refit();
         break;
       case 'showStrip':

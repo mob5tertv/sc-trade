@@ -51,16 +51,20 @@
   // minimum height that reaches the bottom of the list, and the list reaches the right edge of the window: it lies
   // over what is under it, moves nothing, and leaves no empty strip beside it. Outside such a root (the gallery)
   // nothing happens and the list is as wide as the CSS below says.
+  // The root of the window may be zoomed (the setting «Масштаб»): what is measured is on the screen, and a length written to the list
+  // or to the root is multiplied by the zoom. So the whole screen pixels are counted first, as always, and the length written is that
+  // divided by the zoom (the width of the list and the height of the root then come out to the pixel on the screen).
   $effect(() => {
     const element = list;
     if (!element) return; // not open yet (`undefined`) or closed again (`null`)
     void results.length; // the list changes its height with the results
     const host = element.closest<HTMLElement>('[data-float-host]');
     if (host === null) return;
+    const zoom = Number.parseFloat(getComputedStyle(host).zoom) || 1;
     const frame = host.getBoundingClientRect();
     element.style.maxWidth = 'none';
-    element.style.width = `${Math.floor(frame.right - 1 - element.getBoundingClientRect().left)}px`; // 1 px is the frame
-    host.style.setProperty('--sc-float-min-h', `${Math.ceil(element.getBoundingClientRect().bottom - frame.top)}px`);
+    element.style.width = `${Math.floor(frame.right - 1 - element.getBoundingClientRect().left) / zoom}px`; // 1 px is the frame
+    host.style.setProperty('--sc-float-min-h', `${Math.ceil(element.getBoundingClientRect().bottom - frame.top) / zoom}px`);
     return () => host.style.removeProperty('--sc-float-min-h');
   });
 

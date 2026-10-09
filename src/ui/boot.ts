@@ -15,6 +15,7 @@ import { tauriFetchJson } from '../platform/tauri-http';
 import { applyLogLevel } from '../platform/tauri-logger';
 import { app } from './state.svelte';
 import { startDatabase, startFailureText } from './vm/startup-order';
+import { monitorToKnow, PRIMARY_MONITOR } from './vm/ui-scale';
 
 export type BootResult = { ok: true } | { ok: false; reason: string };
 
@@ -79,7 +80,7 @@ async function screenInfo(): Promise<{ width: number; height: number; scaleFacto
     const monitor = await primaryMonitor();
     if (monitor !== null) {
       const size = monitor.size.toLogical(monitor.scaleFactor);
-      return { width: size.width, height: size.height, scaleFactor: monitor.scaleFactor, source: 'primary monitor' };
+      return { width: size.width, height: size.height, scaleFactor: monitor.scaleFactor, source: PRIMARY_MONITOR };
     }
   } catch {
     // falls back to the webview's screen below
@@ -87,12 +88,12 @@ async function screenInfo(): Promise<{ width: number; height: number; scaleFacto
   return { width: screen.width, height: screen.height, scaleFactor: window.devicePixelRatio, source: 'screen' };
 }
 
-/** The first line of every run: what the app, the system and the database are (spec 11). */
-async function logStart(log: Logger, schema: number): Promise<void> {
+/** The first line of every run: what the app, the system and the database are (spec 11). `screen` is the reading of `screenInfo()`. */
+async function logStart(log: Logger, schema: number, screenReading: Awaited<ReturnType<typeof screenInfo>>): Promise<void> {
   log.info('app', 'start', {
     version: await appVersion(),
     windows: osVersion(),
-    screen: await screenInfo(),
+    screen: screenReading,
     schema,
   });
 }
@@ -136,8 +137,13 @@ async function prepare(log: Logger): Promise<void> {
 
   app.attach({ db, uex: createUexClient(tauriFetchJson, log, Date.now, appPacing()), now: nowSec });
   app.setSettings(settings);
+  // The monitor is read once: for the start line, and for the scale of the window («Авто» goes by the monitor), which must be known
+  // before the window is shown, or its first frame is drawn at 100 % and zoomed one fit later (`knowMonitor`, `monitorToKnow`).
+  const screenReading = await screenInfo();
+  const monitor = monitorToKnow(screenReading);
+  if (monitor !== null) app.knowMonitor(monitor);
   // The start line comes first: the window logs its own lines as soon as it is shown.
-  await logStart(log, schema);
+  await logStart(log, schema, screenReading);
   app.ensureShown();
   await app.applyTriggers();
   prepared = true;
