@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CargoLine } from '../../src/core/types';
 import {
-  DEFAULT_TERMINAL_SORT, clickedTerminalSort, holdMark, holdOf, orderRows, terminalAriaSort, type TerminalSort,
+  DEFAULT_TERMINAL_SORT, clickedTerminalSort, holdMark, holdOf, holdOrder, orderRows, terminalAriaSort, type TerminalSort,
 } from '../../src/ui/vm/terminal-order';
 
 // formatUec separates thousands with a non-breaking space
@@ -127,5 +127,40 @@ describe('orderRows: the order of the rows of the table', () => {
   it('is the same list of rows, none lost and none doubled', () => {
     const out = ids(orderRows(ROWS, { side: 'sell', sort: ROI_DESC, cargo: [line(3, 1), line(1, 1)], percentOf }));
     expect([...out].sort()).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+});
+
+describe('holdOrder: the order of the rows is held while a field of the table has the focus', () => {
+  // a row that carries its value: the row is the same commodity with a new number, which must show
+  const withValue = (commodityId: number, value: number) => ({ commodityId, value });
+  const sorted = [withValue(3, 40), withValue(4, 30), withValue(1, 12)];
+
+  it('is the sorted order when nothing is held', () => {
+    expect(ids(holdOrder([1, 3, 4], sorted, false))).toEqual([3, 4, 1]);
+  });
+
+  it('keeps the order that was on screen when the focus came in, whatever the sort says now', () => {
+    expect(ids(holdOrder([1, 3, 4], sorted, true))).toEqual([1, 3, 4]);
+  });
+
+  it('shows the new values in their rows: the rows are the new ones, only their places are the old ones', () => {
+    const held = holdOrder([1, 3, 4], [withValue(3, 99), withValue(4, 30), withValue(1, 12)], true);
+    expect(held.map((row) => [row.commodityId, row.value])).toEqual([[1, 12], [3, 99], [4, 30]]);
+  });
+
+  it('puts a row that appeared meanwhile at the end, in the sorted order of the new ones, and drops a row that went', () => {
+    const now = [withValue(7, 50), withValue(3, 40), withValue(8, 20), withValue(1, 12)]; // 4 went, 7 and 8 came
+    expect(ids(holdOrder([1, 3, 4], now, true))).toEqual([1, 3, 7, 8]);
+  });
+
+  it('holds nothing without a previous order: an empty one holds no place, the rows are as sorted', () => {
+    expect(ids(holdOrder([], sorted, true))).toEqual([3, 4, 1]);
+  });
+
+  it('returns a new list and leaves the sorted rows as they were', () => {
+    const input = [...sorted];
+    const out = holdOrder([1, 3, 4], input, true);
+    expect(out).not.toBe(input);
+    expect(ids(input)).toEqual([3, 4, 1]);
   });
 });

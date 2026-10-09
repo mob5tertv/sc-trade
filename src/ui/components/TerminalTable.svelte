@@ -5,7 +5,7 @@
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
   import type { CellFinish, EditBase } from '../vm/inputs';
   import type { RoiCell } from '../vm/row-roi';
-  import { DEFAULT_TERMINAL_SORT, holdMark, holdOf, orderRows, terminalAriaSort } from '../vm/terminal-order';
+  import { DEFAULT_TERMINAL_SORT, holdMark, holdOf, holdOrder, orderRows, terminalAriaSort } from '../vm/terminal-order';
   import type { TerminalSort, TerminalSortKey } from '../vm/terminal-order';
   import { RANGE_HEAD_TITLE, cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
@@ -184,9 +184,42 @@
 
   // Only the ORDER of the rows is made here; `rows`, and with it every draft, stays as it was.
   const hold = $derived(holdOf(side, cargo));
-  const shown = $derived(orderRows(rows.filter(row => row[side] !== null), {
+  const sorted = $derived(orderRows(rows.filter(row => row[side] !== null), {
     side, sort, cargo, percentOf: commodityId => roi.get(commodityId)?.percent ?? null,
   }));
+
+  // While a field of the table has the focus the places of the rows stay as they were when it came in: a row that is moved in the page
+  // takes the focus out of its field without a blur, and the player is typing into it (the keyboard would go back to the game under
+  // his hands). The new values still show in their rows. Leaving the field gives the sort its way.
+  let frozenIds = $state.raw<number[] | null>(null);
+  let table = $state<HTMLElement | null>();
+  const shown = $derived(holdOrder(frozenIds ?? [], sorted, frozenIds !== null));
+
+  const isField = (el: unknown): el is HTMLElement =>
+    el instanceof HTMLElement && el.matches('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+
+  function onFieldFocus(event: FocusEvent): void {
+    if (frozenIds === null && isField(event.target)) frozenIds = shown.map(row => row.commodityId);
+  }
+
+  // From one field of the table to another (the two inputs of a cell, the trade form under the row) is not leaving.
+  function onFieldBlur(event: FocusEvent): void {
+    const next = event.relatedTarget;
+    if (next instanceof HTMLElement && event.currentTarget instanceof HTMLElement && event.currentTarget.contains(next) && isField(next)) return;
+    frozenIds = null;
+  }
+
+  // A field that is taken out of the page (its row folded, the form closed, the other side shown) gives no blur: look when what
+  // holds the focus can have changed.
+  $effect(() => {
+    void selectedCommodityId;
+    void tradeFor;
+    void side;
+    void scope;
+    untrack(() => {
+      if (frozenIds !== null && !(table?.contains(document.activeElement) && isField(document.activeElement))) frozenIds = null;
+    });
+  });
 
   const roiTitle = $derived(`${noCapacity ? NO_CAPACITY_HINT : 'Лучший ROI для этого товара'}\nНажми, чтобы отсортировать по ROI`);
   const empty = $derived(rows.length === 0 ? 'Нет цен' : side === 'buy' ? 'Здесь ничего не продают' : 'Здесь ничего не покупают');
@@ -293,7 +326,14 @@
 {#if shown.length === 0}
   <p class="empty">{empty}</p>
 {:else}
-  <div class="table" role="table" aria-label={side === 'buy' ? 'Что можно купить' : 'Что можно продать'}>
+  <div
+    class="table"
+    role="table"
+    aria-label={side === 'buy' ? 'Что можно купить' : 'Что можно продать'}
+    bind:this={table}
+    onfocusin={onFieldFocus}
+    onfocusout={onFieldBlur}
+  >
     <div class="grid head sc-label" role="row">
       {@render head('name', 'Товар', 'Порядок по умолчанию: по названию товара')}
       <span role="columnheader" class="r price-head">Цена</span>

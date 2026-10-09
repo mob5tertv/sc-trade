@@ -81,3 +81,16 @@ export function orderRows<T extends { commodityId: number }>(rows: readonly T[],
     })
     .map(({ row }) => row);
 }
+
+/**
+ * The order to show while a field of the table has the focus. A row that is moved in the page takes the focus out of the field it
+ * holds (without a blur), and the player is typing into it: so while `frozen` the places of the rows are those of `previousIds` (the
+ * order that was on screen when the focus came in), and only the values in the rows are new. A row that has appeared since stands
+ * after them, in the sorted order; a row that has gone is gone. Not `frozen`, it is the sorted order as it is. Returns a new list.
+ */
+export function holdOrder<T extends { commodityId: number }>(previousIds: readonly number[], sorted: readonly T[], frozen: boolean): T[] {
+  if (!frozen) return [...sorted];
+  const place = new Map(previousIds.map((id, at) => [id, at]));
+  const held = sorted.filter((row) => place.has(row.commodityId)).sort((x, y) => (place.get(x.commodityId) ?? 0) - (place.get(y.commodityId) ?? 0));
+  return [...held, ...sorted.filter((row) => !place.has(row.commodityId))];
+}

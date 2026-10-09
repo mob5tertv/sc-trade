@@ -79,11 +79,26 @@
     for (let i = 0; i < times; i++) await click(button);
   }
 
-  // A price typed into the open row and not saved (no Enter, the cursor still in the field), then the head «ROI» clicked: the
-  // click event does not move the focus, so the table is put in order with a draft in its field. The row moves, stays open, keeps the text.
+  // A price typed into the open row and not saved, then the head «ROI» clicked the way a mouse clicks it: the button takes the focus
+  // (the field is left, its text is checked and kept), then the click. The row moves, stays open, keeps the text.
   async function sortWithDraft(frame: HTMLElement): Promise<void> {
     await typeInto(find<HTMLInputElement>(frame, '.in-price'), '12x');
+    find<HTMLElement>(frame, '.head > span:last-child .sort').focus();
     await sortBy(frame, 'ROI');
+  }
+
+  // The head «ROI» clicked by a click event that leaves the focus in the field (the keyboard of the player is in the field, the order
+  // is asked for from elsewhere): the sort is asked for and the places of the rows are held while the field has the focus.
+  async function sortHeld(frame: HTMLElement): Promise<void> {
+    await typeInto(find<HTMLInputElement>(frame, '.in-price'), '2400');
+    await sortBy(frame, 'ROI');
+  }
+
+  // ...and then the focus leaves the table: the sort has its way.
+  async function sortReleased(frame: HTMLElement): Promise<void> {
+    await sortHeld(frame);
+    find<HTMLInputElement>(frame, '.in-price').blur();
+    await tick();
   }
 
   async function badPrice(frame: HTMLElement): Promise<void> {
@@ -182,7 +197,13 @@
 <Frame name="sort-cargo-narrow" width={380} caption="the same in the narrowest window (380 px): the mark of the hold and the head «ROI» with its arrow take the room of the names, the columns of numbers stay" act={(frame) => sortBy(frame, 'ROI')}>
   <TableDemo rows={longRows} side="sell" roi={longCells} cargo={longHold} />
 </Frame>
-<Frame name="sort-draft" caption="Lorville, sell · PFOO open, «12x» typed and not saved, then «ROI» clicked: the row moved up to its place by ROI, is still open and holds its text" act={sortWithDraft}>
+<Frame name="sort-draft" caption="Lorville, sell · PFOO open, «12x» typed and not saved, then «ROI» clicked with the mouse: the row moved up to its place by ROI, is still open and holds its text" act={sortWithDraft}>
+  <TableDemo rows={lorville.rows} side="sell" selected={lorvilleId('PFOO')} roi={lorvilleSell} />
+</Frame>
+<Frame name="sort-held" caption="Lorville, sell · PFOO open with the cursor in its price field, «ROI» asked for meanwhile: the arrow moved, the places of the rows did not (a row that moves takes the focus out of the field)" act={sortHeld}>
+  <TableDemo rows={lorville.rows} side="sell" selected={lorvilleId('PFOO')} roi={lorvilleSell} />
+</Frame>
+<Frame name="sort-held-released" caption="the same, and the cursor leaves the field: the table takes the order of the sort" act={sortReleased}>
   <TableDemo rows={lorville.rows} side="sell" selected={lorvilleId('PFOO')} roi={lorvilleSell} />
 </Frame>
 <Frame name="roi-buy" caption="Lorville, buy · the best trip from here: GOLD above the bar, a row of every other tier, SCRA is dearer here than anyone pays (empty cell)">
