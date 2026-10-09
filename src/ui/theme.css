@@ -54,6 +54,8 @@
   /* the triangle of a price that moved; the slot for it left of a number is always as wide as the triangle */
   --sc-trend-w: 8px;
   --sc-trend-h: 6px;
+  /* the triangle of a price that went AGAINST the player: crimson (hue 340°), apart from the orange-red square of a hot price (--sc-hot, 12°) and from the red of a refusal (--sc-bad, 0°) */
+  --sc-trend-bad: #e8326f;
 
   --sc-font: 12.5px;
   --sc-font-sm: 11px;

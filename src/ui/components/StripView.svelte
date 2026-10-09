@@ -28,7 +28,6 @@
     {#if flash !== null}
       <span class="part flash" class:error={flashKind === 'error'} aria-live="polite">{flash}</span>
     {:else if model.kind === 'idle'}
-      <span class="part mark">SC</span>
       <span class="part location">{model.location}{#if model.target !== null}<span class="to">→</span><span class="goal">{model.target}</span>{/if}</span>
       {#if model.session !== null}
         <span class="part session {model.session.tone}"><span class="caption">сессия</span>{model.session.short}</span>
@@ -108,12 +107,6 @@
     display: block;
     line-height: var(--sc-mini-h);
     text-overflow: ellipsis;
-  }
-
-  .mark {
-    color: var(--sc-accent);
-    font-weight: 600;
-    letter-spacing: 0.08em;
   }
 
   .timer {

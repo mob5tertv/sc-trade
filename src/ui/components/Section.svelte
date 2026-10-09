@@ -1,11 +1,18 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import type { Piece } from '../vm/route-pieces';
+  import PieceLine from './PieceLine.svelte';
 
   interface Props {
     /** In small spaced capitals (`.sc-label`). */
     title: string;
     /** A one-line summary in the header, cut with an ellipsis. */
     summary?: string;
+    /**
+     * The same summary in pieces that give way to each other equally, each cut with an ellipsis of its own (`titlePieces`: what is asked, the terminal,
+     * the rest), so that the name of the terminal is not the first thing the line loses. `summary` stays the text of the tooltip.
+     */
+    summaryPieces?: Piece[];
     /** The tooltip of the header when it has more to say than the title and the summary (where the terminal is, say). */
     summaryTitle?: string;
     open: boolean;
@@ -38,7 +45,7 @@
     resetScrollOn?: unknown;
   }
   let {
-    title, summary, summaryTitle, open, onToggle, onClose, closeTitle = 'Закрыть', actions, lead, children, scroll = false, shrink = 1,
+    title, summary, summaryPieces, summaryTitle, open, onToggle, onClose, closeTitle = 'Закрыть', actions, lead, children, scroll = false, shrink = 1,
     bodyMaxHeight, resetScrollOn,
   }: Props = $props();
 
@@ -57,7 +64,7 @@
     <button type="button" class="toggle" aria-expanded={open} aria-controls={open ? bodyId : undefined} title={summaryTitle ?? (summary ? `${title}: ${summary}` : title)} onclick={() => onToggle()}>
       <svg class="chevron" class:open viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M3 1.5 7 5 3 8.5" /></svg>
       <span class="sc-label title">{title}</span>
-      {#if summary}<span class="summary">{summary}</span>{/if}
+      {#if summaryPieces}<span class="summary"><PieceLine pieces={summaryPieces} /></span>{:else if summary}<span class="summary">{summary}</span>{/if}
     </button>
     {#if actions}<div class="actions">{@render actions()}</div>{/if}
     {#if onClose}

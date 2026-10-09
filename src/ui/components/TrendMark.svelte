@@ -45,5 +45,5 @@
   .down .tri { clip-path: polygon(0 0, 100% 0, 50% 100%); }
 
   .good { --tri: var(--sc-good); }
-  .bad { --tri: var(--sc-bad); }
+  .bad { --tri: var(--sc-trend-bad); }
 </style>

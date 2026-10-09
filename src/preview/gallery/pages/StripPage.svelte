@@ -19,7 +19,7 @@
 <Frame name="idle" caption="no run, a target is set: the location → the target" width="content">
   <StripView model={data.strip.idle} flash={null} onOpen={open} />
 </Frame>
-<Frame name="idle-bare" caption="no run and no target: the SC mark and the location" width="content">
+<Frame name="idle-bare" caption="no run and no target: the location alone, no label in front of it (the grip of the window is not in this frame)" width="content">
   <StripView model={data.strip.idle.kind === 'idle' ? { ...data.strip.idle, target: null } : data.strip.idle} flash={null} onOpen={open} />
 </Frame>
 <Frame name="flight" caption="in flight: the phase and its own timer first, the button of the arrival" width="content">
