@@ -105,6 +105,7 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
     case 'nearby':
     case 'showStrip':
     case 'windowLocked':
+    case 'keysHintShown':
       return typeof v === 'boolean' ? null : 'Нужно да или нет';
 
     case 'vehicleId':

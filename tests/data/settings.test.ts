@@ -37,6 +37,13 @@ describe('settings repository', () => {
     expect(settings.windowLocked).toBe(false);
   });
 
+  it('the hint about the keys is not shown yet in a fresh database, and the flag that it was stays', async () => {
+    const db = await migratedDb();
+    expect((await loadSettings(db, log)).keysHintShown).toBe(false);
+    await saveSetting(db, log, 'keysHintShown', true);
+    expect((await loadSettings(db, log)).keysHintShown).toBe(true);
+  });
+
   it('round-trips where the player put the window and the lock', async () => {
     const db = await migratedDb();
     await saveSetting(db, log, 'stripCorner', 'bottom-left');

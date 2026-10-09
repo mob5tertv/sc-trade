@@ -35,6 +35,8 @@ export interface Settings {
   showStrip: boolean;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   serverChangedAt: number | null; currentTerminalId: number | null; targetTerminalId: number | null;
+  /** The one-time hint about the keys of "Взлетел" and "Прилетел" was shown, or such a key was assigned: it is never shown (again). */
+  keysHintShown: boolean;
 }
 export const DEFAULT_SETTINGS: Settings = {
   vehicleId: null, scuCapacity: 0, starSystemId: null, budget: null,
@@ -47,4 +49,5 @@ export const DEFAULT_SETTINGS: Settings = {
   idleCollapseSec: 40, openSections: 'terminal,options,settings:ship',
   opacity: 0.92, showStrip: true, logLevel: 'debug',
   serverChangedAt: null, currentTerminalId: null, targetTerminalId: null,
+  keysHintShown: false,
 };

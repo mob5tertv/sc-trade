@@ -20,7 +20,12 @@
 {/if}
 {#if app.notice !== null}
   <div class="notice" class:error={app.notice.kind === 'error'} role="status">
-    <span>{app.notice.text}</span>
+    <span class="text">{app.notice.text}</span>
+    <!-- a message may offer one thing to do about it (the hint about the keys: "Настроить"), next to the cross -->
+    {#if app.notice.action}
+      {@const action = app.notice.action}
+      <button class="sc-btn sc-btn--act action" type="button" onclick={() => action.run()}>{action.label}</button>
+    {/if}
     <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Скрыть сообщение" title="Скрыть" onclick={() => app.closeNotice()}>
       <Icon name="cross" size={12} />
     </button>
@@ -74,8 +79,20 @@
     color: var(--sc-bad);
   }
 
+  .notice .text {
+    min-width: 0;
+    padding: 2px 0;
+  }
+
   .notice .sc-btn {
     flex: none;
     color: var(--sc-label);
+  }
+
+  /* the one thing the message offers to do: a button of the accent, as the buttons of a question */
+  .notice .sc-btn.action {
+    margin-left: auto;
+    border-color: var(--sc-accent);
+    color: var(--sc-accent);
   }
 </style>

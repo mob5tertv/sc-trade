@@ -19,7 +19,66 @@ function watchWhere(app: SceneApp): void {
   });
 }
 
+/**
+ * What the hint about the keys has done, for `--do "eval:window.__keysHint()"`: whether the flag is set, what the notice line says and whether it
+ * has a button, which screen is open and whether the group "Клавиши" of the settings is unfolded.
+ */
+function watchKeysHint(app: SceneApp): void {
+  (window as unknown as { __keysHint: () => unknown }).__keysHint = () => ({
+    flag: app.settings.keysHintShown,
+    notice: app.notice === null ? null : { text: app.notice.text, button: app.notice.action?.label ?? null },
+    view: app.view,
+    keysOpen: app.sectionOpen('settings:keys'),
+  });
+}
+
+// ids of the preview data: Medical Supplies 1, Stims 8; terminals: ARC-L1 1
+const MEDS = 1;
+const STIM = 8;
+const ARC_L1 = 1;
+
+/** The run of the dataset `run` (MEDS and STIM bought at HUR-L1, the target ARC-L1) is sold out at its target: the last sale closes the run. */
+async function sellOut(app: SceneApp): Promise<void> {
+  await app.expand('preview');
+  app.setViewTerminal(ARC_L1);
+  await app.sell({ terminalId: ARC_L1, commodityId: MEDS, scu: 120, price: 2540, knownScu: 90 });
+  await app.sell({ terminalId: ARC_L1, commodityId: STIM, scu: 80, price: 3320 });
+  await pause(200);
+}
+
 export const TRADER_SCENES: readonly Scene[] = [
+  {
+    // no key for the marks: the notice of the closed run goes on with the hint and its button (`--do "click:.notice .action"` opens the keys)
+    name: 'keys-hint',
+    title: 'После первого закрытого рейса без клавиш «Взлетел» и «Прилетел»: подсказка про клавиши с кнопкой «Настроить»',
+    dataset: 'run',
+    act: async (app) => {
+      watchKeysHint(app);
+      await sellOut(app);
+    },
+  },
+  {
+    // a key for the take-off is assigned before: the player knows the keys, the notice is the result of the run alone, and the flag is set
+    name: 'keys-hint-key-assigned',
+    title: 'Клавиша «Взлетел» назначена раньше: после закрытого рейса подсказки нет и больше не будет',
+    dataset: 'run',
+    act: async (app) => {
+      watchKeysHint(app);
+      await app.updateSetting('hotkeyDepart', 'F9');
+      await sellOut(app);
+    },
+  },
+  {
+    // the hint was shown once already (the flag): the run that closes now says its result and nothing else
+    name: 'keys-hint-shown-before',
+    title: 'Подсказка про клавиши уже была показана: рейс закрывается без неё',
+    dataset: 'run',
+    act: async (app) => {
+      watchKeysHint(app);
+      await app.updateSetting('keysHintShown', true);
+      await sellOut(app);
+    },
+  },
   {
     // HUR-L1 is the current location; `--do "click:header input;type:arc;press:Enter;eval:window.__where()"` makes ARC-L1 the viewed one AND the current one
     name: 'pick-no-run',

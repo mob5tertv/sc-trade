@@ -51,7 +51,8 @@ import { createLatestRequest } from './vm/latest-request';
 import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './vm/lookup';
 import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
-import { closedRunNotice, stayTimes } from './vm/run-closed';
+import { assignsMarkKey, keysHint, withKeysHint } from './vm/keys-hint';
+import { closedRunNotice, stayTimes, type ClosedRunNotice } from './vm/run-closed';
 import { markRefusal } from './vm/run-phase';
 import { sameRun } from './vm/same-run';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
@@ -119,7 +120,9 @@ import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 /** What the expanded window shows: the main screen or the settings, which take the whole window. */
 export type View = 'main' | 'settings';
 export type Phase = 'booting' | 'ready' | 'failed';
-export interface Notice { text: string; kind: 'info' | 'error' }
+/** A button of the notice line next to its cross: what it says and what a click does. */
+export interface NoticeAction { label: string; run: () => void }
+export interface Notice { text: string; kind: 'info' | 'error'; action?: NoticeAction }
 
 /** What the "Варианты" section shows (spec 14.2, 14.8). */
 export interface LookupState {
@@ -175,6 +178,9 @@ const LOOKUP_REPEAT = 'settings changed';
 const OPTIONS_SECTION = 'options';
 /** The id of the "Рейс" section among the open sections. */
 const RUN_SECTION = 'run';
+/** The id of the group "Клавиши" of the settings among the open sections, and how long the hint about those keys stays (it has a button to press). */
+const KEYS_SECTION = 'settings:keys';
+const KEYS_HINT_MS = 15_000;
 /** How long a message of the mini line (`flash`) stays, and how long a question waits before it counts as "no". */
 const FLASH_MS = 3000;
 const CONFIRM_MS = 10_000;
@@ -1476,17 +1482,41 @@ class AppState {
    * Said BEFORE whatever else the trade does after the write, so that a failure of one of those steps (the target that cannot be
    * cleared, the run that cannot be read) lands on top of it and is never covered by it. It carries three numbers to read, so it
    * stays no less than eight seconds where it is said (`stayTimes`); in the mini line an income keeps the usual three, because the
-   * run that goes on has its mark buttons there and they are not drawn while a message is up.
+   * run that goes on has its mark buttons there and they are not drawn while a message is up. Once, after the first run that is closed with no
+   * key for "Взлетел" and "Прилетел", the notice line goes on with a hint about those keys (`#sayKeysHint`).
    */
-  #announceClosed(closed: RunWithEvents): void {
+  async #announceClosed(closed: RunWithEvents): Promise<void> {
     try {
       const notice = closedRunNotice(closed);
       this.#log.info('ui', 'run closed', { runId: closed.run.id, status: closed.run.status });
       this.#say(notice.text, notice.kind, stayTimes(notice, FLASH_MS, NOTICE_MS));
+      // the hint has a button to press: it is for the notice line of the expanded window, not for the mini line that lets a message go in three seconds
+      if (this.mode === 'expanded' && keysHint(notice, this.settings) !== null) await this.#sayKeysHint(notice);
     } catch (err) {
       // the trade IS written: a notice that cannot be made must not turn it into a failure
       this.#log.error('ui', 'cannot say that the run is closed', { runId: closed.run.id, err });
     }
+  }
+
+  /**
+   * The notice of the closed run goes on with the hint about the keys of the two marks and a button that opens them. The flag `keysHintShown` is
+   * written FIRST: a hint on the screen is a hint that was shown, and it never comes again. A write that fails says so itself (the player
+   * reads that, not the hint), and the hint waits for the next closed run. The notice is replaced only while it is still the one of the run: a
+   * message that came after it (an error of a later step) stays on top.
+   */
+  async #sayKeysHint(notice: ClosedRunNotice): Promise<void> {
+    if ((await this.updateSetting('keysHintShown', true)) !== null) return;
+    if (this.notice?.text !== notice.text) return;
+    this.#log.info('ui', 'keys hint shown');
+    this.notify(withKeysHint(notice.text), notice.kind, KEYS_HINT_MS, { label: 'Настроить', run: () => void this.openKeysSettings() });
+  }
+
+  /** The button "Настроить" of the hint about the keys: the settings open with the group "Клавиши" unfolded, and the hint has done its work. */
+  async openKeysSettings(): Promise<void> {
+    this.#log.info('ui', 'keys hint: open the settings of the keys');
+    this.dismissNotice();
+    this.openSettings();
+    await this.openSection(KEYS_SECTION);
   }
 
   /**
@@ -1574,7 +1604,7 @@ class AppState {
         failure = this.#tradeFailure(what, err, { ...input });
         mayHaveWritten = !(err instanceof TradeError);
       }
-      if (failure === null && closed !== null) this.#announceClosed(closed);
+      if (failure === null && closed !== null) await this.#announceClosed(closed);
       if (failure === null && finished) await this.#runEnded('done');
       await this.#reloadRun(mayHaveWritten);
       if (income && mayHaveWritten) void stats.reload('income sale');
@@ -1634,7 +1664,7 @@ class AppState {
         mayHaveWritten = !(err instanceof TradeError);
         this.#say(failure, 'error');
       }
-      if (closed !== null) this.#announceClosed(closed);
+      if (closed !== null) await this.#announceClosed(closed);
       if (failure === null) await this.#runEnded('lost'); // before the run is read again, as after the last sale
       await this.#reloadRun(mayHaveWritten);
       return failure;
@@ -1707,6 +1737,8 @@ class AppState {
     }
     this.settings = { ...this.settings, [key]: value };
     await this.#applySetting(key);
+    // a key given to "Взлетел" or "Прилетел" means the player knows the keys: the hint after the first closed run is never needed
+    if (assignsMarkKey(key, value) && !this.settings.keysHintShown) await this.updateSetting('keysHintShown', true);
     return null;
   }
 
@@ -1766,10 +1798,10 @@ class AppState {
 
   // ---- messages ---------------------------------------------------------------------------------
 
-  /** A short Russian message under the header (the line exists only while there is one); it goes away by itself. */
-  notify(text: string, kind: Notice['kind'], ms: number = NOTICE_MS): void {
+  /** A short Russian message under the header (the line exists only while there is one); it goes away by itself. `action` adds a button beside the cross. */
+  notify(text: string, kind: Notice['kind'], ms: number = NOTICE_MS, action?: NoticeAction): void {
     clearTimeout(this.#noticeTimer);
-    this.notice = { text, kind };
+    this.notice = action === undefined ? { text, kind } : { text, kind, action };
     this.#noticeTimer = setTimeout(() => this.dismissNotice(), ms);
   }
 
