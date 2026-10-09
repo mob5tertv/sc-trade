@@ -1,0 +1,14 @@
+{
+  "domain": "site.example",
+  "port": 8787,
+  "dataDir": "/var/lib/sc-trade-site",
+  "passwordHash": "",
+  "limits": {
+    "requestSeconds": 120,
+    "perAddressHour": 5,
+    "perAddressDay": 20,
+    "globalHour": 120,
+    "storageBytes": 1073741824,
+    "retentionDays": 180
+  }
+}

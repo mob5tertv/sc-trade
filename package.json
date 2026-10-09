@@ -16,6 +16,8 @@
     "site:video": "node scripts/site/video.mjs",
     "site:check": "node scripts/site/pagecheck.mjs",
     "site:deploy": "node scripts/site/deploy.mjs",
+    "site:server:install": "npm ci --prefix site/server --omit=dev --ignore-scripts --no-audit --no-fund",
+    "postinstall": "npm run site:server:install",
     "test": "vitest run",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "tauri": "tauri"
