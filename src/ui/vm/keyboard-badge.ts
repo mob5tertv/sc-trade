@@ -6,10 +6,8 @@ import type { WindowHeader } from './window-header';
 // who may be looking at another monitor, is told that his keys go to the game again. Only the display lives here; who holds the keyboard,
 // how it goes back, and for how long the second sign is said to stand, is `keyboard.ts` and `vm/keyboard-holds.ts`.
 //
-// In the header of the main screen «Esc — в игру» stands in the place of the indicator of UEX (`Header.svelte`): the header has no room to
-// spare, and the sign moves and shrinks nothing. `indicatorFace` and `indicatorClick` put «Клавиатура у игры» into the same slot when they
-// are told that the keyboard went by itself (their last argument); the header does not tell them so yet, so the main screen shows only
-// the first sign. In the header of the settings, which has free space, both signs are a badge of their own (`KeyboardBadge.svelte`).
+// In the header of the main screen a sign stands in the place of the indicator of UEX (`Header.svelte`): the header has no room to spare,
+// and a sign moves and shrinks nothing. In the header of the settings, which has free space, it is a badge of its own (`KeyboardBadge.svelte`).
 
 /** The sign, as the player reads it. */
 export const BADGE_TEXT = 'Esc — в игру';
@@ -23,7 +21,7 @@ const NO_BREAK_SPACE = String.fromCharCode(0xa0);
 /**
  * The sign that the keyboard went back to the game by itself, as the player reads it: «Клавиатура у игры». The space before «игры» is a
  * no-break one: in the slot of the header, which is narrower than the three words (93,7 px against 64 and up, measured in the preview),
- * the sign would stand in two lines, and they are «Клавиатура» (58,2 px) and «у игры», never a line that ends with «у».
+ * the sign stands in two lines, and they are «Клавиатура» (58,2 px) and «у игры», never a line that ends with «у».
  */
 export const GONE_TEXT = `Клавиатура у${NO_BREAK_SPACE}игры`;
 

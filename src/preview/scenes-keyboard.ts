@@ -345,6 +345,35 @@ function expectSettingsSign(app: SceneApp, when: string, wanted: 'held' | 'gone'
   if (wanted === 'gone' && !(sign !== null && sign.text === GONE_TEXT && !sign.button && sign.muted)) fail();
 }
 
+/**
+ * The slot of the UEX indicator in the header of the main screen. `sign`: the sign of the keyboard that stands in it (its words, whether
+ * it is muted, whether it is no wider than the slot); `null` while the slot shows the indicator. `widths`: the slot and the location
+ * field beside it, in px, so that a scene can tell that a sign moved nothing.
+ */
+function headerSlot(): { sign: { text: string; muted: boolean; fits: boolean } | null; widths: string } {
+  const slot = element('header .uex');
+  const keys = slot.querySelector('.keys');
+  const width = (el: Element): number => el.getBoundingClientRect().width;
+  return {
+    sign: keys === null ? null : { text: keys.textContent ?? '', muted: slot.classList.contains('gone'), fits: keys.scrollWidth <= Math.ceil(width(slot)) },
+    widths: `${width(slot)} / ${width(element('header .location'))}`,
+  };
+}
+
+/** Fails the scene unless the slot of the main header shows the sign `wanted` (`null`: the UEX indicator), and the application says the same. */
+function expectHeaderSign(app: SceneApp, when: string, wanted: 'held' | 'gone' | null): void {
+  const { sign } = headerSlot();
+  const told = keyboardSign(app.keyboardHeld, app.keyboardGoneSign);
+  const fail = (): never => {
+    throw new Error(`${when}: the sign must be ${JSON.stringify(wanted)}; the slot of the header shows ${JSON.stringify(sign)}, the application says ${JSON.stringify(told)}`);
+  };
+  if (told !== wanted) fail();
+  if (wanted === null && sign !== null) fail();
+  if (wanted === 'held' && !(sign !== null && sign.text === BADGE_TEXT && !sign.muted && sign.fits)) fail();
+  // «Клавиатура у игры» only tells: it is muted, and it stands inside the slot «Esc — в игру» stood in
+  if (wanted === 'gone' && !(sign !== null && sign.text === GONE_TEXT && sign.muted && sign.fits)) fail();
+}
+
 /** Opens the settings, puts the cursor into «Вместимость» and lets the keyboard go back by itself: the scene is at the moment the sign appears. */
 async function settingsKeyboardGone(app: SceneApp): Promise<void> {
   await app.expand('preview');
@@ -580,23 +609,29 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
     // game's again, the way `Esc` gives it back (the field loses the cursor, the row stays open), with one line in the log. The scene
     // takes that long. What keeps the keyboard is shown with the real keys: `--scene entry-ready --do "hover:.expand .in-price;
     // click:.expand .in-price;type:24;wait:16500;eval:window.__keys()"` (typed and not saved: the keyboard stays).
+    // The header of the main screen tells the player of that return: where «Esc — в игру» stood, the slot of the UEX indicator says
+    // «Клавиатура у игры», muted, and the header does not move. The scene ends with the sign on, so the picture shows it.
     name: 'keyboard-idle',
-    title: 'Клавиатура у окна, 15 секунд ни одной клавиши и в поле ничего не набрано: клавиатура сама вернулась игре, строка осталась раскрытой',
+    title: 'Клавиатура у окна, 15 секунд ни одной клавиши и в поле ничего не набрано: клавиатура сама вернулась игре, строка осталась раскрытой, в шапке на месте «Esc — в игру» приглушённое «Клавиатура у игры»',
     dataset: 'default',
     act: async (app) => {
       await app.expand('preview');
       watchKeys(app);
       withText('.table button.line', 'MEDS').click();
       await pause(100);
+      expectHeaderSign(app, 'before any press', null);
+      const { widths } = headerSlot();
       await clickField('.expand .in-price', 1);
       expectKeyboard(app, 'after the click on the price', { held: true, owner: 'overlay', cursor: 'in-price' });
+      expectHeaderSign(app, 'with the cursor in the price', 'held');
       await pause(KEYBOARD_IDLE_MS - 1500);
       expectKeyboard(app, 'a second and a half before the limit', { held: true, owner: 'overlay', cursor: 'in-price' });
+      expectHeaderSign(app, 'a second and a half before the limit', 'held');
       await until('the keyboard to go back to the game by itself', () => !app.keyboardHeld);
       await pause(100);
-      // ...and the application says that the sign «Клавиатура у игры» is on. The scene asks the application, not the screen: the badge
-      // of the settings shows that sign (`keyboard-gone-sign`), the header of the main screen does not yet (see `vm/keyboard-badge.ts`)
       expectKeyboard(app, `after ${KEYBOARD_IDLE_MS / 1000} s without a key`, { held: false, owner: 'game', cursor: null, sign: 'gone' });
+      expectHeaderSign(app, `after ${KEYBOARD_IDLE_MS / 1000} s without a key`, 'gone');
+      if (headerSlot().widths !== widths) throw new Error(`the sign moved the header: the slot and the location field are ${headerSlot().widths} px wide, and were ${widths}`);
       if (document.querySelector('.expand') === null) throw new Error('the open row was folded when the keyboard went back');
       if (wentBackLines().length !== 1) throw new Error(`the log must say once that the keyboard went back by itself, and it says so ${wentBackLines().length} times`);
     },
@@ -1170,6 +1205,36 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       await until('the keyboard to be dropped after the click on the game', () => !app.keyboardHeld, 3000);
       await pause(200);
       expectSettingsSign(app, 'after a click on the game', null);
+      if (wentBackLines().length !== 0) throw new Error('the log says the keyboard went back by itself, and it was the player who gave it back');
+    },
+  },
+  {
+    // The same on the main screen, where the sign stands in the slot of the UEX indicator (`keyboard-idle` shows it there after the
+    // return by itself). After Esc and after a click on the game the slot is the indicator again at once, with no sign in between.
+    name: 'keyboard-gone-sign-main-none',
+    title: 'Главный экран: после Esc и после клика в игру в шапке снова «UEX …», знака «Клавиатура у игры» нет',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      withText('.table button.line', 'MEDS').click();
+      await pause(100);
+      expectHeaderSign(app, 'before any press', null);
+      const { widths } = headerSlot();
+      const price = await clickField('.expand .in-price', 1);
+      expectHeaderSign(app, 'with the cursor in the price', 'held');
+      await oneEscape(app, 'in the row', price);
+      expectHeaderSign(app, 'after Esc', null);
+      await clickField('.expand .in-price', 1);
+      expectHeaderSign(app, 'with the cursor in the price again', 'held');
+      // past the echo of the take: a loss of the focus is the player's from here on
+      await pause(700);
+      window.__preview?.clickGame();
+      await until('the keyboard to be dropped after the click on the game', () => !app.keyboardHeld, 3000);
+      await pause(200);
+      expectHeaderSign(app, 'after a click on the game', null);
+      if (!(element('header .uex').textContent ?? '').includes('UEX')) throw new Error(`the slot of the header does not show the UEX indicator: "${element('header .uex').textContent?.trim()}"`);
+      if (headerSlot().widths !== widths) throw new Error(`the header moved: the slot and the location field are ${headerSlot().widths} px wide, and were ${widths}`);
       if (wentBackLines().length !== 0) throw new Error('the log says the keyboard went back by itself, and it was the player who gave it back');
     },
   },

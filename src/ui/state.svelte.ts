@@ -296,7 +296,7 @@ class AppState {
   keysSignGoneAt = Number.NEGATIVE_INFINITY;
   /**
    * The keyboard went back to the game by itself a moment ago (nobody used it for a while), and the player is still being told so by the
-   * sign «Клавиатура у игры» (`keyboardSign`; the badge of the settings shows it). The listeners of the keyboard say when (`showKeyboardGone`).
+   * sign «Клавиатура у игры», which stands where «Esc — в игру» stood (`keyboardSign`). The listeners of the keyboard say when (`showKeyboardGone`).
    */
   keyboardGoneSign = $state(false);
   /**

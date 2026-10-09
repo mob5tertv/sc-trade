@@ -7,7 +7,7 @@
 
 <!--
   The signs of the keyboard as a badge of its own, for a header that has room to spare (the settings); the header of the main screen shows
-  «Esc — в игру» in the place of its UEX indicator. No place is reserved for the badge.
+  the same signs in the place of its UEX indicator. No place is reserved for the badge.
   «Esc — в игру» is there while the window holds the keyboard (`app.keyboardHeld`). It is a button: a click does what Esc in a field does.
   It never takes the keyboard (it is no field) and never puts the focus anywhere.
   «Клавиатура у игры» stands in the same place for a few seconds after the keyboard went back to the game by itself (`app.keyboardGoneSign`):
