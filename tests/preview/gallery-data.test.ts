@@ -7,6 +7,9 @@ import { sideCounts } from '../../src/ui/vm/terminal-rows';
 import { galleryWithDiary, priceMoves } from '../helpers/price-trend-fixtures';
 import type { PriceMove } from '../helpers/price-trend-fixtures';
 
+/** A price is written with a non-breaking space as the thousands separator: '1 234' here is '1 234' there (the other spaces stay). */
+const nbsp = (text: string): string => text.replace(/(\d) (?=\d{3}\b)/g, `$1${String.fromCharCode(0xa0)}`);
+
 let data: GalleryData;
 let diary: Db;
 /** The prices of mine that have an earlier reading in the diary the gallery data was read from. */
@@ -240,11 +243,26 @@ describe('the gallery route lists', () => {
 describe('the gallery run, mini line and history', () => {
   it('has the idle line, the line of a run and the line of a run with a cargo that cannot fit', () => {
     expect(data.strip.idle).toEqual({ kind: 'idle', location: 'HUR-L1', target: 'ARC-L1', session: null });
-    expect(data.strip.run).toMatchObject({ kind: 'run', target: 'ARC-L1', cargo: 'MEDS 120 SCU, STIM 80 SCU' });
+    expect(data.strip.run).toMatchObject({ kind: 'run', target: 'ARC-L1', cargo: nbsp('MEDS 120 по 2 115, STIM 80 по 2 810') });
     if (data.strip.run.kind !== 'run' || data.strip.long.kind !== 'run') throw new Error('expected runs');
     expect(data.strip.run.expect).not.toBeNull();
     expect(data.strip.run.rate).not.toBeNull();
     expect(data.strip.long.cargo.length).toBeGreaterThan(60);
+  });
+
+  it('has the lines of one, two and three commodities bought for seven-digit prices, and the run without a target', () => {
+    const { one, two, three } = data.strip.cargo;
+    expect(one).toMatchObject({ kind: 'run', cargo: nbsp('MEDS 600 SCU по 1 234 567') });
+    expect(two).toMatchObject({ kind: 'run', cargo: nbsp('MEDS 120 по 1 234 567, STIM 80 по 2 345 678') });
+    expect(three).toMatchObject({ kind: 'run', cargo: nbsp('MEDS 120 по 1 234 567, STIM 80 по 2 345 678, PFOO 50 по 1 456 789') });
+    // the target of the dataset pays for all three: the first one is expected in the line, every one in the tooltip, and the rate is there
+    if (three.kind !== 'run') throw new Error('expected a run');
+    expect(three.expect).not.toBeNull();
+    expect(three.rate).not.toBeNull();
+    expect(three.cargoTitle.split('\n')).toHaveLength(3);
+    if (data.strip.noTarget.kind !== 'run') throw new Error('expected a run');
+    expect(data.strip.noTarget).toMatchObject({ target: null, expect: null, rate: null });
+    expect(data.strip.noTarget.cargoTitle).not.toContain('ждём');
   });
 
   it('has the card of the run, the sale decision and the three lists of the player', () => {

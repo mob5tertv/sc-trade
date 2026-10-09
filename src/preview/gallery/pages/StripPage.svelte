@@ -6,8 +6,6 @@
 
   const { data } = useGallery();
   const open = (): void => console.info('[gallery] open');
-  // what the strip says when the target was never picked: no target, no price there, no rate
-  const noTarget: StripModel = data.strip.run.kind === 'run' ? { ...data.strip.run, target: null, expect: null, expectShort: null, rate: null } : data.strip.run;
   // the same run in the other two phases: each has its own timer; unloading has no button, the sale ends it
   const inPhase = (phase: 'flight' | 'unloading'): StripModel => (data.strip.run.kind === 'run'
     ? phase === 'flight'
@@ -30,7 +28,7 @@
 <Frame name="unloading" caption="unloading: no button, the sale ends the run" width="content">
   <StripView model={unloading} flash={null} onOpen={open} />
 </Frame>
-<Frame name="run" caption="a run with BOTH mark buttons (more than the owner gives): the widest line of a two-commodity run, just under the 600 px limit" width="content">
+<Frame name="run" caption="a run with BOTH mark buttons (more than the owner gives): two commodities with what they were bought for, the line whole" width="content">
   <StripView model={data.strip.run} flash={null} onOpen={open} onDepart={open} onArrive={open} />
 </Frame>
 <Frame name="run-arrive" caption="a run: timer · cargo · → target · wait for the price · rate, and the one button of the next mark: the cargo is whole" width="content">
@@ -42,9 +40,18 @@
 <Frame name="flash" caption="a message replaces the content" width="content">
   <StripView model={data.strip.run} flash="Цель рейса: ARC-L1." onOpen={open} onArrive={open} />
 </Frame>
-<Frame name="long" caption="a cargo of six lines: the cargo is cut with an ellipsis, the line is not wider than 600 px" width="content">
+<Frame name="long" caption="a cargo of six lines: the cargo is cut with an ellipsis, the line is not wider than 660 px" width="content">
   <StripView model={data.strip.long} flash={null} onOpen={open} onDepart={open} onArrive={open} />
 </Frame>
 <Frame name="no-target" caption="a run with no target chosen" width="content">
-  <StripView model={noTarget} flash={null} onOpen={open} onArrive={open} />
+  <StripView model={data.strip.noTarget} flash={null} onOpen={open} onArrive={open} />
+</Frame>
+<Frame name="cargo-one" caption="one commodity: its quantity with SCU and what it was bought for (seven digits)" width="content">
+  <StripView model={data.strip.cargo.one} flash={null} onOpen={open} onDepart={open} />
+</Frame>
+<Frame name="cargo-two" caption="two commodities: no SCU, each with what it was bought for (seven digits)" width="content">
+  <StripView model={data.strip.cargo.two} flash={null} onOpen={open} onDepart={open} />
+</Frame>
+<Frame name="cargo-three" caption="three commodities with seven-digit prices: the cargo is cut with an ellipsis, the target, the expectation, the rate and the button stay whole" width="content">
+  <StripView model={data.strip.cargo.three} flash={null} onOpen={open} onDepart={open} />
 </Frame>

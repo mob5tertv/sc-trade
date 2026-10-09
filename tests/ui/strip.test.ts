@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { runOutlook } from '../../src/ui/vm/run-outlook';
-import { stripModel } from '../../src/ui/vm/strip';
+import { cargoText, cargoTitle, stripModel } from '../../src/ui/vm/strip';
 import { currentSession, sessionFigure } from '../../src/ui/vm/stats-view';
 import { distKey, pairKey } from '../../src/core/types';
-import type { RunEvent, RunWithEvents } from '../../src/core/types';
+import type { CargoLine, RunEvent, RunWithEvents } from '../../src/core/types';
 import { ev, ref } from '../helpers/factories';
 import { CLOCK, MINUTE, sessionEndedAgo } from '../helpers/indicator-fixtures';
 import { active, ctx, GOLD, market, mixedRun, NOW, s, TITA, withOwnSell, withUexSell } from '../helpers/strip-fixtures';
@@ -62,7 +62,7 @@ describe('stripModel', () => {
     // 96 SCU Gold bought at 6120 at terminal 1, 872 s ago; target 2: UEX 6900 (6400–7100); 1–2: 59 Gm
     expect(stripModel(active, market, ref, toTarget2, ctx)).toEqual({
       kind: 'run', timer: '14:32', phase: 'loading', phaseLabel: 'ПОГРУЗКА', phaseTimer: '14:32', next: 'depart',
-      cargo: 'GOLD 96 SCU', target: 'TDD Area 18',
+      cargo: `GOLD 96 SCU по 6${NBSP}120`, cargoTitle: `GOLD 96 SCU · куплено по 6${NBSP}120 · ждём 6${NBSP}900`, target: 'TDD Area 18',
       expect: `ждём 6${NBSP}900 (6${NBSP}400–7${NBSP}100)`, expectShort: `ждём 6${NBSP}900`, rate: '≈ 266k/ч',     // 96×780 = 74 880 per max(872, 1015) s
     });
   });
@@ -90,7 +90,7 @@ describe('stripModel', () => {
     expect(unknown).toEqual(empty);
   });
   it('lists mixed cargo', () => {
-    expect(stripModel(mixedRun, market, ref, s, ctx)).toMatchObject({ cargo: 'GOLD 96 SCU, TITA 40 SCU' });
+    expect(stripModel(mixedRun, market, ref, s, ctx)).toMatchObject({ cargo: `GOLD 96 по 6${NBSP}120, TITA 40 по 2${NBSP}500` });
   });
 
   it('ignores a target that is missing from the reference even when the market has a price for it', () => {
@@ -174,7 +174,7 @@ describe('stripModel', () => {
         ev({ id: 3, runId: 1, ts: NOW - 100, type: 'sell', terminalId: 2, commodityId: GOLD, scu: 96, price: 6900 }),
         ev({ id: 4, runId: 1, ts: NOW - 90, type: 'sell', terminalId: 2, commodityId: TITA, scu: 40, price: 3000 }));
       // 96×780 + 40×500 = 94 880 per 872 s, without the flight to the target
-      expect(stripModel(soldAll, market, ref, toTarget2, ctx)).toMatchObject({ cargo: '', rate: '≈ 392k/ч' });
+      expect(stripModel(soldAll, market, ref, toTarget2, ctx)).toMatchObject({ cargo: '', cargoTitle: '', rate: '≈ 392k/ч' });
     });
     it('measures the route from the first purchase', () => {
       const laterBuy = ev({ id: 3, runId: 1, ts: NOW - 300, type: 'buy', terminalId: 3, commodityId: GOLD, scu: 4, price: 6120 });
@@ -206,6 +206,83 @@ describe('stripModel', () => {
     });
   });
 
+  describe('what the cargo was bought for', () => {
+    const line = (commodityId: number, scu: number, avgBuyPrice: number): CargoLine => ({ commodityId, scu, avgBuyPrice });
+    const buyOf = (id: number, commodityId: number, scu: number, price: number) => ev({ id, runId: 1, ts: NOW - 800, type: 'buy', terminalId: 1, commodityId, scu, price });
+
+    it('says the quantity and the price after it for the one commodity of the hold', () => {
+      expect(cargoText(ref, [line(GOLD, 96, 6120)])).toBe(`GOLD 96 SCU по 6${NBSP}120`);
+    });
+    it('leaves the word SCU out when there are several commodities: the line must not grow', () => {
+      expect(cargoText(ref, [line(GOLD, 96, 6120), line(TITA, 40, 2500)])).toBe(`GOLD 96 по 6${NBSP}120, TITA 40 по 2${NBSP}500`);
+      expect(cargoText(ref, [line(GOLD, 1, 7), line(TITA, 2, 8), line(99, 3, 9)])).toBe('GOLD 1 по 7, TITA 2 по 8, #99 3 по 9');
+    });
+    it('is empty for an empty hold', () => {
+      expect(cargoText(ref, [])).toBe('');
+      expect(cargoTitle(ref, [])).toBe('');
+    });
+    it('writes a seven-digit price whole, in the format of every price', () => {
+      expect(cargoText(ref, [line(GOLD, 600, 1_234_567)])).toBe(`GOLD 600 SCU по 1${NBSP}234${NBSP}567`);
+    });
+
+    it('is the average over all the purchases, weighted by the quantity, as a whole number', () => {
+      // 60 SCU at 6000 and 40 SCU at 7000 cost 6400 on average; 3 SCU at 100 and 4 SCU at 101 cost 100,57
+      const twice = withEvents(active, buyOf(3, GOLD, 4, 6120));
+      expect(stripModel(withEvents({ run: active.run, events: [] }, buyOf(1, GOLD, 60, 6000), buyOf(2, GOLD, 40, 7000)), market, ref, s, ctx))
+        .toMatchObject({ cargo: `GOLD 100 SCU по 6${NBSP}400` });
+      expect(stripModel(withEvents({ run: active.run, events: [] }, buyOf(1, GOLD, 3, 100), buyOf(2, GOLD, 4, 101)), market, ref, s, ctx))
+        .toMatchObject({ cargo: 'GOLD 7 SCU по 101' });
+      expect(stripModel(twice, market, ref, s, ctx)).toMatchObject({ cargo: `GOLD 100 SCU по 6${NBSP}120` });
+    });
+    it('stays the price of what was bought after a part of the commodity is sold', () => {
+      const soldSome = withEvents(active, ev({ id: 3, runId: 1, ts: NOW - 100, type: 'sell', terminalId: 2, commodityId: GOLD, scu: 40, price: 6900 }));
+      expect(stripModel(soldSome, market, ref, s, ctx)).toMatchObject({ cargo: `GOLD 56 SCU по 6${NBSP}120` });
+    });
+    it('is not changed by the target: the line says what the cargo cost whatever it is expected to bring', () => {
+      expect(stripModel(mixedRun, market, ref, toTarget2, ctx)).toMatchObject({ cargo: `GOLD 96 по 6${NBSP}120, TITA 40 по 2${NBSP}500` });
+      expect(stripModel(mixedRun, market, ref, { ...s, targetTerminalId: 777 }, ctx)).toMatchObject({ cargo: `GOLD 96 по 6${NBSP}120, TITA 40 по 2${NBSP}500` });
+    });
+
+    describe('the tooltip of the cargo: a line for every commodity', () => {
+      const both = withUexSell(market, 2, TITA, 3000, 2800, 3200);
+
+      it('says the quantity, what it was bought for and, with a target and its price, what it is expected to sell for', () => {
+        expect(stripModel(active, market, ref, toTarget2, ctx)).toMatchObject({
+          cargoTitle: `GOLD 96 SCU · куплено по 6${NBSP}120 · ждём 6${NBSP}900`,
+        });
+      });
+      it('expects every commodity, not only the first one (the line itself keeps the expectation of the first)', () => {
+        const strip = stripModel(mixedRun, both, ref, toTarget2, ctx);
+        expect(strip).toMatchObject({
+          cargoTitle: `GOLD 96 SCU · куплено по 6${NBSP}120 · ждём 6${NBSP}900\nTITA 40 SCU · куплено по 2${NBSP}500 · ждём 3${NBSP}000`,
+          expect: `ждём 6${NBSP}900 (6${NBSP}400–7${NBSP}100)`, expectShort: `ждём 6${NBSP}900`,
+        });
+      });
+      it('keeps the SCU in the tooltip however many commodities there are, and leaves the range of the price out of it', () => {
+        const title = stripModel(mixedRun, both, ref, toTarget2, ctx);
+        if (title.kind !== 'run') throw new Error('a run was expected');
+        expect(title.cargoTitle.split('\n')).toHaveLength(2);
+        expect(title.cargoTitle).not.toContain('–');
+      });
+      it('leaves the expectation out of a commodity the target has no price for', () => {
+        expect(stripModel(mixedRun, market, ref, toTarget2, ctx)).toMatchObject({
+          cargoTitle: `GOLD 96 SCU · куплено по 6${NBSP}120 · ждём 6${NBSP}900\nTITA 40 SCU · куплено по 2${NBSP}500`,
+        });
+        // the first commodity has none, the second has one
+        const titaOnly = withUexSell(withUexSell(market, 2, GOLD, 0), 2, TITA, 3000);
+        expect(stripModel(mixedRun, titaOnly, ref, toTarget2, ctx)).toMatchObject({
+          cargoTitle: `GOLD 96 SCU · куплено по 6${NBSP}120\nTITA 40 SCU · куплено по 2${NBSP}500 · ждём 3${NBSP}000`,
+        });
+      });
+      it('has no expectation without a target, or with one the reference does not know, or one without any price', () => {
+        const plain = `GOLD 96 SCU · куплено по 6${NBSP}120\nTITA 40 SCU · куплено по 2${NBSP}500`;
+        expect(stripModel(mixedRun, both, ref, s, ctx)).toMatchObject({ cargoTitle: plain });
+        expect(stripModel(mixedRun, both, ref, { ...s, targetTerminalId: 777 }, ctx)).toMatchObject({ cargoTitle: plain });
+        expect(stripModel(mixedRun, both, ref, { ...s, targetTerminalId: 3 }, ctx)).toMatchObject({ cargoTitle: plain });
+      });
+    });
+  });
+
   describe('timer and cargo', () => {
     it('counts hours and never goes negative', () => {
       const long: RunWithEvents = { run: { ...active.run, startedAt: NOW - 3872 }, events: active.events };
@@ -215,13 +292,13 @@ describe('stripModel', () => {
     });
     it('shows only what is still in the hold', () => {
       const soldSome = withEvents(mixedRun, ev({ id: 3, runId: 1, ts: NOW - 100, type: 'sell', terminalId: 2, commodityId: GOLD, scu: 96, price: 6900 }));
-      expect(stripModel(soldSome, market, ref, s, ctx)).toMatchObject({ cargo: 'TITA 40 SCU' });
+      expect(stripModel(soldSome, market, ref, s, ctx)).toMatchObject({ cargo: `TITA 40 SCU по 2${NBSP}500` });
       const soldAll = withEvents(soldSome, ev({ id: 4, runId: 1, ts: NOW - 90, type: 'sell', terminalId: 2, commodityId: TITA, scu: 40, price: 3000 }));
-      expect(stripModel(soldAll, market, ref, toTarget2, ctx)).toMatchObject({ cargo: '', target: 'TDD Area 18', expect: null });
+      expect(stripModel(soldAll, market, ref, toTarget2, ctx)).toMatchObject({ cargo: '', cargoTitle: '', target: 'TDD Area 18', expect: null });
     });
     it('survives a commodity that left the reference', () => {
       const odd = withEvents(active, ev({ id: 3, runId: 1, ts: NOW - 800, type: 'buy', terminalId: 1, commodityId: 99, scu: 5, price: 100 }));
-      expect(stripModel(odd, market, ref, s, ctx)).toMatchObject({ cargo: 'GOLD 96 SCU, #99 5 SCU' });
+      expect(stripModel(odd, market, ref, s, ctx)).toMatchObject({ cargo: `GOLD 96 по 6${NBSP}120, #99 5 по 100` });
     });
   });
 });
