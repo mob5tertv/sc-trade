@@ -189,12 +189,53 @@ describe('the login', () => {
   it('remembers who tried for fifteen minutes and no longer, as an HMAC and never as the address', async () => {
     const run = await start();
     expect((await admin(run, '/admin/login', { form: { password: 'wrong' } })).status).toBe(401);
-    const { limiter } = run.service;
-    expect(limiter.keys()).toEqual([`login:${limiter.addressKey(AUTHOR)}`]);
+    const limiter = run.service.loginLimiter;
+    // the address that tried, and the count of wrong passwords of everybody together
+    expect(limiter.keys()).toEqual([`login:${limiter.addressKey(AUTHOR)}`, 'wrong:all']);
     expect(JSON.stringify(limiter.keys())).not.toContain(AUTHOR);
+    // the limiter of the form knows nothing of it
+    expect(run.service.limiter.size()).toBe(0);
     run.clock.now += 15 * 60_000 + 1;
     limiter.prune();
     expect(limiter.size()).toBe(0);
+  });
+
+  it('slows everybody down when wrong passwords come from many addresses — and never shuts the author out for what strangers do', async () => {
+    const run = await start();
+    expect(run.settings.limits.loginSlowAfter).toBe(30);
+    expect(run.settings.limits.loginSlowMs).toBe(1000);
+    // thirty wrong passwords in a quarter of an hour, each from an address of its own: none of the addresses is shut out
+    for (let n = 1; n <= 30; n++) {
+      const reply = await admin(run, '/admin/login', { form: { password: `a wrong password, number ${n}` }, headers: { 'X-Forwarded-For': `198.18.1.${n}` } });
+      expect(reply.status).toBe(401);
+    }
+    // so far nobody was made to wait
+    expect(run.sleeps).toEqual([]);
+
+    // from now on one password a second is looked at, whoever sends it
+    const began = run.clock.now;
+    expect((await admin(run, '/admin/login', { form: { password: 'one more wrong password' }, headers: { 'X-Forwarded-For': '198.18.2.1' } })).status).toBe(401);
+    expect((await admin(run, '/admin/login', { form: { password: 'and another wrong one' }, headers: { 'X-Forwarded-For': '198.18.2.2' } })).status).toBe(401);
+    expect(run.sleeps).toEqual([1000, 1000]);
+    expect(run.clock.now - began).toBe(2000);
+
+    // the author, from his own address, with the right password: a second later he is in — not refused
+    const cookie = await login(run);
+    expect(run.sleeps).toEqual([1000, 1000, 1000]);
+    expect((await admin(run, '/admin/', { cookie })).status).toBe(200);
+    // an address that has not tried five times is not told "too many wrong passwords" for what the others did
+    expect(run.lines.filter((line) => / admin login locked /.test(line))).toEqual([]);
+
+    // a check that comes later than a second after the one before is not made to wait at all
+    run.clock.now += 5000;
+    expect((await admin(run, '/admin/login', { form: { password: 'wrong again' }, headers: { 'X-Forwarded-For': '198.18.2.3' } })).status).toBe(401);
+    expect(run.sleeps).toHaveLength(3);
+
+    // a quarter of an hour without wrong passwords, and everything is as fast as before
+    run.clock.now += 15 * 60_000 + 1000;
+    await login(run);
+    expect((await admin(run, '/admin/login', { form: { password: 'wrong, long after' }, headers: { 'X-Forwarded-For': '198.18.2.4' } })).status).toBe(401);
+    expect(run.sleeps).toHaveLength(3);
   });
 
   it('gives every login a session of its own, and closes the one the browser came with', async () => {
@@ -241,7 +282,7 @@ describe('the login', () => {
       expect(reply.status, origin).toBe(403);
       expect(reply.headers['set-cookie']).toBeUndefined();
     }
-    expect(run.service.limiter.size()).toBe(0);
+    expect(run.service.loginLimiter.size()).toBe(0);
     expect(run.lines.filter((line) => / admin login /.test(line))).toEqual([]);
   });
 
@@ -581,7 +622,7 @@ describe('deleting a message', () => {
     expect((await admin(run, `/admin/m/${gone.id}/file/1`, { cookie })).status).toBe(404);
     // asked again: there is nothing to delete
     expect((await admin(run, `/admin/m/${gone.id}/delete`, { cookie, form: { csrf: token, confirm: 'yes' } })).status).toBe(404);
-    expect(run.lines.filter((line) => / admin delete /.test(line)).map((line) => line.replace(/^\S+ /, ''))).toEqual(['admin delete ok status=303']);
+    expect(run.lines.filter((line) => / admin delete /.test(line)).map((line) => line.replace(/^\S+ /, ''))).toEqual(['admin delete ok status=303 count=1']);
   });
 
   it('is not done for an id that is not one', async () => {
@@ -594,6 +635,186 @@ describe('deleting a message', () => {
       expect(reply.status, id).toBe(404);
     }
     expect(listFiles(run.dir)).toHaveLength(2);
+  });
+});
+
+describe('deleting several messages at once', () => {
+  /** Five messages, oldest first. */
+  async function five(run: Running) {
+    const records = [];
+    for (let n = 1; n <= 5; n++) records.push(await visitor(run, { message: `Message ${n} of five, ${n % 2 === 0 ? 'even' : 'odd'}.` }, n === 1 ? [shot()] : []));
+    return records;
+  }
+  const texts = (html: string) => [...html.matchAll(/Message (\d) of five/g)].map((match) => Number(match[1]));
+
+  it('the list has a box to tick for every message and one button for the ticked ones', async () => {
+    const run = await start();
+    const records = await five(run);
+    const page = (await admin(run, '/admin/', { cookie: await login(run) })).text;
+    expect(page).toContain('<form method="post" action="/admin/delete"');
+    for (const record of records) expect(page).toMatch(new RegExp(`<input type="checkbox" name="id" value="${record.id}" aria-label="[^"<>]*">`));
+    expect(page).toMatch(/<input type="checkbox" name="confirm" value="yes" required>[^<]*Удалить отмеченные навсегда/);
+    expect(page).toMatch(/<button type="submit" class="danger">Удалить отмеченные<\/button>/);
+    // one token for every form of the page
+    expect(new Set([...page.matchAll(/name="csrf" value="([^"]+)"/g)].map((match) => match[1])).size).toBe(1);
+  });
+
+  it('removes the ticked ones with their files, and no other', async () => {
+    const run = await start();
+    const records = await five(run);
+    const cookie = await login(run);
+    const csrf = csrfOf((await admin(run, '/admin/', { cookie })).text);
+    const body = new URLSearchParams([['csrf', csrf], ['confirm', 'yes'], ['id', records[0].id], ['id', records[2].id], ['id', records[4].id]]).toString();
+    const reply = await admin(run, '/admin/delete', { cookie, body });
+    expect(reply.status).toBe(303);
+    expect(reply.headers.location).toBe('/admin/');
+    expect(texts((await admin(run, '/admin/', { cookie })).text)).toEqual([4, 2]);
+    expect(listFiles(run.dir)).toEqual([`messages/${records[1].id}.json`, `messages/${records[3].id}.json`]);
+    expect(run.lines.filter((line) => / admin delete /.test(line)).map((line) => line.replace(/^\S+ /, ''))).toEqual(['admin delete ok status=303 count=3']);
+  });
+
+  it('goes back to the search it was started from', async () => {
+    const run = await start();
+    const records = await five(run);
+    const cookie = await login(run);
+    const csrf = csrfOf((await admin(run, '/admin/?q=even', { cookie })).text);
+    const reply = await admin(run, '/admin/delete', { cookie, form: { csrf, confirm: 'yes', id: records[1].id, q: 'even' } });
+    expect(reply.status).toBe(303);
+    expect(reply.headers.location).toBe('/admin/?q=even');
+    // where it goes back to is made by the service from the words of the search, never taken as an address
+    const odd = await admin(run, '/admin/delete', { cookie, form: { csrf, confirm: 'yes', id: records[3].id, q: 'https://evil.example.test/' } });
+    expect(odd.headers.location).toBe('/admin/?q=https%3A%2F%2Fevil.example.test%2F');
+  });
+
+  it('does nothing without the token, without the tick that confirms, with nothing ticked or with an id that is not one', async () => {
+    const run = await start();
+    const records = await five(run);
+    const cookie = await login(run);
+    const csrf = csrfOf((await admin(run, '/admin/', { cookie })).text);
+    const post = (pairs: Array<[string, string]>, headers: Record<string, string> = {}) => admin(run, '/admin/delete', { cookie, body: new URLSearchParams(pairs).toString(), headers });
+    const all: Array<[string, string]> = records.map((record) => ['id', record.id]);
+
+    expect((await post([['confirm', 'yes'], ...all])).status).toBe(403);
+    expect((await post([['csrf', 'x'.repeat(43)], ['confirm', 'yes'], ...all])).status).toBe(403);
+    expect((await post([['csrf', csrf], ['confirm', 'yes'], ...all], { Origin: 'https://evil.example.test' })).status).toBe(403);
+    const unsure = await post([['csrf', csrf], ...all]);
+    expect(unsure.status).toBe(400);
+    expect(unsure.text).toContain('Поставь галочку');
+    const none = await post([['csrf', csrf], ['confirm', 'yes']]);
+    expect(none.status).toBe(400);
+    expect(none.text).toContain('Ничего не отмечено');
+    // one id that is not an id among good ones: the whole request is refused, the good ones stay too
+    for (const bad of ['..', '../..', `${records[0].id}/..`, records[0].id.toUpperCase(), '*', '']) {
+      const reply = await post([['csrf', csrf], ['confirm', 'yes'], ['id', records[1].id], ['id', bad]]);
+      expect(reply.status, bad).toBe(400);
+    }
+    // more boxes than a page has
+    expect((await post([['csrf', csrf], ['confirm', 'yes'], ...Array.from({ length: 30 }, (): [string, string] => ['id', records[0].id])])).status).toBe(400);
+    expect((await admin(run, '/admin/delete', { cookie })).status).toBe(405);
+    expect((await admin(run, '/admin/delete', { form: { csrf, confirm: 'yes', id: records[0].id } })).status).toBe(303); // no session: the login
+
+    expect(stored(run.dir)).toHaveLength(5);
+    expect(listFiles(run.dir)).toHaveLength(6);
+    expect(run.lines.filter((line) => / admin delete /.test(line))).toEqual([]);
+  });
+
+  it('offers to delete everything a search found — behind a page that says how many and asks once more', async () => {
+    const run = await start();
+    const records = await five(run);
+    const cookie = await login(run);
+    // without a search there is nothing to offer: "everything" is never one click away
+    expect((await admin(run, '/admin/', { cookie })).text).not.toContain('/admin/delete-found');
+    const list = (await admin(run, '/admin/?q=odd', { cookie })).text;
+    expect(list).toContain('Найдено: 3');
+    expect(list).toContain('<a href="/admin/delete-found?q=odd">Удалить всё найденное: 3</a>');
+
+    const ask = await admin(run, '/admin/delete-found?q=odd', { cookie });
+    expect(ask.status).toBe(200);
+    expect(ask.text).toContain('Найдено обращений: 3');
+    expect(ask.text).toContain('<form method="post" action="/admin/delete-found"');
+    expect(ask.text).toContain('<input type="hidden" name="q" value="odd">');
+    expect(ask.text).toContain('<input type="hidden" name="count" value="3">');
+    expect(ask.text).toMatch(/<input type="checkbox" name="confirm" value="yes" required>/);
+    // looking at that page deletes nothing
+    expect(stored(run.dir)).toHaveLength(5);
+    const csrf = csrfOf(ask.text);
+
+    const done = await admin(run, '/admin/delete-found', { cookie, form: { csrf, q: 'odd', count: '3', confirm: 'yes' } });
+    expect(done.status).toBe(303);
+    expect(done.headers.location).toBe('/admin/');
+    expect(texts((await admin(run, '/admin/', { cookie })).text)).toEqual([4, 2]);
+    expect(listFiles(run.dir)).toEqual([`messages/${records[1].id}.json`, `messages/${records[3].id}.json`]);
+    expect(run.lines.filter((line) => / admin delete /.test(line)).map((line) => line.replace(/^\S+ /, ''))).toEqual(['admin delete ok status=303 count=3']);
+  });
+
+  it('deletes what a search found only when it is asked with the token, the tick and the very number the page showed', async () => {
+    const run = await start();
+    await five(run);
+    const cookie = await login(run);
+    const csrf = csrfOf((await admin(run, '/admin/delete-found?q=odd', { cookie })).text);
+    const post = (form: Record<string, string>, headers: Record<string, string> = {}) => admin(run, '/admin/delete-found', { cookie, form, headers });
+
+    expect((await post({ q: 'odd', count: '3', confirm: 'yes' })).status).toBe(403);
+    expect((await post({ csrf: 'nope', q: 'odd', count: '3', confirm: 'yes' })).status).toBe(403);
+    expect((await post({ csrf, q: 'odd', count: '3', confirm: 'yes' }, { Origin: 'https://evil.example.test' })).status).toBe(403);
+    expect((await post({ csrf, q: 'odd', count: '3' })).status).toBe(400);
+    // no words of a search: "everything found" would be everything there is
+    for (const q of ['', '   ']) expect((await post({ csrf, q, count: '5', confirm: 'yes' })).status).toBe(400);
+    expect((await admin(run, '/admin/delete-found', { cookie })).status).toBe(400);
+    expect((await admin(run, '/admin/delete-found?q=', { cookie })).status).toBe(400);
+    // a message came in between: the number is not the one the author saw — the page asks again, with the new number
+    await visitor(run, { message: 'One more odd message arrived.' });
+    const changed = await post({ csrf, q: 'odd', count: '3', confirm: 'yes' });
+    expect(changed.status).toBe(409);
+    expect(changed.text).toContain('Найдено обращений: 4');
+    expect(changed.text).toContain('<input type="hidden" name="count" value="4">');
+    for (const count of ['', '0', '-4', '4 ', 'four', '04']) expect((await post({ csrf, q: 'odd', count, confirm: 'yes' })).status, count).toBe(409);
+    // a search that finds nothing has nothing to delete
+    const nothing = await admin(run, '/admin/delete-found?q=zzzz', { cookie });
+    expect(nothing.status).toBe(200);
+    expect(nothing.text).toContain('Ничего не найдено');
+    expect(nothing.text).not.toContain('<form method="post" action="/admin/delete-found"');
+    expect((await post({ csrf, q: 'zzzz', count: '0', confirm: 'yes' })).status).toBe(409);
+    // without a session: the login, for both
+    expect((await admin(run, '/admin/delete-found?q=odd')).status).toBe(303);
+    expect((await admin(run, '/admin/delete-found', { form: { csrf, q: 'odd', count: '4', confirm: 'yes' } })).status).toBe(303);
+
+    expect(stored(run.dir)).toHaveLength(6);
+    expect(run.lines.filter((line) => / admin delete /.test(line))).toEqual([]);
+  });
+
+  it('shows the words of the search and the number as text on the page that asks', async () => {
+    const run = await start();
+    await visitor(run, { message: 'A message with <b>tags</b> in it.' });
+    const cookie = await login(run);
+    const ask = await admin(run, `/admin/delete-found?q=${encodeURIComponent('<b>tags</b>')}`, { cookie });
+    expect(ask.text).toContain('&lt;b&gt;tags&lt;/b&gt;');
+    expect(ask.text).not.toContain('<b>tags');
+    expect(ask.text).toContain('<input type="hidden" name="q" value="&lt;b&gt;tags&lt;/b&gt;">');
+  });
+});
+
+describe('the storage, as the author sees it', () => {
+  it('is spoken of at the top of the list once it is more than four fifths full', async () => {
+    const run = await start({ limits: { storageBytes: 4000 } });
+    const cookie = await login(run);
+    const picture = Buffer.concat([PNG, Buffer.alloc(900, 0x20)]);
+    await visitor(run, {}, [shot(picture)]);
+    await visitor(run, {}, [shot(picture)]);
+    // some 2600 of 4000 bytes: nothing is said
+    expect((await admin(run, '/admin/', { cookie })).text).not.toContain('Хранилище заполнено');
+    await visitor(run, {}, [shot(Buffer.concat([PNG, Buffer.alloc(500, 0x20)]))]);
+    // some 3500 of 4000
+    const full = (await admin(run, '/admin/', { cookie })).text;
+    expect(full).toMatch(/<p class="warning" role="status">Хранилище заполнено на 8\d %: [\d,]+ КБ из [\d,]+ КБ\. Когда место кончится, форма сайта перестанет принимать сообщения: удали ненужные\.<\/p>/);
+    // it stands above the search, on every page of the list, also when a search finds nothing
+    expect(full.indexOf('class="warning"')).toBeLessThan(full.indexOf('class="search"'));
+    expect((await admin(run, '/admin/?q=zzzz', { cookie })).text).toContain('Хранилище заполнено');
+    // deleting makes room, and the line goes
+    const csrf = csrfOf(full);
+    const ids = stored(run.dir).map((record): [string, string] => ['id', record.id]);
+    await admin(run, '/admin/delete', { cookie, body: new URLSearchParams([['csrf', csrf], ['confirm', 'yes'], ...ids.slice(0, 2)]).toString() });
+    expect((await admin(run, '/admin/', { cookie })).text).not.toContain('Хранилище заполнено');
   });
 });
 

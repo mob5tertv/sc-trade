@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { LIMITS } from '../../site/server/src/rules.mjs';
 import {
+  admin,
   DAY_MS,
   everythingIn,
   feedbackReplies,
@@ -14,6 +15,7 @@ import {
   multipart,
   OK,
   ORIGIN,
+  PASSWORD,
   PNG,
   rawSend,
   refused,
@@ -480,7 +482,7 @@ describe('what a file is is decided by its content', () => {
 });
 
 describe('the sizes are cut while the body is read', () => {
-  const head = (extra: string) => `POST /api/feedback HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: ${ORIGIN}\r\nX-Forwarded-For: ${SENDER}\r\nContent-Type: multipart/form-data; boundary=cut\r\n${extra}\r\n`;
+  const head = (extra: string, from = SENDER) => `POST /api/feedback HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: ${ORIGIN}\r\nX-Forwarded-For: ${from}\r\nContent-Type: multipart/form-data; boundary=cut\r\n${extra}\r\n`;
   const chunk = (bytes: Buffer) => Buffer.concat([Buffer.from(`${bytes.length.toString(16)}\r\n`), bytes, Buffer.from('\r\n')]);
   const pictureStart = Buffer.concat([Buffer.from('--cut\r\nContent-Disposition: form-data; name="message"\r\n\r\nA message that is long enough.\r\n--cut\r\nContent-Disposition: form-data; name="shots[]"; filename="big.png"\r\nContent-Type: image/png\r\n\r\n'), PNG]);
 
@@ -552,7 +554,7 @@ describe('the sizes are cut while the body is read', () => {
 
   it('only a few messages are read at the same time; one more is told to come back later', async () => {
     const run = await start({ limits: { uploadsAtOnce: 2 } });
-    const slow = [1, 2].map(() => rawSend(run.port, head('Content-Length: 5000000\r\n'), { first: pictureStart, then: 'wait' }));
+    const slow = [1, 2].map((n) => rawSend(run.port, head('Content-Length: 5000000\r\n', `198.51.100.${n}`), { first: pictureStart, then: 'wait' }));
     await until(() => tmpOf(run.dir).length === 2);
     const reply = await send(run, fields(run.clock), { 'X-Forwarded-For': '198.51.100.20' });
     expect(reply.status).toBe(503);
@@ -562,6 +564,68 @@ describe('the sizes are cut while the body is read', () => {
     await until(() => tmpOf(run.dir).length === 0);
     // and there is room again
     expect((await send(run, fields(run.clock), { 'X-Forwarded-For': '198.51.100.20' })).json).toEqual(OK);
+  });
+
+  it('one address has one body open at a time: a second one is refused while the first is being read', async () => {
+    const run = await start();
+    const open = rawSend(run.port, head('Content-Length: 5000000\r\n'), { first: pictureStart, then: 'wait' });
+    await until(() => tmpOf(run.dir).length === 1);
+    // the same address, a whole and good message: not now
+    const second = await send(run, fields(run.clock));
+    expect(second.status).toBe(429);
+    expect(second.json).toEqual(refused('rate_limited'));
+    expect(run.lines.some((line) => / feedback rate_limited status=429 bytes=0 files=0 kept=0 why=open$/.test(line))).toBe(true);
+    // another address is not held back by it — with one address nobody can take all the places
+    expect((await send(run, fields(run.clock), { 'X-Forwarded-For': '198.51.100.20' })).json).toEqual(OK);
+    open.leave();
+    await open.done;
+    await until(() => run.lines.some((line) => line.includes(' feedback aborted ')));
+    // the first one is gone: the address may send again
+    expect((await send(run, fields(run.clock))).json).toEqual(OK);
+  });
+
+  it('a sender that falls silent loses its place: a body that brings nothing for the time allowed is cut', async () => {
+    const run = await start({ limits: { idleMs: 250, uploadsAtOnce: 1, lingerMs: 100 } });
+    const began = Date.now();
+    const silent = rawSend(run.port, head('Content-Length: 5000000\r\n'), { first: pictureStart, then: 'wait' });
+    await until(() => tmpOf(run.dir).length === 1);
+    // while it holds the only place, nobody else is read
+    expect((await send(run, fields(run.clock), { 'X-Forwarded-For': '198.51.100.20' })).status).toBe(503);
+    const result = await silent.done;
+    expect(Date.now() - began).toBeLessThan(5000);
+    expect(result.response).toMatch(/^HTTP\/1\.1 408 /);
+    expect(result.response).toContain('{"ok":false,"error":"server"}');
+    expect(result.cutByService).toBe(true);
+    expect(run.lines.some((line) => / feedback server status=408 .* why=idle$/.test(line))).toBe(true);
+    await until(() => tmpOf(run.dir).length === 0);
+    // the place is free again
+    expect((await send(run, fields(run.clock), { 'X-Forwarded-For': '198.51.100.20' })).json).toEqual(OK);
+    expect(stored(run.dir)).toHaveLength(1);
+  });
+
+  it('a sender that goes on sending, however slowly, is not taken for a silent one', async () => {
+    const run = await start({ limits: { idleMs: 400 } });
+    // a whole message in pieces, a piece every 150 ms: longer in all than the time a silence may last
+    const { body, type } = multipart([...fields(run.clock), shot()]);
+    const { default: net } = await import('node:net');
+    const reply = await new Promise<string>((done, fail) => {
+      const socket = net.connect({ host: '127.0.0.1', port: run.port });
+      const chunks: Buffer[] = [];
+      socket.on('error', fail);
+      socket.on('data', (data: Buffer) => chunks.push(data));
+      socket.on('close', () => done(Buffer.concat(chunks).toString('latin1')));
+      socket.on('connect', async () => {
+        socket.write(`POST /api/feedback HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\nOrigin: ${ORIGIN}\r\nX-Forwarded-For: ${SENDER}\r\nContent-Type: ${type}\r\nContent-Length: ${body.length}\r\n\r\n`);
+        const step = Math.ceil(body.length / 6);
+        for (let at = 0; at < body.length; at += step) {
+          socket.write(body.subarray(at, at + step));
+          await new Promise((wait) => setTimeout(wait, 150));
+        }
+      });
+    });
+    expect(reply).toMatch(/^HTTP\/1\.1 200 /);
+    expect(reply).toContain('{"ok":true}');
+    expect(stored(run.dir)).toHaveLength(1);
   });
 });
 
@@ -629,6 +693,87 @@ describe('how often one address may write', () => {
     expect(reply.json).toEqual(refused('rate_limited'));
     run.clock.now += HOUR_MS + 1000;
     expect((await send(run, fields(run.clock))).json).toEqual(OK);
+  });
+
+  it('a budget of bytes for one address a day: what does not fit under it is refused, a day later it fits again', async () => {
+    const run = await start({ limits: { perAddressDayBytes: 2500 } });
+    const picture = Buffer.concat([PNG, Buffer.alloc(1000, 0x20)]);
+    expect((await send(run, [...fields(run.clock), shot(picture)])).json).toEqual(OK);
+    const kept = stored(run.dir)[0].files[0].bytes + readFileSync(join(run.dir, 'messages', `${stored(run.dir)[0].id}.json`)).length;
+    expect(kept).toBeGreaterThan(1200);
+    expect(kept).toBeLessThan(1500);
+    // the second one would make more than 2500 bytes in a day
+    const second = await send(run, [...fields(run.clock), shot(picture)]);
+    expect(second.status).toBe(429);
+    expect(second.json).toEqual(refused('rate_limited'));
+    expect(run.lines.at(-1)).toMatch(/ feedback rate_limited status=429 .* kept=0 why=bytes$/);
+    await until(() => tmpOf(run.dir).length === 0);
+    // a small one still fits; another address has a budget of its own
+    expect((await send(run, fields(run.clock, { message: 'A short one fits.', contact: '' }))).json).toEqual(OK);
+    expect((await send(run, [...fields(run.clock), shot(picture)], { 'X-Forwarded-For': '198.51.100.20' })).json).toEqual(OK);
+    // a body that says it is bigger than all that is left is not even read
+    const big = await send(run, [...fields(run.clock), shot(Buffer.concat([PNG, Buffer.alloc(200_000, 0x20)]))]);
+    expect(big.json).toEqual(refused('rate_limited'));
+    expect(run.lines.at(-1)).toMatch(/ feedback rate_limited status=429 bytes=0 files=0 kept=0 why=bytes$/);
+    run.clock.now += DAY_MS - 1000;
+    expect((await send(run, [...fields(run.clock), shot(picture)])).json).toEqual(refused('rate_limited'));
+    run.clock.now += 2000;
+    expect((await send(run, [...fields(run.clock), shot(picture)])).json).toEqual(OK);
+    expect(stored(run.dir)).toHaveLength(4);
+  });
+
+  it('a budget of bytes for everybody an hour: when it is used up no address gets a big message through', async () => {
+    const run = await start({ limits: { globalHourBytes: 2500 } });
+    const picture = Buffer.concat([PNG, Buffer.alloc(1000, 0x20)]);
+    expect((await send(run, [...fields(run.clock), shot(picture)], { 'X-Forwarded-For': '198.51.100.1' })).json).toEqual(OK);
+    const second = await send(run, [...fields(run.clock), shot(picture)], { 'X-Forwarded-For': '198.51.100.2' });
+    expect(second.status).toBe(429);
+    expect(second.json).toEqual(refused('rate_limited'));
+    expect(run.lines.at(-1)).toMatch(/ why=bytes$/);
+    run.clock.now += HOUR_MS + 1000;
+    expect((await send(run, [...fields(run.clock), shot(picture)], { 'X-Forwarded-For': '198.51.100.2' })).json).toEqual(OK);
+  });
+
+  it('the budgets are 40 MB a day for an address and 200 MB an hour for everybody unless the settings say otherwise', async () => {
+    const run = await start();
+    expect(run.settings.limits.perAddressDayBytes).toBe(40 * 1024 * 1024);
+    expect(run.settings.limits.globalHourBytes).toBe(200 * 1024 * 1024);
+    // so that a storage of 1 GB cannot be filled within the hour, as 120 full messages an hour could
+    expect(run.settings.limits.globalHourBytes * 5).toBeLessThanOrEqual(run.settings.limits.storageBytes);
+    // two full messages of 17 MB fit into the day of one address, a third does not
+    expect(Math.floor(run.settings.limits.perAddressDayBytes / (3 * LIMITS.shotBytes + LIMITS.logBytes))).toBe(2);
+  });
+
+  it('a flood of addresses does not shut the form to a new one — and has nothing to do with the login of the author', async () => {
+    const run = await start({ limits: { limiterKeys: 40 } });
+    // 300 addresses, each makes the service count it: the head of a form is enough for that
+    for (let n = 0; n < 300; n++) {
+      const reply = await send(run, fields(run.clock, { message: 'short' }), { 'X-Forwarded-For': `198.18.${n >> 8}.${n & 255}` });
+      expect(reply.json).toEqual(refused('too_short'));
+    }
+    const { limiter, loginLimiter } = run.service;
+    expect(limiter.size()).toBe(40);
+    // a new address is taken all the same: the address counted longest ago makes room for it
+    expect((await send(run, fields(run.clock), { 'X-Forwarded-For': '203.0.113.200' })).json).toEqual(OK);
+    expect(limiter.size()).toBe(40);
+    // the login has a table of its own, and nothing of the flood is in it
+    expect(loginLimiter.size()).toBe(0);
+    const wrong = await admin(run, '/admin/login', { form: { password: 'not the password of the author' } });
+    expect(wrong.status).toBe(401);
+    const right = await admin(run, '/admin/login', { form: { password: PASSWORD } });
+    expect(right.status).toBe(303);
+    expect(loginLimiter.size()).toBe(2); // the address of the author, and the count of wrong passwords of everybody
+    expect(limiter.keys().some((key) => key.startsWith('login:') || key.startsWith('wrong:'))).toBe(false);
+    // an address that goes on writing through the flood is still held to its five an hour
+    for (let n = 1; n <= 5; n++) expect((await send(run, fields(run.clock), { 'X-Forwarded-For': '203.0.113.201' })).json).toEqual(OK);
+    expect((await send(run, fields(run.clock), { 'X-Forwarded-For': '203.0.113.201' })).json).toEqual(refused('rate_limited'));
+  });
+
+  it('what everybody together has sent is counted apart from the addresses: no flood of addresses pushes the count out', async () => {
+    const run = await start({ limits: { limiterKeys: 10, globalHour: 3 } });
+    for (let n = 1; n <= 3; n++) expect((await send(run, fields(run.clock), { 'X-Forwarded-For': `198.51.100.${n}` })).json).toEqual(OK);
+    for (let n = 0; n < 50; n++) await send(run, fields(run.clock, { message: 'short' }), { 'X-Forwarded-For': `198.18.0.${n}` });
+    expect((await send(run, fields(run.clock), { 'X-Forwarded-For': '198.51.100.99' })).json).toEqual(refused('rate_limited'));
   });
 
   it('two messages sent at the same moment do not both slip under the limit', async () => {

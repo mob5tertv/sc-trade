@@ -20,19 +20,31 @@ const PRUNE_EVERY_MS = 10 * 60_000;
 const UP = '{"ok":true}';
 const NOT_FOUND = '{"ok":false,"error":"server"}';
 
+/** @param {number} ms */
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
- * @param {{ settings: import('./config.mjs').Settings, now?: () => number, log?: (line: string) => void }} options
- *   `now` and `log` are the clock and the log of the service; the tests give their own.
+ * @param {{
+ *   settings: import('./config.mjs').Settings,
+ *   now?: () => number,
+ *   log?: (line: string) => void,
+ *   sleep?: (ms: number) => Promise<unknown>,
+ * }} options `now`, `log` and `sleep` are the clock, the log and the waiting of the service; the tests give their own.
  */
-export function createService({ settings, now = Date.now, log = console.log }) {
+export function createService({ settings, now = Date.now, log = console.log, sleep = wait }) {
   const { limits } = settings;
   /** One line of the log: the time, then what happened. Never a text, a name or an address of a sender. */
   const say = (/** @type {string} */ text) => log(`${new Date(now()).toISOString()} ${text}`);
 
   const store = createStore({ dir: settings.dataDir, now, storageBytes: limits.storageBytes, retentionMs: limits.retentionDays * DAY });
-  const limiter = createLimiter({ now });
-  const feedback = createFeedback({ settings, store, limiter, now, log: say });
-  const admin = createAdmin({ settings, store, limiter, now, log: say });
+  // Three tables, so that a flood in one never spills into another: what each address does with the form; what
+  // all addresses together do with it (two keys, which no flood of addresses can push out); and the wrong
+  // passwords of the author's page (a key is made there only by a password that was checked, one at a time).
+  const limiter = createLimiter({ now, maxKeys: limits.limiterKeys });
+  const everybody = createLimiter({ now });
+  const loginLimiter = createLimiter({ now, maxKeys: limits.limiterKeys });
+  const feedback = createFeedback({ settings, store, limiter, everybody, now, log: say });
+  const admin = createAdmin({ settings, store, logins: loginLimiter, now, log: say, sleep });
 
   /** @param {import('./http.mjs').Request} req @param {import('./http.mjs').Response} res */
   const route = (req, res) => {
@@ -77,6 +89,8 @@ export function createService({ settings, now = Date.now, log = console.log }) {
 
   return {
     limiter,
+    everybody,
+    loginLimiter,
     sweep,
 
     /**
@@ -87,7 +101,8 @@ export function createService({ settings, now = Date.now, log = console.log }) {
     async listen(port = settings.port) {
       await store.open();
       await sweep();
-      timers = [setInterval(sweep, SWEEP_EVERY_MS), setInterval(limiter.prune, PRUNE_EVERY_MS)];
+      const prune = () => [limiter, everybody, loginLimiter].forEach((table) => table.prune());
+      timers = [setInterval(sweep, SWEEP_EVERY_MS), setInterval(prune, PRUNE_EVERY_MS)];
       for (const timer of timers) timer.unref();
       await new Promise((resolve, reject) => {
         server.once('error', reject);

@@ -82,6 +82,8 @@ export interface Running {
   lines: string[];
   /** The clock of the service: a test moves it. */
   clock: { now: number };
+  /** Every wait the service asked for, in milliseconds. A wait takes no time here: it moves the clock on by itself. */
+  sleeps: number[];
   settings: Settings;
   service: ReturnType<typeof createService>;
   stop: () => Promise<void>;
@@ -106,8 +108,13 @@ export async function start(options: { limits?: Partial<Settings['limits']>; dir
   const dir = options.dir ?? tempDir();
   const clock = { now: options.now ?? START };
   const lines: string[] = [];
+  const sleeps: number[] = [];
   const settings = settingsFor(dir, options.limits);
-  const service = createService({ settings, now: () => clock.now, log: (line) => lines.push(line) });
+  const sleep = async (ms: number) => {
+    sleeps.push(ms);
+    clock.now += ms;
+  };
+  const service = createService({ settings, now: () => clock.now, log: (line) => lines.push(line), sleep });
   const port = await service.listen(0);
   let stopped = false;
   const one: Running = {
@@ -115,6 +122,7 @@ export async function start(options: { limits?: Partial<Settings['limits']>; dir
     dir,
     lines,
     clock,
+    sleeps,
     settings,
     service,
     stop: async () => {

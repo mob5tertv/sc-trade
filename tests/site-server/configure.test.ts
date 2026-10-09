@@ -70,10 +70,10 @@ describe('the settings are written by a tool that gets the password on its stand
   it('refuses a password that is too short or missing, and writes nothing', () => {
     const dir = tempDir();
     const file = join(dir, 'config.json');
-    for (const password of ['', '\n', 'short', 'x'.repeat(11)]) {
+    for (const password of ['', '\n', 'short', 'x'.repeat(15)]) {
       const run = configure(['--config', file, '--domain', DOMAIN, '--data', dataDir(dir)], password);
       expect(run.status).toBe(1);
-      expect(run.err).toMatch(/at least 12 characters/);
+      expect(run.err).toMatch(/at least 16 characters/);
       expect(existsSync(file)).toBe(false);
     }
     expect(readdirSync(dir)).toEqual([]);

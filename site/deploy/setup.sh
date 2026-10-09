@@ -291,14 +291,14 @@ ask_password() {
     fail 'the password is typed on the keyboard, and this run has no terminal: log in with ssh and start the script there'
   fi
   for try in 1 2 3; do
-    IFS= read -rs -p '    The password of the admin page (12 characters or more; nothing is shown while you type): ' first < /dev/tty
+    IFS= read -rs -p '    The password of the admin page (16 characters or more; nothing is shown while you type): ' first < /dev/tty
     printf '\n'
     IFS= read -rs -p '    Once more: ' second < /dev/tty
     printf '\n'
     if [[ $first != "$second" ]]; then
       printf '    The two are not the same. Again.\n'
-    elif ((${#first} < 12)); then
-      printf '    Too short: 12 characters or more. Again.\n'
+    elif ((${#first} < 16)); then
+      printf '    Too short: 16 characters or more. Again.\n'
     else
       typed_password=$first
       return 0

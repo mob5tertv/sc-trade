@@ -8,6 +8,8 @@
     "perAddressHour": 5,
     "perAddressDay": 20,
     "globalHour": 120,
+    "perAddressDayBytes": 41943040,
+    "globalHourBytes": 209715200,
     "storageBytes": 1073741824,
     "retentionDays": 180
   }

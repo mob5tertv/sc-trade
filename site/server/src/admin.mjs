@@ -1,10 +1,13 @@
-// The author's page: /admin/. Here the author reads the messages, finds one, downloads its files and deletes it.
+// The author's page: /admin/. Here the author reads the messages, finds one, downloads its files and deletes —
+// one message, the ones he ticked, or everything a search found.
 //
 //   /admin/login                 the password; a session begins
 //   /admin/                      the list, newest first; ?q= searches, ?page= turns the pages
 //   /admin/m/<id>                one message
 //   /admin/m/<id>/file/<n>       its n-th file, as a download
 //   /admin/m/<id>/delete  POST   deletes it with its files
+//   /admin/delete         POST   deletes the messages ticked on the list
+//   /admin/delete-found          asks whether everything a search found is to be deleted; POST does it
 //   /admin/logout         POST   ends the session
 //   /admin/assets/admin.css      the look of the pages
 //
@@ -15,7 +18,7 @@
 import { createReadStream, readFileSync } from 'node:fs';
 import { lstat } from 'node:fs/promises';
 import { pipeline } from 'node:stream';
-import { loginPage, listPage, messagePage, notePage } from './admin-pages.mjs';
+import { deleteFoundPage, listPage, loginPage, messagePage, notePage } from './admin-pages.mjs';
 import { clientAddress } from './address.mjs';
 import { answer, errorWord } from './http.mjs';
 import { verifyPassword } from './password.mjs';
@@ -28,16 +31,19 @@ import { cookieFor, createSessions, sameToken, sessionIdFrom } from './sessions.
 
 const STYLES = readFileSync(new URL('./assets/admin.css', import.meta.url));
 
+const ID = /^[0-9a-f]{32}$/;
 const MESSAGE = /^\/admin\/m\/([0-9a-f]{32})$/;
 const FILE = /^\/admin\/m\/([0-9a-f]{32})\/file\/([1-9])$/;
 const DELETE = /^\/admin\/m\/([0-9a-f]{32})\/delete$/;
 
 const PAGE_SIZE = 20;
-/** A form of the author's page is a password or a token: nothing bigger is read. */
+/** A form of the author's page is a password, a token, the boxes of one page of the list: nothing bigger is read. */
 const FORM_BYTES = 8 * 1024;
 const FORM_MS = 10_000;
 /** How many logins may wait for their password to be checked (one is checked at a time). */
-const LOGIN_QUEUE = 8;
+const LOGIN_QUEUE = 32;
+/** The list says so when the storage is fuller than this. */
+const STORAGE_WARNING = 0.8;
 
 /** What every answer of the author's page carries: kept by no browser, shown by no search engine, framed by no site. */
 const COMMON = Object.freeze({
@@ -56,9 +62,11 @@ const FILE_POLICY = "default-src 'none'; sandbox";
 const TEXTS = Object.freeze({
   wrong: 'Неверный пароль.',
   locked: 'Слишком много неверных паролей с этого адреса. Попробуй через 15 минут.',
-  busy: 'Сервер занят. Попробуй ещё раз через несколько секунд.',
+  busy: 'Сервер занят. Попробуй ещё раз через минуту.',
   forbidden: 'Действие отклонено: страница устарела или запрос пришёл не с неё. Вернись к списку, открой страницу заново и повтори.',
-  unsure: 'Поставь галочку «Удалить это обращение и его файлы навсегда», чтобы подтвердить удаление.',
+  unsure: 'Поставь галочку, которая подтверждает удаление, и нажми кнопку ещё раз.',
+  nothing: 'Ничего не отмечено: поставь галочки у обращений, которые надо удалить.',
+  noWords: 'Сначала найди то, что надо удалить: впиши слова в поиск на странице списка.',
   missing: 'Такой страницы нет.',
   method: 'Так к этой странице не обращаются.',
   form: 'Запрос не похож на форму этой страницы.',
@@ -111,23 +119,29 @@ function cleanQuery(raw) {
   return Array.from((raw ?? '').replace(/[\u0000-\u001F\u007F-\u009F]+/g, ' ').trim()).slice(0, 100).join('');
 }
 
+/** The address of the list for a search: made here from the words, never taken from a request as an address. */
+const listAddress = (/** @type {string} */ q) => (q === '' ? '/admin/' : `/admin/?q=${encodeURIComponent(q)}`);
+
 /**
  * @param {{
  *   settings: import('./config.mjs').Settings,
  *   store: import('./store.mjs').Store,
- *   limiter: import('./limiter.mjs').Limiter,
+ *   logins: import('./limiter.mjs').Limiter,
  *   now: () => number,
  *   log: (text: string) => void,
- * }} parts
+ *   sleep: (ms: number) => Promise<unknown>,
+ * }} parts `logins` counts wrong passwords and nothing else: nothing the form of the site does reaches that table
  * @returns {(req: Request, res: Response, path: string, query: string) => Promise<void>}
  */
-export function createAdmin({ settings, store, limiter, now, log }) {
+export function createAdmin({ settings, store, logins, now, log, sleep }) {
   const { limits } = settings;
   const sessions = createSessions({ now, lifeMs: limits.sessionMs });
   /** The logins whose password is being checked or waits to be: one after another. */
   let waiting = 0;
   /** @type {Promise<unknown>} */
   let turn = Promise.resolve();
+  /** When a password was last looked at. */
+  let lastCheck = -Infinity;
 
   /** @param {Request} req @param {Response} res @param {number} status @param {string} body @param {Record<string, string>} [headers] */
   const html = (req, res, status, body, headers = {}) =>
@@ -142,15 +156,38 @@ export function createAdmin({ settings, store, limiter, now, log }) {
   /** A request that changes something must come from the site itself: a browser says where a request was made. */
   const fromTheSite = (/** @type {Request} */ req) => req.headers.origin === undefined || req.headers.origin === settings.origin;
 
+  /**
+   * The ids of the messages a search finds, newest first; without words: of all of them. The words are looked for
+   * in the text, the contact, the names of the files and the day (2026-10-10 or 10.10.2026).
+   * @param {string} q
+   * @returns {Promise<string[]>}
+   */
+  const find = async (q) => {
+    const ids = await store.ids();
+    if (q === '') return ids;
+    const needle = q.toLowerCase();
+    /** @type {string[]} */
+    const found = [];
+    for (const id of ids) {
+      const record = await store.read(id);
+      if (record === null) continue;
+      const iso = isoOf(id);
+      const day = `${iso.slice(0, 10)} ${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
+      const text = [record.message, record.contact, ...record.files.map((file) => file.name), day].join('\n').toLowerCase();
+      if (text.includes(needle)) found.push(id);
+    }
+    return found;
+  };
+
   /** @param {Request} req @param {Response} res @param {string | undefined} oldSession the session the browser came with */
   const login = async (req, res, oldSession) => {
     if (!fromTheSite(req)) {
       log('admin refused status=403 why=origin');
       return html(req, res, 403, notePage({ title: 'Отклонено', text: TEXTS.forbidden }));
     }
-    const key = `login:${limiter.addressKey(clientAddress(req.headers['x-forwarded-for']))}`;
-    // shut out: five wrong passwords within the window — or no room to remember one more address that tries
-    const shutOut = () => limiter.count(key, limits.loginWindowMs) >= limits.loginFailures || !limiter.hasRoom(key);
+    const key = `login:${logins.addressKey(clientAddress(req.headers['x-forwarded-for']))}`;
+    // shut out: five wrong passwords from this very address within the window
+    const shutOut = () => logins.count(key, limits.loginWindowMs) >= limits.loginFailures;
     const refuse = (/** @type {'locked' | 'busy' | 'wrong'} */ why, /** @type {number} */ status) => {
       log(`admin login ${why} status=${status}`);
       html(req, res, status, loginPage({ error: TEXTS[why] }));
@@ -164,8 +201,17 @@ export function createAdmin({ settings, store, limiter, now, log }) {
     waiting++;
     const mine = turn.then(async () => {
       if (shutOut()) return 'locked';
+      // Wrong passwords from many addresses are braked for everybody, not answered with a closed door: after so
+      // many of them within the window, one password is looked at in a second, whoever sends it. The author waits
+      // that second like everybody else and gets in; strangers cannot shut him out, and cannot guess fast.
+      if (logins.count('wrong:all', limits.loginWindowMs) >= limits.loginSlowAfter) {
+        const pause = lastCheck + limits.loginSlowMs - now();
+        if (pause > 0) await sleep(pause);
+      }
+      lastCheck = now();
       if (await verifyPassword(password, settings.passwordHash)) return 'ok';
-      limiter.mark(key, limits.loginWindowMs);
+      logins.mark(key, limits.loginWindowMs);
+      logins.mark('wrong:all', limits.loginWindowMs);
       return 'wrong';
     });
     turn = mine.catch(() => {});
@@ -190,21 +236,7 @@ export function createAdmin({ settings, store, limiter, now, log }) {
   const list = async (req, res, csrf, query) => {
     const params = new URLSearchParams(query);
     const q = cleanQuery(params.get('q'));
-    let ids = await store.ids();
-    if (q !== '') {
-      const needle = q.toLowerCase();
-      /** @type {string[]} */
-      const found = [];
-      for (const id of ids) {
-        const record = await store.read(id);
-        if (record === null) continue;
-        const iso = isoOf(id);
-        const day = `${iso.slice(0, 10)} ${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
-        const text = [record.message, record.contact, ...record.files.map((file) => file.name), day].join('\n').toLowerCase();
-        if (text.includes(needle)) found.push(id);
-      }
-      ids = found;
-    }
+    const ids = await find(q);
     const pages = Math.max(1, Math.ceil(ids.length / PAGE_SIZE));
     const asked = params.get('page') ?? '';
     const page = /^\d{1,20}$/.test(asked) ? Math.min(Math.max(Number(asked), 1), pages) : 1;
@@ -213,7 +245,9 @@ export function createAdmin({ settings, store, limiter, now, log }) {
       const record = await store.read(id);
       if (record !== null) items.push({ record, iso: isoOf(id) });
     }
-    html(req, res, 200, listPage({ csrf, q, page, pages, total: ids.length, items }));
+    const used = store.usedBytes();
+    const storage = used > limits.storageBytes * STORAGE_WARNING ? { used, limit: limits.storageBytes } : undefined;
+    html(req, res, 200, listPage({ csrf, q, page, pages, total: ids.length, items, storage }));
   };
 
   /** @param {Response} res @param {string} id @param {number} number @param {boolean} headOnly */
@@ -272,6 +306,12 @@ export function createAdmin({ settings, store, limiter, now, log }) {
       if (!sameToken(form.get('csrf'), csrf)) throw new Halt(403, 'Отклонено', TEXTS.forbidden, 'token');
       return form;
     };
+    /** Deletes several messages with their files and says in the log how many there were. @param {string[]} ids */
+    const removeAll = async (ids) => {
+      let count = 0;
+      for (const id of ids) if (await store.remove(id)) count++;
+      log(`admin delete ok status=303 count=${count}`);
+    };
 
     if (path === '/admin/logout') {
       if (method !== 'POST') return notAllowed('POST', csrf);
@@ -279,6 +319,36 @@ export function createAdmin({ settings, store, limiter, now, log }) {
       sessions.close(sessionId);
       log('admin logout ok status=303');
       return redirect(req, res, 303, '/admin/login', { 'Set-Cookie': cookieFor('', 0) });
+    }
+
+    // the messages ticked on the list
+    if (path === '/admin/delete') {
+      if (method !== 'POST') return notAllowed('POST', csrf);
+      const form = await trustedForm();
+      const ids = form.getAll('id');
+      // one box that does not hold an id, or more boxes than a page has: the whole request is not the list's
+      if (ids.length > PAGE_SIZE || ids.some((id) => !ID.test(id))) return note(400, 'Не удалено', TEXTS.form, csrf);
+      if (ids.length === 0) return note(400, 'Не удалено', TEXTS.nothing, csrf);
+      if (form.get('confirm') !== 'yes') return note(400, 'Не удалено', TEXTS.unsure, csrf);
+      await removeAll(ids);
+      return redirect(req, res, 303, listAddress(cleanQuery(form.get('q'))));
+    }
+
+    // everything a search found: first a page that says how many and asks, then the deed
+    if (path === '/admin/delete-found') {
+      if (!reading && method !== 'POST') return notAllowed('GET, HEAD, POST', csrf);
+      const form = reading ? new URLSearchParams(query) : await trustedForm();
+      const q = cleanQuery(form.get('q'));
+      // without words "everything found" would be everything there is: that is never one form away
+      if (q === '') return note(400, 'Не удалено', TEXTS.noWords, csrf);
+      if (!reading && form.get('confirm') !== 'yes') return note(400, 'Не удалено', TEXTS.unsure, csrf);
+      const ids = await find(q);
+      // done only for the very number the page showed: what came or went since is shown first
+      if (reading || ids.length === 0 || form.get('count') !== String(ids.length)) {
+        return html(req, res, reading ? 200 : 409, deleteFoundPage({ csrf, q, count: ids.length, changed: !reading }));
+      }
+      await removeAll(ids);
+      return redirect(req, res, 303, '/admin/');
     }
 
     const message = MESSAGE.exec(path);
@@ -302,7 +372,7 @@ export function createAdmin({ settings, store, limiter, now, log }) {
       const form = await trustedForm();
       if (form.get('confirm') !== 'yes') return note(400, 'Не удалено', TEXTS.unsure, csrf);
       if (!(await store.remove(removal[1]))) return note(404, 'Не найдено', TEXTS.missing, csrf);
-      log('admin delete ok status=303');
+      log('admin delete ok status=303 count=1');
       return redirect(req, res, 303, '/admin/');
     }
 

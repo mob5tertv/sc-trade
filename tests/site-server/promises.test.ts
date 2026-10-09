@@ -54,7 +54,8 @@ describe('«О данных» and the service say the same', () => {
     expect(limiter.size()).toBe(0);
     // and the longest the service itself asks for is a day
     const sources = ['feedback.mjs', 'admin.mjs'].map((name) => readFileSync(resolve(siteDir, 'server', 'src', name), 'utf8')).join('\n');
-    const asked = [...sources.matchAll(/limiter\.mark\([^,]+, ([\w.]+)\)/g)].map((match) => match[1]);
+    const asked = [...sources.matchAll(/\b(?:limiter|everybody|logins)\.mark\([^,]+, ([\w.]+)[,)]/g)].map((match) => match[1]);
+    expect(asked).toHaveLength(7);
     expect([...new Set(asked)].sort()).toEqual(['DAY', 'HOUR', 'limits.loginWindowMs']);
     expect(readSettings(good()).limits.loginWindowMs).toBeLessThan(DAY);
   });

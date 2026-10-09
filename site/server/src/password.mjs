@@ -16,7 +16,7 @@ const N_MAX = 1048576;
 const SALT_BYTES = 16;
 const KEY_BYTES = 32;
 
-export const PASSWORD_MIN = 12;
+export const PASSWORD_MIN = 16;
 /** Nobody types a password longer than this; a longer one is not looked at. */
 const PASSWORD_MAX_BYTES = 1024;
 

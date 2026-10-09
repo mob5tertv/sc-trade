@@ -15,16 +15,22 @@ const MEGABYTE = 1024 * 1024;
  * @typedef {{
  *   bodyBytes: number,
  *   requestMs: number,
+ *   idleMs: number,
  *   lingerMs: number,
  *   perAddressHour: number,
  *   perAddressDay: number,
  *   globalHour: number,
+ *   perAddressDayBytes: number,
+ *   globalHourBytes: number,
  *   attemptsPerAddressHour: number,
  *   uploadsAtOnce: number,
+ *   limiterKeys: number,
  *   storageBytes: number,
  *   retentionDays: number,
  *   loginFailures: number,
  *   loginWindowMs: number,
+ *   loginSlowAfter: number,
+ *   loginSlowMs: number,
  *   sessionMs: number,
  * }} Limits
  *
@@ -36,13 +42,23 @@ const MEGABYTE = 1024 * 1024;
 const FIXED = Object.freeze({
   // three pictures of 5 MB, a log of 2 MB, the text and the envelope of the form
   bodyBytes: 18 * MEGABYTE,
+  // a body that brings nothing for this long is cut: a sender that is silent does not keep a place
+  idleMs: 15_000,
   // how long the rest of a refused body is thrown away before the line is cut, so that the sender can read the answer
   lingerMs: 2000,
   // bodies one address may make the service read in an hour, whatever became of them
   attemptsPerAddressHour: 30,
+  // bodies read at the same time, each from another address
   uploadsAtOnce: 4,
+  // how many keys a table of the limiter holds; a full table lets the key marked longest ago go
+  limiterKeys: 20_000,
+  // wrong passwords one address may send within the window before it is shut out for the rest of it
   loginFailures: 5,
   loginWindowMs: 15 * 60_000,
+  // wrong passwords of everybody together within the window, after which one password is looked at in `loginSlowMs`:
+  // a delay for all, never a closed door — strangers cannot shut the author out
+  loginSlowAfter: 30,
+  loginSlowMs: 1000,
   sessionMs: 12 * 3_600_000,
 });
 
@@ -56,6 +72,10 @@ const CHANGEABLE = Object.freeze({
   perAddressHour: { min: 1, max: 1000, default: 5 },
   perAddressDay: { min: 1, max: 10_000, default: 20 },
   globalHour: { min: 1, max: 100_000, default: 120 },
+  // what is kept of one address in a day, and of everybody in an hour: so that the storage is not filled within
+  // the hour by full messages (two full messages fit into the day of one address)
+  perAddressDayBytes: { min: FIXED.bodyBytes, max: 1024 * 1024 * MEGABYTE, default: 40 * MEGABYTE },
+  globalHourBytes: { min: FIXED.bodyBytes, max: 1024 * 1024 * MEGABYTE, default: 200 * MEGABYTE },
   storageBytes: { min: 32 * MEGABYTE, max: 1024 * 1024 * MEGABYTE, default: 1024 * MEGABYTE },
   retentionDays: { min: 2, max: 180, default: 180 },
 });
@@ -128,16 +148,22 @@ export function readSettings(value) {
     limits: {
       bodyBytes: FIXED.bodyBytes,
       requestMs: limit('requestSeconds') * 1000,
+      idleMs: FIXED.idleMs,
       lingerMs: FIXED.lingerMs,
       perAddressHour: limit('perAddressHour'),
       perAddressDay: limit('perAddressDay'),
       globalHour: limit('globalHour'),
+      perAddressDayBytes: limit('perAddressDayBytes'),
+      globalHourBytes: limit('globalHourBytes'),
       attemptsPerAddressHour: FIXED.attemptsPerAddressHour,
       uploadsAtOnce: FIXED.uploadsAtOnce,
+      limiterKeys: FIXED.limiterKeys,
       storageBytes: limit('storageBytes'),
       retentionDays: limit('retentionDays'),
       loginFailures: FIXED.loginFailures,
       loginWindowMs: FIXED.loginWindowMs,
+      loginSlowAfter: FIXED.loginSlowAfter,
+      loginSlowMs: FIXED.loginSlowMs,
       sessionMs: FIXED.sessionMs,
     },
   };

@@ -78,21 +78,56 @@ describe('the limiter', () => {
     expect(marks.count('sent:x', DAY)).toBe(1);
   });
 
-  it('holds a number of keys and no more: a flood of addresses cannot fill the memory', () => {
+  it('holds a number of keys and no more — and a full table never shuts a new key out: the one marked longest ago makes room', () => {
     const { clock, limiter: marks } = limiter({ maxKeys: 3 });
-    expect(marks.mark('a', HOUR)).toBe(true);
-    expect(marks.mark('b', HOUR)).toBe(true);
-    expect(marks.mark('c', HOUR)).toBe(true);
-    // no room for a new key; a key that is already there is still counted
-    expect(marks.hasRoom('d')).toBe(false);
-    expect(marks.hasRoom('a')).toBe(true);
-    expect(marks.mark('d', HOUR)).toBe(false);
-    expect(marks.mark('a', HOUR)).toBe(true);
-    expect(marks.size()).toBe(3);
+    for (const key of ['a', 'b', 'c']) {
+      clock.now += 1000;
+      marks.mark(key, HOUR);
+    }
+    expect(marks.keys()).toEqual(['a', 'b', 'c']);
+    // a key that is there is counted on, and is now the one marked last
+    clock.now += 1000;
+    marks.mark('a', HOUR);
     expect(marks.count('a', HOUR)).toBe(2);
-    // room comes back when the old marks have run out
-    clock.now += HOUR + 1;
-    expect(marks.mark('d', HOUR)).toBe(true);
-    expect(marks.keys()).toEqual(['d']);
+    expect(marks.keys()).toEqual(['b', 'c', 'a']);
+    // a new key at the ceiling: "b", marked longest ago, goes — "d" is taken, nobody is refused
+    clock.now += 1000;
+    marks.mark('d', HOUR);
+    expect(marks.size()).toBe(3);
+    expect(marks.keys()).toEqual(['c', 'a', 'd']);
+    expect(marks.count('b', HOUR)).toBe(0);
+    expect(marks.count('d', HOUR)).toBe(1);
+    // looking at a key makes none: a flood of questions about unknown keys changes nothing
+    for (let n = 0; n < 100; n++) expect(marks.count(`unknown-${n}`, HOUR)).toBe(0);
+    expect(marks.keys()).toEqual(['c', 'a', 'd']);
+  });
+
+  it('does not look through the whole table when a new key comes to a full one', () => {
+    const { clock, limiter: marks } = limiter({ maxKeys: 2000 });
+    for (let n = 0; n < 2000; n++) marks.mark(`k${n}`, HOUR);
+    // every key is long out of date, and still a new key costs one step: the oldest goes, the rest wait for the
+    // sweep that runs by the clock
+    clock.now += 2 * HOUR;
+    marks.mark('new', HOUR);
+    expect(marks.size()).toBe(2000);
+    expect(marks.keys()[0]).toBe('k1');
+    marks.prune();
+    expect(marks.keys()).toEqual(['new']);
+  });
+
+  it('adds up what the marks weigh, for a budget of bytes', () => {
+    const { clock, limiter: marks } = limiter();
+    expect(marks.sum('bytes:x', DAY)).toBe(0);
+    marks.mark('bytes:x', DAY, 1500);
+    clock.now += 2 * HOUR;
+    marks.mark('bytes:x', DAY, 700);
+    marks.mark('sent:x', DAY);
+    expect(marks.sum('bytes:x', DAY)).toBe(2200);
+    expect(marks.sum('bytes:x', HOUR)).toBe(700);
+    expect(marks.count('bytes:x', DAY)).toBe(2);
+    // a mark that is not given a weight weighs one
+    expect(marks.sum('sent:x', DAY)).toBe(1);
+    clock.now = START + DAY + 1;
+    expect(marks.sum('bytes:x', DAY)).toBe(700);
   });
 });

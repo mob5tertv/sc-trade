@@ -107,6 +107,24 @@ describe('the guides for the user', () => {
     for (const name of ['DEPLOY.md', 'VIDEO.md']) expect(guide(name), name).not.toMatch(/задач\S*\s*\(?53|task 53/i);
   });
 
+  it('ask for a random password of sixteen characters or more, and say why a made-up one will not do', () => {
+    const text = guide('DEPLOY.md');
+    expect(text).toContain('The password of the admin page (16 characters or more; nothing is shown while you type):');
+    expect(text).toMatch(/Пароль должен быть \*\*случайным\*\*: создай его в менеджере паролей \(16 знаков или больше\)/);
+    expect(text).toMatch(/подбор\s+пароля служба только тормозит/);
+    expect(text).toMatch(/не больше одного пароля в секунду/);
+    // the guide never shows a password and never asks to send one anywhere
+    expect(text).not.toMatch(/пароль\s*[:=]\s*\S|password\s*[:=]\s*\S/i);
+  });
+
+  it('say what the author can do when the storage fills up, and what keeps it from filling within the hour', () => {
+    const text = guide('DEPLOY.md');
+    expect(text).toMatch(/«Удалить\s+отмеченные»/);
+    expect(text).toMatch(/«Удалить всё найденное»/);
+    expect(text).toMatch(/больше 80 %/);
+    expect(text).toMatch(/не больше 40 МБ в сутки с одного адреса и не больше 200 МБ в\s+час от всех вместе/);
+  });
+
   it('give the key for uploads to the upload user, not to root', () => {
     const text = guide('DEPLOY.md');
     expect(text).not.toMatch(/root@\S+ "mkdir -p ~\/\.ssh/);

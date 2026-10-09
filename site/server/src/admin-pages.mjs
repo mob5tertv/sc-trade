@@ -96,32 +96,77 @@ function listUrl(q, page) {
  *   pages: number,
  *   total: number,
  *   items: Array<{ record: MessageRecord, iso: string }>,
- * }} list `q`: the words of the search; `total`: how many messages there are, or how many were found
+ *   storage?: { used: number, limit: number },
+ * }} list `q`: the words of the search; `total`: how many messages there are, or how many were found; `storage`:
+ *   given when the storage is nearly full — the list then says so at its top
  */
-export function listPage({ csrf, q, page, pages, total, items }) {
+export function listPage({ csrf, q, page, pages, total, items, storage }) {
   const rows = items.map(({ record, iso }) => {
     const text = record.message.replace(/\s+/g, ' ');
     const chars = Array.from(text);
     const excerpt = chars.length > EXCERPT_CHARS ? `${chars.slice(0, EXCERPT_CHARS).join('')}…` : text;
     const who = record.contact === '' ? '<span class="who muted">без контакта</span>' : `<span class="who"><bdi>${esc(record.contact)}</bdi></span>`;
     const files = record.files.length === 0 ? '<span class="amount"></span>' : `<span class="amount">файлов: ${record.files.length}</span>`;
-    return `<li class="item"><a href="/admin/m/${esc(record.id)}"><span class="when">${time(iso)}</span>${who}${files}<span class="excerpt"><bdi>${esc(excerpt)}</bdi></span></a></li>`;
+    const tick = `<input type="checkbox" name="id" value="${esc(record.id)}" aria-label="Отметить обращение от ${esc(whenText(iso))}">`;
+    return `<li class="item">${tick}<a href="/admin/m/${esc(record.id)}"><span class="when">${time(iso)}</span>${who}${files}<span class="excerpt"><bdi>${esc(excerpt)}</bdi></span></a></li>`;
   });
   const nothing = q === '' ? 'Обращений пока нет.' : 'Ничего не найдено.';
   const prev = page > 1 ? `<a href="${esc(listUrl(q, page - 1))}" rel="prev">← Новее</a>` : '';
   const next = page < pages ? `<a href="${esc(listUrl(q, page + 1))}" rel="next">Старше →</a>` : '';
+  const warning =
+    storage === undefined
+      ? ''
+      : `\n<p class="warning" role="status">Хранилище заполнено на ${Math.floor((storage.used * 100) / storage.limit)} %: ${sizeText(storage.used)} из ${sizeText(storage.limit)}. Когда место кончится, форма сайта перестанет принимать сообщения: удали ненужные.</p>`;
+  // the messages of the page, each with a box to tick, and one button for the ticked ones
+  const ticked = `<form method="post" action="/admin/delete" class="bulk">
+${token(csrf)}<input type="hidden" name="q" value="${esc(q)}">
+<ol class="list">
+${rows.join('\n')}
+</ol>
+<p class="bulk-actions"><label><input type="checkbox" name="confirm" value="yes" required> Удалить отмеченные навсегда, вместе с файлами</label><button type="submit" class="danger">Удалить отмеченные</button></p>
+</form>`;
+  // everything a search found: a link to the page that says how many and asks once more
+  const found = q === '' || total === 0 ? '' : `\n<p class="bulk-found"><a href="/admin/delete-found?q=${esc(encodeURIComponent(q))}">Удалить всё найденное: ${total}</a></p>`;
   return layout({
     title: 'Обращения',
     csrf,
-    body: `<h1>Обращения</h1>
+    body: `<h1>Обращения</h1>${warning}
 <form method="get" action="/admin/" class="search" role="search">
 <label for="q">Поиск по тексту, контакту, имени файла или дню (2026-10-10 или 10.10.2026, время — UTC)</label>
 <input id="q" type="search" name="q" value="${esc(q)}" maxlength="100">
 <button type="submit">Найти</button>
 </form>
 <p class="count">${q === '' ? 'Всего' : 'Найдено'}: ${total}</p>
-${rows.length === 0 ? `<p class="empty">${nothing}</p>` : `<ol class="list">\n${rows.join('\n')}\n</ol>`}
+${rows.length === 0 ? `<p class="empty">${nothing}</p>` : ticked}${found}
 <nav class="pages" aria-label="Страницы">${prev}<span>Страница ${page} из ${pages}</span>${next}</nav>`,
+  });
+}
+
+/**
+ * The page that stands before the deleting of everything a search found: how many there are, and one more question.
+ * @param {{ csrf: string, q: string, count: number, changed: boolean }} ask `changed`: the number is not the one the
+ *   author was shown a moment ago
+ */
+export function deleteFoundPage({ csrf, q, count, changed }) {
+  const back = `<p><a href="${esc(listUrl(q, 1))}">← К найденному</a></p>`;
+  const words = `<p>Слова поиска: <bdi>${esc(q)}</bdi></p>`;
+  if (count === 0) {
+    return layout({ title: 'Удаление найденного', csrf, body: `${back}\n<h1>Удаление найденного</h1>\n${words}\n<p class="empty">Ничего не найдено: удалять нечего.</p>` });
+  }
+  return layout({
+    title: 'Удаление найденного',
+    csrf,
+    body: `${back}
+<h1>Удаление найденного</h1>${changed ? '\n<p class="error" role="alert">Пока ты смотрел, найденное изменилось. Проверь число и подтверди ещё раз.</p>' : ''}
+${words}
+<p>Найдено обращений: ${count}. Они будут удалены навсегда, вместе с файлами. Вернуть их будет нельзя.</p>
+<form method="post" action="/admin/delete-found" class="delete">
+${token(csrf)}
+<input type="hidden" name="q" value="${esc(q)}">
+<input type="hidden" name="count" value="${count}">
+<label><input type="checkbox" name="confirm" value="yes" required> Да, удалить все найденные обращения: ${count}</label>
+<button type="submit" class="danger">Удалить найденное</button>
+</form>`,
   });
 }
 

@@ -21,16 +21,22 @@ describe('the settings of the service', () => {
       limits: {
         bodyBytes: 18 * 1024 * 1024,
         requestMs: 120_000,
+        idleMs: 15_000,
         lingerMs: 2000,
         perAddressHour: 5,
         perAddressDay: 20,
         globalHour: 120,
+        perAddressDayBytes: 40 * 1024 * 1024,
+        globalHourBytes: 200 * 1024 * 1024,
         attemptsPerAddressHour: 30,
         uploadsAtOnce: 4,
+        limiterKeys: 20_000,
         storageBytes: 1024 * 1024 * 1024,
         retentionDays: 180,
         loginFailures: 5,
         loginWindowMs: 15 * 60_000,
+        loginSlowAfter: 30,
+        loginSlowMs: 1000,
         sessionMs: 12 * 3_600_000,
       },
     });
@@ -46,8 +52,16 @@ describe('the settings of the service', () => {
   });
 
   it('lets the owner of the server change the limits that are his to change', () => {
-    const settings = readSettings({ ...good(), limits: { requestSeconds: 60, perAddressHour: 2, perAddressDay: 4, globalHour: 30, storageBytes: 64 * 1024 * 1024, retentionDays: 30 } });
-    expect(settings.limits).toMatchObject({ requestMs: 60_000, perAddressHour: 2, perAddressDay: 4, globalHour: 30, storageBytes: 64 * 1024 * 1024, retentionDays: 30 });
+    const mb = 1024 * 1024;
+    const settings = readSettings({ ...good(), limits: { requestSeconds: 60, perAddressHour: 2, perAddressDay: 4, globalHour: 30, perAddressDayBytes: 20 * mb, globalHourBytes: 100 * mb, storageBytes: 64 * mb, retentionDays: 30 } });
+    expect(settings.limits).toMatchObject({ requestMs: 60_000, perAddressHour: 2, perAddressDay: 4, globalHour: 30, perAddressDayBytes: 20 * mb, globalHourBytes: 100 * mb, storageBytes: 64 * mb, retentionDays: 30 });
+  });
+
+  it('never sets a budget of bytes below one full message: such a form would refuse what the page allows', () => {
+    const full = 18 * 1024 * 1024;
+    expect(() => readSettings({ ...good(), limits: { perAddressDayBytes: full - 1 } })).toThrow(/"limits\.perAddressDayBytes" must be a whole number from 18874368 to/);
+    expect(() => readSettings({ ...good(), limits: { globalHourBytes: 1000 } })).toThrow(/"limits\.globalHourBytes"/);
+    expect(readSettings({ ...good(), limits: { perAddressDayBytes: full, globalHourBytes: full } }).limits).toMatchObject({ perAddressDayBytes: full, globalHourBytes: full });
   });
 
   it('never keeps messages longer than the 180 days the page about data promises', () => {
@@ -124,7 +138,7 @@ describe('the example of the settings (site/server/config.example.json)', () => 
       port: 8787,
       dataDir: '/var/lib/sc-trade-site',
       passwordHash: '',
-      limits: { requestSeconds: 120, perAddressHour: 5, perAddressDay: 20, globalHour: 120, storageBytes: 1024 * 1024 * 1024, retentionDays: 180 },
+      limits: { requestSeconds: 120, perAddressHour: 5, perAddressDay: 20, globalHour: 120, perAddressDayBytes: 40 * 1024 * 1024, globalHourBytes: 200 * 1024 * 1024, storageBytes: 1024 * 1024 * 1024, retentionDays: 180 },
     });
   });
 

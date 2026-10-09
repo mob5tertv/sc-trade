@@ -26,9 +26,9 @@ describe('the hash of the password', () => {
   });
 
   it('is not made of a password that is too short to be one', () => {
-    expect(PASSWORD_MIN).toBeGreaterThanOrEqual(12);
-    expect(() => hashPassword('short', CHEAP)).toThrow(/at least 12 characters/);
-    expect(() => hashPassword('x'.repeat(PASSWORD_MIN - 1), CHEAP)).toThrow(/at least 12/);
+    expect(PASSWORD_MIN).toBe(16);
+    expect(() => hashPassword('short', CHEAP)).toThrow(/at least 16 characters/);
+    expect(() => hashPassword('x'.repeat(PASSWORD_MIN - 1), CHEAP)).toThrow(/at least 16/);
     expect(() => hashPassword('x'.repeat(2000), CHEAP)).toThrow(/too long/);
     expect(hashPassword('x'.repeat(PASSWORD_MIN), CHEAP)).toMatch(/^scrypt\$/);
   });

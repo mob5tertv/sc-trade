@@ -18,7 +18,7 @@ import { answer, errorWord, JSON_HEADERS } from './http.mjs';
 import { DAY, HOUR } from './limiter.mjs';
 import { checkContact, checkMessage, cleanContact, cleanFileName, cleanLang, cleanMessage, isTooFast, LIMITS, Refusal } from './rules.mjs';
 import { createTextChecker, IMAGE_HEAD_BYTES, imageType, MIME } from './sniff.mjs';
-import { StorageFull } from './store.mjs';
+import { recordBytes, StorageFull } from './store.mjs';
 
 /**
  * @typedef {import('./http.mjs').Request} Request
@@ -59,15 +59,20 @@ const notTheForm = () => new Refusal('server', { status: 400, why: 'form' });
  *   settings: import('./config.mjs').Settings,
  *   store: import('./store.mjs').Store,
  *   limiter: import('./limiter.mjs').Limiter,
+ *   everybody: import('./limiter.mjs').Limiter,
  *   now: () => number,
  *   log: (text: string) => void,
- * }} parts `log` writes one line of the log of the service; nothing a sender sent ever goes into it
+ * }} parts `limiter` counts what each address does, `everybody` what all of them do together (a table of its own,
+ *   so that no flood of addresses pushes that count out); `log` writes one line of the log of the service — nothing a
+ *   sender sent ever goes into it
  * @returns {(req: Request, res: Response) => void}
  */
-export function createFeedback({ settings, store, limiter, now, log }) {
+export function createFeedback({ settings, store, limiter, everybody, now, log }) {
   const { limits } = settings;
   /** How many messages are being read right now. */
   let uploads = 0;
+  /** The senders a body of which is being read right now: one body at a time for each. */
+  const reading = new Set();
 
   return function feedback(req, res) {
     const arrived = now();
@@ -104,11 +109,21 @@ export function createFeedback({ settings, store, limiter, now, log }) {
 
     const who = limiter.addressKey(clientAddress(req.headers['x-forwarded-for']));
     const sentKey = `sent:${who}`;
+    const bytesKey = `bytes:${who}`;
     const triedKey = `tried:${who}`;
+    const tooOften = (/** @type {string} */ why) => new Refusal('rate_limited', { why });
+    // one address has one body open at a time: with one address nobody takes every place there is
+    if (reading.has(who)) return refuse(tooOften('open'));
     const sentTooOften = () =>
-      limiter.count(sentKey, HOUR) >= limits.perAddressHour || limiter.count(sentKey, DAY) >= limits.perAddressDay || limiter.count('sent:all', HOUR) >= limits.globalHour;
-    // every body the service is made to read is counted, whatever becomes of it
-    if (sentTooOften() || limiter.count(triedKey, HOUR) >= limits.attemptsPerAddressHour || !limiter.mark(triedKey, HOUR)) return refuse(new Refusal('rate_limited'));
+      limiter.count(sentKey, HOUR) >= limits.perAddressHour || limiter.count(sentKey, DAY) >= limits.perAddressDay || everybody.count('sent', HOUR) >= limits.globalHour;
+    /** Would so many more bytes be more than this address may have kept in a day, or everybody in an hour? */
+    const overBudget = (/** @type {number} */ more) =>
+      limiter.sum(bytesKey, DAY) + more > limits.perAddressDayBytes || everybody.sum('bytes', HOUR) + more > limits.globalHourBytes;
+    if (sentTooOften()) return refuse(tooOften('often'));
+    if (limiter.count(triedKey, HOUR) >= limits.attemptsPerAddressHour) return refuse(tooOften('tried'));
+    // a body that says it is bigger than what is left of the budget is not read at all (what it would keep is at
+    // least what it holds without the heads of its parts)
+    if (overBudget(Math.max(1, announced > 0 ? announced - ENVELOPE_BYTES : 1))) return refuse(tooOften('bytes'));
 
     if (uploads >= limits.uploadsAtOnce) return refuse(new Refusal('server', { status: 503, why: 'busy' }));
     if (announced > 0 && store.usedBytes() + announced > limits.storageBytes + ENVELOPE_BYTES) return refuse(new Refusal('server', { status: 503, why: 'storage_full' }));
@@ -134,7 +149,10 @@ export function createFeedback({ settings, store, limiter, now, log }) {
 
     // ---- the body, as it arrives
 
+    // every body the service is made to read is counted, whatever becomes of it
+    limiter.mark(triedKey, HOUR);
     uploads++;
+    reading.add(who);
     const id = store.newId();
     /** @type {Map<string, string>} */
     const texts = new Map();
@@ -156,7 +174,9 @@ export function createFeedback({ settings, store, limiter, now, log }) {
       if (over) return;
       over = true;
       clearTimeout(deadline);
+      clearTimeout(silence);
       uploads--;
+      reading.delete(who);
       if (outcome === 'aborted') say('aborted', 0);
       else if (typeof outcome === 'number') {
         reply(200, '{"ok":true}');
@@ -177,6 +197,17 @@ export function createFeedback({ settings, store, limiter, now, log }) {
     };
 
     const deadline = setTimeout(() => fail(new Refusal('server', { status: 408, why: 'deadline' })), limits.requestMs);
+
+    // A sender that falls silent does not keep its place until the deadline: a body that brings nothing for
+    // `idleMs` is cut. The clock runs only while the service is waiting for the sender — not while it has itself
+    // asked the sender to wait, and not once the body is all here.
+    /** @type {NodeJS.Timeout | undefined} */
+    let silence;
+    const listen = () => {
+      clearTimeout(silence);
+      silence = setTimeout(() => fail(new Refusal('server', { status: 408, why: 'idle' })), limits.idleMs);
+    };
+    listen();
 
     /**
      * Writes one file of the form into the work folder, judging it on the way: its size, and whether it is what
@@ -237,11 +268,17 @@ export function createFeedback({ settings, store, limiter, now, log }) {
       const contact = cleanContact(texts.get('contact') ?? '');
       const problem = checkMessage(message) ?? checkContact(contact);
       if (problem !== null) throw new Refusal(problem);
-      // the limit of sending is looked at again at the very moment of keeping, and the message is counted before the
-      // first wait: of several messages sent at the same instant only as many get through as the limit allows
-      if (sentTooOften() || !limiter.mark(sentKey, DAY) || !limiter.mark('sent:all', HOUR)) throw new Refusal('rate_limited');
       /** @type {MessageRecord} */
       const record = { id, receivedAt: new Date(store.timeOf(id)).toISOString(), lang: cleanLang(texts.get('lang')), message, contact, files };
+      // the limits of sending are looked at again at the very moment of keeping, and the message is counted before
+      // the first wait: of several messages sent at the same instant only as many get through as the limits allow
+      const bytes = recordBytes(record);
+      if (sentTooOften()) throw tooOften('often');
+      if (overBudget(bytes)) throw tooOften('bytes');
+      limiter.mark(sentKey, DAY);
+      limiter.mark(bytesKey, DAY, bytes);
+      everybody.mark('sent', HOUR);
+      everybody.mark('bytes', HOUR, bytes);
       finish(await store.save(record));
     };
 
@@ -286,20 +323,28 @@ export function createFeedback({ settings, store, limiter, now, log }) {
     req.on('data', (chunk) => {
       received += chunk.length;
       if (over) return;
+      listen();
       // the limit of the whole body, counted as it is read: what the head of the request said about it is not believed
       if (received > limits.bodyBytes) return fail(new Refusal('file_too_big'));
       // whatever a body is made of, the worst it can do is not be the form: an error the parser throws at it is a
       // refusal of this one request, never the end of the service
       try {
         if (!parser.write(chunk)) {
+          // the service is behind, not the sender: the sender is asked to wait, and its silence is not counted
           req.pause();
-          parser.once('drain', () => req.resume());
+          clearTimeout(silence);
+          parser.once('drain', () => {
+            if (over) return;
+            listen();
+            req.resume();
+          });
         }
       } catch {
         fail(notTheForm());
       }
     });
     req.on('end', () => {
+      clearTimeout(silence);
       if (over) return;
       try {
         parser.end();

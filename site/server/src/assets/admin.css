@@ -14,6 +14,7 @@
   --label: #8fb7c4;
   --accent: #3fd0f0;
   --ink: #03131b;
+  --warn: #ffb347;
   --bad: #ff6b6b;
 
   --font: 'Bahnschrift SemiCondensed', Bahnschrift, 'Segoe UI', system-ui, sans-serif;
@@ -168,18 +169,55 @@ label {
   border-top: 1px solid var(--line);
 }
 
+/* a message of the list: a box to tick, and the message itself, which is a link */
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.item input {
+  margin: 17px 4px 0;
+}
+
 .item a {
+  flex: 1 1 auto;
+  min-width: 0;
   display: grid;
   grid-template-columns: 170px 1fr auto;
   gap: 4px 16px;
   padding: 12px 8px;
-  border-bottom: 1px solid var(--line);
   color: var(--text);
   text-decoration: none;
 }
 
 .item a:hover {
   background: var(--surface);
+}
+
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin: 16px 0 0;
+}
+
+.bulk-actions label {
+  margin: 0;
+  color: var(--text);
+}
+
+.bulk-found {
+  margin: 12px 0 0;
+}
+
+.warning {
+  padding: 10px 14px;
+  border-left: 3px solid var(--warn);
+  background: var(--surface);
+  color: var(--warn);
 }
 
 .when,

@@ -122,6 +122,10 @@ describe('what setup.sh must never do', () => {
     const reads = code.match(/read -rs[^\n]*/g) ?? [];
     expect(reads).toHaveLength(2);
     for (const read of reads) expect(read).toMatch(/^read -rs -p '[^']*' \w+ < \/dev\/tty$/);
+    // sixteen characters at the least: the same number the service itself holds a password to
+    expect(reads[0]).toContain('16 characters or more');
+    expect(code).toMatch(/elif \(\(\$\{#first\} < 16\)\); then/);
+    expect(readFileSync(join(siteDir, 'server', 'src', 'password.mjs'), 'utf8')).toMatch(/^export const PASSWORD_MIN = 16;$/m);
     // and reaches the tool that makes the hash on its standard input, from a builtin of bash
     const handed = code.match(/[^\n]*\| node [^\n]*/g) ?? [];
     expect(handed).toHaveLength(2);

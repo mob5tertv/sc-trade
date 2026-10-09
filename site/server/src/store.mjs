@@ -30,6 +30,11 @@ const DAY = 24 * HOUR;
 /** The check for messages past their term runs once a day (service.mjs); see `isDue`. */
 export const SWEEP_EVERY_MS = DAY;
 
+/** The bytes a message takes on the disk: its JSON and its files. @param {MessageRecord} record */
+export function recordBytes(record) {
+  return Buffer.byteLength(JSON.stringify(record)) + record.files.reduce((total, file) => total + file.bytes, 0);
+}
+
 /** There is no room left under the ceiling of the storage. */
 export class StorageFull extends Error {
   constructor() {
@@ -158,7 +163,7 @@ export function createStore({ dir, now, storageBytes, retentionMs }) {
       const { id } = record;
       if (!ID.test(id) || !isRecord(record, id)) return Promise.reject(new Error('not a message'));
       const json = JSON.stringify(record);
-      const bytes = Buffer.byteLength(json) + record.files.reduce((total, file) => total + file.bytes, 0);
+      const bytes = recordBytes(record);
       return alone(async () => {
         if (used + bytes > storageBytes) throw new StorageFull();
         const draft = join(tmpDir, `${id}.json`);
