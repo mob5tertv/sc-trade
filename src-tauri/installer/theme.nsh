@@ -15,7 +15,7 @@
 
 ; ---- the colours, from src/ui/theme.css -------------------------------------------------------------------------------
 !define SCT_GLASS "07121b"  ; --sc-bg-solid: the window and every page
-!define SCT_TEXT "d6eef5"   ; --sc-text: the text of the pages (14:1 on the glass)
+!define SCT_TEXT "d6eef5"   ; --sc-text: the text of the pages (15.7:1 on the glass, 14.4:1 on SCT_FIELD)
 !define SCT_MUTED "82a8b6"  ; --sc-muted: the corner text and the lines of the space on the disk (7.4:1 on the glass; keep it off SCT_FIELD, 6.8:1)
 !define SCT_FIELD "0b1c27"  ; --sc-surface: the field of the path and the list of the details
 !define SCT_TROUGH "1d4654" ; --sc-border: the empty part of the progress bar

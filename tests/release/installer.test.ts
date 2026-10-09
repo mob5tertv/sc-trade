@@ -594,3 +594,110 @@ describe('the theme of the inner pages', () => {
     expect(writes, 'lines that replace the page in $1 before it is coloured').toEqual([]);
   });
 });
+
+describe('the pages-only preview of the installer (preview.nsi)', () => {
+  const preview = existsSync(resolve(installerDir, 'preview.nsi')) ? readInstaller('preview.nsi') : '';
+  const previewCode = codeLines(preview);
+  /** The code of the preview and of the theme it includes: whatever runs in the preview comes from one of the two. */
+  const runs = [...previewCode, ...codeLines(themeSource)];
+  /** The first word of a line, after an optional label (`name:`): the NSIS command, a `${Macro}` or `plug-in::function`. */
+  const command = (line: string) => /^(?:[\w.]+:\s+)?(\S+)/.exec(line)?.[1] ?? '';
+
+  it('exists, and its first lines say in so many words that it is a mock-up and installs nothing', () => {
+    expect(preview, 'src-tauri/installer/preview.nsi').not.toBe('');
+    const opening = preview.split('\n').slice(0, 12).join('\n').toLowerCase();
+    expect(opening).toContain('mock-up');
+    expect(opening).toContain('installs nothing');
+  });
+
+  it('wears the very same theme as the installer: it includes theme.nsh, and adds no colour of its own', () => {
+    expect(previewCode).toContain('!include "theme.nsh"');
+    expect(previewCode.filter((line) => /SetCtlColors|SetWindowTheme|InstallColors|MUI_BGCOLOR|MUI_TEXTCOLOR/.test(line))).toEqual([]);
+    for (const macro of ['SCT_FUNCTIONS_GUIINIT', 'SCT_FUNCTIONS_DIRECTORY', 'SCT_FUNCTIONS_INSTFILES']) expect(preview, macro).toContain(`!insertmacro ${macro}`);
+  });
+
+  it('shows the pages of the installer: welcome, the question of the second installation, folder, progress, finish', () => {
+    for (const page of ['MUI_PAGE_WELCOME', 'MUI_PAGE_DIRECTORY', 'MUI_PAGE_INSTFILES', 'MUI_PAGE_FINISH']) expect(preview, page).toContain(`!insertmacro ${page}`);
+    expect(previewCode.some((line) => /^Page custom /.test(line)), 'the question of the second installation').toBe(true);
+    for (const handle of ['$R1', '$R2', '$R3', '$R4']) expect(previewCode.join('\n'), handle).toContain(handle);
+  });
+
+  it('shows the pages of the removal, too, in a build of its own: the real dialog of the confirmation, then the progress', () => {
+    expect(previewCode).toContain('!ifdef PREVIEW_UNINSTALL');
+    expect(previewCode.some((line) => /^PageEx uninstConfirm\b/.test(line))).toBe(true);
+    expect(previewCode.join('\n')).toMatch(/!insertmacro SCT_PAINT_UNCONFIRM \$1 \$2 \$3 \$4 \$\w+/);
+  });
+
+  it('has no command that installs, writes, deletes, starts or registers anything', () => {
+    const forbidden =
+      /^(File|FileOpen|FileWrite\w*|FileSeek|FileRead\w*|WriteReg\w+|DeleteReg\w+|EnumReg\w+|CreateShortCut|CreateDirectory|Delete|RMDir|Rename|CopyFiles|SetOutPath|Exec|ExecWait|ExecShell|ExecShellWait|WriteUninstaller|WriteINIStr|DeleteINI\w+|SetShellVarContext|RegDLL|UnRegDLL|nsExec::\w+|ExecDos::\w+|InstallDirRegKey|SectionSetFlags|SetRegView)$/i;
+    expect(runs.filter((line) => forbidden.test(command(line))), 'a forbidden command in preview.nsi or theme.nsh').toEqual([]);
+    // ... and no macro that expands to one of them
+    expect(runs.filter((line) => /^\$\{(?:CreateShortcut|File|Exec|Write\w+|Delete\w*|RMDir)\b/i.test(command(line)))).toEqual([]);
+  });
+
+  it('runs nothing at the time it is built: no !system, !execute, !packhdr, !finalize, !uninstfinalize, !appendfile', () => {
+    expect(runs.filter((line) => /^!(system|execute|packhdr|finalize|uninstfinalize|appendfile|delfile|tempfile|addplugindir)\b/i.test(line))).toEqual([]);
+  });
+
+  it('calls only the Windows functions that make controls and colour them: no call that touches a file or the registry', () => {
+    const targets = runs.filter((line) => /System::Call/.test(line)).map((line) => /['"]([\w.]+::\w+)\(/.exec(line)?.[1]);
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) {
+      expect(['UXTHEME::SetWindowTheme', 'dwmapi::DwmSetWindowAttribute', 'user32::GetDpiForWindow', 'user32::CreateWindowEx']).toContain(target);
+    }
+    expect(runs.filter((line) => /^(\w+)::\w+/.test(line) && !/^System::/.test(line) && !/^nsDialogs::/.test(line)), 'plug-ins other than System and nsDialogs').toEqual([]);
+  });
+
+  it('runs as the user and writes nowhere: no administrator rights, no folder to install to', () => {
+    expect(previewCode).toContain('RequestExecutionLevel user');
+    expect(runs.filter((line) => /^(InstallDirRegKey|WriteUninstaller|SetOutPath)\b/i.test(line))).toEqual([]);
+  });
+
+  it('has sections that only report and wait, so that the bar of the progress page moves for a few seconds', () => {
+    const body: string[] = [];
+    let inSection = false;
+    for (const line of previewCode) {
+      if (/^Section\b/.test(line)) inSection = true;
+      else if (/^SectionEnd\b/.test(line)) inSection = false;
+      else if (inSection) body.push(line);
+    }
+    expect(body.length, 'lines in sections').toBeGreaterThan(5);
+    for (const line of body) expect(command(line), line).toMatch(/^(DetailPrint|Sleep)$/);
+    expect(body.filter((line) => /^Sleep\b/.test(line)).length).toBeGreaterThan(3);
+    const milliseconds = body.filter((line) => /^Sleep\b/.test(line)).reduce((sum, line) => sum + Number(line.split(/\s+/)[1]), 0);
+    expect(milliseconds, 'the bar runs for a few seconds, not for a minute').toBeGreaterThanOrEqual(1500);
+    expect(milliseconds).toBeLessThanOrEqual(6000);
+  });
+
+  it('does not start the program from the finish page: the check boxes are shown, and they call a function that does nothing', () => {
+    const joined = previewCode.join('\n');
+    expect(joined).toMatch(/!define MUI_FINISHPAGE_RUN_FUNCTION PreviewNothing/);
+    expect(joined).toMatch(/!define MUI_FINISHPAGE_SHOWREADME_FUNCTION PreviewNothing/);
+    const start = previewCode.indexOf('Function PreviewNothing');
+    expect(start, 'Function PreviewNothing').toBeGreaterThanOrEqual(0);
+    expect(previewCode.slice(start + 1, previewCode.indexOf('FunctionEnd', start))).toEqual(['Nop']);
+  });
+
+  it('shows the version of the application in its corner, the one of package.json', () => {
+    expect(defines(preview).get('VERSION')).toBe(packageVersion);
+    expect(previewCode).toContain('BrandingText "${PRODUCTNAME} ${VERSION}"');
+  });
+
+  it('uses the same pictures and the same icon as the installer', () => {
+    const joined = previewCode.join('\n');
+    expect(joined).toContain('!define MUI_HEADERIMAGE_BITMAP "header.bmp"');
+    expect(joined).toContain('!define MUI_WELCOMEFINISHPAGE_BITMAP "sidebar.bmp"');
+    expect(joined).toContain('!define MUI_ICON "..\\icons\\icon.ico"');
+    // the files are the ones of tauri.conf.json
+    expect(nsis?.headerImage).toBe('installer/header.bmp');
+    expect(nsis?.sidebarImage).toBe('installer/sidebar.bmp');
+    expect(nsis?.installerIcon).toBe('icons/icon.ico');
+  });
+
+  it('offers the same two languages as the installer, Russian first', () => {
+    const languages = previewCode.filter((line) => /^!insertmacro MUI_LANGUAGE /.test(line)).map((line) => line.replace(/^.*MUI_LANGUAGE\s+"?(\w+)"?.*$/, '$1'));
+    expect(languages).toEqual(['Russian', 'English']);
+    expect((nsis as unknown as { languages?: string[] }).languages).toEqual(['Russian', 'English']);
+  });
+});
