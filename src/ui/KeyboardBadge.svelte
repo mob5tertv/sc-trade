@@ -1,18 +1,24 @@
 <script lang="ts">
   import { app } from './state.svelte';
-  import { BADGE_HINT, BADGE_TEXT } from './vm/keyboard-badge';
+  import { BADGE_HINT, BADGE_TEXT, GONE_HINT, GONE_TEXT, keyboardSign } from './vm/keyboard-badge';
+
+  const sign = $derived(keyboardSign(app.keyboardHeld, app.keyboardGoneSign));
 </script>
 
 <!--
-  The sign «Esc — в игру» as a badge of its own, for a header that has room to spare (the settings); the header of the main screen shows the
-  same sign in the place of its UEX indicator. It is there only while the window holds the keyboard (`app.keyboardHeld`), and no place is
-  reserved for it. It is a button: a click does what Esc in a field does. It never takes the keyboard (it is no field) and never puts the
-  focus anywhere.
+  The signs of the keyboard as a badge of its own, for a header that has room to spare (the settings); the header of the main screen shows
+  «Esc — в игру» in the place of its UEX indicator. No place is reserved for the badge.
+  «Esc — в игру» is there while the window holds the keyboard (`app.keyboardHeld`). It is a button: a click does what Esc in a field does.
+  It never takes the keyboard (it is no field) and never puts the focus anywhere.
+  «Клавиатура у игры» stands in the same place for a few seconds after the keyboard went back to the game by itself (`app.keyboardGoneSign`):
+  muted, and no button, it only tells. A press on a field takes it away at once.
 -->
-{#if app.keyboardHeld}
+{#if sign === 'held'}
   <button class="badge" type="button" aria-label="{BADGE_TEXT}: вернуть клавиатуру игре" title={BADGE_HINT} onclick={() => void app.giveKeyboardBack()}>
     {BADGE_TEXT}
   </button>
+{:else if sign === 'gone'}
+  <span class="badge gone" role="status" title={GONE_HINT}>{GONE_TEXT}</span>
 {/if}
 
 <style>
@@ -35,5 +41,14 @@
 
   .badge:hover {
     background: var(--sc-surface-2);
+  }
+
+  /* the keyboard is with the game again: nothing to press, so no accent and no hand */
+  .badge.gone,
+  .badge.gone:hover {
+    border-color: var(--sc-border);
+    background: transparent;
+    color: var(--sc-muted);
+    cursor: default;
   }
 </style>

@@ -1,5 +1,6 @@
 import type { Logger } from '../data/logger';
 import { createHeldKeyGuard } from './vm/held-keys';
+import { GONE_SIGN_MS } from './vm/keyboard-badge';
 import type { KeyboardHolds } from './vm/keyboard-holds';
 import { createTypingMemory, entryText, KEYBOARD_IDLE_MS, keyboardUnused, type EditedField, type FieldPlace } from './vm/keyboard-idle';
 
@@ -29,7 +30,8 @@ import { createTypingMemory, entryText, KEYBOARD_IDLE_MS, keyboardUnused, type E
 //    `vm/keyboard-idle.ts`; here the fields are told to its memory: what stood in a field before it was typed into, what
 //    was typed, Enter and Esc, a field that is left, and where the page says those save: `CELL_MARK`, `SAVES_ON_LEAVE_MARK`).
 //    Of a search box the memory is told what is picked in it, never the query typed over it (`PICKED_MARK`): a query is a
-//    search, not an entry, and keeps no keyboard;
+//    search, not an entry, and keeps no keyboard. That return, and only that one, is told to the page (`goneByItself`), so
+//    that a sign says for a few seconds where the keyboard is: the player may be looking elsewhere;
 //  - the guard against a game key that is still held down.
 
 /** The holder name of a text field being edited. */
@@ -227,8 +229,13 @@ export function resetHeldKeys(): void {
   heldKeyLogged = false;
 }
 
-/** Starts listening; returns the function that stops. */
-export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
+/**
+ * Starts listening; returns the function that stops. `goneByItself` is told `true` when the keyboard went back to the game
+ * BY ITSELF (the watchdog found it unused; not by Esc, not by a click on the game, not because the field was gone), and
+ * `false` when the player need not be told any more: `GONE_SIGN_MS` later, or at once when he presses a field or a button
+ * that opens an entry. The sign «Клавиатура у игры» stands while it is `true` (`vm/keyboard-badge.ts`).
+ */
+export function installKeyboard(holds: KeyboardHolds, log: Logger, goneByItself: (gone: boolean) => void = () => undefined): () => void {
   /** When the player last pressed a field or a button that opens an entry: the press that takes the keyboard, or keeps it. */
   let lastPressAt = Number.NEGATIVE_INFINITY;
   /** When a key was last pressed in the window (a key that the guard of the held keys let through), or a choice made from a list. */
@@ -251,6 +258,22 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   const giveBack = (): void => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     void quietly(holds.release(FIELD));
+  };
+
+  /** The time the sign «Клавиатура у игры» still has; `undefined` while nobody is being told that the keyboard went by itself. */
+  let goneSign: number | undefined;
+  /** The player need not be told any more that the keyboard went by itself: the sign has had its time, or he pressed a field. */
+  const goneSignOver = (): void => {
+    if (goneSign === undefined) return;
+    window.clearTimeout(goneSign);
+    goneSign = undefined;
+    goneByItself(false);
+  };
+  /** The keyboard goes back by itself: the player is told, for `GONE_SIGN_MS`. */
+  const tellGoneByItself = (): void => {
+    window.clearTimeout(goneSign);
+    goneSign = window.setTimeout(goneSignOver, GONE_SIGN_MS);
+    goneByItself(true);
   };
 
   /** The return of the keyboard that a press of `Esc` has asked for and that has not happened yet; one at a time. */
@@ -442,6 +465,8 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     const { element: field, entry } = taker;
     const pressedAt = performance.now();
     lastPressAt = pressedAt;
+    // the player is back at a field: he need not be told any longer that the keyboard had gone by itself
+    goneSignOver();
     if (!holds.held) {
       const armed = holds.state === 'armed';
       if (entry === null) log.debug('ui', 'field pressed, the window needs the keyboard', { field: field.id || field.tagName, armed });
@@ -502,6 +527,9 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     const typed = typing.read((field) => ({ text: field.isConnected ? textOf(field) : null, refused: refusedAt(field) }));
     if (!keyboardUnused({ now, lastKeyAt, takenAt: lastPressAt, field: editedField(active, listPressed), typed })) return;
     log.info('ui', `the keyboard was not used for ${KEYBOARD_IDLE_MS / 1000} s: it goes back to the game`);
+    // Told before the keyboard is given: the sign «Esc — в игру» stands until the holder is released, and «Клавиатура у игры»
+    // takes its place at that very moment, with nothing shown in between.
+    tellGoneByItself();
     giveBack();
   }, WATCHDOG_MS);
 
@@ -526,6 +554,7 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   return () => {
     window.clearInterval(watchdog);
     window.clearTimeout(escapeReturn);
+    goneSignOver();
     stopEntryLook();
     window.removeEventListener('keydown', onKeyDownCapture, true);
     window.removeEventListener('keyup', onKeyUpCapture, true);

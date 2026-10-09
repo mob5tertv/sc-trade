@@ -1,3 +1,4 @@
+import { BADGE_TEXT, GONE_SIGN_MS, GONE_TEXT, keyboardSign } from '../ui/vm/keyboard-badge';
 import { KEYBOARD_IDLE_MS } from '../ui/vm/keyboard-idle';
 import { PRICE_CHECK_NOTE } from '../ui/vm/trade-form';
 import type { Scene, SceneApp } from './scenes';
@@ -139,6 +140,8 @@ interface KeyboardNow {
   cursor: string | null;
   text: string | null;
   selection: string | null;
+  /** The sign of the keyboard the application says stands: «Esc — в игру» (`held`), «Клавиатура у игры» (`gone`), or none. */
+  sign: 'held' | 'gone' | null;
 }
 
 function keyboardNow(app: SceneApp): KeyboardNow {
@@ -155,6 +158,7 @@ function keyboardNow(app: SceneApp): KeyboardNow {
     cursor: field === null ? null : `${known(field.closest('form'))} ${field.getAttribute('role') ?? known(field)}`.trim(),
     text: field === null ? null : field.value,
     selection: field === null ? null : selectionOf(field),
+    sign: keyboardSign(app.keyboardHeld, app.keyboardGoneSign),
   };
 }
 
@@ -249,7 +253,8 @@ async function oneEscape(app: SceneApp, where: string, field: HTMLElement): Prom
   keyDown(field, 'Escape');
   await until(`the keyboard to go back to the game after ONE Esc ${where}`, () => !app.keyboardHeld, 1000);
   await pause(300);
-  expectKeyboard(app, `after one Esc ${where}`, { held: false, owner: 'game', cursor: null });
+  // the player gave the keyboard back himself: no sign tells him where it is
+  expectKeyboard(app, `after one Esc ${where}`, { held: false, owner: 'game', cursor: null, sign: null });
   if (escapeLines().length !== before + 1) throw new Error(`the log must say once that Esc gave the keyboard back ${where}, and it says so ${escapeLines().length - before} times`);
 }
 
@@ -317,6 +322,43 @@ async function sendQuick(): Promise<string> {
   form.requestSubmit();
   await until('the price to be written', () => pricesWritten().length === before + 1);
   return pricesWritten()[before];
+}
+
+// ---- the sign that the keyboard went back by itself --------------------------------------------------------------------
+
+/** The sign of the keyboard in the header of the settings: what it reads and whether it is a button; `null` when there is none. */
+function settingsSign(): { text: string; button: boolean; muted: boolean } | null {
+  const badge = document.querySelector('header .badge');
+  return badge === null ? null : { text: (badge.textContent ?? '').trim(), button: badge instanceof HTMLButtonElement, muted: badge.classList.contains('gone') };
+}
+
+function expectSettingsSign(app: SceneApp, when: string, wanted: 'held' | 'gone' | null): void {
+  const sign = settingsSign();
+  const told = keyboardSign(app.keyboardHeld, app.keyboardGoneSign);
+  const fail = (): never => {
+    throw new Error(`${when}: the sign must be ${JSON.stringify(wanted)}; the header shows ${JSON.stringify(sign)}, the application says ${JSON.stringify(told)}`);
+  };
+  if (told !== wanted) fail();
+  if (wanted === null && sign !== null) fail();
+  if (wanted === 'held' && !(sign !== null && sign.text === BADGE_TEXT && sign.button && !sign.muted)) fail();
+  // «Клавиатура у игры» only tells: it is muted, and it is no button
+  if (wanted === 'gone' && !(sign !== null && sign.text === GONE_TEXT && !sign.button && sign.muted)) fail();
+}
+
+/** Opens the settings, puts the cursor into «Вместимость» and lets the keyboard go back by itself: the scene is at the moment the sign appears. */
+async function settingsKeyboardGone(app: SceneApp): Promise<void> {
+  await app.expand('preview');
+  app.openSettings();
+  await pause(100);
+  watchKeys(app);
+  await clickField('#set-scuCapacity', 1);
+  expectSettingsSign(app, 'with the cursor in a field', 'held');
+  await pause(KEYBOARD_IDLE_MS - 1500);
+  expectSettingsSign(app, 'a second and a half before the limit', 'held');
+  await until('the keyboard to go back to the game by itself', () => !app.keyboardHeld, 3000);
+  await until('the sign «Клавиатура у игры» to stand where «Esc — в игру» stood', () => settingsSign()?.text === GONE_TEXT, 1000);
+  expectKeyboard(app, 'after the keyboard went back by itself', { held: false, owner: 'game', cursor: null });
+  expectSettingsSign(app, 'after the keyboard went back by itself', 'gone');
 }
 
 /** Opens the form of a purchase of ALUM, which has only a price of UEX at HUR-L1: the keyboard is with the window, the cursor in the quantity. */
@@ -552,7 +594,9 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       expectKeyboard(app, 'a second and a half before the limit', { held: true, owner: 'overlay', cursor: 'in-price' });
       await until('the keyboard to go back to the game by itself', () => !app.keyboardHeld);
       await pause(100);
-      expectKeyboard(app, `after ${KEYBOARD_IDLE_MS / 1000} s without a key`, { held: false, owner: 'game', cursor: null });
+      // ...and the application says that the sign «Клавиатура у игры» is on. The scene asks the application, not the screen: the badge
+      // of the settings shows that sign (`keyboard-gone-sign`), the header of the main screen does not yet (see `vm/keyboard-badge.ts`)
+      expectKeyboard(app, `after ${KEYBOARD_IDLE_MS / 1000} s without a key`, { held: false, owner: 'game', cursor: null, sign: 'gone' });
       if (document.querySelector('.expand') === null) throw new Error('the open row was folded when the keyboard went back');
       if (wentBackLines().length !== 1) throw new Error(`the log must say once that the keyboard went back by itself, and it says so ${wentBackLines().length} times`);
     },
@@ -1059,6 +1103,74 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       app.setTerminalSide('sell');
       await pause(60);
       expectSide('the empty line after the tab was turned back to «Продать»', 'Прод.');
+    },
+  },
+  {
+    // «Пока я смотрю в UEX на втором мониторе, клавиатура уходит к игре, а мои цифры уходят в игру. Единственный сигнал — подпись
+    // погасла». When the keyboard goes back BY ITSELF, the place of «Esc — в игру» says so for six seconds: a muted «Клавиатура у игры»,
+    // which shifts nothing and is no button. The scene ends with the sign on, so the picture shows it.
+    name: 'keyboard-gone-sign',
+    title: 'Настройки: клавиатура вернулась игре сама (15 с без клавиш) — на месте «Esc — в игру» приглушённая плашка «Клавиатура у игры»',
+    dataset: 'default',
+    act: async (app) => {
+      await settingsKeyboardGone(app);
+    },
+  },
+  {
+    name: 'keyboard-gone-sign-over',
+    title: 'Знак «Клавиатура у игры» стоит 6 секунд и уходит сам',
+    dataset: 'default',
+    act: async (app) => {
+      await settingsKeyboardGone(app);
+      await pause(GONE_SIGN_MS - 1500);
+      expectSettingsSign(app, 'a second and a half before the sign has had its time', 'gone');
+      await until('the sign «Клавиатура у игры» to go', () => settingsSign() === null, 3000);
+      expectSettingsSign(app, `${GONE_SIGN_MS / 1000} s after the keyboard went back by itself`, null);
+      if (wentBackLines().length !== 1) throw new Error(`the keyboard went back by itself once in this scene, and the log says so ${wentBackLines().length} times`);
+    },
+  },
+  {
+    name: 'keyboard-gone-sign-press',
+    title: 'Знак «Клавиатура у игры» на экране, клик в поле — знак снят сразу, на его месте «Esc — в игру»; после Esc он не возвращается',
+    dataset: 'default',
+    act: async (app) => {
+      await settingsKeyboardGone(app);
+      // the press itself takes the sign away, before the keyboard is even taken
+      const budget = input('#set-budget');
+      budget.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      await pause(60);
+      budget.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      if (app.keyboardGoneSign) throw new Error('the press on a field did not take the sign «Клавиатура у игры» away at once');
+      await until('the cursor in the budget field', cursorIn('#set-budget'));
+      expectSettingsSign(app, 'after the press on a field', 'held');
+      // the six seconds of the sign are not over yet: it must not come back when the keyboard goes by the player's own hand
+      await oneEscape(app, 'in the budget field', budget);
+      expectSettingsSign(app, 'after Esc, with the six seconds of the sign not yet over', null);
+    },
+  },
+  {
+    // only the return BY ITSELF brings the sign: Esc and a click on the game are the player's own, he knows where the keyboard is
+    name: 'keyboard-gone-sign-none',
+    title: 'После Esc и после клика в игру знака «Клавиатура у игры» нет: игрок сам отдал клавиатуру',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      app.openSettings();
+      await pause(100);
+      watchKeys(app);
+      const field = await clickField('#set-scuCapacity', 1);
+      expectSettingsSign(app, 'with the cursor in a field', 'held');
+      await oneEscape(app, 'in a field of the settings', field);
+      expectSettingsSign(app, 'after Esc', null);
+      await clickField('#set-scuCapacity', 1);
+      expectSettingsSign(app, 'with the cursor in the field again', 'held');
+      // past the echo of the take: a loss of the focus is the player's from here on
+      await pause(700);
+      window.__preview?.clickGame();
+      await until('the keyboard to be dropped after the click on the game', () => !app.keyboardHeld, 3000);
+      await pause(200);
+      expectSettingsSign(app, 'after a click on the game', null);
+      if (wentBackLines().length !== 0) throw new Error('the log says the keyboard went back by itself, and it was the player who gave it back');
     },
   },
 ];
