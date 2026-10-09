@@ -138,6 +138,8 @@ describe('repairRuns leaves a run that is as it should be', () => {
     expect(repairLines()).toEqual([]);
   });
 
+  // The repair is about ACTIVE runs. A lost run without events is not its business either; the sweep of the leftovers (once per
+  // session, already made on this database by the first purchase) is the one that takes it: tests/data/clear-history.test.ts.
   it('runs that are done or lost, and a lost one that was never given an event', async () => {
     await recordBuy(deps, buyIn(300));
     clock.advance(10);

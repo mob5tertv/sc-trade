@@ -114,10 +114,22 @@ export async function addFinishedRun(db: Db, r: { vehicleId: number | null; scuC
   return result.lastInsertId;
 }
 
+// A run is "finished" when it is over, `done` or `lost`: the player's history. An `active` run is never one.
+const FINISHED = "status IN ('done', 'lost')";
+
+// A run without a single event (for the table `run`, whatever statement the clause stands in).
+const NO_EVENT = 'NOT EXISTS (SELECT 1 FROM run_event WHERE run_event.run_id = run.id)';
+
 // What `addFinishedRun` can leave behind when its sale is never written: a finished run without a single event. An active run
-// without events is another thing (`EMPTY_ACTIVE_RUN` below), a lost run is the player's own act, and a run with events is a
-// record: none of those is ever matched.
-const EMPTY_FINISHED_RUN = "status = 'done' AND NOT EXISTS (SELECT 1 FROM run_event WHERE run_event.run_id = run.id)";
+// without events is another thing (`EMPTY_ACTIVE_RUN` below), and a run with events is a record: neither is ever matched. A lost
+// run is not matched by this either: the rollback of one income asks for the run it has just written, which is `done`.
+const EMPTY_FINISHED_RUN = `status = 'done' AND ${NO_EVENT}`;
+
+// What a clearing of the history (`removeFinishedRunEvents`, then `removeFinishedRuns`) leaves behind when its second statement
+// fails: finished runs, done or lost, whose events are already gone. Nothing else makes a lost run without events (a run is lost
+// by closing an active one, and an active run without events is removed before any lost cargo is written), so the sweep of the
+// leftovers takes both.
+const EMPTY_LEFTOVER_RUN = `${FINISHED} AND ${NO_EVENT}`;
 
 // What `startRun` can leave behind when the first purchase is cut off before its event is written: an active run without a
 // single event. It has no cargo and no trade, but it has a start time, which would be wrong for the next purchase.
@@ -139,9 +151,38 @@ export async function removeEmptyRun(db: Db, id: number): Promise<void> {
   await db.execute(`DELETE FROM run WHERE id = ? AND ${EMPTY_FINISHED_RUN}`, [id]);
 }
 
-/** Removes every finished run without events (the leftovers of a write that was cut off); returns how many there were. */
+/**
+ * Removes every finished run, done or lost, that has no event (the leftovers of an income or of a clearing that was cut off);
+ * returns how many there were.
+ */
 export async function removeEmptyFinishedRuns(db: Db): Promise<number> {
-  return (await db.execute(`DELETE FROM run WHERE ${EMPTY_FINISHED_RUN}`)).rowsAffected;
+  return (await db.execute(`DELETE FROM run WHERE ${EMPTY_LEFTOVER_RUN}`)).rowsAffected;
+}
+
+// The clearing of the history (spec 14.14) is two statements, because the plugin has no transactions and `run_event.run_id`
+// references `run(id)` without a cascade (the foreign keys are on): the events of the runs go first, the runs after them. Each of
+// the two repeats in its own SQL what may be deleted (a run that is over and, when `endedBefore` is given, one that ended before
+// that moment); neither takes a list of ids that was read earlier. The run that is going and the diary of prices are never matched.
+function finishedBefore(endedBefore: number | null): { where: string; params: number[] } {
+  return endedBefore === null ? { where: FINISHED, params: [] } : { where: `${FINISHED} AND ended_at < ?`, params: [endedBefore] };
+}
+
+/**
+ * Deletes the events of the finished runs (all of them, or those that ended before `endedBefore`, unix seconds); returns how many.
+ * The first half of a clearing: the runs themselves stay, empty, until `removeFinishedRuns`.
+ */
+export async function removeFinishedRunEvents(db: Db, endedBefore: number | null): Promise<number> {
+  const { where, params } = finishedBefore(endedBefore);
+  return (await db.execute(`DELETE FROM run_event WHERE run_id IN (SELECT id FROM run WHERE ${where})`, params)).rowsAffected;
+}
+
+/**
+ * Deletes the finished runs (all of them, or those that ended before `endedBefore`) that have no event any more; returns how many.
+ * The second half of a clearing. A run that still has an event is left, which is also what the foreign key would insist on.
+ */
+export async function removeFinishedRuns(db: Db, endedBefore: number | null): Promise<number> {
+  const { where, params } = finishedBefore(endedBefore);
+  return (await db.execute(`DELETE FROM run WHERE ${where} AND ${NO_EVENT}`, params)).rowsAffected;
 }
 
 /** Appends an event to a run; returns its id. */

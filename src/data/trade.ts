@@ -5,7 +5,8 @@ import type { Db } from './db';
 import type { Logger } from './logger';
 import { addObservation } from './repo/diary';
 import {
-  addFinishedRun, addRunEvent, closeRun, emptyActiveRuns, getActiveRun, getRun, removeEmptyActiveRun, removeEmptyFinishedRuns, removeEmptyRun, startRun,
+  addFinishedRun, addRunEvent, closeRun, emptyActiveRuns, getActiveRun, getRun, removeEmptyActiveRun, removeEmptyFinishedRuns, removeEmptyRun,
+  removeFinishedRunEvents, removeFinishedRuns, startRun,
 } from './repo/runs';
 
 // The trade service: records a purchase, a sale, a sale of goods that were never bought here (income), a depart or arrive
@@ -28,6 +29,9 @@ import {
 //  - an income sale (spec 14.10) is a run of its own, written already finished (so it never takes the slot of the run that is
 //    going, and the schema needs nothing new), with one sale event. A failure at that event removes the empty run again; a
 //    crash between the two inserts leaves it, and the first call of the service in the next session removes it (`sweepLeftovers`).
+//  - the clearing of the history (spec 14.14, `clearHistory`) deletes the events of the finished runs first and the runs after
+//    them (the events reference their run without a cascade). A failure of the second statement leaves finished runs without
+//    events: it is tried once more at once, and what still remains is removed by the next clearing or by `sweepLeftovers`.
 // Calls on one database run one after another, so two quick presses cannot both pass a check that only
 // the first of them should pass.
 
@@ -97,21 +101,22 @@ async function repairHalfWrittenRuns(d: RepairDeps): Promise<void> {
 }
 
 /**
- * The first call of the service on a database clears away what an income that was cut off left behind: a finished run without
- * a sale (a crash between the insert of the run and the insert of its sale would show it as a row of nothing in the history for
- * ever). Once per session, not at every call: `recordIncome` takes such a run back itself when its sale fails, so only a crash
- * (a new session) leaves one, and the one thing that can survive a session, a removal that failed as well, leaves a row in the
- * history and touches no trade. Runs inside the queue, so it never meets an income that is being written; a failure is
- * logged and never stops the call.
+ * The first call of the service on a database clears away what a write that was cut off left behind: a finished run, done or
+ * lost, without a single event. An income that was cut off (a crash between the insert of the run and the insert of its sale)
+ * and a clearing of the history whose second statement failed (the events are gone, the runs are not) both leave such runs, and
+ * each would show as a row of nothing in the history for ever. Once per session, not at every call: `recordIncome` takes its
+ * run back itself when its sale fails, and `clearHistory` repeats its second statement, so only a crash (a new session) or a
+ * removal that failed twice leaves one, and it touches no trade. Runs inside the queue, so it never meets an income that is being
+ * written nor a clearing; a failure is logged and never stops the call.
  */
 async function sweepLeftovers(d: RepairDeps): Promise<void> {
   if (swept.has(d.db)) return;
   swept.add(d.db);
   try {
     const count = await removeEmptyFinishedRuns(d.db);
-    if (count > 0) d.log.info(LOG, 'removed the empty runs of an income that was cut off', { count });
+    if (count > 0) d.log.info(LOG, 'removed the finished runs without events (an income or a clearing that was cut off)', { count });
   } catch (err) {
-    d.log.warn(LOG, 'cannot remove the empty runs of an income that was cut off', { err });
+    d.log.warn(LOG, 'cannot remove the finished runs without events (an income or a clearing that was cut off)', { err });
   }
 }
 
@@ -292,5 +297,63 @@ export function loseCargo(d: TradeDeps): Promise<RunWithEvents> {
     await closeRun(d.db, runId, 'lost', ts);
     d.log.info(LOG, 'lost', { runId, endedAt: ts, cargo: cargoOf(active.events) });
     return reload(d.db, runId);
+  });
+}
+
+/** What a clearing of the history deleted: the runs, and the events of those runs. */
+export interface ClearedHistory { runs: number; events: number }
+
+/**
+ * A clearing of the history that did not work to the end. `message` is meant for the player. `partial` tells whether the events
+ * of the runs were deleted already (the runs stay in the history, empty, until the next clearing or the next start of the
+ * application) or nothing was deleted at all; `events` is how many events were deleted.
+ */
+export class ClearHistoryError extends Error {
+  readonly partial: boolean;
+  readonly events: number;
+
+  constructor(partial: boolean, events: number) {
+    super(partial
+      ? 'История очищена не до конца: в списке остались пустые рейсы. Нажми кнопку ещё раз. Подробности в логе.'
+      : 'Не удалось очистить историю: ничего не удалено. Подробности в логе.');
+    this.name = 'ClearHistoryError';
+    this.partial = partial;
+    this.events = events;
+  }
+}
+
+/**
+ * Clears the history of the player's runs (spec 14.14): every finished run, done or lost (a sale without a purchase is a done run),
+ * or, with `endedBefore` (unix seconds), those that ENDED before that moment. The run that is going and the diary of prices are
+ * never touched: both statements repeat the condition in their own SQL. In the queue of the service, so it never meets a trade
+ * that is being written nor the repair of a half-written run (that repair runs first, as before every job).
+ *
+ * Two statements, the events of the runs first, the runs after them (see `removeFinishedRunEvents`). A failure of the first
+ * deletes nothing. A failure of the second is tried once more at once; when that fails too, the runs stay as finished runs
+ * without events, and the error says so (`partial`): a second press of the button, or the sweep of the next start, finishes it.
+ */
+export function clearHistory(d: RepairDeps, endedBefore: number | null): Promise<ClearedHistory> {
+  return serialized(d, async () => {
+    let events: number;
+    try {
+      events = await removeFinishedRunEvents(d.db, endedBefore);
+    } catch (err) {
+      d.log.error(LOG, 'cannot delete the events of the cleared runs: nothing was deleted', { endedBefore, err });
+      throw new ClearHistoryError(false, 0);
+    }
+    let runs: number;
+    try {
+      runs = await removeFinishedRuns(d.db, endedBefore);
+    } catch (first) {
+      d.log.warn(LOG, 'cannot delete the cleared runs, trying once more', { endedBefore, events, err: first });
+      try {
+        runs = await removeFinishedRuns(d.db, endedBefore);
+      } catch (second) {
+        d.log.error(LOG, 'cannot delete the cleared runs: their events are gone, the runs stay empty', { endedBefore, events, err: second });
+        throw new ClearHistoryError(true, events);
+      }
+    }
+    d.log.info(LOG, 'history cleared', { endedBefore, runs, events });
+    return { runs, events };
   });
 }
