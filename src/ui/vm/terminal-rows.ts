@@ -70,10 +70,11 @@ export function cellScu(cell: Cell | null, side: Side): CellScu | null {
 
 /**
  * The tooltip of the dash in the quantity column: there is no quantity because nobody knows it, which is not an empty stock
- * (a known zero is written 0). On the sell side the number is what the buyer already holds.
+ * (a known zero is written 0). On the sell side the number is what the buyer already holds. «Свежего»: the estimate does not use a
+ * reading of mine that has gone cold (see `estimate` of the core), so a cold one leaves the dash as well.
  */
 export function unknownScuTitle(side: Side): string {
-  return `${side === 'buy' ? 'Запас' : 'Склад у покупателя'} неизвестен: ни своего замера, ни данных UEX`;
+  return `${side === 'buy' ? 'Запас' : 'Склад у покупателя'} неизвестен: нет свежего своего замера и нет данных UEX`;
 }
 
 /**
