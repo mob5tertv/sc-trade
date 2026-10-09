@@ -361,7 +361,8 @@ describe('suggestTo', () => {
     const o = await suggestTo(deps, 2, 696);
     expect(uex.routeCalls).toEqual([2]);
     expect(uex.distanceCalls).toEqual([]);
-    expect(o.map((x) => [x.originId, x.timeSec])).toEqual([[5, 1010], [1, 1015]]);
+    // terminal 5 is the quicker one (1010 s), but UEX says nothing of its stock: the trip from terminal 1, whose stock I read, stands first
+    expect(o.map((x) => [x.originId, x.timeSec])).toEqual([[1, 1015], [5, 1010]]);
   });
 
   it('still answers when UEX is down', async () => {

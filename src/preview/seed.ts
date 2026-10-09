@@ -286,7 +286,7 @@ const OWN_OBSERVATIONS: OwnObservation[] = [
   // ARC-L1 (above) rose, Gold at Port Tressler stayed
   { terminal: 9, code: 'DIAM', side: 'buy', jitter: 1.1, scu: null, age: ago.h(7) },
   { terminal: 1, code: 'GOLD', side: 'buy', jitter: 0.94, scu: null, age: ago.h(3) },
-  { terminal: 11, code: 'GOLD', side: 'buy', jitter: 1.0, scu: null, age: ago.m(50) }, // hot
+  { terminal: 11, code: 'GOLD', side: 'buy', jitter: 1.0, scu: 600, age: ago.m(50) }, // hot, with its stock: a trip on a known stock stays among the best of the list (one on an unknown stock stands after them)
   { terminal: 11, code: 'GOLD', side: 'buy', jitter: 1.0, scu: null, age: ago.h(3) },
 ];
 

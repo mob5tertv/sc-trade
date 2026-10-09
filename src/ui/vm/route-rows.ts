@@ -1,4 +1,5 @@
 import { formatCompact, formatDuration, formatUec } from '../../core/format';
+import { stockKnown } from '../../core/routes';
 import type { RouteOption } from '../../core/routes';
 import type { SellAlternative, SellHere } from '../../core/sell';
 import { pairKey } from '../../core/types';
@@ -216,7 +217,7 @@ export function routeOptionRow(
     roi: formatRoi(o.roi), rate: perHourNarrow(o.uecPerHour),
     worst: formatUec(o.worstProfit), worstLoss: o.worstProfit < 0,
     qty: `${o.qty} SCU`,
-    stockNote: o.buy.scu === null ? UNKNOWN_STOCK_NOTE : null,
+    stockNote: stockKnown(o) ? null : UNKNOWN_STOCK_NOTE,
     invested: formatUec(o.qty * o.buy.price), profit: formatUec(o.profit), profitLoss: o.profit < 0,
     buy: buyView, sell: sellView,
   };
