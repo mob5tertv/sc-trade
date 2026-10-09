@@ -11,6 +11,7 @@
     "preview:shot": "node scripts/preview/shot.mjs",
     "preview:sweep": "node scripts/preview/sweep.mjs",
     "installer:images": "node scripts/installer/build-images.mjs",
+    "site:build": "node scripts/site/build.mjs",
     "test": "vitest run",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "tauri": "tauri"

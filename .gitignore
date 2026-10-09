@@ -7,3 +7,8 @@ dist
 src-tauri/target
 src-tauri/gen
 Screenshot/
+
+# the site: what is built and what belongs to one computer only
+site/dist/
+site/dist-deploy/
+site/deploy.local.json

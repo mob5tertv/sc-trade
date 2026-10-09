@@ -1,0 +1,35 @@
+      <section class="section section--band" id="support" aria-labelledby="support-title">
+        <div class="section__inner">
+          <header class="section__head">
+            <p class="section__label">{{t.support.label}}</p>
+            <h2 class="section__title" id="support-title">{{t.support.title}}</h2>
+            <p class="section__intro">{{t.support.text}}</p>
+          </header>
+          <ul class="support">
+            <li>
+              <a class="support__link" href="{{site.links.boosty}}" target="_blank" rel="noopener noreferrer">
+                <span class="support__mark support__mark--tier" aria-hidden="true"></span>
+                <span class="support__name">{{t.support.boosty}}</span>
+                <span class="support__hint">{{shown.boosty}}</span>
+                <span class="visually-hidden">({{t.footer.external}})</span>
+              </a>
+            </li>
+            <li>
+              <a class="support__link" href="{{site.links.donationalerts}}" target="_blank" rel="noopener noreferrer">
+                <span class="support__mark support__mark--coin" aria-hidden="true"></span>
+                <span class="support__name">{{t.support.donationalerts}}</span>
+                <span class="support__hint">{{shown.donationalerts}}</span>
+                <span class="visually-hidden">({{t.footer.external}})</span>
+              </a>
+            </li>
+            <li>
+              <a class="support__link" href="{{site.links.twitch}}" target="_blank" rel="noopener noreferrer">
+                <span class="support__mark support__mark--play" aria-hidden="true"></span>
+                <span class="support__name">{{t.support.twitch}}</span>
+                <span class="support__hint">{{shown.twitch}}</span>
+                <span class="visually-hidden">({{t.footer.external}})</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </section>

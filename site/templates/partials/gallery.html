@@ -1,0 +1,28 @@
+      <section class="section section--band" id="gallery" aria-labelledby="gallery-title">
+        <div class="section__inner">
+          <header class="section__head">
+            <p class="section__label">{{t.gallery.label}}</p>
+            <h2 class="section__title" id="gallery-title">{{t.gallery.title}}</h2>
+            <p class="section__intro">{{t.gallery.intro}}</p>
+          </header>
+          <ul class="gallery" data-gallery>
+{{#each gallery}}            <li>
+              <figure class="stage stage--tile">
+                <a class="stage__screen" href="{{src}}" data-full data-width="{{fullWidth}}" data-height="{{fullHeight}}" data-caption="{{caption}}" aria-label="{{t.gallery.open}}: {{caption}}">
+                  <img src="{{src}}" width="{{width}}" height="{{height}}" alt="{{alt}}" loading="lazy">
+                </a>
+                <figcaption>{{caption}}</figcaption>
+              </figure>
+            </li>
+{{/each}}          </ul>
+        </div>
+        <dialog class="lightbox" data-lightbox aria-label="{{t.gallery.dialog}}">
+          <div class="lightbox__bar">
+            <p class="lightbox__caption" data-lightbox-caption></p>
+            <button class="button button--icon" type="button" data-lightbox-prev aria-label="{{t.gallery.prev}}"><span aria-hidden="true">←</span></button>
+            <button class="button button--icon" type="button" data-lightbox-next aria-label="{{t.gallery.next}}"><span aria-hidden="true">→</span></button>
+            <button class="button button--icon" type="button" data-lightbox-close aria-label="{{t.gallery.close}}" autofocus><span aria-hidden="true">✕</span></button>
+          </div>
+          <div class="lightbox__stage"><img data-lightbox-image alt=""></div>
+        </dialog>
+      </section>

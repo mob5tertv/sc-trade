@@ -1,0 +1,155 @@
+/*
+ * Pictures of the application (site/assets/shots/*.png). Each is the window alone, cut along its own frame, twice as
+ * many pixels as the size it is shown at. A picture stands on a "stage": a dark plate with a dot grid, where the
+ * window lies the way it lies over the game.
+ */
+.stage figcaption {
+  margin-top: 14px;
+  padding-left: 14px;
+  border-left: 1px solid var(--frame);
+  color: var(--label);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.stage__screen {
+  --c: var(--cut);
+  --edge: var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(14px, 3.4vw, 44px);
+  border: 1px solid var(--edge);
+  background:
+    linear-gradient(135deg, transparent 50%, var(--edge) 50%, var(--edge) calc(50% + 1px), transparent calc(50% + 1px)) top left / var(--c) var(--c)
+      no-repeat border-box,
+    linear-gradient(135deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%) bottom right / var(--c) var(--c)
+      no-repeat border-box,
+    radial-gradient(circle, rgb(43 143 168 / 0.28) 0 0.8px, transparent 1.4px) 11px 11px / 22px 22px border-box,
+    linear-gradient(160deg, #06121b, #040a10) border-box;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+}
+
+/* the mini line is one line in a corner of the screen: the stage shows that corner */
+.stage--mini-run .stage__screen {
+  position: relative;
+  align-items: flex-start;
+  justify-content: flex-end;
+  min-height: clamp(120px, 13vw, 176px);
+  padding: 26px 26px 26px 14px;
+  overflow: hidden;
+}
+
+.stage--mini-run .stage__screen::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  border-top: 1px solid var(--frame);
+  border-right: 1px solid var(--frame);
+}
+
+/* where the corner is narrower than the line, the line keeps its size and its left end goes out of the stage */
+.stage--mini-run img {
+  flex: none;
+  max-width: none;
+}
+
+/* and there the cut end fades out, so that it reads as "the line goes on", not as a broken picture */
+@media (max-width: 859.98px) {
+  .stage--mini-run .stage__screen::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    bottom: 1px;
+    left: 1px;
+    width: 56px;
+    background: linear-gradient(90deg, #06121b 12%, rgb(6 18 27 / 0));
+  }
+}
+
+/* ---- the gallery ----------------------------------------------------------------------------------------- */
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(24px, 4vw, 48px) clamp(20px, 3vw, 40px);
+  list-style: none;
+}
+
+/* the two stages of a row are as tall as the taller one, each window in the middle of its own */
+.gallery > li,
+.stage--tile {
+  display: flex;
+  flex-direction: column;
+}
+
+.stage--tile,
+.stage--tile .stage__screen {
+  flex: 1 1 auto;
+}
+
+.stage--tile .stage__screen {
+  cursor: zoom-in;
+}
+
+.stage--tile .stage__screen:hover,
+.stage--tile .stage__screen:focus-visible {
+  --edge: var(--accent);
+}
+
+.stage--tile .stage__screen:focus-visible {
+  outline: 0;
+}
+
+/* ---- a picture opened larger -------------------------------------------------------------------------------- */
+
+.lightbox {
+  width: min(100vw - 24px, 960px);
+  max-width: none;
+  max-height: calc(100dvh - 24px);
+  padding: 0;
+  border: 1px solid var(--frame);
+  background: var(--glass);
+  color: var(--text);
+}
+
+.lightbox::backdrop {
+  background: rgb(2 6 9 / 0.88);
+}
+
+.lightbox__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.lightbox__caption {
+  flex: 1 1 auto;
+  color: var(--label);
+  font-size: 0.9375rem;
+  line-height: 1.35;
+}
+
+.lightbox__stage {
+  display: flex;
+  justify-content: center;
+  padding: clamp(10px, 2.4vw, 28px);
+  overflow: auto;
+}
+
+.lightbox__stage img {
+  width: auto;
+  max-height: calc(100dvh - 150px);
+  object-fit: contain;
+}
+
+@media (max-width: 859.98px) {
+  .gallery {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

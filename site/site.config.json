@@ -1,0 +1,21 @@
+{
+  "author": "mob5ter",
+  "year": 2026,
+  "domain": "sc-trade.space",
+  "links": {
+    "twitch": "https://www.twitch.tv/mob5tertv",
+    "boosty": "https://boosty.to/mob5ter",
+    "donationalerts": "https://www.donationalerts.com/r/mob5tertv",
+    "uex": "https://uexcorp.space/"
+  },
+  "analytics": {
+    "ga4Id": ""
+  },
+  "feedback": {
+    "endpoint": "/api/feedback"
+  },
+  "server": {
+    "root": "/var/www/sc-trade.space",
+    "service": "127.0.0.1:8787"
+  }
+}

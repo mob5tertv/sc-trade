@@ -1,0 +1,17 @@
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#07121b">
+    <title>{{page.title}}</title>
+    <meta name="description" content="{{page.description}}">
+    <link rel="canonical" href="{{page.canonical}}">
+{{#each alternates}}    <link rel="alternate" hreflang="{{code}}" href="{{url}}">
+{{/each}}    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="SC Trade">
+    <meta property="og:title" content="{{page.title}}">
+    <meta property="og:description" content="{{page.description}}">
+    <meta property="og:url" content="{{page.canonical}}">
+    <meta property="og:locale" content="{{page.locale}}">
+    <link rel="icon" type="image/svg+xml" href="{{asset "assets/icon.svg"}}">
+    <link rel="stylesheet" href="{{asset "assets/css/site.css"}}">
+    <script defer src="{{asset "assets/js/site.js"}}"></script>

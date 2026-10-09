@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="robots" content="noindex">
+    <title>404 — SC Trade</title>
+    <style>{{{css}}}</style>
+  </head>
+  <body>
+    <main>
+      <p class="code" aria-hidden="true">404</p>
+      <h1>{{#each pages}}<span lang="{{lang}}">{{t.title}}</span>{{/each}}</h1>
+{{#each pages}}      <p lang="{{lang}}">{{t.text}} <a href="{{home}}">{{t.home}}</a></p>
+{{/each}}      <p class="name">SC Trade</p>
+    </main>
+  </body>
+</html>
