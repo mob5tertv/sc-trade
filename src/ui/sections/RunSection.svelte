@@ -7,7 +7,7 @@
   import { runOutlook } from '../vm/run-outlook';
   import { cardMarks, phaseLine, runPhases } from '../vm/run-phase';
   import {
-    cargoRows, decisionAtClock, planSummary, runHeader, runSectionKind, sellDecisionKey, sellDecisions, sellLogContext,
+    cargoRows, decisionAtClock, planSummary, runHeader, runSectionKind, sellDecisionKey, sellDecisions, sellLogContext, targetOffer,
   } from '../vm/run-section';
 
   const SECTION = 'run';
@@ -25,6 +25,8 @@
   const header = $derived(model.kind === 'run' ? runHeader(model) : null);
   const summary = $derived(header !== null ? header.summary : model.kind === 'idle' && model.target !== null ? planSummary(model.target) : '');
   const hasTarget = $derived(model.target !== null);
+  // a run without a target can take the terminal that is viewed as its target, from the header of the section
+  const offer = $derived(targetOffer(active, app.settings.targetTerminalId, app.viewTerminalId, app.reference));
 
   // the three phases of the leg and the money, on the clock of the window (once a second); the money of a run that goes on
   // is its EXPECTED result (a run that is not finished is not a loss)
@@ -70,7 +72,11 @@
 {#snippet actions()}
   {#if header !== null}
     {@const next = model.kind === 'run' ? model.next : null}
-    <span class="target" class:none={!hasTarget} title={hasTarget ? 'Цель рейса' : 'Цель выбирается в списке вариантов'}>{header.target}</span>
+    {#if offer !== null && !hasTarget}
+      <button type="button" class="sc-btn sc-btn--act offer" title={offer.title} onclick={() => void app.setTarget(offer.terminalId)}>{offer.label}</button>
+    {:else}
+      <span class="target" class:none={!hasTarget} title={hasTarget ? 'Цель рейса' : 'Цель выбирается в списке вариантов'}>{header.target}</span>
+    {/if}
     {#if next !== null}
       <button type="button" class="sc-btn sc-btn--act" onclick={() => void app.mark(next)}>{next === 'depart' ? 'Взлетел' : 'Прилетел'}</button>
     {/if}
@@ -111,6 +117,15 @@
 
   .target.none {
     color: var(--sc-muted);
+  }
+
+  /* the name of the terminal is cut like the name of the target is: a long one must not push the mark button out of the header */
+  .offer {
+    min-width: 0;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .plan {

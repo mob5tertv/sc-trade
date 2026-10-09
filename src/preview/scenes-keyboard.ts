@@ -7,7 +7,7 @@ import type { Scene } from './scenes';
 
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-function element(selector: string): HTMLElement {
+export function element(selector: string): HTMLElement {
   const found = document.querySelector<HTMLElement>(selector);
   if (found === null) throw new Error(`the scene wants "${selector}", and there is none`);
   return found;
@@ -18,7 +18,7 @@ function element(selector: string): HTMLElement {
  * with the pause of a hand (the arm reaches the window before the press). The press of a mouse that has NOT been seen
  * coming is `--do "eval:…dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))"` on the picture command.
  */
-async function hoverAndPress(selector: string): Promise<void> {
+export async function hoverAndPress(selector: string): Promise<void> {
   const target = element(selector);
   target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
   await pause(60);

@@ -9,6 +9,10 @@
   const { trade } = data;
   const confirm = (t: { scu: number; price: number }): void => console.info('[gallery] confirm', JSON.stringify(t));
 
+  async function typedPrice(frame: HTMLElement): Promise<void> {
+    await typeInto(find<HTMLInputElement>(frame, 'input.in-price'), '3350');
+  }
+
   async function bad(frame: HTMLElement): Promise<void> {
     await typeInto(find<HTMLInputElement>(frame, 'input'), '0');
     find<HTMLFormElement>(frame, 'form').requestSubmit();
@@ -33,4 +37,10 @@
 </Frame>
 <Frame name="error" caption="the write failed: the reason from the owner">
   <TradeDialog title={trade.title} side="buy" defaultScu={trade.scu} defaultPrice={trade.price} error="Свободно только 40 SCU" onConfirm={confirm} onCancel={() => {}} />
+</Frame>
+<Frame name="foreign-price" caption="the price is not mine (UEX, or mine gone cold): it stands muted, as in the field of the expanded row, until it is touched">
+  <TradeDialog title="Продал Stims" side="sell" defaultScu={80} defaultPrice={3320} defaultPriceIsOwn={false} error={null} onConfirm={confirm} onCancel={() => {}} />
+</Frame>
+<Frame name="foreign-price-typed" caption="the same form after the price was typed over: the number is the player's now, in normal text" act={typedPrice}>
+  <TradeDialog title="Продал Stims" side="sell" defaultScu={80} defaultPrice={3320} defaultPriceIsOwn={false} error={null} onConfirm={confirm} onCancel={() => {}} />
 </Frame>

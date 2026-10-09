@@ -21,7 +21,7 @@
   <StripView
     {model}
     {flash}
-    flashKind={app.phase === 'failed' ? 'error' : 'info'}
+    flashKind={app.phase === 'failed' ? 'error' : app.flashKind}
     onOpen={() => app.expandByHand('mini click')}
     onDepart={next === 'depart' ? () => void app.mark('depart') : undefined}
     onArrive={next === 'arrive' ? () => void app.mark('arrive') : undefined}

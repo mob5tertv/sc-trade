@@ -51,6 +51,7 @@ import { createLatestRequest } from './vm/latest-request';
 import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './vm/lookup';
 import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
+import { closedRunNotice, stayTimes } from './vm/run-closed';
 import { markRefusal } from './vm/run-phase';
 import { sameRun } from './vm/same-run';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
@@ -61,6 +62,7 @@ import { rowRoiMap, type RowRoi } from './vm/row-roi';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
 import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
+import { bindNeeded, boundAfter, withoutErrorsOfEmptyKeys } from './vm/trigger-suspension';
 import { uexErrorText } from './vm/uex-error';
 import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 
@@ -96,7 +98,9 @@ import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 //    writes through the trade service, then reads the active run (and, unless the service refused, the market) again, and only then the next one
 //    starts, so that a double click or a key pressed twice judges the state the first press left. A refusal comes back as
 //    a Russian sentence (the form under a row shows it); marks say it with `flash` (the mini line) and the notice line
-//    (the expanded window). `ask` / `answer` are the one in-flow question of the window (a line under the header);
+//    (the expanded window). A write that closes a run (the last sale, the lost cargo) or writes an income says its result the
+//    same way (`#announceClosed`: 'Рейс закрыт: +73 400 · 369k/ч · ROI 15%'), after the write and before what the trade does next.
+//    `ask` / `answer` are the one in-flow question of the window (a line under the header);
 //  - the window: it is the mini bar (`mini`) or the expanded view (`expanded`), as big as its content and
 //    anchored to a corner. It never takes the keyboard from the game by itself: the keyboard is taken only
 //    through `keyboard.hold(...)` (a text field is edited) and handed back by `release`. The expanded view
@@ -191,6 +195,8 @@ class AppState {
   activeRun = $state.raw<RunWithEvents | null>(null);
   /** A short message of the mini line (3 seconds); in the expanded window the same text goes to the notice line. */
   flash = $state<string | null>(null);
+  /** `error`: the message of the mini line is in the colour of an error (a refused write, a run that closed at a loss). */
+  flashKind = $state<Notice['kind']>('info');
   /** The question under the header that waits for yes or no; `null` when none is asked. */
   confirm = $state.raw<Confirm | null>(null);
   pricesSyncedAt = $state<number | null>(null);
@@ -268,6 +274,11 @@ class AppState {
   /** The keyboard is with the window: the player is typing. */
   keyboardHeld = $state(false);
   /**
+   * When the keyboard last went away from the window, `performance.now()` ms (`-Infinity` before the first time): the sign «Esc — в игру»
+   * went with it, and a click that comes right after lands on what stands in its place (`indicatorClick`). Not reactive: it is read at a click.
+   */
+  keysSignGoneAt = Number.NEGATIVE_INFINITY;
+  /**
    * Who needs the keyboard (see `HoldEffects` in vm/keyboard-holds.ts). The only way to the keyboard: the
    * window never takes the focus from the game by itself. `hold('field')` takes it, `release` gives it back.
    */
@@ -282,7 +293,10 @@ class AppState {
     },
     (held) => {
       this.keyboardHeld = held;
-      if (!held) this.#touch();
+      if (!held) {
+        this.keysSignGoneAt = performance.now();
+        this.#touch();
+      }
     },
     { settleMs: FOCUS_SETTLE_MS },
   );
@@ -918,6 +932,18 @@ class AppState {
     this.#touch();
   }
 
+  /**
+   * The sign «Esc — в игру» (it is there while `keyboardHeld`: in the place of the UEX indicator of the header, and as a badge in the
+   * header of the settings): the keyboard goes back to the game and the window stays open, exactly as `Esc` in a field does it
+   * (`installKeyboard`: a line in the log, the focused element is blurred, the last holder is released). It takes no keyboard and puts
+   * the focus nowhere: the press is on a button, which is no field. Never rejects: a failure is logged by the window layer.
+   */
+  async giveKeyboardBack(): Promise<void> {
+    this.#log.info('ui', 'the sign: the keyboard goes back to the game');
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    await this.keyboard.release('field').catch(() => undefined);
+  }
+
   /** Something needs the window to stay as it is (a dialog is open): it does not fold by itself while that lasts. */
   holdBusy(why: string): void {
     this.#busy.add(why);
@@ -1052,15 +1078,21 @@ class AppState {
     return this.#triggerQueue(async () => {
       if (this.#triggersSuspended) return;
       const s = this.settings;
-      const outcome = await bindTriggers(
-        { panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive },
-        {
-          panel: () => void this.toggleMode(),
-          depart: () => void this.mark('depart'),
-          arrive: () => void this.mark('arrive'),
-        },
-        this.#log,
-      );
+      const keys = { panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive };
+      if (!bindNeeded(keys, this.#triggersBound)) {
+        // no key saved and nothing bound: "no keys" has nothing to change, so no call. The errors of keys that are gone must not stay
+        // under their empty fields, and this is the one place that would reset them (a key refused by the Rust side, taken off in its field)
+        this.triggerErrors = withoutErrorsOfEmptyKeys(keys, this.triggerErrors);
+        return;
+      }
+      const wasBound = this.#triggersBound;
+      this.#triggersBound = boundAfter(keys, wasBound, false); // a set with a key may install a hook: bound before the call, whatever comes of it
+      const { outcome, reached } = await this.#sendTriggers(keys, {
+        panel: () => void this.toggleMode(),
+        depart: () => void this.mark('depart'),
+        arrive: () => void this.mark('arrive'),
+      });
+      this.#triggersBound = boundAfter(keys, wasBound, reached);
       const shown: Record<TriggerName, string | null> = {
         panel: triggerErrorText(outcome.panel),
         depart: triggerErrorText(outcome.depart),
@@ -1076,6 +1108,31 @@ class AppState {
   }
 
   #triggersSuspended = false;
+  /**
+   * A keyboard hook may be installed on the Rust side. Nothing saved and nothing bound asks for no call (`bindNeeded`). It is set BEFORE a set
+   * with a key goes out and goes down only after an EMPTY set that reached the Rust side (`boundAfter`): a call that does not get there (the
+   * event could not be subscribed to) leaves it as it was, so a hook that no saved key asks for any more is taken out by the next call, and
+   * the flag can never say "nothing bound" while one stands.
+   */
+  #triggersBound = false;
+
+  /**
+   * `bindTriggers` and whether the set REACHED the Rust side. The result of `bindTriggers` cannot say it for an empty set (no key, no error to
+   * report: a failure looks like success), but it writes the line `trigger bound` only after the Rust command has answered, so that line is
+   * the confirmation. A change of that line leaves `reached` false, which keeps the flag as it was: the safe side.
+   */
+  async #sendTriggers(keys: Record<TriggerName, string>, handlers: Record<TriggerName, () => void>): Promise<{ outcome: Record<TriggerName, string | null>; reached: boolean }> {
+    let reached = false;
+    const watching: Logger = {
+      ...this.#log,
+      info: (module, msg, ctx) => {
+        if (module === 'trigger' && msg === 'bound') reached = true;
+        this.#log.info(module, msg, ctx);
+      },
+    };
+    const outcome = await bindTriggers(keys, handlers, watching);
+    return { outcome, reached };
+  }
 
   /**
    * A key field of the settings has the focus: the hook is taken out (an empty set goes through the same queue), so that pressing an
@@ -1085,8 +1142,12 @@ class AppState {
   suspendTriggers(): Promise<void> {
     this.#triggersSuspended = true;
     return this.#triggerQueue(async () => {
+      const s = this.settings;
+      if (!bindNeeded({ panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive }, this.#triggersBound)) return;
+      const empty = { panel: '', depart: '', arrive: '' };
       const none = () => undefined;
-      await bindTriggers({ panel: '', depart: '', arrive: '' }, { panel: none, depart: none, arrive: none }, this.#log);
+      const { reached } = await this.#sendTriggers(empty, { panel: none, depart: none, arrive: none });
+      this.#triggersBound = boundAfter(empty, this.#triggersBound, reached); // down only if the empty set got there
     });
   }
 
@@ -1162,20 +1223,28 @@ class AppState {
 
   /**
    * The answer "yes" to the question of `askClearHistory`: the trade service deletes the runs (the threshold is counted now, at the
-   * answer, not at the question), then the statistics are read again, so that the status line, the rating, the sessions and the
-   * medians all follow the runs that are left, and one notice says how many runs went. A failure is told as well, and the statistics
-   * are read again after it too: a part of the clearing may have been done. The current location and the target are not touched.
+   * answer, not at the question), then the active run is read again (the service repairs half-written runs before it works, as
+   * before every job, so the run on the screen may be gone by now; see `#reloadRun`) and the statistics are read again, so that the
+   * status line, the rating, the sessions and the medians all follow the runs that are left, and one notice says how many runs went.
+   * A failure is told as well, and both are read again after it too: a part of the clearing may have been done. The current location
+   * and the target are not touched.
    */
   async #clearHistory(scope: ClearScope): Promise<void> {
     const endedBefore = scope === 'old' ? oldRunsBefore(this.#syncDeps().now()) : null;
-    let cleared: ClearedHistory | null = null;
-    let failure = CLEAR_FAILED;
-    try {
-      cleared = await clearRunHistory(this.#tradeDeps(), endedBefore);
-    } catch (err) {
-      this.#log.error('ui', 'cannot clear the history', { scope, err });
-      if (err instanceof ClearHistoryError) failure = err.message;
-    }
+    // a job of the trade queue like every other call of the service: the run is read again before the next trade or mark starts, so
+    // that a mark of a hotkey cannot come between the clearing and the re-read
+    const { cleared, failure } = await this.#tradeQueue(async (): Promise<{ cleared: ClearedHistory | null; failure: string }> => {
+      let done: ClearedHistory | null = null;
+      let why = CLEAR_FAILED;
+      try {
+        done = await clearRunHistory(this.#tradeDeps(), endedBefore);
+      } catch (err) {
+        this.#log.error('ui', 'cannot clear the history', { scope, err });
+        if (err instanceof ClearHistoryError) why = err.message;
+      }
+      await this.#reloadRun(false); // nothing of the market was written
+      return { cleared: done, failure: why };
+    });
     await stats.reload('history cleared'); // never throws
     if (cleared !== null) this.notify(clearedText(cleared.runs), 'info');
     else this.notify(failure, 'error');
@@ -1360,14 +1429,37 @@ class AppState {
     return TRADE_FAILED;
   }
 
-  /** A short message for the player where he looks now: the mini line for 3 seconds, the notice line in the expanded window. */
-  #say(text: string, kind: Notice['kind'] = 'info'): void {
+  /**
+   * A short message for the player where he looks now: the mini line for 3 seconds, the notice line in the expanded window. The mini
+   * line takes the colour of the message (`kind`). A message that needs another time says how long it stays in each place (`stay`).
+   */
+  #say(text: string, kind: Notice['kind'] = 'info', stay: { flashMs: number; noticeMs: number } = { flashMs: FLASH_MS, noticeMs: NOTICE_MS }): void {
     this.flash = text;
+    this.flashKind = kind;
     clearTimeout(this.#flashTimer);
     this.#flashTimer = setTimeout(() => {
       this.flash = null;
-    }, FLASH_MS);
-    if (this.mode === 'expanded') this.notify(text, kind);
+    }, stay.flashMs);
+    if (this.mode === 'expanded') this.notify(text, kind, stay.noticeMs);
+  }
+
+  /**
+   * A run was closed (the sale that emptied the hold, the cargo lost) or an income was written: the result is said at once, in the line
+   * the player looks at, so that it is not found only in the history. The numbers are those of the row of that run (`closedRunNotice`).
+   * Said BEFORE whatever else the trade does after the write, so that a failure of one of those steps (the target that cannot be
+   * cleared, the run that cannot be read) lands on top of it and is never covered by it. It carries three numbers to read, so it
+   * stays no less than eight seconds where it is said (`stayTimes`); in the mini line an income keeps the usual three, because the
+   * run that goes on has its mark buttons there and they are not drawn while a message is up.
+   */
+  #announceClosed(closed: RunWithEvents): void {
+    try {
+      const notice = closedRunNotice(closed);
+      this.#log.info('ui', 'run closed', { runId: closed.run.id, status: closed.run.status });
+      this.#say(notice.text, notice.kind, stayTimes(notice, FLASH_MS, NOTICE_MS));
+    } catch (err) {
+      // the trade IS written: a notice that cannot be made must not turn it into a failure
+      this.#log.error('ui', 'cannot say that the run is closed', { runId: closed.run.id, err });
+    }
   }
 
   /**
@@ -1441,13 +1533,20 @@ class AppState {
       let failure: string | null = null;
       let finished = false;
       let mayHaveWritten = true;
+      /** The run this write closed (the sale that emptied the hold) or wrote (an income): what the notice tells the result of. */
+      let closed: RunWithEvents | null = null;
       try {
-        if (income) await recordIncome(this.#tradeDeps(), input);
-        else finished = (await recordSell(this.#tradeDeps(), input)).finished;
+        if (income) closed = await recordIncome(this.#tradeDeps(), input);
+        else {
+          const sale = await recordSell(this.#tradeDeps(), input);
+          finished = sale.finished;
+          if (finished) closed = sale.run;
+        }
       } catch (err) {
         failure = this.#tradeFailure(what, err, { ...input });
         mayHaveWritten = !(err instanceof TradeError);
       }
+      if (failure === null && closed !== null) this.#announceClosed(closed);
       if (failure === null && finished) await this.#runEnded('done');
       await this.#reloadRun(mayHaveWritten);
       if (income && mayHaveWritten) void stats.reload('income sale');
@@ -1494,13 +1593,15 @@ class AppState {
       this.#log.info('ui', 'lose cargo');
       let failure: string | null = null;
       let mayHaveWritten = true;
+      let closed: RunWithEvents | null = null;
       try {
-        await closeAsLost(this.#tradeDeps());
+        closed = await closeAsLost(this.#tradeDeps());
       } catch (err) {
         failure = this.#tradeFailure('lose cargo', err, {});
         mayHaveWritten = !(err instanceof TradeError);
         this.#say(failure, 'error');
       }
+      if (closed !== null) this.#announceClosed(closed);
       if (failure === null) await this.#runEnded('lost'); // before the run is read again, as after the last sale
       await this.#reloadRun(mayHaveWritten);
       return failure;
@@ -1625,17 +1726,17 @@ class AppState {
       await getCurrentWindow().close();
     } catch (err) {
       this.#log.error('ui', 'cannot quit', { err });
-      this.notify('Не удалось выйти. Закройте приложение через значок в трее.', 'error');
+      this.notify('Не удалось выйти. Закрой приложение через значок в трее.', 'error');
     }
   }
 
   // ---- messages ---------------------------------------------------------------------------------
 
   /** A short Russian message under the header (the line exists only while there is one); it goes away by itself. */
-  notify(text: string, kind: Notice['kind']): void {
+  notify(text: string, kind: Notice['kind'], ms: number = NOTICE_MS): void {
     clearTimeout(this.#noticeTimer);
     this.notice = { text, kind };
-    this.#noticeTimer = setTimeout(() => this.dismissNotice(), NOTICE_MS);
+    this.#noticeTimer = setTimeout(() => this.dismissNotice(), ms);
   }
 
   /** The cross of the notice line: the player puts the message away before its time (the timer does it without a line). */

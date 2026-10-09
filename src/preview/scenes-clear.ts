@@ -75,4 +75,40 @@ export const CLEAR_SCENES: readonly Scene[] = [
     dataset: 'run',
     act: openData,
   },
+  {
+    // The run that is going is gone from the database behind the state's back (the data layer repairs half-written runs before every job
+    // of the trade service, and a clearing is one): the clearing must read the run again, like every other call of the service, or the
+    // mini line keeps showing a run that is not there. `--do "click:[data-clear=all];click:.ask .yes;wait:600;eval:window.__run()"`
+    // prints `{"shown":false,"strip":"idle"}` once the run is read again, `{"shown":true,"strip":"run"}` while it is not.
+    name: 'settings-history-run-gone',
+    title: 'Очистка истории, пока идущий рейс исчез из базы мимо состояния: после очистки состояние перечитывает рейс',
+    dataset: 'run',
+    act: async (app) => {
+      const { db } = app.suggestDeps();
+      await db.execute("DELETE FROM run_event WHERE run_id IN (SELECT id FROM run WHERE status = 'active')");
+      await db.execute("DELETE FROM run WHERE status = 'active'");
+      (window as unknown as { __run: () => unknown }).__run = () => ({ shown: app.activeRun !== null, strip: app.strip.kind });
+      await openData(app);
+    },
+  },
+  {
+    // A mark is asked for (a hotkey) at the very moment the clearing is answered with "yes": the clearing is a job of the trade queue like every other
+    // write of the service, so the mark waits for it and for the re-read of the run. `eval:window.__order()` says which came first in the log:
+    // «history cleared» before the line of the mark (`clearedFirst: true`); without the queue the mark job starts at once and logs first.
+    name: 'settings-history-mark-waits',
+    title: 'Очистка истории и отметка из горячей клавиши в один момент: отметка ждёт своей очереди после очистки и перечитывания рейса',
+    dataset: 'run',
+    act: async (app) => {
+      (window as unknown as { __order: () => unknown }).__order = () => {
+        const log = window.__preview?.log ?? [];
+        const at = (text: string): number => log.findIndex((line) => line.includes(text));
+        return { clearedAt: at('history cleared'), markAt: at('[ui] mark'), clearedFirst: at('history cleared') >= 0 && at('history cleared') < at('[ui] mark') };
+      };
+      await openData(app);
+      app.askClearHistory('all');
+      app.answer(true);
+      void app.mark('depart');
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    },
+  },
 ];

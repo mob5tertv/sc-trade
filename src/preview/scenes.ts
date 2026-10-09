@@ -6,6 +6,7 @@ import { INCOME_SCENES } from './scenes-income';
 import { INDICATOR_SCENES } from './scenes-indicators';
 import { KEYBOARD_SCENES } from './scenes-keyboard';
 import { ROI_SCENES } from './scenes-roi';
+import { POLISH_SCENES } from './scenes-polish';
 import { REPAIR_SCENES } from './scenes-repairs';
 import { RUN_SCENES } from './scenes-run';
 import { STATS_SCENES } from './scenes-stats';
@@ -308,6 +309,7 @@ export const SCENES: readonly Scene[] = [
   ...INDICATOR_SCENES,
   ...KEYBOARD_SCENES,
   ...REPAIR_SCENES,
+  ...POLISH_SCENES,
 ];
 
 export const DEFAULT_SCENE = 'mini';

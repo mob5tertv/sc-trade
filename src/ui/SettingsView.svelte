@@ -4,6 +4,7 @@
   import type { TriggerName } from '../platform/triggers';
   import Icon from './components/Icon.svelte';
   import Section from './components/Section.svelte';
+  import KeyboardBadge from './KeyboardBadge.svelte';
   import MessageLines from './MessageLines.svelte';
   import { app } from './state.svelte';
   import { stats } from './stats.svelte';
@@ -22,7 +23,7 @@
 
   // What the field says in its tooltip: how it is filled, what the key does, and that the press still reaches the game (the hook that
   // catches the keys never swallows one).
-  const HOW_TO_FILL = 'Нажми клавишу в этом поле — она запишется. Подходят F1–F24, ScrollLock, Pause, Insert, Home, End, PageUp, PageDown и буква или цифра с Ctrl или Alt; Backspace или Delete снимают клавишу. Пока курсор в поле, назначенные клавиши не срабатывают.';
+  const HOW_TO_FILL = 'Нажми клавишу в этом поле — она запишется. Подходят F1–F24, кроме F5, F11 и F12, ScrollLock, Pause, Insert, Home, End, PageUp, PageDown и буква или цифра с Ctrl или Alt; Backspace или Delete снимают клавишу. Пока курсор в поле, назначенные клавиши не срабатывают.';
   const TRIGGERS: ReadonlyArray<{ key: TriggerKey; name: TriggerName; label: string; title: string }> = [
     {
       key: 'hotkeyPanel', name: 'panel', label: 'Развернуть и свернуть окно',
@@ -352,6 +353,7 @@
     <Icon name="back" />
   </button>
   <strong class="title">Настройки</strong>
+  <KeyboardBadge />
   <button class="sc-btn sc-btn--ghost sc-btn--icon collapse" type="button" aria-label="Свернуть" title="Свернуть" onclick={() => app.collapse('close button')}>
     <Icon name="minus" />
   </button>

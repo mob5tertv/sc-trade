@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { distKey } from '../../src/core/types';
-import { cargoRows, decisionAtClock, planSummary, runHeader, runSectionKind, sellDecisionKey, sellDecisions, sellLogContext } from '../../src/ui/vm/run-section';
+import {
+  cargoRows, decisionAtClock, planSummary, runHeader, runSectionKind, sellDecisionKey, sellDecisions, sellLogContext, targetOffer,
+} from '../../src/ui/vm/run-section';
 import { sameRun } from '../../src/ui/vm/same-run';
 import { stripModel } from '../../src/ui/vm/strip';
 import { buildMarket } from '../../src/core/market';
@@ -53,6 +55,57 @@ describe('runHeader', () => {
   });
   it('words the plan: the target and nothing else', () => {
     expect(planSummary('ARC-L1')).toBe('цель: ARC-L1');
+  });
+});
+
+describe('targetOffer (task 44)', () => {
+  // the run of `strip-fixtures` bought at terminal 1 (ARC-L1); terminal 2 is TDD Area 18, 3 is CRU-L1
+  it('offers the viewed terminal as the target while a run goes on without one and the terminal is not where it was loaded', () => {
+    expect(targetOffer(active, null, 2, ref)).toEqual({
+      terminalId: 2, label: 'Цель: TDD Area 18', title: 'Сделать целью рейса: TDD Area 18',
+    });
+    expect(targetOffer(mixedRun, null, 3, ref)).toMatchObject({ terminalId: 3, label: 'Цель: CRU-L1' });
+  });
+
+  it('offers nothing at the terminal of the first purchase: the run does not fly there', () => {
+    expect(targetOffer(active, null, 1, ref)).toBeNull();
+  });
+
+  it('offers nothing when a target is set: the section shows it, with its cross', () => {
+    expect(targetOffer(active, 3, 2, ref)).toBeNull();
+    expect(targetOffer(active, 2, 2, ref)).toBeNull();
+  });
+
+  it('offers nothing without a run (the plan with a target, or no run at all)', () => {
+    expect(targetOffer(null, null, 2, ref)).toBeNull();
+  });
+
+  it('offers nothing when no terminal is viewed, or the reference does not know the one that is', () => {
+    expect(targetOffer(active, null, null, ref)).toBeNull();
+    expect(targetOffer(active, null, 777, ref)).toBeNull();
+  });
+
+  it('judges "where it was loaded" by the first purchase in time, whatever order the events come in', () => {
+    const late = ev({ id: 2, runId: 1, ts: NOW - 100, type: 'buy', terminalId: 2, commodityId: GOLD, scu: 10, price: 6000 });
+    const first = ev({ id: 1, runId: 1, ts: NOW - 872, type: 'buy', terminalId: 1, commodityId: GOLD, scu: 10, price: 6000 });
+    const run = { run: active.run, events: [late, first] };
+    expect(targetOffer(run, null, 1, ref)).toBeNull();
+    expect(targetOffer(run, null, 2, ref)).toMatchObject({ terminalId: 2 });
+  });
+
+  it('names the terminal as the line of the strip does: the nickname, else the display name, else the name', () => {
+    const named = (nickname: string, displayname: string, name: string) => {
+      const terminal = { ...ref.terminals.get(2)!, nickname, displayname, name };
+      return targetOffer(active, null, 2, { ...ref, terminals: new Map([...ref.terminals, [2, terminal]]) })?.label;
+    };
+    expect(named('TDD', 'TDD Area 18', 'Trade and Development Division')).toBe('Цель: TDD');
+    expect(named('', 'TDD Area 18', 'Trade and Development Division')).toBe('Цель: TDD Area 18');
+    expect(named('', '', 'Trade and Development Division')).toBe('Цель: Trade and Development Division');
+  });
+
+  it('offers a terminal when the first purchase has no terminal of its own (nothing says the run is already there)', () => {
+    const nowhere = { run: active.run, events: active.events.map((e) => ({ ...e, terminalId: null })) };
+    expect(targetOffer(nowhere, null, 2, ref)).toMatchObject({ terminalId: 2 });
   });
 });
 

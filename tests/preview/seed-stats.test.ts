@@ -40,9 +40,10 @@ describe('the stats dataset: the history', () => {
   it('names the lost run and the mixed one in the history as the section says', async () => {
     const { db, reference } = await statsData('stats');
     const { runs } = await loadHistory(db);
-    const titles = historyRows(runs, reference, STATS_NOW).map((r) => r.title);
-    expect(titles.some((t) => t.endsWith(': рейс без продаж'))).toBe(true);
-    expect(titles.some((t) => t === 'GOLD, TUNG: смешанный рейс')).toBe(true);
+    const rows = historyRows(runs, reference, STATS_NOW);
+    const titles = rows.map((r) => r.title);
+    expect(titles.some((t) => t.endsWith(': груз потерян'))).toBe(true);
+    expect(rows.some((r) => /^смеш\.: .+ → .+$/.test(r.title) && r.hint.startsWith('GOLD, TUNG: смешанный рейс, '))).toBe(true);
     expect(titles.some((t) => /^STIM: HUR-L1 → MIC-L1$/.test(t))).toBe(true);
   });
 
@@ -116,6 +117,6 @@ describe('the window dataset, whose history the stats dataset is made on', () =>
     expect(history.runs).toHaveLength(2);
     expect(figuresOf(history).stats).toHaveLength(1);
     const titles = historyRows(history.runs, reference, STATS_NOW).map((r) => r.title);
-    expect(titles.filter((t) => t.endsWith(': смешанный рейс'))).toHaveLength(1);
+    expect(titles.filter((t) => t.startsWith('смеш.: '))).toHaveLength(1);
   });
 });
