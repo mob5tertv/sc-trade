@@ -7,7 +7,7 @@
   import type { RoiCell } from '../vm/row-roi';
   import { DEFAULT_TERMINAL_SORT, holdMark, holdOf, orderRows, terminalAriaSort } from '../vm/terminal-order';
   import type { TerminalSort, TerminalSortKey } from '../vm/terminal-order';
-  import { cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
+  import { RANGE_HEAD_TITLE, cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
   import TempBadge from './TempBadge.svelte';
   import TrendMark from './TrendMark.svelte';
@@ -297,7 +297,7 @@
     <div class="grid head sc-label" role="row">
       {@render head('name', 'Товар', 'Порядок по умолчанию: по названию товара')}
       <span role="columnheader" class="r price-head">Цена</span>
-      <span role="columnheader" class="r">Мин–макс</span>
+      <span role="columnheader" class="r" title={RANGE_HEAD_TITLE}>Мин–макс</span>
       <span role="columnheader" class="r">SCU</span>
       {@render head('roi', 'ROI', roiTitle)}
     </div>

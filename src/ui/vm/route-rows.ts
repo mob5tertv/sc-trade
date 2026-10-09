@@ -8,6 +8,7 @@ import { priceTrend } from './price-trend';
 import type { PriceTrend } from './price-trend';
 import { roiTier } from './roi-tier';
 import type { RoiTier } from './roi-tier';
+import { terminalLabel } from './terminal-name';
 import { terminalFullPlace } from './terminal-place';
 import { NO_RANGE, badgeText, isOwnPrice, rangeOfEstimate, rangeView } from './terminal-rows';
 import type { RangeView, UexRange } from './terminal-rows';
@@ -27,12 +28,6 @@ export const UNKNOWN_STOCK_NOTE = 'Запас в точке закупки не�
 
 /** Which end of a suggested trip is named: the destination for trips that start here, the origin for trips that end here. */
 export type RouteMode = 'from' | 'to';
-
-// A terminal is known by its nickname; UEX leaves it empty on rare rows. What the reference lacks is shown by id.
-function terminalLabel(ref: Reference, id: number): string {
-  const t = ref.terminals.get(id);
-  return (t && (t.nickname || t.displayname || t.name)) || `#${id}`;
-}
 
 const commodityLabel = (ref: Reference, id: number): string => ref.commodities.get(id)?.code || `#${id}`;
 

@@ -10,7 +10,7 @@ const NOW = 1_790_000_000;   // fixed Unix seconds
 describe('headerModel', () => {
   it('describes location, ship and system', () => {
     const h = headerModel(ref, { ...DEFAULT_SETTINGS, currentTerminalId: 1, vehicleId: 7, scuCapacity: 696, starSystemId: 68 }, NOW - 1500, true, NOW);
-    expect(h).toEqual({ location: 'ARC-L1 Wide Forest Station', ship: 'C2 Hercules · 696 SCU', system: 'Stanton', uex: 'UEX 25 мин назад', uexStale: false });
+    expect(h).toEqual({ location: 'ARC-L1', ship: 'C2 Hercules · 696 SCU', system: 'Stanton', uex: 'UEX 25 мин назад', uexStale: false });
   });
   it('covers unset values', () => {
     const h = headerModel(ref, DEFAULT_SETTINGS, null, true, NOW);
@@ -67,13 +67,20 @@ describe('terminalSearchItems', () => {
     expect(terminalSearchItems(ref, null).map(i => i.id)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(terminalSearchItems(ref, 99).map(i => i.id)).toEqual([4]);
   });
-  it('names an item after its display name and keeps the other names as aliases; the system is kept apart, not among them', () => {
+  it('names an item as the terminal is named everywhere (the nickname) and keeps the full name in the tooltip and the other names as aliases; the system is kept apart, not among them', () => {
     const t = { ...ref.terminals.get(1)!, name: 'Wide Forest', code: 'ARCL1', planetName: 'ArcCorp' };
     const item = terminalSearchItems({ ...ref, terminals: new Map([[1, t]]) }, null)[0];
     expect(item).toEqual({
-      id: 1, code: 'ARCL1', name: 'ARC-L1 Wide Forest Station', aliases: ['ARC-L1', 'Wide Forest', 'ArcCorp'],
+      id: 1, code: 'ARCL1', name: 'ARC-L1', aliases: ['ARC-L1', 'ARC-L1 Wide Forest Station', 'Wide Forest', 'ArcCorp'],
       system: 'Stanton', place: 'Stanton · ArcCorp', title: 'ARC-L1 Wide Forest Station\nStanton · ArcCorp',
     });
+  });
+  it('still finds a terminal by its other spelling: the display name that says the same words in another order', () => {
+    const area18 = term(5, { nickname: 'TDD Area 18', displayname: 'Area 18 TDD', name: 'TDD - Area 18', code: 'A18', starSystemId: 68 });
+    const items = terminalSearchItems({ ...ref, terminals: new Map([[5, area18]]) }, null);
+    expect(items[0].name).toBe('TDD Area 18');
+    expect(search(items, 'area 18 tdd').map(i => i.id)).toEqual([5]);
+    expect(search(items, 'tdd area').map(i => i.id)).toEqual([5]);
   });
   it('drops empty aliases and falls back to the nickname without a display name', () => {
     const item = terminalSearchItems(ref, null).find(i => i.id === 3)!;

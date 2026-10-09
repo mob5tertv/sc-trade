@@ -121,6 +121,12 @@ export function uexRangeOf(m: Market, terminalId: number, commodityId: number, s
   return rangeOfEstimate(estimate({ ...m, own: new Map() }, terminalId, commodityId, side, ctx));
 }
 
+/**
+ * The tooltip of the head «Мин–макс»: which period the two numbers are of. The estimate takes the bounds of the week, and only when
+ * the week has no price those of the month, then of all time (`priceRange` of the core).
+ */
+export const RANGE_HEAD_TITLE = 'Минимум и максимум цены по данным UEX за неделю; если за неделю цены нет — за месяц, потом за всё время';
+
 /** The «Мин–макс» cell as it is read: `3 900–4 300`, `= 5 500` or `—` (two kinds of it), and what the tooltip says about it. */
 export interface RangeView { kind: UexRange['kind']; text: string; title: string }
 

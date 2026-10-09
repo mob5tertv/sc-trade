@@ -13,7 +13,21 @@ export function defaultSide(row: Pick<TerminalRow, 'buy' | 'sell'> | undefined):
   return row !== undefined && row.sell !== null && row.buy === null ? 'sell' : 'buy';
 }
 
-export type QuickEntryInput = { ok: true; price: number; scu: number | null } | { ok: false; price: boolean; scu: boolean };
+/** Why Enter wrote nothing: there is nowhere to write to, no commodity, a price or a quantity that cannot be read. */
+export const REJECTIONS = ['no-terminal', 'no-commodity', 'bad-price', 'bad-scu'] as const;
+export type Rejection = (typeof REJECTIONS)[number];
+
+const REJECTION_TEXT: Record<Rejection, string> = {
+  'no-terminal': 'Сначала выбери локацию в шапке окна',
+  'no-commodity': 'Выбери товар',
+  'bad-price': 'Цена — целое число больше нуля',
+  'bad-scu': 'Количество — целое число от нуля',
+};
+
+/** What the line says under the quick entry when it refuses: a few words, the reason and what it takes. */
+export const rejectionText = (reason: Rejection): string => REJECTION_TEXT[reason];
+
+export type QuickEntryInput ={ ok: true; price: number; scu: number | null } | { ok: false; price: boolean; scu: boolean };
 
 /**
  * The price is required; the quantity is optional, so an empty one is "no quantity reading in this observation".

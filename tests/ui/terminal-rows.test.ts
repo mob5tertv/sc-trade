@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  badgeText, cellScu, isOwnPrice, rangeOfEstimate, rangeView, sideCounts, terminalRows, uexRangeOf, unknownScuTitle,
+  RANGE_HEAD_TITLE, badgeText, cellScu, isOwnPrice, rangeOfEstimate, rangeView, sideCounts, terminalRows, uexRangeOf, unknownScuTitle,
 } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
@@ -415,6 +415,21 @@ describe('cellScu', () => {
     const m = buildMarket([px(1, 10, { buy: { avgWeek: 6000 }, dateModified: NOW - 7200 })], []);
     expect(cellScu(buyOf(m), 'buy')).toBeNull();
     expect(cellScu(null, 'sell')).toBeNull();
+  });
+});
+
+describe('RANGE_HEAD_TITLE: the period of «Мин–макс»', () => {
+  it('names the period the bounds are of: the week, and only without a week the month, then all time', () => {
+    expect(RANGE_HEAD_TITLE).toBe('Минимум и максимум цены по данным UEX за неделю; если за неделю цены нет — за месяц, потом за всё время');
+  });
+
+  it('says what the estimate does: the bounds of the week while the week has a price, else of the month', () => {
+    // a week with a price: its bounds
+    const week = buildMarket([px(1, 10, { buy: { avgWeek: 6000, minWeek: 5900, maxWeek: 6200, avgMonth: 5000, minMonth: 4000, maxMonth: 7000 } })], []);
+    expect(terminalRows(week, ref, 1, ctx)[0].buy?.range).toEqual({ kind: 'spread', low: 5900, high: 6200 });
+    // no price in the week: the bounds of the month
+    const month = buildMarket([px(1, 10, { buy: { avgMonth: 5000, minMonth: 4000, maxMonth: 7000 } })], []);
+    expect(terminalRows(month, ref, 1, ctx)[0].buy?.range).toEqual({ kind: 'spread', low: 4000, high: 7000 });
   });
 });
 

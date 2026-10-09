@@ -3,6 +3,7 @@
   import type { Reference } from '../../core/types';
   import { routeOptionRow } from '../vm/route-rows';
   import type { RouteMode, RouteOptionRow, UexRangeOf } from '../vm/route-rows';
+  import { RANGE_HEAD_TITLE } from '../vm/terminal-rows';
   import TempBadge from './TempBadge.svelte';
   import TrendMark from './TrendMark.svelte';
 
@@ -77,7 +78,7 @@
     <div class="grid head sc-label" role="row">
       <span role="columnheader">{mode === 'to' ? 'Откуда' : 'Куда'}</span>
       <span role="columnheader" class="r price-head">Цена</span>
-      <span role="columnheader" class="r">Мин–макс</span>
+      <span role="columnheader" class="r" title={RANGE_HEAD_TITLE}>Мин–макс</span>
       <span role="columnheader" class="r">ROI</span>
       <span role="columnheader" class="r">UEC/ч</span>
     </div>

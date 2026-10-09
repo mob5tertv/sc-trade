@@ -10,6 +10,7 @@
   import { headerModel } from './vm/header';
   import { CLEAR_BUTTONS, historyStatus } from './vm/history-clearing';
   import { captureKey } from './vm/key-capture';
+  import { SETTING_HINTS } from './vm/settings-hints';
   import { parseNumberText } from './vm/settings-validation';
   import WindowGrip from './WindowGrip.svelte';
 
@@ -164,7 +165,7 @@
   {:else}
     <p class="line">Список кораблей не загружен: введи вместимость вручную.</p>
   {/if}
-  {@render numberField('scuCapacity', 'Вместимость, SCU')}
+  {@render numberField('scuCapacity', 'Вместимость, SCU', { title: SETTING_HINTS.scuCapacity })}
   <div class="row">
     <label for="set-system">Система</label>
     <select id="set-system" class="sc-input field" value={app.settings.starSystemId ?? ''} onchange={(event) => chooseSystem(event.currentTarget.value)}>
@@ -174,7 +175,7 @@
       {/each}
     </select>
   </div>
-  {@render numberField('budget', 'Бюджет, UEC', { placeholder: 'не ограничен' })}
+  {@render numberField('budget', 'Бюджет, UEC', { placeholder: 'не ограничен', title: SETTING_HINTS.budget })}
 {/snippet}
 
 {#snippet fresh()}
@@ -184,11 +185,11 @@
 {/snippet}
 
 {#snippet routes()}
-  {@render numberField('quantumSpeedKkms', 'Скорость квантума, тыс. км/с')}
-  {@render numberField('overheadMin', 'Накладные на рейс, мин')}
-  {@render numberField('overheadEmptyMin', 'Накладные на пустой перелёт, мин')}
-  {@render numberField('topN', 'Число вариантов')}
-  {@render numberField('refillFullMin', 'Полное пополнение склада, мин')}
+  {@render numberField('quantumSpeedKkms', 'Скорость квантума, тыс. км/с', { title: SETTING_HINTS.quantumSpeedKkms })}
+  {@render numberField('overheadMin', 'Накладные на рейс, мин', { title: SETTING_HINTS.overheadMin })}
+  {@render numberField('overheadEmptyMin', 'Накладные на пустой перелёт, мин', { title: SETTING_HINTS.overheadEmptyMin })}
+  {@render numberField('topN', 'Число вариантов', { title: SETTING_HINTS.topN })}
+  {@render numberField('refillFullMin', 'Полное пополнение склада, мин', { title: SETTING_HINTS.refillFullMin })}
   {@render numberField('roiHighlightPct', 'Выделять ROI от, %', {
     title: 'Строка таблицы с таким ROI и выше выделяется цветной полосой. 0 — выделять всё, что в плюсе.',
   })}

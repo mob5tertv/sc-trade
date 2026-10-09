@@ -2,9 +2,9 @@ import { formatUec } from '../../core/format';
 import { routesFrom, routesTo } from '../../core/routes';
 import type { RouteCtx, RouteOption } from '../../core/routes';
 import type { Market, Reference, Side } from '../../core/types';
-import { terminalLabel } from './lookup';
 import type { RoiTier } from './roi-tier';
 import { formatRoi, shownPercent, shownTier } from './route-rows';
+import { terminalLabel } from './terminal-name';
 
 // The profit of a row of the terminal table (spec 14.10): for each commodity of the viewed terminal, the ROI of the best
 // trip there is with it. On the side "продать здесь" that is the best way to buy the commodity somewhere and bring it here

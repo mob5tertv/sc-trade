@@ -2,11 +2,11 @@
   import { formatUec } from '../../core/format';
   import type { Searchable } from '../../core/search';
   import type { Side } from '../../core/types';
-  import { resolveQuickEntry } from '../vm/quick-entry';
+  import { rejectionText, resolveQuickEntry } from '../vm/quick-entry';
+  import type { Rejection } from '../vm/quick-entry';
   import SearchBox from './SearchBox.svelte';
 
   interface PriceEntry { terminalId: number; commodityId: number; side: Side; price: number; scu: number | null }
-  type Rejection = 'no-terminal' | 'no-commodity' | 'bad-price' | 'bad-scu';
 
   interface Props {
     /** The viewed terminal: the price is written for it. The location is picked in the header of the window, not here. */
@@ -39,10 +39,14 @@
   /** The write was refused, or there is nowhere to write to: the button of the line is marked. */
   let badSave = $state(false);
   let busy = $state(false);
-  // What happened, for the screen reader and for the tooltip of the field that is marked. It takes no room on the screen:
-  // between the entry line and the table nothing appears or disappears, so a saved price shifts nothing.
+  // What happened, for the screen reader and for the tooltip of the field that is marked. A saved price says nothing on the screen
+  // (the table below is its confirmation), so it shifts nothing.
   let status = $state<{ text: string; kind: 'ok' | 'error' } | null>(null);
   const problem = $derived(status !== null && status.kind === 'error' ? status.text : null);
+  // A refusal says why in words under the line, for as long as a field is marked; with no refusal the line is not there at all and
+  // takes no height. The marked fields point at it (`aria-describedby`).
+  const reasonShown = $derived(problem !== null && (badPrice || badScu || badCommodity || badSave));
+  const reasonId = `reason-${uid}`;
 
   // `bind:this` gives `undefined` before the element exists and `null` after it has gone: both are "not there"
   let commodityBox = $state<ReturnType<typeof SearchBox> | null>();
@@ -62,8 +66,8 @@
     priceInput?.focus();
   }
 
-  function reject(reason: Rejection, text: string): void {
-    status = { text, kind: 'error' };
+  function reject(reason: Rejection): void {
+    status = { text: rejectionText(reason), kind: 'error' };
     onReject?.({ reason });
   }
 
@@ -75,12 +79,12 @@
     if (commodityId === null && priceText.trim() === '' && scuText.trim() === '') return;
     if (terminalId === null) {
       badSave = true;
-      reject('no-terminal', 'Сначала выбери локацию в шапке окна.');
+      reject('no-terminal');
       return;
     }
     if (commodityId === null) {
       badCommodity = true;
-      reject('no-commodity', 'Выбери товар: три буквы кода или названия и Enter.');
+      reject('no-commodity');
       commodityBox?.focus();
       return;
     }
@@ -89,10 +93,10 @@
       badPrice = input.price;
       badScu = input.scu;
       if (input.price) {
-        reject('bad-price', 'Цена — целое число больше нуля.');
+        reject('bad-price');
         priceInput?.focus();
       } else {
-        reject('bad-scu', 'Количество — целое число SCU или пустое поле.');
+        reject('bad-scu');
         scuInput?.focus();
       }
       return;
@@ -182,6 +186,7 @@
       title={badPrice && problem !== null ? problem : 'Цена, UEC за SCU'}
       aria-label="Цена, UEC за SCU"
       aria-invalid={badPrice ? 'true' : undefined}
+      aria-describedby={badPrice && reasonShown ? reasonId : undefined}
       oninput={() => (badPrice = false)}
       onkeydown={(event) => onFieldKeydown(event, priceText, () => { priceText = ''; badPrice = false; })}
     />
@@ -196,6 +201,7 @@
       title={badScu && problem !== null ? problem : 'Количество, SCU (можно не вводить)'}
       aria-label="Количество, SCU (можно не вводить)"
       aria-invalid={badScu ? 'true' : undefined}
+      aria-describedby={badScu && reasonShown ? reasonId : undefined}
       oninput={() => (badScu = false)}
       onkeydown={(event) => onFieldKeydown(event, scuText, () => { scuText = ''; badScu = false; })}
     />
@@ -205,8 +211,11 @@
       disabled={busy}
       data-failed={badSave ? '' : undefined}
       title={badSave && problem !== null ? problem : undefined}
+      aria-describedby={badSave && reasonShown ? reasonId : undefined}
     >Записать</button>
   </div>
+  <!-- the words of a refusal: only while a field is marked; the screen reader gets the same sentence from the status below -->
+  {#if reasonShown}<p class="reason" id={reasonId} aria-hidden="true">{problem}</p>{/if}
 
   <!-- for the screen reader only: the line has no room for a message, a mark and a tooltip say what went wrong -->
   <p class="sr-only" role="status" aria-live="polite">{status === null ? '' : `${chosen && status.kind === 'error' ? `${chosen.code}: ` : ''}${status.text}`}</p>
@@ -261,6 +270,15 @@
   .side:has(input:focus-visible) {
     outline: 1px solid var(--sc-accent);
     outline-offset: -1px;
+  }
+
+  /* why the entry was refused, in the colour of the red mark of the field; it is there only while a field is marked */
+  .reason {
+    margin: 0;
+    padding-top: 2px;
+    color: var(--sc-bad);
+    font-size: var(--sc-font-sm);
+    line-height: 14px;
   }
 
   /* read by the screen reader, takes no place on the screen */

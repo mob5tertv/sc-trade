@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultSide, resolveQuickEntry } from '../../src/ui/vm/quick-entry';
+import { REJECTIONS, defaultSide, rejectionText, resolveQuickEntry } from '../../src/ui/vm/quick-entry';
 import { terminalRows } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
 import { obs, px, ref } from '../helpers/factories';
@@ -64,5 +64,26 @@ describe('resolveQuickEntry', () => {
 
   it('marks both when both are wrong', () => {
     expect(resolveQuickEntry('abc', '-5')).toEqual({ ok: false, price: true, scu: true });
+  });
+});
+
+describe('rejectionText: the reason a quick entry says when it refuses', () => {
+  it('says what to do in a few words, for each of the four reasons', () => {
+    expect(rejectionText('no-commodity')).toBe('Выбери товар');
+    expect(rejectionText('bad-price')).toBe('Цена — целое число больше нуля');
+    expect(rejectionText('bad-scu')).toBe('Количество — целое число от нуля');
+    expect(rejectionText('no-terminal')).toBe('Сначала выбери локацию в шапке окна');
+  });
+
+  it('has a sentence for every reason there is, and speaks to the player as «ты»', () => {
+    for (const reason of REJECTIONS) {
+      expect(rejectionText(reason), reason).not.toBe('');
+      expect(rejectionText(reason), reason).not.toMatch(/(ите|йте|ьте)(?![а-яё])/);
+    }
+  });
+
+  it('is what the quantity check allows: a quantity from zero is no refusal, a negative one is', () => {
+    expect(resolveQuickEntry('6120', '0').ok).toBe(true);
+    expect(resolveQuickEntry('6120', '-1')).toEqual({ ok: false, price: false, scu: true });
   });
 });

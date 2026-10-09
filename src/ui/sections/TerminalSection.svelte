@@ -23,6 +23,7 @@
   import { defaultSide } from '../vm/quick-entry';
   import { crossedRows, roiCells, type RoiSnapshot } from '../vm/row-roi';
   import { sideCounts, type TerminalRow } from '../vm/terminal-rows';
+  import { terminalFullName } from '../vm/terminal-name';
   import { terminalFullPlace } from '../vm/terminal-place';
   import { clickedTerminalSort, type TerminalSortKey } from '../vm/terminal-order';
   import { selectedCommodity, type RowPick } from '../vm/terminal-side';
@@ -42,18 +43,21 @@
   // what is in the hold while a run goes on: on the sell side the table puts these commodities first and marks them
   const cargo = $derived(cargoOf(app.activeRun?.events ?? []));
 
-  // the full name of the viewed terminal (the location field of the header shows the short one)
+  // the name of the viewed terminal as the location field of the header names it (one name for a terminal everywhere)
   const name = $derived(
     viewedId !== null && app.reference.terminals.has(viewedId)
       ? locationModel(app.reference, app.settings, viewedId, app.pricesSyncedAt, app.uexOk, app.now).header.location
       : 'Локация не выбрана',
   );
-  // the tooltip of the header says where it is (there are many terminals of one name in different star systems); the line itself is not changed
-  const place = $derived.by(() => {
+  // the tooltip of the header has the official name and says where it is (there are many terminals of one name in different star
+  // systems); the line itself is not changed
+  const nameTitle = $derived.by(() => {
     const terminal = viewedId === null ? undefined : app.reference.terminals.get(viewedId);
-    return terminal === undefined ? '' : terminalFullPlace(terminal, app.reference.starSystems);
+    if (terminal === undefined) return undefined;
+    const full = terminalFullName(terminal);
+    const place = terminalFullPlace(terminal, app.reference.starSystems);
+    return place === '' && full === name ? undefined : `Терминал: ${full}${place === '' ? '' : `\n${place}`}`;
   });
-  const nameTitle = $derived(place === '' ? undefined : `Терминал: ${name}\n${place}`);
 
   // The rows that flash now (see `enteringPrice`): commodity ids, so they belong to the table that was drawn when they crossed the threshold
   const PULSE_MS = 1300;
