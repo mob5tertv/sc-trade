@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { badgeText, cellScu, isOwnPrice, rangeOfEstimate, rangeView, sideCounts, terminalRows, uexRangeOf } from '../../src/ui/vm/terminal-rows';
+import {
+  RANGE_HEAD_TITLE, badgeText, cellScu, isOwnPrice, rangeOfEstimate, rangeView, sideCounts, terminalRows, uexRangeOf, unknownScuTitle,
+} from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
 import type { UexSideStats } from '../../src/core/types';
@@ -413,6 +415,47 @@ describe('cellScu', () => {
     const m = buildMarket([px(1, 10, { buy: { avgWeek: 6000 }, dateModified: NOW - 7200 })], []);
     expect(cellScu(buyOf(m), 'buy')).toBeNull();
     expect(cellScu(null, 'sell')).toBeNull();
+  });
+});
+
+describe('RANGE_HEAD_TITLE: the period of «Мин–макс»', () => {
+  it('names the period the bounds are of: the week, and only without a week the month, then all time', () => {
+    expect(RANGE_HEAD_TITLE).toBe('Минимум и максимум цены по данным UEX за неделю; если за неделю цены нет — за месяц, потом за всё время');
+  });
+
+  it('says what the estimate does: the bounds of the week while the week has a price, else of the month', () => {
+    // a week with a price: its bounds
+    const week = buildMarket([px(1, 10, { buy: { avgWeek: 6000, minWeek: 5900, maxWeek: 6200, avgMonth: 5000, minMonth: 4000, maxMonth: 7000 } })], []);
+    expect(terminalRows(week, ref, 1, ctx)[0].buy?.range).toEqual({ kind: 'spread', low: 5900, high: 6200 });
+    // no price in the week: the bounds of the month
+    const month = buildMarket([px(1, 10, { buy: { avgMonth: 5000, minMonth: 4000, maxMonth: 7000 } })], []);
+    expect(terminalRows(month, ref, 1, ctx)[0].buy?.range).toEqual({ kind: 'spread', low: 4000, high: 7000 });
+  });
+});
+
+describe('unknownScuTitle: what the dash of the SCU column says', () => {
+  it('says that the stock is unknown, and why: neither a measure of mine nor data of UEX', () => {
+    expect(unknownScuTitle('buy')).toBe('Запас неизвестен: нет свежего своего замера и нет данных UEX');
+  });
+
+  it('says the same of the buyer on the sell side, where the number is what the buyer already holds', () => {
+    expect(unknownScuTitle('sell')).toBe('Склад у покупателя неизвестен: нет свежего своего замера и нет данных UEX');
+  });
+
+  it('is the dash of a row whose own reading of the quantity has gone cold and which UEX knows no quantity of: a cold reading is not used, so «свежего» is the word', () => {
+    // my reading of 300 SCU is five hours old (cold at the default thresholds) and UEX has no quantity: the estimate ignores mine
+    const m = buildMarket([], [obs({ ts: NOW - 5 * 3600, terminalId: 1, commodityId: 10, side: 'buy', price: 6100, scu: 300 })]);
+    const cell = terminalRows(m, ref, 1, ctx)[0].buy;
+    expect(cell).not.toBeNull();
+    expect(cellScu(cell, 'buy')).toBeNull();
+    // and the same reading when it is fresh is shown
+    const fresh = buildMarket([], [obs({ ts: NOW - 60, terminalId: 1, commodityId: 10, side: 'buy', price: 6100, scu: 300 })]);
+    expect(cellScu(terminalRows(fresh, ref, 1, ctx)[0].buy, 'buy')).toMatchObject({ text: '300', own: true });
+  });
+
+  it('is for the dash only: a known zero is written 0 and keeps its own tooltip', () => {
+    const m = buildMarket([], [obs({ ts: NOW - 60, terminalId: 1, commodityId: 10, side: 'buy', price: 6100, scu: 0 })]);
+    expect(cellScu(terminalRows(m, ref, 1, ctx)[0].buy, 'buy')).toMatchObject({ text: '0', title: 'Остаток у продавца по твоему замеру, SCU' });
   });
 });
 

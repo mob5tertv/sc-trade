@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { formatUec } from '../../src/core/format';
 import { DEFAULT_SETTINGS } from '../../src/core/settings';
 import type { Reference } from '../../src/core/types';
-import { affectsLookup, kindForSide, lookupEmptyText, lookupPrice, lookupTarget, lookupTitle, sameRequest, terminalLabel } from '../../src/ui/vm/lookup';
+import { affectsLookup, kindForSide, lookupEmptyText, lookupPrice, lookupTarget, lookupTitle, sameRequest } from '../../src/ui/vm/lookup';
 import type { LookupRequest } from '../../src/ui/vm/lookup';
 import { terminalRows } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
@@ -31,17 +31,6 @@ describe('sameRequest', () => {
     expect(sameRequest(request(), request({ commodityId: 10 }))).toBe(false);
     expect(sameRequest(request({ price: 1 }), request({ price: 2 }))).toBe(false);
     expect(sameRequest(null, request())).toBe(false);
-  });
-});
-
-describe('terminalLabel', () => {
-  it('is the nickname players know a terminal by', () => {
-    expect(terminalLabel(ref, 1)).toBe('ARC-L1');
-    expect(terminalLabel(ref, 2)).toBe('TDD Area 18');
-  });
-
-  it('shows the id of a terminal that left the reference', () => {
-    expect(terminalLabel(ref, 777)).toBe('#777');
   });
 });
 

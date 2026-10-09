@@ -69,6 +69,15 @@ export function cellScu(cell: Cell | null, side: Side): CellScu | null {
 }
 
 /**
+ * The tooltip of the dash in the quantity column: there is no quantity because nobody knows it, which is not an empty stock
+ * (a known zero is written 0). On the sell side the number is what the buyer already holds. «Свежего»: the estimate does not use a
+ * reading of mine that has gone cold (see `estimate` of the core), so a cold one leaves the dash as well.
+ */
+export function unknownScuTitle(side: Side): string {
+  return `${side === 'buy' ? 'Запас' : 'Склад у покупателя'} неизвестен: нет свежего своего замера и нет данных UEX`;
+}
+
+/**
  * The price a cell offers to be corrected or confirmed: the whole number the row writes (`formatUec` rounds with `Math.round`;
  * UEX averages are REAL), mine else the hint. It must be what the row shows and what the typed path (`parsePrice`: whole
  * numbers above zero) would take, so a price that rounds to zero is no price: `null`. The fields of an expanded row and the form
@@ -112,6 +121,12 @@ export function rangeOfEstimate(e: Estimate | null): UexRange {
 export function uexRangeOf(m: Market, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): UexRange {
   return rangeOfEstimate(estimate({ ...m, own: new Map() }, terminalId, commodityId, side, ctx));
 }
+
+/**
+ * The tooltip of the head «Мин–макс»: which period the two numbers are of. The estimate takes the bounds of the week, and only when
+ * the week has no price those of the month, then of all time (`priceRange` of the core).
+ */
+export const RANGE_HEAD_TITLE = 'Минимум и максимум цены по данным UEX за неделю; если за неделю цены нет — за месяц, потом за всё время';
 
 /** The «Мин–макс» cell as it is read: `3 900–4 300`, `= 5 500` or `—` (two kinds of it), and what the tooltip says about it. */
 export interface RangeView { kind: UexRange['kind']; text: string; title: string }

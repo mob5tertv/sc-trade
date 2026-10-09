@@ -3,6 +3,7 @@ import type { Settings } from '../../core/settings';
 import type { Reference } from '../../core/types';
 import { headerModel } from './header';
 import { locationModel } from './location';
+import { terminalFullName, terminalName } from './terminal-name';
 import { terminalFullPlace } from './terminal-place';
 
 /** What the one-line header of the expanded window shows. */
@@ -80,14 +81,13 @@ export function windowHeader(
   const terminal = viewTerminalId === null ? undefined : ref.terminals.get(viewTerminalId);
   const title = terminal === undefined
     ? EMPTY_FIELD_TITLE
-    : [view.header.location, terminalFullPlace(terminal, ref.starSystems), view.currentLocation === null ? '' : `Сейчас: ${view.currentLocation}`]
+    : [terminalFullName(terminal), terminalFullPlace(terminal, ref.starSystems), view.currentLocation === null ? '' : `Сейчас: ${view.currentLocation}`]
       .filter((line) => line !== '')
       .join('\n');
   const referenceFailed = referenceOk ? [] : [REFERENCE_FAILED];
   const unfetched = sync.unfetched > 0 ? [`Не обновилось терминалов: ${sync.unfetched}`] : [];
   return {
-    // the nickname is what players know a terminal by; UEX leaves it empty on rare rows
-    location: terminal === undefined ? null : terminal.nickname || terminal.displayname || terminal.name,
+    location: terminal === undefined ? null : terminalName(terminal),
     locationTitle: title,
     hereTerminalId: view.canSetCurrent ? viewTerminalId : null,
     uex: sync.running

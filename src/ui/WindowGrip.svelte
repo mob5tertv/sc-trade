@@ -15,7 +15,7 @@
   data-locked={locked}
   role="img"
   aria-label={locked ? 'Окно закреплено' : 'Перетащить окно'}
-  title={locked ? 'Окно закреплено: откройте замок, чтобы переместить' : 'Перетащить окно'}
+  title={locked ? 'Окно закреплено: открой замок, чтобы переместить' : 'Перетащить окно'}
 >
   <svg viewBox="0 0 8 12" width="8" height="12" aria-hidden="true">
     <circle cx="2" cy="2" r="1" /><circle cx="6" cy="2" r="1" />

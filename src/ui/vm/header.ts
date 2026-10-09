@@ -2,7 +2,8 @@ import { formatAge } from '../../core/format';
 import { search } from '../../core/search';
 import type { Searchable } from '../../core/search';
 import type { Settings } from '../../core/settings';
-import type { Reference, Terminal } from '../../core/types';
+import type { Reference } from '../../core/types';
+import { terminalFullName, terminalName } from './terminal-name';
 import { terminalFullPlace, terminalPlace, terminalSystem } from './terminal-place';
 
 export interface HeaderModel { location: string; ship: string; system: string; uex: string; uexStale: boolean }
@@ -10,9 +11,6 @@ export interface HeaderModel { location: string; ship: string; system: string; u
 const NO_LOCATION = 'Локация не выбрана';
 const NO_SHIP = 'Корабль не выбран';
 const ALL_SYSTEMS = 'Все системы';
-
-// UEX leaves displayname empty on some terminals; the nickname is what players know them by
-const terminalLabel = (t: Terminal): string => t.displayname || t.nickname || t.name;
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -41,7 +39,7 @@ export function headerModel(ref: Reference, s: Settings, pricesSyncedAt: number 
   const terminal = s.currentTerminalId === null ? undefined : ref.terminals.get(s.currentTerminalId);
   const system = s.starSystemId === null ? undefined : ref.starSystems.find(x => x.id === s.starSystemId);
   return {
-    location: terminal ? terminalLabel(terminal) : NO_LOCATION,
+    location: terminal ? terminalName(terminal) : NO_LOCATION,
     ship: shipLine(ref, s),
     system: system ? system.name : ALL_SYSTEMS,
     uex: uexLine(pricesSyncedAt, uexOk, now),
@@ -62,7 +60,8 @@ export function terminalSearchItems(ref: Reference, starSystemId: number | null)
   const items: SearchItem[] = [];
   for (const t of ref.terminals.values()) {
     if (starSystemId !== null && t.starSystemId !== starSystemId) continue;
-    const name = terminalLabel(t);
+    const name = terminalName(t);
+    const full = terminalFullName(t);
     const place = terminalPlace(t, ref.starSystems);
     const whole = terminalFullPlace(t, ref.starSystems);
     const system = terminalSystem(t, ref.starSystems);
@@ -70,10 +69,11 @@ export function terminalSearchItems(ref: Reference, starSystemId: number | null)
       id: t.id,
       code: t.code,
       name,
-      aliases: [t.nickname, t.name, t.planetName ?? ''].filter(a => a !== ''),
+      // the other spellings stay searchable: a player may type the display name as the game writes it ('Area 18 TDD')
+      aliases: [...new Set([t.nickname, t.displayname, t.name, t.planetName ?? ''].filter(a => a !== ''))],
       ...(system === '' ? {} : { system }),
       ...(place === '' ? {} : { place }),
-      title: whole === '' ? name : `${name}\n${whole}`,
+      title: whole === '' ? full : `${full}\n${whole}`,
     });
   }
   return items;

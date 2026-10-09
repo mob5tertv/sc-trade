@@ -27,7 +27,15 @@ describe('windowHeader: the location field', () => {
   it('keeps the full name in the tooltip, then where the terminal is, then where the ship stands when that is another place', () => {
     // these terminals know their star system only by its id: the name comes from the list of the reference
     expect(windowHeader(ref, settings(1), 1, NOW, true, NOW).locationTitle).toBe('ARC-L1 Wide Forest Station\nStanton');
-    expect(windowHeader(ref, settings(1), 2, NOW, true, NOW).locationTitle).toBe('TDD Area 18\nStanton\nСейчас: ARC-L1 Wide Forest Station');
+    expect(windowHeader(ref, settings(1), 2, NOW, true, NOW).locationTitle).toBe('TDD Area 18\nStanton\nСейчас: ARC-L1');
+  });
+
+  it('puts the official name in the tooltip when it is another spelling than the short name of the field', () => {
+    const area18 = term(5, { nickname: 'TDD Area 18', displayname: 'Area 18 TDD', starSystemId: 68, planetName: 'ArcCorp' });
+    const named = { ...ref, terminals: new Map([...ref.terminals, [5, area18]]) };
+    const header = windowHeader(named, settings(1), 5, NOW, true, NOW);
+    expect(header.location).toBe('TDD Area 18');
+    expect(header.locationTitle).toBe('Area 18 TDD\nStanton · ArcCorp\nСейчас: ARC-L1');
   });
 
   it('says the whole place of the viewed terminal in the tooltip: system, planet, moon, city or station', () => {
@@ -36,7 +44,7 @@ describe('windowHeader: the location field', () => {
     });
     const withGrim = { ...ref, terminals: new Map([...ref.terminals, [13, grim]]) };
     expect(windowHeader(withGrim, settings(13), 13, NOW, true, NOW).locationTitle).toBe('GrimHEX\nStanton · Crusader · Yela');
-    expect(windowHeader(withGrim, settings(1), 13, NOW, true, NOW).locationTitle).toBe('GrimHEX\nStanton · Crusader · Yela\nСейчас: ARC-L1 Wide Forest Station');
+    expect(windowHeader(withGrim, settings(1), 13, NOW, true, NOW).locationTitle).toBe('GrimHEX\nStanton · Crusader · Yela\nСейчас: ARC-L1');
   });
 
   it('adds no line for a place that is not known', () => {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { onDestroy, onMount, type Snippet } from 'svelte';
   import type { Settings } from '../core/settings';
   import type { TriggerName } from '../platform/triggers';
   import Icon from './components/Icon.svelte';
@@ -9,6 +9,9 @@
   import { stats } from './stats.svelte';
   import { headerModel } from './vm/header';
   import { CLEAR_BUTTONS, historyStatus } from './vm/history-clearing';
+  import { captureKey } from './vm/key-capture';
+  import { SETTING_HINTS } from './vm/settings-hints';
+  import { triggerSuspension } from './vm/trigger-suspension';
   import { parseNumberText } from './vm/settings-validation';
   import WindowGrip from './WindowGrip.svelte';
 
@@ -17,10 +20,22 @@
     | 'overheadMin' | 'overheadEmptyMin' | 'topN' | 'refillFullMin' | 'roiHighlightPct' | 'panelWidth' | 'idleCollapseSec';
   type TriggerKey = 'hotkeyPanel' | 'hotkeyDepart' | 'hotkeyArrive';
 
-  const TRIGGERS: ReadonlyArray<{ key: TriggerKey; name: TriggerName; label: string }> = [
-    { key: 'hotkeyPanel', name: 'panel', label: 'Развернуть и свернуть окно' },
-    { key: 'hotkeyDepart', name: 'depart', label: 'Отметка «Взлетел»' },
-    { key: 'hotkeyArrive', name: 'arrive', label: 'Отметка «Прилетел»' },
+  // What the field says in its tooltip: how it is filled, what the key does, and that the press still reaches the game (the hook that
+  // catches the keys never swallows one).
+  const HOW_TO_FILL = 'Нажми клавишу в этом поле — она запишется. Подходят F1–F24, ScrollLock, Pause, Insert, Home, End, PageUp, PageDown и буква или цифра с Ctrl или Alt; Backspace или Delete снимают клавишу. Пока курсор в поле, назначенные клавиши не срабатывают.';
+  const TRIGGERS: ReadonlyArray<{ key: TriggerKey; name: TriggerName; label: string; title: string }> = [
+    {
+      key: 'hotkeyPanel', name: 'panel', label: 'Развернуть и свернуть окно',
+      title: `${HOW_TO_FILL} Например F8 или Ctrl+Alt+T. Клавиша разворачивает и сворачивает окно, игра её тоже получает. Без клавиши окно разворачивается кликом по мини-строке.`,
+    },
+    {
+      key: 'hotkeyDepart', name: 'depart', label: 'Отметка «Взлетел»',
+      title: `${HOW_TO_FILL} Клавиша ставит в идущем рейсе отметку «Взлетел», как одноимённая кнопка; игра её тоже получает.`,
+    },
+    {
+      key: 'hotkeyArrive', name: 'arrive', label: 'Отметка «Прилетел»',
+      title: `${HOW_TO_FILL} Клавиша ставит в идущем рейсе отметку «Прилетел», как одноимённая кнопка (с целью окно покажет её терминал); игра её тоже получает.`,
+    },
   ];
 
   const CORNERS: ReadonlyArray<{ id: Settings['stripCorner']; label: string }> = [
@@ -47,11 +62,15 @@
     return value === null ? '' : String(value);
   };
 
-  /** Settles a field: the saved value (or the error) replaces what was typed. */
+  /**
+   * Settles a field: the saved value (or the error) replaces what was typed. Only what was typed when the saving began: a text typed
+   * meanwhile (a second key pressed at once) is the next change's and stays until that one has settled.
+   */
   async function settle(key: string, save: () => Promise<string | null>): Promise<void> {
+    const typedThen = drafts[key];
     const error = await save();
     errors[key] = error;
-    if (error === null) delete drafts[key];
+    if (error === null && drafts[key] === typedThen) delete drafts[key];
   }
 
   async function commitNumber(key: NumberKey): Promise<void> {
@@ -66,6 +85,58 @@
     const text = drafts[key];
     if (text === undefined) return;
     await settle(key, () => app.updateSetting(key, text.trim()));
+  }
+
+  // The assigned keys are global: pressing one in a key field would fire its action. So they are suspended while a key field has the
+  // focus (from one key field to the next they stay so) and applied again when it has gone. A field that goes away with the screen (the
+  // settings closed, the window folded) gives no blur: the screen lets go of the keys when it is destroyed. The focus of the window
+  // itself leaving gives a blur, as Esc and Tab do.
+  const suspension = triggerSuspension({ suspend: () => void app.suspendTriggers(), resume: () => void app.resumeTriggers() });
+  onDestroy(() => suspension.release());
+  // The window itself losing the focus (the player went to the game) is the same: the field is left, and a field that still is the
+  // active element of a window that came back is a key field in hand again.
+  onMount(() => {
+    const left = (): void => suspension.blur();
+    const back = (): void => {
+      if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.triggerKey !== undefined) suspension.focus();
+    };
+    window.addEventListener('blur', left);
+    window.addEventListener('focus', back);
+    return () => {
+      window.removeEventListener('blur', left);
+      window.removeEventListener('focus', back);
+    };
+  });
+
+  // What a key field says for a moment about a key it did not write, by field.
+  const HINT_MS = 5000;
+  let hints = $state<Record<string, string | null>>({});
+  const hintTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+  function say(key: string, text: string | null): void {
+    clearTimeout(hintTimers[key]);
+    hints[key] = text;
+    if (text !== null) hintTimers[key] = setTimeout(() => (hints[key] = null), HINT_MS);
+  }
+  onDestroy(() => Object.values(hintTimers).forEach(clearTimeout));
+
+  /**
+   * A key field takes the key that is pressed in it (`captureKey`) and saves it as an ordinary change of the field. It writes only
+   * a key that can be assigned: a key that cannot is not written, the saved one stays, and the field says why for a moment. What the
+   * field does not take (Enter, Esc, Tab, a modifier alone, Alt+F4) it neither writes nor stops: Enter does what it does in the other
+   * fields, Esc still gives the keyboard back to the game and Tab still goes on. A held key repeats the press: one press, one assignment.
+   */
+  function captureTrigger(event: KeyboardEvent, key: TriggerKey): void {
+    const taken = captureKey(event);
+    if (taken.kind === 'pass') return;
+    event.preventDefault();
+    if (event.repeat) return;
+    if (taken.kind === 'refuse') {
+      say(key, taken.reason);
+      return;
+    }
+    say(key, null);
+    drafts[key] = taken.kind === 'clear' ? '' : taken.text;
+    void commitTrigger(key);
   }
 
   async function chooseVehicle(value: string): Promise<void> {
@@ -137,7 +208,7 @@
   {:else}
     <p class="line">Список кораблей не загружен: введи вместимость вручную.</p>
   {/if}
-  {@render numberField('scuCapacity', 'Вместимость, SCU')}
+  {@render numberField('scuCapacity', 'Вместимость, SCU', { title: SETTING_HINTS.scuCapacity })}
   <div class="row">
     <label for="set-system">Система</label>
     <select id="set-system" class="sc-input field" value={app.settings.starSystemId ?? ''} onchange={(event) => chooseSystem(event.currentTarget.value)}>
@@ -147,7 +218,7 @@
       {/each}
     </select>
   </div>
-  {@render numberField('budget', 'Бюджет, UEC', { placeholder: 'не ограничен' })}
+  {@render numberField('budget', 'Бюджет, UEC', { placeholder: 'не ограничен', title: SETTING_HINTS.budget })}
 {/snippet}
 
 {#snippet fresh()}
@@ -157,11 +228,11 @@
 {/snippet}
 
 {#snippet routes()}
-  {@render numberField('quantumSpeedKkms', 'Скорость квантума, тыс. км/с')}
-  {@render numberField('overheadMin', 'Накладные на рейс, мин')}
-  {@render numberField('overheadEmptyMin', 'Накладные на пустой перелёт, мин')}
-  {@render numberField('topN', 'Число вариантов')}
-  {@render numberField('refillFullMin', 'Полное пополнение склада, мин')}
+  {@render numberField('quantumSpeedKkms', 'Скорость квантума, тыс. км/с', { title: SETTING_HINTS.quantumSpeedKkms })}
+  {@render numberField('overheadMin', 'Накладные на рейс, мин', { title: SETTING_HINTS.overheadMin })}
+  {@render numberField('overheadEmptyMin', 'Накладные на пустой перелёт, мин', { title: SETTING_HINTS.overheadEmptyMin })}
+  {@render numberField('topN', 'Число вариантов', { title: SETTING_HINTS.topN })}
+  {@render numberField('refillFullMin', 'Полное пополнение склада, мин', { title: SETTING_HINTS.refillFullMin })}
   {@render numberField('roiHighlightPct', 'Выделять ROI от, %', {
     title: 'Строка таблицы с таким ROI и выше выделяется цветной полосой. 0 — выделять всё, что в плюсе.',
   })}
@@ -170,7 +241,7 @@
 {#snippet keys()}
   {#each TRIGGERS as trigger (trigger.key)}
     {@const error = errors[trigger.key] ?? app.triggerErrors[trigger.name]}
-    <div class="row" title="Например F8 или Ctrl+Alt+T. Пустое поле: клавиша не назначена, окно разворачивается кликом по мини-строке.">
+    <div class="row" title={trigger.title}>
       <label for="set-{trigger.key}">{trigger.label}</label>
       <input
         id="set-{trigger.key}"
@@ -178,14 +249,19 @@
         type="text"
         autocomplete="off"
         spellcheck="false"
-        placeholder="не назначена"
+        data-trigger-key
+        placeholder="нажми клавишу"
         value={drafts[trigger.key] ?? app.settings[trigger.key]}
         aria-invalid={error ? 'true' : undefined}
+        onfocus={() => suspension.focus()}
+        onblur={() => suspension.blur()}
+        onkeydown={(event) => captureTrigger(event, trigger.key)}
         oninput={(event) => typed(trigger.key, event)}
         onchange={() => commitTrigger(trigger.key)}
       />
     </div>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if hints[trigger.key]}<p class="line note" role="status">{hints[trigger.key]}</p>{/if}
   {/each}
 {/snippet}
 
@@ -391,6 +467,11 @@
 
   .line {
     color: var(--sc-muted);
+  }
+
+  /* a key the field did not write: not an error of the field (the key that was saved is fine), so the colour of a warning */
+  .line.note {
+    color: var(--sc-warn);
   }
 
   .buttons {

@@ -1,3 +1,11 @@
+<script lang="ts" module>
+  import { DEFAULT_TERMINAL_SORT, type TerminalSort } from '../vm/terminal-order';
+
+  // The header the table of the terminal is ordered by. It is kept here, in the module and not in the component: the section is gone
+  // from the screen whenever the window folds to the mini line, and the choice lives until the program is closed (it is not a setting).
+  const terminalSort = $state<TerminalSort>({ ...DEFAULT_TERMINAL_SORT });
+</script>
+
 <script lang="ts">
   import { untrack } from 'svelte';
   import { cargoOf } from '../../core/run';
@@ -15,7 +23,9 @@
   import { defaultSide } from '../vm/quick-entry';
   import { crossedRows, roiCells, type RoiSnapshot } from '../vm/row-roi';
   import { sideCounts, type TerminalRow } from '../vm/terminal-rows';
+  import { terminalFullName } from '../vm/terminal-name';
   import { terminalFullPlace } from '../vm/terminal-place';
+  import { clickedTerminalSort, type TerminalSortKey } from '../vm/terminal-order';
   import { selectedCommodity, type RowPick } from '../vm/terminal-side';
   import {
     goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, tradeDefaults, tradeMode, type TradeDefaults, type TradeMode,
@@ -30,19 +40,24 @@
   const rows = $derived(app.terminalRows);
   const side = $derived(app.terminalSide);
   const counts = $derived(sideCounts(rows));
+  // what is in the hold while a run goes on: on the sell side the table puts these commodities first and marks them
+  const cargo = $derived(cargoOf(app.activeRun?.events ?? []));
 
-  // the full name of the viewed terminal (the location field of the header shows the short one)
+  // the name of the viewed terminal as the location field of the header names it (one name for a terminal everywhere)
   const name = $derived(
     viewedId !== null && app.reference.terminals.has(viewedId)
       ? locationModel(app.reference, app.settings, viewedId, app.pricesSyncedAt, app.uexOk, app.now).header.location
       : 'Локация не выбрана',
   );
-  // the tooltip of the header says where it is (there are many terminals of one name in different star systems); the line itself is not changed
-  const place = $derived.by(() => {
+  // the tooltip of the header has the official name and says where it is (there are many terminals of one name in different star
+  // systems); the line itself is not changed
+  const nameTitle = $derived.by(() => {
     const terminal = viewedId === null ? undefined : app.reference.terminals.get(viewedId);
-    return terminal === undefined ? '' : terminalFullPlace(terminal, app.reference.starSystems);
+    if (terminal === undefined) return undefined;
+    const full = terminalFullName(terminal);
+    const place = terminalFullPlace(terminal, app.reference.starSystems);
+    return place === '' && full === name ? undefined : `Терминал: ${full}${place === '' ? '' : `\n${place}`}`;
   });
-  const nameTitle = $derived(place === '' ? undefined : `Терминал: ${name}\n${place}`);
 
   // The rows that flash now (see `enteringPrice`): commodity ids, so they belong to the table that was drawn when they crossed the threshold
   const PULSE_MS = 1300;
@@ -76,6 +91,14 @@
     }
     app.log.debug('ui', 'select commodity', { terminalId: viewedId, side, commodityId });
     pick = { terminalId: viewedId, side, commodityId };
+  }
+
+  // A click on «Товар» or «ROI»: only the order of the rows changes (the table keeps its rows, so the open row and what was typed stay)
+  function sortBy(key: TerminalSortKey): void {
+    const next = clickedTerminalSort(terminalSort, key);
+    app.log.info('ui', 'terminal sort', { key: next.key, dir: next.dir });
+    terminalSort.key = next.key;
+    terminalSort.dir = next.dir;
   }
 
   // An edit in a cell of the table belongs to the terminal that is viewed now; the table keeps what was typed
@@ -289,6 +312,9 @@
       roi={roiByRow}
       {pulse}
       noCapacity={app.settings.scuCapacity <= 0}
+      {cargo}
+      sort={terminalSort}
+      onSort={sortBy}
     />
   {/if}
 </Section>
