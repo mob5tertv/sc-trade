@@ -60,6 +60,7 @@ import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, refreshPl
 import { stripModel, type StripModel } from './vm/strip';
 import { rowRoiMap, type RowRoi } from './vm/row-roi';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
+import { arrivalAsksWhere, pickEffect } from './vm/terminal-pick';
 import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
 import { bindNeeded, boundAfter, withoutErrorsOfEmptyKeys } from './vm/trigger-suspension';
@@ -306,6 +307,14 @@ class AppState {
    * Change it through `#showTerminal`, which also settles the side of the table.
    */
   viewTerminalId = $state<number | null>(null);
+  /** An arrival was marked with no target and nothing has said where the ship landed since (`askingWhere`). */
+  #arrivedWithoutTarget = $state(false);
+  /**
+   * The field of the location asks "Где прилетел?": an arrival was marked with no target, so nothing tells where the ship has landed, and the
+   * next terminal chosen in the field becomes the current location (`pickTerminal`). It ends with that choice, a trade, a take-off, and the
+   * end of the run (it holds only while a run goes on: the end of a run, a lost cargo and a cleared history all leave none).
+   */
+  askingWhere = $derived(this.#arrivedWithoutTarget && this.activeRun !== null);
   phase = $state<Phase>('booting');
   /** One line for the strip while the application starts. */
   bootStatus = $state('Запуск…');
@@ -1167,7 +1176,25 @@ class AppState {
 
   /** "Я здесь": the viewed terminal becomes the current location. */
   async setCurrentTerminal(id: number): Promise<void> {
-    if ((await this.#setLocation(id)) === null) this.#showTerminal(id);
+    if ((await this.#setLocation(id)) === null) {
+      this.#arrivedWithoutTarget = false; // the question "Где прилетел?" is answered
+      this.#showTerminal(id);
+    }
+  }
+
+  /**
+   * A terminal chosen in the field of the location (Enter, Ctrl+Enter, a click on the list). It is always the terminal the window looks at;
+   * whether it is also the current location is `pickEffect`: with no run going it is ("Я здесь" in one press), in a run it is not, so that
+   * the player can read the prices of a far station without losing his "from" (Ctrl+Enter says "Я здесь" anyway), and the field that asks
+   * "Где прилетел?" takes it as the answer. The question ends with the choice.
+   */
+  async pickTerminal(id: number, ctrl = false): Promise<void> {
+    const askingWhere = this.askingWhere;
+    const effect = pickEffect({ runGoing: this.activeRun !== null, ctrl, askingWhere });
+    this.#log.info('ui', 'pick terminal', { terminalId: id, effect, ctrl, askingWhere });
+    this.#arrivedWithoutTarget = false;
+    this.#showTerminal(id);
+    if (effect === 'here') await this.#locateAt(id);
   }
 
   /**
@@ -1508,6 +1535,7 @@ class AppState {
       }
       await this.#reloadRun(mayHaveWritten);
       if (failure === null) {
+        this.#arrivedWithoutTarget = false; // a trade says where the ship is: it is the terminal of the trade
         await this.#locateAt(input.terminalId);
         if (startsRun) void this.openSection(RUN_SECTION);
       }
@@ -1550,7 +1578,10 @@ class AppState {
       if (failure === null && finished) await this.#runEnded('done');
       await this.#reloadRun(mayHaveWritten);
       if (income && mayHaveWritten) void stats.reload('income sale');
-      if (failure === null) await this.#locateAt(input.terminalId);
+      if (failure === null) {
+        this.#arrivedWithoutTarget = false; // a trade says where the ship is: it is the terminal of the trade
+        await this.#locateAt(input.terminalId);
+      }
       return failure;
     });
   }
@@ -1581,6 +1612,8 @@ class AppState {
       await this.#reloadRun(mayHaveWritten);
       if (failure === null) {
         const cargoAboard = cargoOf(this.activeRun?.events ?? []).length > 0;
+        // an arrival with no target does not know where the ship landed: the field of the location asks (`askingWhere`); a take-off ends the question
+        this.#arrivedWithoutTarget = arrivalAsksWhere(type, this.settings.targetTerminalId);
         await this.#followTarget(arrivalView(type, this.settings.targetTerminalId, cargoAboard, this.settings.currentTerminalId));
       }
       return failure;
@@ -1611,6 +1644,7 @@ class AppState {
   /** A run is over (the hold was sold or lost): the target of that run goes. Called before the state reads the run that is over. */
   async #runEnded(how: 'done' | 'lost'): Promise<void> {
     this.#log.info('ui', 'run ended, the target is cleared', { how });
+    this.#arrivedWithoutTarget = false;
     await this.updateSetting('targetTerminalId', null);
   }
 

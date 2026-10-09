@@ -18,17 +18,22 @@
      * selects all of it, typing replaces it, and when the field is left it comes back.
      */
     value?: string;
-    /** Called with the id of the chosen item; the box is emptied afterwards. */
-    onPick: (id: number) => void;
+    /**
+     * Called with the id of the chosen item; the box is emptied afterwards. `ctrl` says the choice was made with Enter while Ctrl was held
+     * (a choice by the mouse, and a plain Enter, are without it); a caller that has no use for it ignores the second argument.
+     */
+    onPick: (id: number, how: { ctrl: boolean }) => void;
     /** Accessible name of the input. */
     label?: string;
     /** The field is marked as wrong (a red line). */
     invalid?: boolean;
     /** The tooltip of the field; the value (the full name of what stands there) when absent. */
     title?: string;
+    /** The field asks to be filled now (the accent colour of its frame, and what was typed and not picked is not kept when it is left). */
+    asking?: boolean;
   }
 
-  let { items, boostIds, find = search, placeholder = 'Поиск…', value, onPick, label = placeholder, invalid = false, title }: Props = $props();
+  let { items, boostIds, find = search, placeholder = 'Поиск…', value, onPick, label = placeholder, invalid = false, title, asking = false }: Props = $props();
 
   const MAX_RESULTS = 8;
   const listId = `search-${Math.random().toString(36).slice(2, 8)}`;
@@ -76,9 +81,9 @@
     active = 0;
   }
 
-  function pick(id: number): void {
+  function pick(id: number, ctrl = false): void {
     reset();
-    onPick(id);
+    onPick(id, { ctrl });
   }
 
   function onInput(event: Event & { currentTarget: HTMLInputElement }): void {
@@ -104,7 +109,7 @@
       const chosen = results[active];
       if (chosen === undefined) return;
       event.preventDefault();
-      pick(chosen.id);
+      pick(chosen.id, event.ctrlKey);
     } else if (event.key === 'Escape' && (open || query !== '' || editing)) {
       // The first Esc closes the list; the panel collapses only on the next one.
       event.preventDefault();
@@ -120,8 +125,8 @@
 
   function onBlur(): void {
     open = false;
-    // what was typed and not picked is not kept when the field has a value to go back to
-    if (value !== undefined) reset();
+    // what was typed and not picked is not kept when the field has a value to go back to (or is asking for one)
+    if (value !== undefined || asking) reset();
   }
 </script>
 
@@ -131,6 +136,7 @@
     value={shown}
     class="sc-input"
     class:has-value={!editing && value !== undefined}
+    class:asking
     type="text"
     role="combobox"
     aria-label={label}
@@ -186,6 +192,15 @@
   /* the name of the place is text to read, not a hint: it keeps its own colour and gets the field's width */
   .has-value {
     text-overflow: ellipsis;
+  }
+
+  /* the field asks to be filled (the location after an arrival with no target): its frame and its question are in the accent colour */
+  .asking {
+    border-color: var(--sc-accent);
+  }
+
+  .asking::placeholder {
+    color: var(--sc-accent);
   }
 
   .list {

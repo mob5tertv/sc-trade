@@ -4,6 +4,7 @@
   import { app } from './state.svelte';
   import { searchTerminals, terminalSearchItems } from './vm/header';
   import { BADGE_TEXT, indicatorClick, indicatorFace } from './vm/keyboard-badge';
+  import { locationFieldTitle, locationPlaceholder } from './vm/terminal-pick';
   import { windowHeader } from './vm/window-header';
   import WindowGrip from './WindowGrip.svelte';
 
@@ -11,6 +12,9 @@
   const items = $derived(terminalSearchItems(app.reference, app.settings.starSystemId));
   // While the window holds the keyboard the slot of the UEX indicator says «Esc — в игру» instead (nothing else of the header moves or shrinks)
   const face = $derived(indicatorFace(app.keyboardHeld, header.uex));
+  // After an arrival with no target the field asks "Где прилетел?": it shows no old name, only the question, and the next terminal chosen is the answer
+  const asking = $derived(app.askingWhere);
+  const locationTitle = $derived(locationFieldTitle(header.locationTitle, { runGoing: app.activeRun !== null, askingWhere: asking }));
 
   /** The click on the slot: the sign gives the keyboard back, the indicator refreshes the prices; right after the sign went away it does nothing. */
   function clickSlot(): void {
@@ -38,11 +42,12 @@
     <SearchBox
       {items}
       find={searchTerminals}
-      value={header.location ?? undefined}
-      title={header.locationTitle}
-      placeholder="Локация…"
+      value={asking ? undefined : header.location ?? undefined}
+      title={locationTitle}
+      placeholder={locationPlaceholder(asking)}
       label="Локация: три буквы и Enter"
-      onPick={(id) => app.setViewTerminal(id)}
+      {asking}
+      onPick={(id, { ctrl }) => void app.pickTerminal(id, ctrl)}
     />
   </div>
   {#if header.hereTerminalId !== null}
