@@ -2,15 +2,23 @@ import { parsePrice, parseScu } from '../../core/input';
 import type { Side } from '../../core/types';
 import type { TerminalRow } from './terminal-rows';
 
-// What the quick entry line of the Terminal tab decides: the side it starts with and what its texts mean.
+// What the quick entry line of the Terminal tab decides: the side it shows and what its texts mean.
 
 /**
- * The side the quick entry starts with for a commodity, from its row of the viewed terminal: the side the terminal
- * trades it on. A terminal that sells it (a buy cell) is bought from; one that only buys it (a sell cell) is sold to.
- * A commodity traded both ways, or not at all, starts as "buy".
+ * The side the switch of the quick entry shows while the player has not picked one by hand, and so the side the price
+ * is written to. `row`: the row of the chosen commodity at the viewed terminal (`undefined`: no commodity is chosen yet,
+ * or the terminal does not trade it). `shown`: the side of the table of the terminal the player is looking at (the tab).
+ *
+ * A commodity the terminal trades on one side only goes to that side, whatever the tab: a terminal that only sells it (a
+ * buy cell) is bought from, one that only buys it (a sell cell) is sold to. Where the terminal does not say (no commodity
+ * yet, traded both ways, not traded at all) the side is the tab: the player enters what he is looking at. It used to be
+ * "buy" there, so on «Продать» the empty line showed «Куп.» and a new commodity was written to the other side.
  */
-export function defaultSide(row: Pick<TerminalRow, 'buy' | 'sell'> | undefined): Side {
-  return row !== undefined && row.sell !== null && row.buy === null ? 'sell' : 'buy';
+export function defaultSide(row: Pick<TerminalRow, 'buy' | 'sell'> | undefined, shown: Side): Side {
+  const sold = row !== undefined && row.buy !== null;
+  const bought = row !== undefined && row.sell !== null;
+  if (sold === bought) return shown;
+  return sold ? 'buy' : 'sell';
 }
 
 /** Why Enter wrote nothing: there is nowhere to write to, no commodity, a price or a quantity that cannot be read. */

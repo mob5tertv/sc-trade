@@ -10,9 +10,10 @@ import { createTypingMemory, entryText, KEYBOARD_IDLE_MS, keyboardUnused, type E
 //    pointer leaving the field makes it not activatable again;
 //  - a press on a text field takes the keyboard first and puts the cursor into the field afterwards; when Windows
 //    refuses the take, nobody holds the keyboard and the cursor is taken out of the field again;
-//  - a button that opens an entry (`data-opens-entry`: «+ цена», «Купил», «Продал») is a field for all of the above: the
-//    pointer over it arms the window, the player's press on it takes the keyboard, and the cursor goes into the field of
-//    the entry once that field is there. What counts as a field or as such a button is decided in one place, `takerAt`;
+//  - a button that opens an entry (`data-opens-entry`: «+ цена», «Купил», «Продал», the switch «Куп.» / «Прод.» of the quick
+//    entry) is a field for all of the above: the pointer over it arms the window, the player's press on it takes the
+//    keyboard, and the cursor goes into the field of the entry once that field is there. What counts as a field or as such
+//    a button is decided in one place, `takerAt`;
 //  - a press on anything else is told to the holds: right after the pointer left a field it may have activated the window;
 //  - a number field (`data-select-on-focus`) that gets the cursor has its whole number selected, so that typing replaces
 //    it; a click on a field that has the cursor already puts the caret where the click was;
@@ -64,9 +65,10 @@ function fieldAt(target: EventTarget | null): HTMLElement | null {
 
 /**
  * The attribute of a button that opens an entry, with the name of the entry: «+ цена» (while the quick entry is closed),
- * «Купил» and «Продал» of an open row, and the button of the form of a trade while its next press only asks about the
- * price. The field the cursor goes into carries the same name in `data-entry-field`, on itself or on an element around
- * it (then the first field inside is meant).
+ * «Купил» and «Продал» of an open row, the button of the form of a trade while its next press only asks about the
+ * price, and the switch of the side of the quick entry («Куп.» / «Прод.»: the press picks the side, and the cursor goes
+ * into the price, so that the line is never left without one). The field the cursor goes into carries the same name in
+ * `data-entry-field`, on itself or on an element around it (then the first field inside is meant).
  */
 const OPENS_ENTRY = 'data-opens-entry';
 const ENTRY_FIELD = 'data-entry-field';

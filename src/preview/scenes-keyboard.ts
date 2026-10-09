@@ -253,6 +253,72 @@ async function oneEscape(app: SceneApp, where: string, field: HTMLElement): Prom
   if (escapeLines().length !== before + 1) throw new Error(`the log must say once that Esc gave the keyboard back ${where}, and it says so ${escapeLines().length - before} times`);
 }
 
+// ---- the switch of the side of the quick entry ---------------------------------------------------------------------------
+
+const QUICK_PRICE = '.quick .in-price';
+/** The two sides of the switch, by the words the player reads on them. */
+type SideWord = 'Куп.' | 'Прод.';
+const sideRadio = (word: SideWord): HTMLInputElement => input(`.quick .side:nth-child(${word === 'Куп.' ? 1 : 2}) input`);
+
+/** The side the switch shows: the label that is lit. It must be the one whose radio is checked: one state, not two. */
+function quickSide(): string {
+  const words = (elements: Element[]): string[] => elements.map((el) => (el.closest('.side')?.textContent ?? '').trim());
+  const lit = words([...document.querySelectorAll('.quick .side.is-on')]);
+  const checked = words([...document.querySelectorAll<HTMLInputElement>('.quick .side input')].filter((radio) => radio.checked));
+  if (lit.length !== 1 || checked.length !== 1 || lit[0] !== checked[0]) {
+    throw new Error(`the switch of the side is in two states: lit ${JSON.stringify(lit)}, checked ${JSON.stringify(checked)}`);
+  }
+  return lit[0];
+}
+
+function expectSide(when: string, word: SideWord): void {
+  if (quickSide() !== word) throw new Error(`${when}: the switch shows «${quickSide()}», not «${word}»`);
+}
+
+/**
+ * A click of the mouse on a side of the switch, as the browser carries it out: the button goes down on the radio (which covers
+ * its label), the browser gives the pressed radio the focus, the button goes up and the click picks the side. `hover: false`: the
+ * pointer is there already. With the real mouse: `--do "hover:.quick .side:nth-child(2) input;click:.quick .side:nth-child(2) input"`.
+ */
+async function clickSide(word: SideWord, options: { hover?: boolean } = {}): Promise<void> {
+  const radio = sideRadio(word);
+  if (options.hover !== false) {
+    radio.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    await pause(60);
+  }
+  radio.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  radio.focus();
+  await pause(80);
+  radio.click();
+  await pause(60);
+}
+
+/** Opens the quick entry with the mouse, picks the first commodity that matches `query` with Enter: the cursor is in the empty price. */
+async function quickWith(app: SceneApp, query: string): Promise<HTMLInputElement> {
+  if (document.querySelector('form.quick') === null) {
+    await pressButton(element('button.entry'));
+    await until('the cursor in the commodity field of the quick entry', cursorIn(QUICK_COMMODITY));
+  }
+  const commodity = input(QUICK_COMMODITY);
+  typeInto(QUICK_COMMODITY, query);
+  await pause(60);
+  keyDown(commodity, 'Enter');
+  await until('the cursor in the price of the quick entry', cursorIn(QUICK_PRICE));
+  if (commodity.value === '' || commodity.value === query) throw new Error(`Enter picked no commodity for "${query}": the field holds "${commodity.value}"`);
+  expectKeyboard(app, `with «${commodity.value}» picked`, { held: true, owner: 'overlay', cursor: 'quick in-price' });
+  return commodity;
+}
+
+/** Sends the line of the quick entry (Enter in one of its fields) and waits for the price to be told to the application. */
+async function sendQuick(): Promise<string> {
+  const before = pricesWritten().length;
+  const form = element('form.quick');
+  if (!(form instanceof HTMLFormElement)) throw new Error('the quick entry is not a form');
+  form.requestSubmit();
+  await until('the price to be written', () => pricesWritten().length === before + 1);
+  return pricesWritten()[before];
+}
+
 /** Opens the form of a purchase of ALUM, which has only a price of UEX at HUR-L1: the keyboard is with the window, the cursor in the quantity. */
 async function openForeignPurchase(app: SceneApp): Promise<void> {
   await app.expand('preview');
@@ -902,6 +968,97 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       expectKeyboard(app, 'after an Esc with the keyboard at the game', { held: false, owner: 'game', cursor: null });
       if (escapeLines().length !== 1) throw new Error(`an Esc pressed while the game had the keyboard was answered: ${escapeLines().at(-1)}`);
       if (document.querySelector('.expand') === null) throw new Error('the open row was folded by Esc');
+    },
+  },
+  {
+    // The switch stands between «Товар» and the price, and a click on it used to take the cursor out of the price: the watchdog found
+    // no field being edited and gave the keyboard to the game, with the line half written. The switch is a button that opens an entry
+    // now (the fifth kind): the click picks the side and the cursor is back in the price, its number selected.
+    // With the real mouse: `--scene entry-ready --do "hover:button.entry;click:button.entry;type:sti;press:Enter;type:2400;
+    // hover:.quick .side:nth-child(2) input;click:.quick .side:nth-child(2) input;wait:1500;eval:window.__keys()"`.
+    name: 'side-switch',
+    title: 'Быстрый ввод: товар и цена набраны, клик по «Прод.» — сторона сменилась, курсор снова в цене (число выделено), клавиатура у окна',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      await quickWith(app, 'sti');
+      expectSide('STIM is only sold at HUR-L1', 'Куп.');
+      typeInto(QUICK_PRICE, '2400');
+      await pause(60);
+      await clickSide('Прод.');
+      await until('the cursor to come back into the price after the click on «Прод.»', cursorIn(QUICK_PRICE), 1500);
+      expectSide('after the click on «Прод.»', 'Прод.');
+      expectKeyboard(app, 'after the click on «Прод.»', { held: true, owner: 'overlay', cursor: 'quick in-price', text: '2400', selection: '0..4' });
+      // past the time a press is given: the watchdog finds a field with the cursor, and the keyboard stays
+      await pause(1500);
+      expectKeyboard(app, 'a second and a half after the click on «Прод.»', { held: true, owner: 'overlay', cursor: 'quick in-price', text: '2400' });
+      if (askedCount() !== 0) throw new Error('the click on the switch had to ask Windows for the foreground');
+      const written = await sendQuick();
+      if (!written.includes('"side":"sell"') || !written.includes('"price":2400')) throw new Error(`the switch showed «Прод.», and what was written is ${written}`);
+    },
+  },
+  {
+    // ...and with the keyboard at the game (Esc, or the return by itself): the pointer over the switch arms the window, as over a
+    // field, so the player's press activates it, and the cursor goes into the price. Windows is asked for nothing.
+    name: 'side-switch-armed',
+    title: 'Быстрый ввод, клавиатура у игры: наведение на «Куп./Прод.» взводит окно, клик меняет сторону и ставит курсор в цену, клавиатура у окна',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      await quickWith(app, 'sti');
+      await oneEscape(app, 'in the empty price', input(QUICK_PRICE));
+      await until('the window to be idle: the pointer is over no field', () => app.keyboard.state === 'idle' && window.__preview?.state().focusable === false);
+      const radio = sideRadio('Прод.');
+      radio.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      await until('the pointer over the switch to arm the window', () => app.keyboard.state === 'armed' && window.__preview?.state().focusable === true, 1500);
+      expectKeyboard(app, 'with the pointer over the switch', { held: false, holds: 'armed', owner: 'game', focusable: true });
+      await clickSide('Прод.', { hover: false });
+      await until('the cursor to go into the price after the click on «Прод.»', cursorIn(QUICK_PRICE), 1500);
+      expectSide('after the click on «Прод.»', 'Прод.');
+      expectKeyboard(app, 'after the click on «Прод.»', { held: true, holds: 'held', owner: 'overlay', cursor: 'quick in-price' });
+      if (askedCount() !== 0) throw new Error('the click on the switch had to ask Windows for the foreground: the press itself must activate the armed window');
+    },
+  },
+  {
+    // «На вкладке „Продать“ переключатель горит „Куп.“, хотя цена ложится на сторону „Продать“». The switch showed «Куп.» whenever no
+    // commodity was chosen, and for a commodity the terminal trades both ways or not at all, whatever tab the player was on; such a
+    // price was then written to the buy side under his eyes on «Продать». The side is the one the terminal trades the commodity on,
+    // and where that does not say (no commodity yet, both ways, not at all) the tab the player looks at. What the switch shows is
+    // what is written. QUAR is not traded at HUR-L1 at all; MEDS is only sold there.
+    name: 'entry-side',
+    title: 'Быстрый ввод на вкладке «Продать»: переключатель горит «Прод.», цена нового товара ложится на «Продать»; товар, который здесь только продают, переводит его на «Куп.»',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      app.setTerminalSide('sell');
+      await pause(60);
+      await pressButton(element('button.entry'));
+      await until('the cursor in the commodity field of the quick entry', cursorIn(QUICK_COMMODITY));
+      expectSide('the empty line, opened on the tab «Продать»', 'Прод.');
+      await quickWith(app, 'quar');
+      expectSide('QUAR, which HUR-L1 does not trade at all, on the tab «Продать»', 'Прод.');
+      typeInto(QUICK_PRICE, '1500');
+      const quartz = await sendQuick();
+      if (!quartz.includes('"side":"sell"') || !quartz.includes('"price":1500')) throw new Error(`the switch showed «Прод.», and what was written is ${quartz}`);
+      await until('the line to be empty again', () => input(QUICK_COMMODITY).value === '');
+      expectSide('the line emptied after the save', 'Прод.');
+      // a commodity the terminal only sells cannot be sold to it: the switch says so before anything is written
+      await quickWith(app, 'meds');
+      expectSide('MEDS, which HUR-L1 only sells', 'Куп.');
+      typeInto(QUICK_PRICE, '2300');
+      const meds = await sendQuick();
+      if (!meds.includes('"side":"buy"') || !meds.includes('"price":2300')) throw new Error(`the switch showed «Куп.», and what was written is ${meds}`);
+      await until('the line to be empty again', () => input(QUICK_COMMODITY).value === '');
+      // the tab is what the empty line follows, also when the player turns it
+      app.setTerminalSide('buy');
+      await pause(60);
+      expectSide('the empty line after the tab was turned to «Купить»', 'Куп.');
+      app.setTerminalSide('sell');
+      await pause(60);
+      expectSide('the empty line after the tab was turned back to «Продать»', 'Прод.');
     },
   },
 ];
