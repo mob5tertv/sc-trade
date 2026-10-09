@@ -31,4 +31,9 @@
   </g>
   <polyline points="20,278 36,272 50,279 66,263 80,268 96,254 110,262 124,256 142,248" fill="none" stroke="#2b8fa8" stroke-width="1.5" stroke-linejoin="miter"/>
   <circle cx="142" cy="248" r="3" fill="#3fd0f0"/>
+
+  <!-- The version of the application under the chart: bold, in the text colour of the theme, with air between the signs so that
+       the dots do not fuse with the digits at the 164 px of this picture. Written by hand: it is the version of package.json,
+       and a test fails when it is not (then change it and run `npm run installer:images`). -->
+  <text id="version" x="18" y="302" font-family="'Bahnschrift SemiCondensed', Bahnschrift, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700" letter-spacing="2.6" fill="#d6eef5">v1.1.0</text>
 </svg>
