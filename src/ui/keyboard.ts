@@ -57,8 +57,9 @@ function fieldAt(target: EventTarget | null): HTMLElement | null {
 
 /**
  * The attribute of a button that opens an entry, with the name of the entry: «+ цена» (while the quick entry is closed),
- * «Купил» and «Продал» of an open row. The field the cursor goes into carries the same name in `data-entry-field`, on
- * itself or on an element around it (then the first field inside is meant).
+ * «Купил» and «Продал» of an open row, and the button of the form of a trade while its next press only asks about the
+ * price. The field the cursor goes into carries the same name in `data-entry-field`, on itself or on an element around
+ * it (then the first field inside is meant).
  */
 const OPENS_ENTRY = 'data-opens-entry';
 const ENTRY_FIELD = 'data-entry-field';
@@ -107,13 +108,18 @@ function numberFieldAt(target: EventTarget | null): HTMLInputElement | null {
 /** A field that holds text the player types: every field but a select, whose choice is applied at once and is never "typed and not saved". */
 const holdsTypedText = (field: Element | null): boolean => isEditable(field) && !(field instanceof HTMLSelectElement);
 
-/** The field with the cursor as the rule of the unused keyboard reads it; `typed` is what the listeners have kept. */
-function editedField(field: Element, typed: boolean): EditedField {
+/** The field with the cursor as the rule of the unused keyboard reads it; `typed` and `listPressed` are what the listeners have kept. */
+function editedField(field: Element, typed: boolean, listPressed: boolean): EditedField {
   let text = '';
   if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) text = field.value;
   else if (holdsTypedText(field)) text = field.textContent ?? '';
-  // every field of the window marks a refused entry this way (the cells of the table, the form of a trade, the quick entry, the settings)
-  return { text, typed, refused: field.getAttribute('aria-invalid') === 'true' };
+  return {
+    text,
+    typed,
+    // every field of the window marks a refused entry this way (the cells of the table, the form of a trade, the quick entry, the settings)
+    refused: field.getAttribute('aria-invalid') === 'true',
+    choosing: listPressed && field instanceof HTMLSelectElement,
+  };
 }
 
 /**
@@ -159,10 +165,12 @@ export function resetHeldKeys(): void {
 export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   /** When the player last pressed a field or a button that opens an entry: the press that takes the keyboard, or keeps it. */
   let lastPressAt = Number.NEGATIVE_INFINITY;
-  /** When a key was last pressed in the window (a key that the guard of the held keys let through). */
+  /** When a key was last pressed in the window (a key that the guard of the held keys let through), or a choice made from a list. */
   let lastKeyAt = Number.NEGATIVE_INFINITY;
   /** Something was typed into the field with the cursor since it got the cursor, and no key has settled it (`settlesTyping`). */
   let typed = false;
+  /** The last press was on a list (a select), which opens it, and nothing was chosen from it since: it may still be open. */
+  let listPressed = false;
   // the window layer has already logged a failure of its own; the listeners have nothing to add
   const quietly = (job: Promise<void>): Promise<void> => job.catch(() => undefined);
 
@@ -182,9 +190,14 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     }
   };
   const onKeyUpCapture = (event: KeyboardEvent): void => heldKeys.released(event.code);
-  // the player typed into a field (a key, a paste): what stands in it now is his, and not saved
+  // The player typed into a field (a key, a paste): what stands in it now is his, and not saved. A choice from a list is
+  // applied at once and closes the list; it counts as a key, because the keys or the click that made it went to the open
+  // list, which is drawn outside the page, and the page heard none of them.
   const onInput = (event: Event): void => {
-    if (event.target instanceof Element && holdsTypedText(event.target)) typed = true;
+    if (event.target instanceof HTMLSelectElement) {
+      listPressed = false;
+      lastKeyAt = performance.now();
+    } else if (event.target instanceof Element && holdsTypedText(event.target)) typed = true;
   };
 
   /**
@@ -242,10 +255,11 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   const cursorIntoEntry = (entry: string, pressedAt: number): void => {
     stopEntryLook();
     entryLook = window.setInterval(() => {
-      // the keyboard went away meanwhile (`Esc`, a click on the game): the cursor does not follow it
-      if (!holds.held) return stopEntryLook();
       const field = entryField(entry);
-      if (field !== null) {
+      if (!holds.held) {
+        // the keyboard went away meanwhile (`Esc`, a click on the game): the cursor does not follow it
+        stopEntryLook();
+      } else if (field !== null) {
         stopEntryLook();
         field.focus();
         log.debug('ui', 'the cursor goes into the entry', { entry });
@@ -290,6 +304,7 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     // a new press is a new intention: the cursor does not go into the entry of an earlier press behind it
     stopEntryLook();
     const taker = takerAt(event.target);
+    listPressed = taker?.element instanceof HTMLSelectElement;
     const number = numberFieldAt(taker?.element ?? null);
     // read before the hold: it is this press that makes the window hold the keyboard
     pressedNumber = number === null
@@ -374,7 +389,7 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     // A field has the cursor, but the player may be gone: he typed a price, pressed Enter and flies on, and his keys go
     // to the window. The keyboard was taken by the last press on a field (or on an entry button); a look while that take
     // is still on its way counts from the press too. Nothing is written per look, one line when the keyboard goes.
-    if (!keyboardUnused({ now, lastKeyAt, takenAt: lastPressAt, field: editedField(active, typed) })) return;
+    if (!keyboardUnused({ now, lastKeyAt, takenAt: lastPressAt, field: editedField(active, typed, listPressed) })) return;
     log.info('ui', `the keyboard was not used for ${KEYBOARD_IDLE_MS / 1000} s: it goes back to the game`);
     giveBack();
   }, WATCHDOG_MS);

@@ -21,6 +21,12 @@ export interface EditedField {
   typed: boolean;
   /** The field is marked as refused: what stands in it was not saved. */
   refused: boolean;
+  /**
+   * The field is a list the player may still be choosing from: he pressed it, which opens it, and has chosen nothing since.
+   * The options of an open list are drawn outside the page, so the page hears nothing while he reads them, and taking the
+   * cursor out of the list would shut it under his pointer.
+   */
+  choosing: boolean;
 }
 
 export interface KeyboardUse {
@@ -45,9 +51,10 @@ export function hasUnsavedTyping(field: EditedField): boolean {
 
 /**
  * Whether the keyboard goes back to the game now: no key was pressed for `KEYBOARD_IDLE_MS`, counted from the last key
- * or from the take, whichever is later, and the field with the cursor holds nothing typed and unsaved.
+ * or from the take, whichever is later, and the field with the cursor holds nothing typed and unsaved and is not a
+ * list the player may still be choosing from.
  */
 export function keyboardUnused(use: KeyboardUse): boolean {
   if (use.now - Math.max(use.lastKeyAt, use.takenAt) < KEYBOARD_IDLE_MS) return false;
-  return !hasUnsavedTyping(use.field);
+  return !hasUnsavedTyping(use.field) && !use.field.choosing;
 }

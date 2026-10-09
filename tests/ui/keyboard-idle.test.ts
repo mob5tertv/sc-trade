@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { hasUnsavedTyping, KEYBOARD_IDLE_MS, keyboardUnused, settlesTyping, type EditedField } from '../../src/ui/vm/keyboard-idle';
 
 /** A field with a number standing in it that the player has not typed into, unless said. */
-const field = (over: Partial<EditedField> = {}): EditedField => ({ text: '2350', typed: false, refused: false, ...over });
+const field = (over: Partial<EditedField> = {}): EditedField => ({ text: '2350', typed: false, refused: false, choosing: false, ...over });
 
 /** The keyboard was taken at 0 and no key was pressed since, unless said. */
 const use = (over: Partial<Parameters<typeof keyboardUnused>[0]> = {}) => keyboardUnused({
@@ -70,6 +70,16 @@ describe('keyboardUnused: the keyboard goes back to the game by itself', () => {
 
   it('an empty field that was never typed into (the commodity of the quick entry after a saved price)', () => {
     expect(use({ field: field({ text: '' }) })).toBe(true);
+  });
+
+  it('never while a list may be open: it was pressed and nothing was chosen yet (the player reads the ships, and no key is needed for that)', () => {
+    expect(use({ field: field({ text: '', choosing: true }) })).toBe(false);
+    expect(use({ now: 3_600_000, field: field({ text: '', choosing: true }) })).toBe(false);
+  });
+
+  it('when the choice was made the list is like any field that holds nothing typed', () => {
+    expect(use({ now: KEYBOARD_IDLE_MS - 1, field: field({ text: '', choosing: false }) })).toBe(false);
+    expect(use({ field: field({ text: '', choosing: false }) })).toBe(true);
   });
 });
 
