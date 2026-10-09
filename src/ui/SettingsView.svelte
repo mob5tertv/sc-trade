@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import type { Settings } from '../core/settings';
   import type { TriggerName } from '../platform/triggers';
   import Icon from './components/Icon.svelte';
@@ -21,7 +21,7 @@
 
   // What the field says in its tooltip: how it is filled, what the key does, and that the press still reaches the game (the hook that
   // catches the keys never swallows one).
-  const HOW_TO_FILL = 'Нажми клавишу в этом поле — она запишется. Backspace или Delete снимают клавишу.';
+  const HOW_TO_FILL = 'Нажми клавишу в этом поле — она запишется. Подходят F1–F24, ScrollLock, Pause, Insert, Home, End, PageUp, PageDown и буква или цифра с Ctrl или Alt; Backspace или Delete снимают клавишу.';
   const TRIGGERS: ReadonlyArray<{ key: TriggerKey; name: TriggerName; label: string; title: string }> = [
     {
       key: 'hotkeyPanel', name: 'panel', label: 'Развернуть и свернуть окно',
@@ -61,11 +61,15 @@
     return value === null ? '' : String(value);
   };
 
-  /** Settles a field: the saved value (or the error) replaces what was typed. */
+  /**
+   * Settles a field: the saved value (or the error) replaces what was typed. Only what was typed when the saving began: a text typed
+   * meanwhile (a second key pressed at once) is the next change's and stays until that one has settled.
+   */
   async function settle(key: string, save: () => Promise<string | null>): Promise<void> {
+    const typedThen = drafts[key];
     const error = await save();
     errors[key] = error;
-    if (error === null) delete drafts[key];
+    if (error === null && drafts[key] === typedThen) delete drafts[key];
   }
 
   async function commitNumber(key: NumberKey): Promise<void> {
@@ -82,16 +86,33 @@
     await settle(key, () => app.updateSetting(key, text.trim()));
   }
 
+  // What a key field says for a moment about a key it did not write, by field.
+  const HINT_MS = 5000;
+  let hints = $state<Record<string, string | null>>({});
+  const hintTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+  function say(key: string, text: string | null): void {
+    clearTimeout(hintTimers[key]);
+    hints[key] = text;
+    if (text !== null) hintTimers[key] = setTimeout(() => (hints[key] = null), HINT_MS);
+  }
+  onDestroy(() => Object.values(hintTimers).forEach(clearTimeout));
+
   /**
-   * A key field takes the key that is pressed in it (`captureKey`) and saves it as an ordinary change of the field; the check says
-   * next to the field why a key is not taken. What the field does not take (Esc, Tab, a modifier alone) it neither writes nor stops:
-   * Esc still gives the keyboard back to the game and Tab still goes on. A held key repeats the press: one press is one assignment.
+   * A key field takes the key that is pressed in it (`captureKey`) and saves it as an ordinary change of the field. It writes only
+   * a key that can be assigned: a key that cannot is not written, the saved one stays, and the field says why for a moment. What the
+   * field does not take (Enter, Esc, Tab, a modifier alone, Alt+F4) it neither writes nor stops: Enter does what it does in the other
+   * fields, Esc still gives the keyboard back to the game and Tab still goes on. A held key repeats the press: one press, one assignment.
    */
   function captureTrigger(event: KeyboardEvent, key: TriggerKey): void {
     const taken = captureKey(event);
     if (taken.kind === 'pass') return;
     event.preventDefault();
     if (event.repeat) return;
+    if (taken.kind === 'refuse') {
+      say(key, taken.reason);
+      return;
+    }
+    say(key, null);
     drafts[key] = taken.kind === 'clear' ? '' : taken.text;
     void commitTrigger(key);
   }
@@ -215,6 +236,7 @@
       />
     </div>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if hints[trigger.key]}<p class="line note" role="status">{hints[trigger.key]}</p>{/if}
   {/each}
 {/snippet}
 
@@ -420,6 +442,11 @@
 
   .line {
     color: var(--sc-muted);
+  }
+
+  /* a key the field did not write: not an error of the field (the key that was saved is fine), so the colour of a warning */
+  .line.note {
+    color: var(--sc-warn);
   }
 
   .buttons {
