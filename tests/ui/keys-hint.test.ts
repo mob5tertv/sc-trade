@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../src/core/settings';
-import { assignsMarkKey, carryOutKeysHint, KEYS_HINT, keysHintStep, withKeysHint } from '../../src/ui/vm/keys-hint';
+import { assignsMarkKey, carryOutKeysHint, KEYS_HINT, KEYS_HINT_STAY_MS, keysHintStep, withKeysHint } from '../../src/ui/vm/keys-hint';
 
 // A run is closed: the result says `kind` (an error is a loss or a lost cargo), `closesRun` is false for a sale without a purchase.
 const closedRun = { closesRun: true, kind: 'info' as const };
@@ -57,6 +57,12 @@ describe('keysHintStep: what the closing of a run does about the one-time hint',
   it('starts as "not shown" in the settings of a new installation', () => {
     expect(DEFAULT_SETTINGS.keysHintShown).toBe(false);
     expect(keysHintStep(closedRun, DEFAULT_SETTINGS, true)).toBe('show');
+  });
+});
+
+describe('KEYS_HINT_STAY_MS: how long the hint stays in the notice line', () => {
+  it('has no time of its own (null): the player reads the kiosk at the last sale, so the hint stays until the cross, "Настроить" or another notice', () => {
+    expect(KEYS_HINT_STAY_MS).toBeNull();
   });
 });
 

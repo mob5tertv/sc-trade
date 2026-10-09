@@ -21,15 +21,20 @@ function watchWhere(app: SceneApp): void {
 
 /**
  * What the hint about the keys has done, for `--do "eval:window.__keysHint()"`: whether the flag is set, what the notice line says and whether it
- * has a button, which screen is open and whether the group "Клавиши" of the settings is unfolded.
+ * has a button, which screen is open and whether the group "Клавиши" of the settings is unfolded. `--do "eval:window.__fold()"` folds the window
+ * into the mini line, `--do "eval:window.__unfold()"` expands it again (the hint is not taken away by the fold).
  */
 function watchKeysHint(app: SceneApp): void {
-  (window as unknown as { __keysHint: () => unknown }).__keysHint = () => ({
+  const w = window as unknown as { __keysHint: () => unknown; __fold: () => Promise<void>; __unfold: () => Promise<void> };
+  w.__keysHint = () => ({
     flag: app.settings.keysHintShown,
     notice: app.notice === null ? null : { text: app.notice.text, button: app.notice.action?.label ?? null },
     view: app.view,
     keysOpen: app.sectionOpen('settings:keys'),
+    mode: app.mode,
   });
+  w.__fold = () => app.collapse('preview');
+  w.__unfold = () => app.expand('preview');
 }
 
 // ids of the preview data: Medical Supplies 1, Stims 8; terminals: ARC-L1 1

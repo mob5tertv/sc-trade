@@ -7,6 +7,13 @@ import type { Settings } from '../../core/settings';
 /** The sentence that follows the result of the run in the notice line. */
 export const KEYS_HINT = 'В полёте курсора нет: назначь клавиши «Взлетел» и «Прилетел»';
 
+/**
+ * How long the notice that carries the hint stays on the screen (version 1.1.1): no time of its own (`null`). At the last sale the player
+ * looks at the kiosk, not at the corner of the window, and the hint is given once in a lifetime, so it waits there until the cross or
+ * "Настроить" is pressed, or another notice takes its place. Folding the window does not take it away: it is there at the next expansion.
+ */
+export const KEYS_HINT_STAY_MS: number | null = null;
+
 type HintSettings = Pick<Settings, 'keysHintShown' | 'hotkeyDepart' | 'hotkeyArrive'>;
 
 /** What a closed run does about the hint: put it on the screen (`show`), only write the flag because the keys are there (`remember`), or nothing. */

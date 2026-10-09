@@ -51,7 +51,7 @@ import { createLatestRequest } from './vm/latest-request';
 import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './vm/lookup';
 import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
-import { assignsMarkKey, carryOutKeysHint, keysHintStep, withKeysHint } from './vm/keys-hint';
+import { assignsMarkKey, carryOutKeysHint, KEYS_HINT_STAY_MS, keysHintStep, withKeysHint } from './vm/keys-hint';
 import { closedRunNotice, stayTimes, type ClosedRunNotice } from './vm/run-closed';
 import { quitQuestion } from './vm/quit';
 import { markRefusal } from './vm/run-phase';
@@ -180,9 +180,8 @@ const LOOKUP_REPEAT = 'settings changed';
 const OPTIONS_SECTION = 'options';
 /** The id of the "Рейс" section among the open sections. */
 const RUN_SECTION = 'run';
-/** The id of the group "Клавиши" of the settings among the open sections, and how long the hint about those keys stays (it has a button to press). */
+/** The id of the group "Клавиши" of the settings among the open sections (the hint about those keys opens it). */
 const KEYS_SECTION = 'settings:keys';
-const KEYS_HINT_MS = 15_000;
 /** How long a message of the mini line (`flash`) stays, and how long a question waits before it counts as "no". */
 const FLASH_MS = 3000;
 const CONFIRM_MS = 10_000;
@@ -1568,7 +1567,7 @@ class AppState {
   #showKeysHint(notice: ClosedRunNotice): boolean {
     if (this.mode !== 'expanded' || this.notice?.text !== notice.text) return false;
     this.#log.info('ui', 'keys hint shown');
-    this.notify(withKeysHint(notice.text), notice.kind, KEYS_HINT_MS, { label: 'Настроить', run: () => void this.openKeysSettings() });
+    this.notify(withKeysHint(notice.text), notice.kind, KEYS_HINT_STAY_MS, { label: 'Настроить', run: () => void this.openKeysSettings() });
     return true;
   }
 
@@ -1888,11 +1887,14 @@ class AppState {
 
   // ---- messages ---------------------------------------------------------------------------------
 
-  /** A short Russian message under the header (the line exists only while there is one); it goes away by itself. `action` adds a button beside the cross. */
-  notify(text: string, kind: Notice['kind'], ms: number = NOTICE_MS, action?: NoticeAction): void {
+  /**
+   * A short Russian message under the header (the line exists only while there is one); it goes away by itself, after `ms`, or stays (`null`)
+   * until the cross, its button or another message. `action` adds a button beside the cross.
+   */
+  notify(text: string, kind: Notice['kind'], ms: number | null = NOTICE_MS, action?: NoticeAction): void {
     clearTimeout(this.#noticeTimer);
     this.notice = action === undefined ? { text, kind } : { text, kind, action };
-    this.#noticeTimer = setTimeout(() => this.dismissNotice(), ms);
+    this.#noticeTimer = ms === null ? undefined : setTimeout(() => this.dismissNotice(), ms);
   }
 
   /** The cross of the notice line: the player puts the message away before its time (the timer does it without a line). */
