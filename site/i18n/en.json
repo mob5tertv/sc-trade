@@ -1,0 +1,296 @@
+{
+  "meta": {
+    "title": "SC Trade — a price diary and trade routes for Star Citizen",
+    "description": "A small window over the game: write down terminal prices, see what a route earns and how long a trip takes. An unofficial fan project.",
+    "data_title": "About data — SC Trade",
+    "data_description": "What the SC Trade site keeps, what the feedback form sends and what the server sees. The app sends nothing to the site."
+  },
+  "nav": {
+    "skip": "Skip to content",
+    "menu": "Menu",
+    "sections": "Sections of the page",
+    "features": "Features",
+    "gallery": "How it looks",
+    "safety": "Safety",
+    "download": "Download",
+    "feedback": "Feedback",
+    "support": "Support",
+    "language": "Language",
+    "home": "SC Trade — home"
+  },
+  "hero": {
+    "kicker": "An overlay for Star Citizen",
+    "title": "SC Trade",
+    "lead": "A personal price diary and trade-route helper. A small window over the game.",
+    "download": "Download",
+    "no_installer": "built without the installer",
+    "platform": "Windows 10 / 11, 64-bit",
+    "disclaimer": "Unofficial fan project. Not affiliated with Cloud Imperium Games.",
+    "facts": ["Your own prices", "Routes by UEC/\u2060h", "Trip timer", "Over the game"]
+  },
+  "features": {
+    "label": "Features",
+    "title": "What it does",
+    "intro": "You enter the prices you see on the terminals in the game. The app works out the rest, on your own computer.",
+    "groups": [
+      {
+        "name": "At the terminal",
+        "items": [
+          {
+            "title": "A price diary",
+            "text": "Write down the prices you see on the terminals. The app keeps them, marks how fresh they are and works out what a route earns."
+          },
+          {
+            "title": "Your prices come first",
+            "text": "UEX reference prices fill in where you have none of your own yet. Until your own price has gone cold, it is the one the numbers use."
+          }
+        ]
+      },
+      {
+        "name": "On a trip",
+        "items": [
+          {
+            "title": "A trip in one line",
+            "text": "Your first purchase starts the timer. Folded, the window is a mini line: the cargo, the expected profit and the mark buttons «Взлетел» (departed) and «Прилетел» (arrived)."
+          },
+          {
+            "title": "Sell here or fly on",
+            "text": "When you have a price of your own here that has not gone cold, the app compares selling here with other buyers: profit, UEC per hour, flight time."
+          }
+        ]
+      },
+      {
+        "name": "Routes",
+        "items": [
+          {
+            "title": "A route from where you are",
+            "text": "The «Маршрут» (route) button shows the best options from your current location, sorted by UEC per hour or by ROI."
+          },
+          {
+            "title": "My routes",
+            "text": "Your trips add up to a ranking of routes by UEC per hour, a history of trips and what a session earned."
+          }
+        ]
+      }
+    ]
+  },
+  "shots": {
+    "hero-strip": {
+      "caption": "Folded — the mini line in flight",
+      "alt": "The SC Trade mini line in flight: the timer of the phase, the cargo with its purchase price, the target of the trip, the expected profit and the «Прилетел» (arrived) button. The interface is in Russian."
+    },
+    "hero-window": {
+      "caption": "Unfolded — the terminal table",
+      "alt": "The unfolded SC Trade window: the terminal table on its «Продать» (sell) side — commodities, prices, stock and the best ROI for each. The interface is in Russian."
+    },
+    "mini-run": {
+      "caption": "The mini line on a trip: phase and timer, cargo, target, expected profit and the mark button",
+      "alt": "The SC Trade mini line while loading: a timer, two commodities in the hold with their purchase prices, the target, the expected profit and the «Взлетел» (departed) button. The interface is in Russian."
+    },
+    "terminal-options": {
+      "caption": "The unfolded window: the terminal table and the options of where to haul",
+      "alt": "The unfolded SC Trade window: a table of the terminal's commodities with prices and ROI, and under it the «Варианты» (options) section — five destinations with price, ROI and UEC per hour. The interface is in Russian."
+    },
+    "my-routes": {
+      "caption": "«Мои маршруты» (my routes): a ranking by UEC per hour",
+      "alt": "The «Мои маршруты» section: a table of routes with the commodity, UEC per hour, number of trips, time, profit and ROI. The interface is in Russian."
+    },
+    "price-entry": {
+      "caption": "A commodity row opened: price, quantity, «Где продать» (where to sell) and «Купил» (bought)",
+      "alt": "The terminal table with a commodity row opened: the price and quantity fields, the «Где продать» and «Купил» buttons, and the mark «моя · 7 мин» (mine, 7 minutes old). The interface is in Russian."
+    },
+    "sell-or-fly": {
+      "caption": "A trip: phases, cargo, totals and the “sell here or fly on” comparison",
+      "alt": "The «Рейс» (trip) section: phases and timer, cargo, money invested, the expected profit, ROI and UEC per hour; below, the «Здесь» (here) line and a table of other buyers. The interface is in Russian."
+    },
+    "history": {
+      "caption": "«Мои маршруты», the «История» (history) tab: every trip, the newest first",
+      "alt": "The «История» tab: trips with date, route, profit, ROI, time and UEC per hour; the trip under way and a trip with lost cargo are marked in colour. The interface is in Russian."
+    },
+    "settings": {
+      "caption": "Settings: six groups, from the ship to the data",
+      "alt": "The SC Trade settings: the «Корабль и поиск» (ship and search) group is open; below it, folded, are price freshness, route calculation, keys, window and data. The interface is in Russian."
+    }
+  },
+  "gallery": {
+    "label": "How it looks",
+    "title": "The app's window",
+    "intro": "The pictures were taken from the app itself on demo data. The app's interface is in Russian only; commodity and terminal names are in English, as in UEX.",
+    "open": "Open larger",
+    "close": "Close",
+    "prev": "Previous picture",
+    "next": "Next picture",
+    "dialog": "A picture of the app, larger"
+  },
+  "safety": {
+    "label": "Safety",
+    "title": "Beside the game, not inside it",
+    "intro": "SC Trade is an ordinary Windows window that stays on top of the others. Here is what it does and what it does not.",
+    "items": [
+      {
+        "title": "A window over the game",
+        "text": "The game has to run in borderless window mode. The window is not drawn over exclusive fullscreen."
+      },
+      {
+        "title": "Never takes the keyboard by itself",
+        "text": "The keyboard goes to the window only while you type into a text field — after your click on it — and after the input goes back to the window that had it (usually the game). Esc in a field gives it back at once."
+      },
+      {
+        "title": "No injection, no reading of the game's memory",
+        "text": "The app does not read the game's memory and injects nothing into other processes; it opens no handle of another process. To tell whose window is active, it asks Windows which process the active window belongs to (and, with the cursor diagnostics switched on, the window under the cursor), and compares the process number only with its own: the other number is not kept anywhere and not written to the log."
+      },
+      {
+        "title": "Presses nothing for you",
+        "text": "The app sends no key presses and no clicks. Keys are assigned in the settings; nothing is assigned by default. While at least one is assigned, Windows calls the app on every press of any key. For a key that is not assigned the app returns at once: it does not read the state of Ctrl, Alt and Shift and remembers nothing. It passes every press on: the game gets it as usual."
+      },
+      {
+        "title": "Online only for UEX data",
+        "text": "Everything is worked out on your computer. The app goes online only for the UEX reference lists and reference prices (api.uexcorp.uk)."
+      },
+      {
+        "title": "Your data stays on your disk",
+        "text": "The settings, your prices and your trips live in one database in your Windows user folder; the five latest backups are kept next to it."
+      }
+    ],
+    "unsigned_title": "The installer is not signed",
+    "unsigned_text": "The file has no digital signature, so Windows may show a SmartScreen warning. Whether to run it is your call: compare the SHA-256 of the file you downloaded with the sum in the “Download” section."
+  },
+  "download": {
+    "label": "Download",
+    "title": "The installer for Windows",
+    "button": "Download SC Trade",
+    "no_installer": "built without the installer",
+    "no_installer_note": "This page was built for a preview: it has no installer.",
+    "version": "Version",
+    "file": "File",
+    "size": "Size",
+    "built": "Page built",
+    "units": { "mb": "MB", "kb": "KB", "b": "bytes" },
+    "requirements_title": "What you need",
+    "requirements": [
+      "Windows 10 or 11, 64-bit.",
+      "WebView2: Windows 11 already has it. If it is missing, the installer downloads it itself.",
+      "The game in borderless window mode.",
+      "It installs for the current user; no administrator rights are needed.",
+      "The installer is in Russian and English; the app's interface is in Russian only."
+    ],
+    "sha_title": "SHA-256 of the file",
+    "sha_missing": "none: built without the installer",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copy_failed": "That did not work: select it and copy by hand",
+    "sums_link": "The SHA256SUMS.txt file",
+    "smartscreen_title": "The Windows warning",
+    "smartscreen": [
+      "The installer is not signed, so Windows may show a SmartScreen window.",
+      "If you trust the file, click “More info”, then “Run anyway”."
+    ],
+    "verify_title": "How to check the sum",
+    "verify_before": "Open PowerShell in the folder with the downloaded file and run:",
+    "verify_after": "The Hash line must match the sum on this page; letter case does not matter.",
+    "latest_only": "This page offers only the latest version.",
+    "update": "Updating: close the app («Выход» in the tray icon's menu) and run the new installer. Your data stays."
+  },
+  "feedback": {
+    "label": "Feedback",
+    "title": "Write to the author",
+    "intro": "Found a bug or have an idea? Write. You can attach screenshots and the app's log file.",
+    "message": "Message",
+    "message_hint": "From 10 to 4000 characters.",
+    "contact": "How to reach you",
+    "contact_hint": "Optional. For example, your Discord or Twitch name.",
+    "shots": "Screenshots",
+    "shots_hint": "Up to 3 PNG, JPEG or WebP files, 5 MB each at most.",
+    "log": "Log file",
+    "log_hint": "One .log or .txt file, 2 MB at most.",
+    "log_where": "Where the log is: in the app, the gear → «Данные» → «Открыть папку логов»; the file is sctrade.log. It holds folder paths with your Windows user name.",
+    "trap": "Leave this field empty",
+    "submit": "Send",
+    "sending": "Sending…",
+    "privacy": "What you typed and attached is sent: the text, the contact, the screenshots and the log file. Only the author sees it.",
+    "privacy_link": "More on the “About data” page",
+    "noscript": "The form needs JavaScript.",
+    "elsewhere": "You can write to the author on Twitch:",
+    "success": "Thank you! The message has been sent.",
+    "again": "Write another",
+    "errors": {
+      "too_short": "The message is too short: at least 10 characters are needed.",
+      "too_long": "Too long: the message takes up to 4000 characters, the contact up to 200.",
+      "too_many_files": "Too many files: up to three screenshots and one log file.",
+      "file_too_big": "The file is too big: a screenshot takes up to 5 MB, the log up to 2 MB.",
+      "bad_file_type": "This file will not do: screenshots are PNG, JPEG or WebP, the log is .log or .txt.",
+      "rate_limited": "Too many messages in a row. Try again later.",
+      "spam": "The message was not accepted: it looks automated. If that is a mistake, write on Twitch.",
+      "server": "Sending failed: the server did not answer or answered with an error. Your text is still in the form — try again later."
+    }
+  },
+  "support": {
+    "label": "Support",
+    "title": "Support the author",
+    "text": "If the app has been useful, you can support its author.",
+    "boosty": "Boosty",
+    "donationalerts": "DonationAlerts",
+    "twitch": "Twitch"
+  },
+  "footer": {
+    "twitch": "The author's Twitch",
+    "disclaimer": "SC Trade is an unofficial tool made by a player. Star Citizen®, Roberts Space Industries® and Cloud Imperium® are trademarks of Cloud Imperium Rights LLC. The project is not affiliated with them and not endorsed by them.",
+    "uex": "Reference prices and the lists of terminals, commodities and ships come from UEX (UEX Corp). Thank you!",
+    "uex_link": "The UEX site",
+    "data_link": "About data",
+    "consent_change": "Change your choice about analytics",
+    "version": "App version",
+    "external": "opens in a new tab"
+  },
+  "consent": {
+    "title": "Analytics",
+    "text": "May the site turn on Google Analytics? It shows the author how many people visit. Analytics is not loaded until you allow it.",
+    "allow": "Allow",
+    "decline": "Decline",
+    "more": "About data"
+  },
+  "data": {
+    "label": "About data",
+    "title": "What the site collects, and what it does not",
+    "lead": "In short: the app sends nothing to this site, and the site keeps only what you send through the form yourself. The address a request comes from stays on the server for a short time: see “What the server sees” below.",
+    "back": "Home",
+    "analytics_title": "Analytics on the site",
+    "analytics_off": [
+      "The site has no analytics. Its pages load no counters and no third-party scripts, and set no cookies."
+    ],
+    "analytics_on": [
+      "The site uses Google Analytics 4 — only after you click “Allow” in the banner. Until then the analytics script is not loaded and its cookies are not set.",
+      "After you agree, Google receives data about the visit: which pages you opened and where you came from, the kind of browser and device, an approximate region from the IP address. To tell visits apart, the analytics sets its own cookies.",
+      "Your choice is kept in your browser. You can change it with the “Change your choice about analytics” link at the bottom of any page. Declining switches nothing off on the site."
+    ],
+    "form_title": "The feedback form",
+    "form": [
+      "Through the form you send what you typed and attached: the text of the message, the contact if you gave one, the pictures and the log file.",
+      "The language of the page, the time the form was shown and a hidden field that a person leaves empty go with them: the time and that field are used to filter out robots.",
+      "The app's log file holds folder paths with your Windows user name, the Windows version, the screen size, terminal identifiers and prices, the names of the keys you assigned, and the number of the window that had the keyboard before the app's window took it. It holds no titles of other windows and no names or numbers of other processes.",
+      "Only the author sees the messages and the files attached to them. They are kept for up to 180 days, or deleted earlier at your request."
+    ],
+    "server_title": "What the server sees",
+    "server": [
+      "As on any site, your IP address and the headers your browser sends reach the server with every request.",
+      "They are not stored with a message.",
+      "The address stays for a short time in two places: in the server's error log, for up to 30 days, and in the limiter that keeps one sender from writing too often, for up to a day."
+    ],
+    "app_title": "The app itself",
+    "app": [
+      "The SC Trade app sends nothing to this site.",
+      "It goes online only for UEX data (api.uexcorp.uk). Everything is worked out on your computer.",
+      "The settings, your prices and your trips stay on your disk: %APPDATA%\\com.sctrade.app. The logs are in %LOCALAPPDATA%\\com.sctrade.app\\logs."
+    ],
+    "contact_title": "Who holds the data, and how to reach him",
+    "holder": "The data is held by the author of the site and the app:",
+    "contact": "Today you can write to him on Twitch:",
+    "no_email": "There is no e-mail address yet."
+  },
+  "notfound": {
+    "code": "404",
+    "title": "Page not found",
+    "text": "The site has no such page.",
+    "home": "Home"
+  }
+}

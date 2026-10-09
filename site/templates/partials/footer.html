@@ -1,0 +1,19 @@
+    <footer class="site-footer">
+      <div class="site-footer__inner">
+        <div class="site-footer__brand">
+          <p class="site-footer__name"><img src="{{asset "assets/icon.svg"}}" width="22" height="22" alt=""> SC Trade</p>
+          <p class="site-footer__copy">© {{site.year}} {{site.author}}</p>
+          <p><a href="{{site.links.twitch}}" target="_blank" rel="noopener noreferrer">{{t.footer.twitch}}<span class="visually-hidden"> ({{t.footer.external}})</span></a></p>
+          <p class="site-footer__version">{{t.footer.version}} {{build.version}}</p>
+        </div>
+        <div class="site-footer__legal">
+          <p>{{t.footer.disclaimer}}</p>
+          <p>{{t.footer.uex}} <a href="{{site.links.uex}}" target="_blank" rel="noopener noreferrer">{{t.footer.uex_link}}<span class="visually-hidden"> ({{t.footer.external}})</span></a></p>
+        </div>
+        <div class="site-footer__links">
+          <a href="{{links.data}}">{{t.footer.data_link}}</a>
+{{#if flags.analytics}}          <button class="link-button" type="button" data-consent-open hidden>{{t.footer.consent_change}}</button>
+{{/if}}{{#each langs}}{{#unless current}}          <a href="{{href}}" hreflang="{{code}}" lang="{{code}}">{{label}}</a>
+{{/unless}}{{/each}}        </div>
+      </div>
+    </footer>

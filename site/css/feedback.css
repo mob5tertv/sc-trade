@@ -1,0 +1,179 @@
+/* ---- the feedback form ----------------------------------------------------------------------------------- */
+
+.feedback {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+  align-items: start;
+  gap: clamp(20px, 3vw, 40px);
+}
+
+.feedback__main {
+  display: grid;
+  gap: 16px;
+}
+
+.feedback__side {
+  padding-left: 14px;
+  border-left: 1px solid var(--frame);
+  color: var(--label);
+}
+
+.form {
+  display: grid;
+  gap: 22px;
+}
+
+/* the field robots fill in and people never see */
+.form__trap {
+  position: absolute;
+  left: -200vw;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field label {
+  color: var(--label);
+  font-size: 0.8125rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.field textarea,
+.field input[type='text'] {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--frame);
+  border-radius: 0;
+  background: var(--glass);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.field textarea {
+  min-height: 9em;
+  resize: vertical;
+}
+
+.field textarea:focus-visible,
+.field input[type='text']:focus-visible {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: 0;
+}
+
+.field [aria-invalid='true'] {
+  border-color: var(--bad);
+}
+
+.field input[type='file'] {
+  max-width: 100%;
+  color: var(--label);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
+.field input[type='file']::file-selector-button {
+  min-height: 36px;
+  margin-right: 14px;
+  padding: 0 16px;
+  border: 1px solid var(--frame);
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.field input[type='file']::file-selector-button:hover {
+  background: var(--surface-2);
+}
+
+.field__hint {
+  color: var(--label);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.form__error {
+  padding: 12px 16px;
+  border-left: 2px solid var(--bad);
+  background: rgb(255 107 107 / 0.09);
+  color: #ffd9d9;
+}
+
+.form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 22px;
+}
+
+.form__progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--label);
+  font-size: 0.9375rem;
+}
+
+.form__progress progress {
+  width: 140px;
+  height: 6px;
+  border: 0;
+  background: var(--surface-2);
+  accent-color: var(--accent);
+}
+
+.form__progress progress::-webkit-progress-bar {
+  background: var(--surface-2);
+}
+
+.form__progress progress::-webkit-progress-value {
+  background: var(--accent);
+}
+
+.form__progress progress::-moz-progress-bar {
+  background: var(--accent);
+}
+
+.form__privacy {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  color: var(--label);
+  font-size: 0.9375rem;
+}
+
+.form__done {
+  display: grid;
+  gap: 16px;
+  --edge: var(--good);
+}
+
+.form__done p:first-child {
+  color: var(--good);
+  font-size: 1.3125rem;
+  font-weight: 600;
+}
+
+@media (max-width: 859.98px) {
+  .feedback {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 479.98px) {
+  .form__actions .button {
+    width: 100%;
+  }
+}

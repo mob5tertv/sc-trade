@@ -1,0 +1,45 @@
+      <section class="hero{{#if video}} hero--video{{/if}}" id="top" aria-labelledby="hero-title">
+        <div class="hero__media" aria-hidden="true">
+          <div class="hero__space"></div>
+          <div class="hero__planet"></div>
+          <div class="hero__grid"></div>
+{{#if video}}          <img class="hero__poster" src="{{video.poster}}" alt="">
+          <video class="hero__video" autoplay muted loop playsinline preload="metadata" poster="{{video.poster}}" data-hero-video>
+            <source src="{{video.webm}}" type="video/webm" media="(min-width: 720px) and (prefers-reduced-motion: no-preference)">
+            <source src="{{video.mp4}}" type="video/mp4" media="(min-width: 720px) and (prefers-reduced-motion: no-preference)">
+          </video>
+          <div class="hero__veil"></div>
+{{/if}}        </div>
+        <div class="hero__inner">
+          <div class="hero__copy">
+            <p class="hero__kicker">{{t.hero.kicker}}</p>
+            <h1 class="hero__title" id="hero-title">{{t.hero.title}}</h1>
+            <p class="hero__lead">{{t.hero.lead}}</p>
+            <div class="hero__cta">
+{{#if installer}}              <a class="button button--primary button--large" href="{{installer.href}}" download>
+                <span class="button__label">{{t.hero.download}} {{build.version}}</span>
+                <span class="button__meta">{{installer.size}}</span>
+              </a>
+{{else}}              <button class="button button--primary button--large" type="button" disabled>
+                <span class="button__label">{{t.hero.download}} {{build.version}}</span>
+                <span class="button__meta">{{t.hero.no_installer}}</span>
+              </button>
+{{/if}}              <p class="hero__platform">{{t.hero.platform}}</p>
+            </div>
+            <p class="hero__disclaimer">{{t.hero.disclaimer}}</p>
+          </div>
+{{#if shots.hero-window}}          <div class="hero__shots">
+            <figure class="hero-shot hero-shot--strip">
+              <img src="{{shots.hero-strip.src}}" width="{{shots.hero-strip.width}}" height="{{shots.hero-strip.height}}" alt="{{shots.hero-strip.alt}}">
+              <figcaption>{{shots.hero-strip.caption}}</figcaption>
+            </figure>
+            <figure class="hero-shot hero-shot--window">
+              <img src="{{shots.hero-window.src}}" width="{{shots.hero-window.width}}" height="{{shots.hero-window.height}}" alt="{{shots.hero-window.alt}}">
+              <figcaption>{{shots.hero-window.caption}}</figcaption>
+            </figure>
+          </div>
+{{/if}}        </div>
+        <ul class="hero__facts">
+{{#each t.hero.facts}}          <li>{{this}}</li>
+{{/each}}        </ul>
+      </section>

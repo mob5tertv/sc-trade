@@ -1,0 +1,19 @@
+      <section class="section" id="safety" aria-labelledby="safety-title">
+        <div class="section__inner">
+          <header class="section__head">
+            <p class="section__label">{{t.safety.label}}</p>
+            <h2 class="section__title" id="safety-title">{{t.safety.title}}</h2>
+            <p class="section__intro">{{t.safety.intro}}</p>
+          </header>
+          <dl class="facts">
+{{#each t.safety.items}}            <div class="fact">
+              <dt><span class="fact__index" aria-hidden="true">{{@nn}}</span>{{title}}</dt>
+              <dd>{{text}}</dd>
+            </div>
+{{/each}}          </dl>
+          <aside class="note note--warn" aria-labelledby="unsigned-title">
+            <h3 class="note__title" id="unsigned-title">{{t.safety.unsigned_title}}</h3>
+            <p>{{t.safety.unsigned_text}}</p>
+          </aside>
+        </div>
+      </section>

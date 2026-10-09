@@ -1,0 +1,28 @@
+      <section class="section" id="features" aria-labelledby="features-title">
+        <div class="section__inner">
+          <header class="section__head">
+            <p class="section__label">{{t.features.label}}</p>
+            <h2 class="section__title" id="features-title">{{t.features.title}}</h2>
+            <p class="section__intro">{{t.features.intro}}</p>
+          </header>
+          <div class="features">
+{{#each features}}            <article class="feature-row{{#unless shot}} feature-row--plain{{/unless}}">
+              <div class="feature-row__text">
+                <h3 class="feature-row__name"><span class="feature-row__index">{{@nn}}</span>{{name}}</h3>
+                <dl class="feature-list">
+{{#each items}}                  <div class="feature">
+                    <dt>{{title}}</dt>
+                    <dd>{{text}}</dd>
+                  </div>
+{{/each}}                </dl>
+              </div>
+{{#if shot}}              <figure class="stage stage--{{shot.name}}">
+                <div class="stage__screen">
+                  <img src="{{shot.src}}" width="{{shot.width}}" height="{{shot.height}}" alt="{{shot.alt}}" loading="lazy">
+                </div>
+                <figcaption>{{shot.caption}}</figcaption>
+              </figure>
+{{/if}}            </article>
+{{/each}}          </div>
+        </div>
+      </section>

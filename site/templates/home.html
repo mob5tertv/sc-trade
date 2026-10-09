@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="{{lang}}">
+  <head>
+{{> head}}  </head>
+  <body>
+{{> header}}
+    <main id="main">
+{{> hero}}
+{{> features}}
+{{#if flags.pictures}}{{> gallery}}
+{{/if}}{{> safety}}
+{{> download}}
+{{> feedback}}
+{{> support}}
+    </main>
+{{> footer}}  </body>
+</html>

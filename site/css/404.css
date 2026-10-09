@@ -1,0 +1,66 @@
+/* The 404 page is served at any address, so it carries its own few styles (the server allows them by their hash). */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  display: grid;
+  min-height: 100vh;
+  margin: 0;
+  place-items: center;
+  background: #050c12;
+  color: #d6eef5;
+  font: 17px/1.6 'Bahnschrift SemiCondensed', Bahnschrift, 'Segoe UI', system-ui, sans-serif;
+}
+
+main {
+  max-width: 560px;
+  padding: 40px 16px;
+}
+
+.code {
+  margin: 0;
+  color: #3fd0f0;
+  font-size: 0.875rem;
+  letter-spacing: 0.24em;
+}
+
+h1 {
+  margin: 14px 0 28px;
+  font-size: clamp(2rem, 8vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1.06;
+  text-transform: uppercase;
+}
+
+h1 span {
+  display: block;
+}
+
+h1 span + span {
+  color: #8fb7c4;
+}
+
+p {
+  margin: 0 0 10px;
+}
+
+a {
+  color: #3fd0f0;
+  text-underline-offset: 0.2em;
+}
+
+a:focus-visible {
+  outline: 2px solid #3fd0f0;
+  outline-offset: 3px;
+}
+
+.name {
+  margin-top: 40px;
+  padding-top: 16px;
+  border-top: 1px solid #1d4654;
+  color: #8fb7c4;
+  font-size: 0.8125rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}

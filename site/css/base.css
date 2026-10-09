@@ -1,0 +1,582 @@
+/*
+ * The look of the site: the theme of the application itself (src/ui/theme.css) — cold dark glass, hairlines, the cut
+ * top-left and bottom-right corners, one cyan accent, the narrow technical face that comes with Windows. Nothing is
+ * downloaded: no fonts, no pictures from elsewhere.
+ */
+:root {
+  color-scheme: dark;
+
+  --bg: #050c12; /* the page: a little deeper than the glass of the window */
+  --glass: #07121b;
+  --surface: #0b1c27;
+  --surface-2: #0f2733;
+  --line: #1d4654; /* hairlines */
+  --frame: #2b8fa8; /* frames of what can be pressed */
+  --text: #d6eef5;
+  --label: #8fb7c4; /* small caps, secondary text */
+  --accent: #3fd0f0;
+  --accent-hi: #8be4f7;
+  --ink: #03131b; /* text on the accent */
+  --good: #3ee08f;
+  --warn: #ffb347;
+  --bad: #ff6b6b;
+
+  --cut: 14px;
+  --font: 'Bahnschrift SemiCondensed', Bahnschrift, 'Segoe UI', system-ui, sans-serif;
+  --mono: Consolas, 'Cascadia Mono', 'Lucida Console', ui-monospace, monospace;
+
+  --page: 1200px;
+  --gutter: clamp(16px, 4vw, 48px);
+  --header-h: 60px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-padding-top: calc(var(--header-h) + 16px);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.6 var(--font);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: break-word;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+dl,
+dd,
+figure,
+pre {
+  margin: 0;
+}
+
+ul,
+ol {
+  padding: 0;
+}
+
+img,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+img {
+  height: auto;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+}
+
+a:hover {
+  color: var(--accent-hi);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--frame);
+  color: var(--text);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.skip:focus {
+  transform: none;
+}
+
+/* ---- the header -------------------------------------------------------------------------------------- */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  border-bottom: 1px solid var(--line);
+  background: rgb(5 12 18 / 0.94);
+}
+
+.site-header__inner {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  max-width: calc(var(--page) + 120px + 2 * var(--gutter));
+  height: var(--header-h);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.brand {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 1.0625rem;
+  letter-spacing: 0.14em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.brand:hover {
+  color: var(--text);
+}
+
+.site-nav {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  gap: clamp(14px, 2vw, 28px);
+}
+
+.site-nav a {
+  padding: 6px 0;
+  color: var(--label);
+  font-size: 0.8125rem;
+  letter-spacing: 0.12em;
+  text-decoration: none;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.site-nav a:hover {
+  color: var(--text);
+  box-shadow: 0 1px 0 var(--accent);
+}
+
+/* the switch of the language: two cells, like a switch of the application */
+.lang {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--line);
+}
+
+.lang__item {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  color: var(--label);
+  font-size: 0.8125rem;
+  letter-spacing: 0.1em;
+  text-decoration: none;
+}
+
+.lang__item + .lang__item {
+  border-left: 1px solid var(--line);
+}
+
+a.lang__item:hover {
+  color: var(--text);
+}
+
+.lang__item.is-current {
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+/* the menu of a narrow screen works without a script: a checkbox opens the list. On a wide screen there is no
+   folded menu, and the checkbox is not there at all: a keyboard must not stop at something that cannot be seen. */
+.menu-toggle {
+  display: none;
+}
+
+.menu-button {
+  display: none;
+}
+
+@media (max-width: 1019.98px) {
+  .site-header__inner {
+    gap: 12px;
+  }
+
+  .menu-toggle {
+    display: block;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+
+  .menu-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 36px;
+    margin-left: auto;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    color: var(--label);
+    font-size: 0.8125rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .menu-button__bars {
+    width: 14px;
+    height: 10px;
+    border-block: 1px solid currentColor;
+    background: linear-gradient(currentColor, currentColor) center / 100% 1px no-repeat;
+  }
+
+  .menu-toggle:focus-visible + .menu-button {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .menu-toggle:checked + .menu-button {
+    border-color: var(--frame);
+    background: var(--surface-2);
+    color: var(--accent);
+  }
+
+  .site-nav {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    display: none;
+    flex-direction: column;
+    gap: 0;
+    padding: 4px var(--gutter) 12px;
+    border-bottom: 1px solid var(--frame);
+    background: var(--glass);
+  }
+
+  .menu-toggle:checked ~ .site-nav {
+    display: flex;
+  }
+
+  .site-nav a {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.875rem;
+  }
+
+  .site-nav a:last-child {
+    border-bottom: 0;
+  }
+
+  .site-nav a:hover {
+    box-shadow: none;
+  }
+}
+
+/* the narrowest phones: the three bars alone say "menu" (the checkbox still carries the word for a screen reader) */
+@media (max-width: 359.98px) {
+  .brand {
+    letter-spacing: 0.08em;
+  }
+
+  .menu-button__text {
+    display: none;
+  }
+}
+
+/* ---- sections ---------------------------------------------------------------------------------------- */
+
+main {
+  counter-reset: section;
+}
+
+.section {
+  padding: clamp(64px, 9vw, 128px) 0;
+  counter-increment: section;
+}
+
+.section--band {
+  border-block: 1px solid var(--line);
+  background: var(--glass);
+}
+
+.section__inner {
+  max-width: calc(var(--page) + 2 * var(--gutter));
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.section__head {
+  max-width: 760px;
+  margin-bottom: clamp(32px, 5vw, 64px);
+}
+
+/* small caps with spacing, as the titles of sections in the window */
+.section__label {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  color: var(--label);
+  font-size: 0.8125rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.section .section__label::before {
+  content: counter(section, decimal-leading-zero);
+  color: var(--accent);
+}
+
+.section__label::after {
+  content: '';
+  flex: 0 1 64px;
+  height: 1px;
+  background: var(--frame);
+}
+
+.section__title {
+  font-size: clamp(2rem, 4.4vw, 3.5rem);
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.section__intro {
+  margin-top: 18px;
+  color: var(--label);
+  font-size: 1.1875rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* ---- buttons ----------------------------------------------------------------------------------------- */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6em;
+  min-height: 44px;
+  padding: 0 22px;
+  border: 1px solid var(--frame);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--surface-2);
+  color: var(--accent-hi);
+}
+
+.button--ghost {
+  background: transparent;
+}
+
+/* the main button: the accent itself, with the two cut corners of the window */
+.button--primary {
+  --c: 12px;
+  border: 0;
+  background: var(--accent);
+  color: var(--ink);
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+}
+
+.button--primary:hover {
+  background: var(--accent-hi);
+  color: var(--ink);
+}
+
+/* the cut would cut an outline too: the ring is drawn inside */
+.button--primary:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 3px var(--ink);
+}
+
+.button--primary:disabled {
+  background: var(--surface-2);
+  color: var(--label);
+  cursor: default;
+}
+
+.button--large {
+  flex-direction: column;
+  gap: 2px;
+  min-height: 68px;
+  padding: 10px 38px;
+  font-size: 1.125rem;
+}
+
+.button__meta {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+}
+
+.button--icon {
+  width: 44px;
+  padding: 0;
+  font-size: 1.125rem;
+  letter-spacing: 0;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--accent-hi);
+}
+
+/* ---- a plate: the frame of the window, one hairline all the way round, the two corners cut -------------- */
+
+.panel {
+  --c: var(--cut);
+  --edge: var(--line);
+  padding: clamp(20px, 3vw, 36px);
+  border: 1px solid var(--edge);
+  background:
+    linear-gradient(135deg, transparent 50%, var(--edge) 50%, var(--edge) calc(50% + 1px), transparent calc(50% + 1px)) top left / var(--c) var(--c)
+      no-repeat border-box,
+    linear-gradient(135deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%) bottom right / var(--c) var(--c)
+      no-repeat border-box,
+    var(--bg) border-box;
+  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+}
+
+.note {
+  padding: 16px 20px;
+  border-left: 2px solid var(--frame);
+  background: var(--surface);
+}
+
+.note--warn {
+  border-left-color: var(--warn);
+}
+
+.note__title {
+  margin-bottom: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.note--warn .note__title {
+  color: var(--warn);
+}
+
+.note p + p {
+  margin-top: 6px;
+}
+
+/* ---- the footer -------------------------------------------------------------------------------------- */
+
+.site-footer {
+  border-top: 1px solid var(--line);
+  background: #03080c;
+  color: var(--label);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.site-footer__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 6fr) minmax(0, 2fr);
+  gap: clamp(24px, 4vw, 64px);
+  max-width: calc(var(--page) + 2 * var(--gutter));
+  margin: 0 auto;
+  padding: clamp(40px, 6vw, 72px) var(--gutter);
+}
+
+.site-footer p + p {
+  margin-top: 10px;
+}
+
+.site-footer__name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.site-footer__copy {
+  color: var(--text);
+}
+
+.site-footer__links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+@media (max-width: 859.98px) {
+  .site-footer__inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

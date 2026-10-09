@@ -1,0 +1,53 @@
+      <section class="section section--band" id="download" aria-labelledby="download-title">
+        <div class="section__inner">
+          <header class="section__head">
+            <p class="section__label">{{t.download.label}}</p>
+            <h2 class="section__title" id="download-title">{{t.download.title}}</h2>
+          </header>
+          <div class="download">
+            <div class="panel download__main">
+{{#if installer}}              <a class="button button--primary button--large" href="{{installer.href}}" download>
+                <span class="button__label">{{t.download.button}} {{build.version}}</span>
+                <span class="button__meta">{{installer.size}}</span>
+              </a>
+{{else}}              <button class="button button--primary button--large" type="button" disabled>
+                <span class="button__label">{{t.download.button}} {{build.version}}</span>
+                <span class="button__meta">{{t.download.no_installer}}</span>
+              </button>
+              <p class="download__absent">{{t.download.no_installer_note}}</p>
+{{/if}}              <dl class="specs">
+                <div><dt>{{t.download.version}}</dt><dd>{{build.version}}</dd></div>
+{{#if installer}}                <div><dt>{{t.download.file}}</dt><dd>{{installer.fileName}}</dd></div>
+                <div><dt>{{t.download.size}}</dt><dd>{{installer.size}}</dd></div>
+{{/if}}                <div><dt>{{t.download.built}}</dt><dd><time datetime="{{build.date.iso}}">{{build.date.text}}</time></dd></div>
+              </dl>
+              <h3 class="download__subtitle">{{t.download.requirements_title}}</h3>
+              <ul class="ticks">
+{{#each t.download.requirements}}                <li>{{this}}</li>
+{{/each}}              </ul>
+              <p class="download__small">{{t.download.latest_only}} {{t.download.update}}</p>
+            </div>
+            <div class="download__side">
+              <div class="panel download__sum">
+                <h3 class="download__subtitle">{{t.download.sha_title}}</h3>
+{{#if installer}}                <p class="sum" data-copy-source>{{#each installer.shaGroups}}<span>{{this}}</span>{{/each}}</p>
+                <p class="sum__actions">
+                  <button class="button button--ghost" type="button" data-copy="{{installer.sha256}}" data-copied="{{t.download.copied}}" data-copy-failed="{{t.download.copy_failed}}" hidden>{{t.download.copy}}</button>
+                  <a href="{{installer.sums}}">{{t.download.sums_link}}</a>
+                </p>
+                <p class="sum__status" data-copy-status role="status"></p>
+{{else}}                <p class="sum sum--missing">{{t.download.sha_missing}}</p>
+{{/if}}                <h3 class="download__subtitle">{{t.download.verify_title}}</h3>
+                <p>{{t.download.verify_before}}</p>
+{{#if installer}}                <pre class="code"><code>{{installer.verify}}</code></pre>
+{{else}}                <pre class="code"><code>Get-FileHash .\SC-Trade-{{build.version}}-setup.exe</code></pre>
+{{/if}}                <p>{{t.download.verify_after}}</p>
+              </div>
+              <aside class="note note--warn" aria-labelledby="smartscreen-title">
+                <h3 class="note__title" id="smartscreen-title">{{t.download.smartscreen_title}}</h3>
+{{#each t.download.smartscreen}}                <p>{{this}}</p>
+{{/each}}              </aside>
+            </div>
+          </div>
+        </div>
+      </section>
