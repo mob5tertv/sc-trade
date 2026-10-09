@@ -38,6 +38,15 @@ export interface RunOutlook {
 const approx = (text: string): string => `≈ ${text}`;
 
 /**
+ * The expected profit of a run as the screens write it, the one place that does: '≈ 74 880' on the card of the run; the mini line asks for
+ * the sign of a gain too ('≈ +74 880': it stands among other numbers of the line). A loss carries the minus of its number, a zero none.
+ */
+export function expectedProfitText(profit: number, signed = false): string {
+  const text = formatUec(profit);
+  return approx(signed && Math.round(profit) > 0 ? `+${text}` : text);
+}
+
+/**
  * Expected profit = what is sold so far + what is aboard at the price the TARGET is expected to pay − what is put in
  * (`expectedRun`, which the mini line asks too). It needs a target and a price there for EVERYTHING aboard: a sum over
  * part of the hold is not the result of the run. With the hold empty nothing is left to price, and the result is the one
@@ -55,7 +64,7 @@ export function runOutlook(active: RunWithEvents, m: Market, ref: Reference, s: 
   return {
     ...facts,
     expected: {
-      profit: approx(formatUec(result.profit)),
+      profit: expectedProfitText(result.profit),
       profitLoss: result.profit < 0,
       roi: invested > 0 ? approx(formatRoi(result.profit / invested)) : NONE,
       rate: result.rate === null ? NONE : approx(formatCompact(result.rate)),

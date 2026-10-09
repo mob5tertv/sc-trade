@@ -46,8 +46,14 @@
 <Frame name="no-target" caption="a run with no target chosen" width="content">
   <StripView model={data.strip.noTarget} flash={null} onOpen={open} onArrive={open} />
 </Frame>
-<Frame name="cargo-one" caption="one commodity: its quantity with SCU and what it was bought for (seven digits)" width="content">
+<Frame name="cargo-single" caption="one commodity at an ordinary price: what it was bought for, then what it is expected to sell for, then the profit expected and the rate" width="content">
+  <StripView model={data.strip.cargo.single} flash={null} onOpen={open} onDepart={open} />
+</Frame>
+<Frame name="cargo-one" caption="one commodity: its quantity with SCU, what it was bought for (seven digits) and what it is expected to sell for, the profit and the rate (nine digits: a loss, the widest numbers)" width="content">
   <StripView model={data.strip.cargo.one} flash={null} onOpen={open} onDepart={open} />
+</Frame>
+<Frame name="cargo-one-far" caption="the widest line of one commodity: the same with the longest name of a target (Seraphim Station): only the cargo may be cut" width="content">
+  <StripView model={{ ...data.strip.cargo.one, target: 'Seraphim Station' }} flash={null} onOpen={open} onDepart={open} />
 </Frame>
 <Frame name="cargo-two" caption="two commodities: no SCU, each with what it was bought for (seven digits)" width="content">
   <StripView model={data.strip.cargo.two} flash={null} onOpen={open} onDepart={open} />

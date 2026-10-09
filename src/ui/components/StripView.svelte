@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { StripModel } from '../vm/strip';
+  import { outlookText, stripTitle, type StripModel } from '../vm/strip';
 
   interface Props {
     model: StripModel;
@@ -16,19 +16,11 @@
 
   const showMarks = $derived(flash === null && model.kind === 'run' && (onDepart !== undefined || onArrive !== undefined));
 
-  // the line shows 'ждём 6 900', the tooltip the range as well ('ждём 6 900 (6 400–7 100)')
-  const expect = $derived(model.kind === 'run' ? model.expectShort : null);
+  // the profit the run is expected to bring and the rate after it: '≈ +66 720 · 337k/ч'
+  const outlook = $derived(outlookText(model));
 
   // Everything the strip knows, for the tooltip: the line cuts a long cargo.
-  const full = $derived(
-    flash ??
-      (model.kind === 'idle'
-        ? [model.target === null ? model.location : `${model.location} → ${model.target}`, model.session?.line].filter(Boolean).join(' · ')
-        : [
-          `${model.phaseLabel} ${model.phaseTimer}`, `всего ${model.timer}`, model.cargo,
-          model.target === null ? 'цель не выбрана' : `→ ${model.target}`, model.expect, model.rate,
-        ].filter(Boolean).join(' · ')),
-  );
+  const full = $derived(flash ?? stripTitle(model));
 </script>
 
 <div class="strip">
@@ -43,10 +35,9 @@
       {/if}
     {:else}
       <span class="part timer" title="Всего: {model.timer}"><span class="phase">{model.phaseLabel}</span>{model.phaseTimer}</span>
-      <span class="part cargo" title={model.cargoTitle || undefined}>{model.cargo}</span>
+      <span class="part cargo" title={model.cargoTitle || undefined}>{model.cargoLine}</span>
       <span class="part" class:muted={model.target === null}>{model.target === null ? 'цель не выбрана' : `→ ${model.target}`}</span>
-      {#if expect}<span class="part">{expect}</span>{/if}
-      {#if model.rate}<span class="part rate">{model.rate}</span>{/if}
+      {#if outlook}<span class="part rate" class:loss={model.profitLoss}>{outlook}</span>{/if}
     {/if}
   </button>
   {#if showMarks}
@@ -59,8 +50,10 @@
 
 <style>
   /* one line, as wide as what it says, and never wider than 660 px: a long cargo is cut, nothing else is. The cargo says what each commodity was bought for
-     ('MEDS 120 по 2 115'); measured in the gallery (task 42), the line takes 568 px with two commodities, 623 with five-digit prices and a long name of the target,
-     640 with six-digit prices, and 658 with three commodities; the glass and the frame belong to the window around it (`.sc-frame`), so that the glass is painted once */
+     ('MEDS 120 по 2 115') and, for one commodity, what it is expected to sell for ('…, ждём 2 351'); after the target stands the profit expected with the rate
+     ('≈ +66 720 · 273k/ч'). Measured in the gallery (task 49, the frame included): 533 px with one commodity at an ordinary price, 607 with a seven-digit price and
+     nine-digit numbers of the profit, 654 with the longest name of a target (nothing is cut), 631 with two commodities, and 662 (660 and the frame) with three: there the
+     cargo is cut; the glass and the frame belong to the window around it (`.sc-frame`), so that the glass is painted once */
   .strip {
     display: flex;
     align-items: stretch;
@@ -148,6 +141,11 @@
 
   .rate {
     color: var(--sc-good);
+  }
+
+  /* the run is expected to lose */
+  .rate.loss {
+    color: var(--sc-bad);
   }
 
   /* what the session that is going has earned: the colour of a profit, of a loss, or none for an even one */

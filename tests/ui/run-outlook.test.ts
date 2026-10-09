@@ -31,7 +31,7 @@ describe('runOutlook, nothing sold yet', () => {
   it('gives the very rate the mini line gives (they share the arithmetic)', () => {
     const strip = stripModel(active, market, ref, toTarget2, ctx);
     if (strip.kind !== 'run') throw new Error('a run was expected');
-    expect(`${o.expected?.rate}/ч`).toBe(strip.rate);
+    expect(`${o.expected?.rate.replace('≈ ', '')}/ч`).toBe(strip.rate);   // the line puts the '≈' before the profit
   });
 });
 
@@ -103,7 +103,7 @@ describe('runOutlook, the time of the run', () => {
     const strip = stripModel(partly, market, ref, toTarget2, ctx);
     if (strip.kind !== 'run') throw new Error('a run was expected');
     expect(runOutlook(partly, market, ref, toTarget2, ctx).expected?.rate).toBe('≈ 251k');   // 70 880 per 1015 s
-    expect(strip.rate).toBe('≈ 251k/ч');
+    expect(strip.rate).toBe('251k/ч');   // the card says '≈ 251k', the line puts its '≈' before the profit
   });
 });
 
