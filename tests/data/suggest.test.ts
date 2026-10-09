@@ -540,6 +540,26 @@ describe("suggestFromDetailed, distances 'fetch'", () => {
     expect(await suggestFromDetailed(d, 1, 696, undefined, cached)).toEqual(fetched);
   });
 
+  it('spends the 20 candidates on the options that are shown first: a known stock before an unknown one, each group by ROI', async () => {
+    // 27 trips from terminal 1 (a stock of 340 that I know) and 27 from terminal 5 (the same planet: "and nearby"; Gold at 3000, and nobody knows how
+    // much of it there is). The trips from 5 pay far more by ROI, but they stand after the known ones, so the distances of the known ones come first.
+    const reference = { ...ref, terminals: new Map(ref.terminals) };
+    for (let id = 101; id <= 125; id++) {
+      reference.terminals.set(id, term(id, { starSystemId: 68 }));
+      await addUexSell(db, id, GOLD, 7000 + id);
+    }
+    await addUexBuy(db, 5, GOLD, 3000);
+    uex.failRoutes = true;
+    const fetched = await suggestFromDetailed(withNearby({ ...deps, reference }), 1, 696);
+    expect(uex.distanceCalls).toHaveLength(20);
+    expect(uex.distanceCalls.some(([a, b]) => a === 5 || b === 5)).toBe(false);          // no trip from the unknown stock is measured, nor the empty leg to it
+    const measured = uex.distanceCalls.map(([a, b]) => (a === 1 ? b : a)).sort((a, b) => a - b);
+    expect(measured).toEqual(Array.from({ length: 20 }, (_, i) => 106 + i));            // the 20 best of the known ones by ROI: 106–125
+    // what is shown has its time: the options on the screen are the ones whose distances were asked
+    expect(fetched.options.map((o) => o.originId)).toEqual([1, 1, 1, 1, 1]);
+    expect(fetched.options.every((o) => o.timeSec !== null)).toBe(true);
+  });
+
   it('logs the mode and what is missing after the requests', async () => {
     uex.routes = [{ destId: 2, gm: 59 }];
     uex.failDistances = () => true;
@@ -661,20 +681,21 @@ describe('suggestFromDetailed progress across terminals', () => {
   it('stays sound and ends complete when a request of an earlier terminal fails and a later one still runs', async () => {
     await addUexBuy(db, 5, GOLD, 6000);
     uex.failRoutes = true;                                   // pairs only
-    uex.failDistances = (a) => a === 5;                      // the pairs asked of terminal 5 (the first group) fail
+    // the pairs asked of terminal 1 fail: it is the FIRST group (its stock is known, so its trips are asked before those of terminal 5)
+    uex.failDistances = (a) => a === 1;
     const { points, onProgress } = recordProgress();
     const r = await suggestFromDetailed(withNearby(deps), 1, 696, undefined, { onProgress });
-    // terminal 5: the route list and two pairs planned (3), terminal 1: the route list and three pairs (4);
-    // the first pair of 5 fails, so its second pair is dropped; terminal 1 goes on with all of its own
+    // terminal 1: the route list and three pairs planned (4: 1-2, 1-3 and the empty leg 1-5), terminal 5: the route list and two pairs (3);
+    // the first pair of 1 fails, so its other two are dropped; terminal 5 goes on with all of its own
     expect(points).toEqual([
-      { done: 0, total: 7 }, { done: 1, total: 7 }, { done: 2, total: 6 },
-      { done: 3, total: 6 }, { done: 4, total: 6 }, { done: 5, total: 6 }, { done: 6, total: 6 },
+      { done: 0, total: 7 }, { done: 1, total: 7 }, { done: 2, total: 5 },
+      { done: 3, total: 5 }, { done: 4, total: 5 }, { done: 5, total: 5 },
     ]);
     expectSoundProgress(points);
-    expect(uex.routeCalls).toEqual([5, 1]);
-    expect(uex.distanceCalls).toEqual([[5, 2], [1, 5], [1, 2], [1, 3]]);
+    expect(uex.routeCalls).toEqual([1, 5]);
+    expect(uex.distanceCalls).toEqual([[1, 2], [5, 2], [5, 3]]);
     expect(uex.maxInFlight).toBe(1);
-    expect(r.missing).toBe(2);                               // 5-2 and 5-3 are still unknown
+    expect(r.missing).toBe(3);                               // 1-2, 1-3 and 1-5 are still unknown
   });
 });
 
