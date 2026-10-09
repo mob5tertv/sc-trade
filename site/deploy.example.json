@@ -1,0 +1,6 @@
+{
+  "host": "server.example",
+  "user": "deploy",
+  "path": "/var/www/sc-trade.space",
+  "port": 22
+}
