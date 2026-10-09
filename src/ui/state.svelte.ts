@@ -51,7 +51,7 @@ import { createLatestRequest } from './vm/latest-request';
 import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './vm/lookup';
 import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
-import { assignsMarkKey, keysHint, withKeysHint } from './vm/keys-hint';
+import { assignsMarkKey, carryOutKeysHint, keysHintStep, withKeysHint } from './vm/keys-hint';
 import { closedRunNotice, stayTimes, type ClosedRunNotice } from './vm/run-closed';
 import { quitQuestion } from './vm/quit';
 import { markRefusal } from './vm/run-phase';
@@ -1484,7 +1484,7 @@ class AppState {
    * cleared, the run that cannot be read) lands on top of it and is never covered by it. It carries three numbers to read, so it
    * stays no less than eight seconds where it is said (`stayTimes`); in the mini line an income keeps the usual three, because the
    * run that goes on has its mark buttons there and they are not drawn while a message is up. Once, after the first run that is closed with no
-   * key for "Взлетел" and "Прилетел", the notice line goes on with a hint about those keys (`#sayKeysHint`).
+   * key for "Взлетел" and "Прилетел", the notice line goes on with a hint about those keys (`keysHintStep`, `#showKeysHint`).
    */
   async #announceClosed(closed: RunWithEvents): Promise<void> {
     try {
@@ -1492,7 +1492,8 @@ class AppState {
       this.#log.info('ui', 'run closed', { runId: closed.run.id, status: closed.run.status });
       this.#say(notice.text, notice.kind, stayTimes(notice, FLASH_MS, NOTICE_MS));
       // the hint has a button to press: it is for the notice line of the expanded window, not for the mini line that lets a message go in three seconds
-      if (this.mode === 'expanded' && keysHint(notice, this.settings) !== null) await this.#sayKeysHint(notice);
+      const step = keysHintStep(notice, this.settings, this.mode === 'expanded');
+      await carryOutKeysHint(step, { show: () => this.#showKeysHint(notice), remember: () => this.#rememberKeysHint() });
     } catch (err) {
       // the trade IS written: a notice that cannot be made must not turn it into a failure
       this.#log.error('ui', 'cannot say that the run is closed', { runId: closed.run.id, err });
@@ -1500,16 +1501,30 @@ class AppState {
   }
 
   /**
-   * The notice of the closed run goes on with the hint about the keys of the two marks and a button that opens them. The flag `keysHintShown` is
-   * written FIRST: a hint on the screen is a hint that was shown, and it never comes again. A write that fails says so itself (the player
-   * reads that, not the hint), and the hint waits for the next closed run. The notice is replaced only while it is still the one of the run: a
-   * message that came after it (an error of a later step) stays on top.
+   * The notice of the closed run goes on with the hint about the keys of the two marks and a button that opens them. It replaces the notice
+   * only while that is still the one of the run in the expanded window (a message that came after it, an error of a later step, stays on top),
+   * and says whether the hint is on the screen: only then the flag is written (`carryOutKeysHint`).
    */
-  async #sayKeysHint(notice: ClosedRunNotice): Promise<void> {
-    if ((await this.updateSetting('keysHintShown', true)) !== null) return;
-    if (this.notice?.text !== notice.text) return;
+  #showKeysHint(notice: ClosedRunNotice): boolean {
+    if (this.mode !== 'expanded' || this.notice?.text !== notice.text) return false;
     this.#log.info('ui', 'keys hint shown');
     this.notify(withKeysHint(notice.text), notice.kind, KEYS_HINT_MS, { label: 'Настроить', run: () => void this.openKeysSettings() });
+    return true;
+  }
+
+  /**
+   * Writes the flag `keysHintShown`: the hint was shown, or the keys are there, and it never comes (again). Quiet: a write that fails is one line
+   * in the log and nothing on the screen (it must not cover the result of the run with an error of the settings); the hint may then come once more.
+   * Never rejects.
+   */
+  async #rememberKeysHint(): Promise<void> {
+    if (this.settings.keysHintShown) return;
+    try {
+      await saveSetting(this.#syncDeps().db, this.#log, 'keysHintShown', true);
+      this.settings = { ...this.settings, keysHintShown: true };
+    } catch (err) {
+      this.#log.warn('ui', 'cannot remember that the hint about the keys is dealt with', { err });
+    }
   }
 
   /** The button "Настроить" of the hint about the keys: the settings open with the group "Клавиши" unfolded, and the hint has done its work. */
@@ -1738,8 +1753,8 @@ class AppState {
     }
     this.settings = { ...this.settings, [key]: value };
     await this.#applySetting(key);
-    // a key given to "Взлетел" or "Прилетел" means the player knows the keys: the hint after the first closed run is never needed
-    if (assignsMarkKey(key, value) && !this.settings.keysHintShown) await this.updateSetting('keysHintShown', true);
+    // a key given to "Взлетел" or "Прилетел" means the player knows the keys: the hint after the first closed run is never needed (written quietly)
+    if (assignsMarkKey(key, value)) await this.#rememberKeysHint();
     return null;
   }
 

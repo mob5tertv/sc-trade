@@ -80,6 +80,30 @@ export const TRADER_SCENES: readonly Scene[] = [
     },
   },
   {
+    // the flag of the hint cannot be written: the hint is on the screen all the same (it is shown BEFORE it is remembered), nothing says a word of
+    // the settings, and the flag stays false (`__keysHint()`: flag false, the notice with its button), so the hint may come once more
+    name: 'keys-hint-save-fails',
+    title: 'Подсказка про клавиши: флаг не записывается, подсказка всё равно на экране, ошибки настроек нет',
+    dataset: 'run',
+    act: async (app) => {
+      watchKeysHint(app);
+      (globalThis as { __previewSettingWriteFails?: string[] }).__previewSettingWriteFails = ['keysHintShown'];
+      await sellOut(app);
+    },
+  },
+  {
+    // a lost cargo is a result in the colour of an error: no hint and no flag, it waits for the next closed run
+    name: 'keys-hint-lost-cargo',
+    title: 'Груз потерян: итог ошибкой, подсказки про клавиши нет и флаг не пишется',
+    dataset: 'run',
+    act: async (app) => {
+      watchKeysHint(app);
+      await app.expand('preview');
+      await app.loseCargo();
+      await pause(200);
+    },
+  },
+  {
     // a key for the take-off is assigned before: the player knows the keys, the notice is the result of the run alone, and the flag is set
     name: 'keys-hint-key-assigned',
     title: 'Клавиша «Взлетел» назначена раньше: после закрытого рейса подсказки нет и больше не будет',
