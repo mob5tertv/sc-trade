@@ -1,5 +1,3 @@
-import { RANGE_HEAD_TITLE } from './terminal-rows';
-
 // The tooltips of the words that the README explains in «Обозначения» (version 1.1.1): «Худший», «Время» of an option, «скорость выучена» /
 // «скорость запасная», «Мин–макс», every «≈» and every «UEC/ч». The player does not open the README in a flight, so the screen says the same, in
 // one or two short sentences. The texts live HERE and nowhere else: the components take them from `LEGEND` (a second copy would drift from the
@@ -32,6 +30,13 @@ export const LEGEND_WORDS: Readonly<Record<LegendTerm, string>> = {
   rateSessions: 'UEC/ч (сессии)',
 };
 
+/**
+ * Which period the two numbers of «Мин–макс» are of: the estimate takes the bounds of the week, and only when the week has no price those of the month,
+ * then of all time (`priceRange` of the core). `terminal-rows.ts` keeps it as `RANGE_HEAD_TITLE`; it stands here, and not there, so that this module imports nothing
+ * (`terminal-rows.ts` takes the tooltip of the estimate «≈» from it).
+ */
+export const RANGE_PERIOD = 'Минимум и максимум цены по данным UEX за неделю; если за неделю цены нет — за месяц, потом за всё время';
+
 /** What the tooltip of each place says: the sense of the README, shortened to one or two sentences. */
 export const LEGEND: Readonly<Record<LegendTerm, string>> = {
   worst: 'Прибыль при худших ценах диапазона: закупка по верхней границе диапазона, продажа по нижней. У твоей цены диапазона нет — берётся она сама.',
@@ -41,7 +46,7 @@ export const LEGEND: Readonly<Record<LegendTerm, string>> = {
     + 'По ней считается оценка «≈».',
   rateDefault: 'Замеров скорости пополнения по этой паре нет, взята запасная: максимум запаса, делённый на «Полное пополнение склада, мин» из настроек. '
     + 'По ней считается оценка «≈».',
-  range: `${RANGE_HEAD_TITLE}. «= 5 500» — цена за период не менялась.`,
+  range: `${RANGE_PERIOD}. «= 5 500» — цена за период не менялась.`,
   approxScu: '≈ — оценка запаса по таймеру пополнения: сколько там, по расчёту, сейчас. «было …» в раскрытой строке говорит, от какого твоего замера считалось.',
   approxRun: '≈ — ожидаемый результат идущего рейса (прибыль, ROI, UEC/ч): так будет, если груз продастся в точке цели по ожидаемым ценам.',
   approxStrip: '≈ — ожидаемые прибыль и UEC в час идущего рейса: так будет, если груз продастся в точке цели по ожидаемым ценам.',
@@ -52,6 +57,14 @@ export const LEGEND: Readonly<Record<LegendTerm, string>> = {
   rateRoutes: 'UEC/ч по завершённым рейсам: прибыль, делённая на время рейсов.',
   rateSessions: 'UEC/ч сессии — заработок сессии: прибыль, делённая на всё время сессии от первой записи до последней, простои между записями входят.',
 };
+
+/**
+ * The tooltip of a value of the card of a run, by what it says: a number that carries «≈» gets the legend of it; a dash has no «≈» to explain, so it has
+ * only its own reason (`dashReason`: why the card cannot say, or nothing).
+ */
+export function approxTitle(value: string, legend: string, dashReason?: string): string | undefined {
+  return value.startsWith('≈') ? legend : dashReason;
+}
 
 /** A tooltip that says the legend and, on a line of its own under it, what is true of this very place ('по твоим рейсам · пустой перелёт 4:10'). */
 export function legendTitle(legend: string, detail?: string | null): string {

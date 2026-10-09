@@ -51,7 +51,7 @@ import { createLatestRequest } from './vm/latest-request';
 import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './vm/lookup';
 import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
-import { assignsMarkKey, carryOutKeysHint, KEYS_HINT_STAY_MS, keysHintStep, withKeysHint } from './vm/keys-hint';
+import { assignsMarkKey, carryOutKeysHint, hintLeavesOnAssign, KEYS_HINT_STAY_MS, keysHintStep, withKeysHint } from './vm/keys-hint';
 import { closedRunNotice, stayTimes, type ClosedRunNotice } from './vm/run-closed';
 import { quitQuestion } from './vm/quit';
 import { markRefusal } from './vm/run-phase';
@@ -1259,7 +1259,7 @@ class AppState {
     this.#askedInRun = null;
     if (askingWhere) {
       const cargoAboard = cargoOf(this.activeRun?.events ?? []).length > 0;
-      await this.#followTarget(landingView(id, cargoAboard, this.settings.currentTerminalId));
+      await this.#followTarget(landingView(id, cargoAboard, this.settings.currentTerminalId), 'pick after "where did I land": the view follows the choice');
       return;
     }
     this.#showTerminal(id);
@@ -1641,11 +1641,11 @@ class AppState {
    * market were read again, so the rows are those of the arrival. The target stays: the run is not over. The terminal picked as the
    * answer to "Где прилетел?" is carried out the same way (`pickTerminal`).
    */
-  async #followTarget(view: ArrivalView): Promise<void> {
+  async #followTarget(view: ArrivalView, say = 'arrival: the view follows the target'): Promise<void> {
     if (view.show === null) return;
     if (view.preferSide !== null) this.terminalSide = view.preferSide;
     this.#showTerminal(view.show);
-    this.#log.info('ui', 'arrival: the view follows the target', { terminalId: view.show, side: this.terminalSide });
+    this.#log.info('ui', say, { terminalId: view.show, side: this.terminalSide });
     if (view.locateAt !== null) await this.#setLocation(view.locateAt);
   }
 
@@ -1841,6 +1841,7 @@ class AppState {
     this.settings = { ...this.settings, [key]: value };
     await this.#applySetting(key);
     // a key given to "Взлетел" or "Прилетел" means the player knows the keys: the hint after the first closed run is never needed (written quietly)
+    if (hintLeavesOnAssign(key, value, this.notice)) this.dismissNotice(); // the hint on the screen has done its work
     if (assignsMarkKey(key, value)) await this.#rememberKeysHint();
     // «Авто» chosen in the settings may make the window larger right now; a scale the player picks himself is remembered quietly (no word on it, ever)
     if (key === 'uiScale') await this.#announceScale();

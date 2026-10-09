@@ -55,7 +55,7 @@ describe('tradeDefaults, buying', () => {
     expect(buyIn({ cell: cell({ hint: 0.3, ownScu: 50 }), budget: 1000 })).toEqual({ scu: 50, price: null, priceIsOwn: false, stockUnknown: false });
   });
   it('does not guess a quantity when nothing limits it, or when nothing can be carried', () => {
-    expect(buyIn({ capacity: 0, cell: cell({ own: 6120 }) })).toEqual({ scu: null, price: 6120, priceIsOwn: true, stockUnknown: true });       // no ship, no stock
+    expect(buyIn({ capacity: 0, cell: cell({ own: 6120 }) })).toEqual({ scu: null, price: 6120, priceIsOwn: true, stockUnknown: false });      // no ship, no stock: nothing is offered, so nothing is said of it
     expect(buyIn({ capacity: 0 })).toMatchObject({ scu: 340 });                                          // no ship: the stock
     expect(buyIn({ cargo: [gold(696)] })).toMatchObject({ scu: null });                                  // the hold is full
     expect(buyIn({ cell: cell({ own: 6120, ownScu: 0 }) })).toMatchObject({ scu: null });                // a known empty stock
@@ -70,6 +70,14 @@ describe('tradeDefaults, buying: the stock at the seller is unknown (version 1.1
     expect(buyIn({ cell: cell({ own: 6120 }) })).toMatchObject({ scu: 696, stockUnknown: true });         // the whole hold, silently, until now
     expect(buyIn({ cell: cell({ own: 6120 }), budget: 1_000_000 })).toMatchObject({ scu: 163, stockUnknown: true });
     expect(buyIn({ cell: cell({ hint: 6000 }) })).toMatchObject({ stockUnknown: true });
+  });
+
+  it('says it only when a quantity was actually offered: with no ship chosen or a full hold the quantity is empty, and "по трюму и бюджету" beside nothing would be untrue', () => {
+    const none = cell({ own: 6120 });
+    expect(buyIn({ cell: none, capacity: 0 })).toEqual({ scu: null, price: 6120, priceIsOwn: true, stockUnknown: false });   // no ship: nothing limits it, nothing is offered
+    expect(buyIn({ cell: none, cargo: [gold(696)] })).toMatchObject({ scu: null, stockUnknown: false });                      // the hold is full
+    expect(buyIn({ cell: none, cargo: [gold(695)] })).toMatchObject({ scu: 1, stockUnknown: true });                          // one SCU is still offered
+    expect(buyIn({ cell: none, budget: 10 })).toMatchObject({ scu: null, stockUnknown: false });                              // the budget buys nothing
   });
 
   it('says nothing when a stock is known: my reading, my estimate of the refill timer, a quantity of UEX, and a known zero', () => {

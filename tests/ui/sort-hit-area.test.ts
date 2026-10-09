@@ -37,6 +37,12 @@ describe('the area of press of the sorting headers of the table of a terminal', 
     expect(table).toMatch(/\.sort::after\s*\{[^}]*top:\s*0[^}]*height:\s*var\(--hit-h\)/);
   });
 
+  it('reaches only downward, and no further than the 24 px asked for: nothing above the head can be pressed (the table stands at the top of the scrolling body, which clips what is above it)', () => {
+    const button = px('--head-h') - 1; // the head is 18 px high with a 1 px border: the button is 17
+    expect(table).not.toMatch(/\.sort::after\s*\{[^}]*top:\s*-/);
+    expect(px('--hit-h') - button).toBeLessThanOrEqual(7);
+  });
+
   it('lets the head stand over the rows, so that the extension below the head is pressed as the head and not as the row under it', () => {
     expect(table).toMatch(/\.head\s*\{[^}]*z-index:\s*1/);
   });

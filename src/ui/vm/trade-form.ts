@@ -2,7 +2,7 @@ import { quantity } from '../../core/routes';
 import { cargoOf } from '../../core/run';
 import type { CargoLine, RunWithEvents, Side } from '../../core/types';
 import { priceIsOwn } from './inputs';
-import { shownPrice } from './terminal-rows';
+import { cellStock, isStockUnknown, shownPrice } from './terminal-rows';
 import type { Cell } from './terminal-rows';
 
 // What the trade form under a table row starts with, and what it writes (`tradeMode`: a purchase, a sale of the cargo, or
@@ -15,9 +15,9 @@ export interface TradeDefaults {
   /** The price is mine (a price I saw, not cold). `false`: it is the one of UEX, or mine gone cold, that the row shows; the form marks it until it is touched. */
   priceIsOwn: boolean;
   /**
-   * A purchase whose quantity rests on no stock: nobody knows how much the seller has (neither a reading of mine nor a quantity of UEX), so what
-   * is offered is the hold and the budget alone and the real stock may be smaller. The form says so (`STOCK_UNKNOWN_NOTE`). Always `false` for
-   * a sale: what the buyer already holds limits nothing.
+   * A purchase whose OFFERED quantity rests on no stock: nobody knows how much the seller has (neither a reading of mine nor a quantity of UEX,
+   * `isStockUnknown`), so what is offered is the hold and the budget alone and the real stock may be smaller. The form says so (`STOCK_UNKNOWN_NOTE`).
+   * `false` when no quantity is offered (`scu` is `null`) and always for a sale: what the buyer already holds limits nothing.
    */
   stockUnknown: boolean;
 }
@@ -48,16 +48,16 @@ export function tradeDefaults(i: DefaultsInput): TradeDefaults {
     return { scu: onBoard > 0 ? onBoard : null, price, priceIsOwn: own, stockUnknown: false };
   }
   const held = i.cargo.reduce((sum, line) => sum + line.scu, 0);
-  // the one stock of the row: the number of the column «SCU» (`cellScu`), and the volume of an option of the list rests on the same one (`stockKnown`:
-  // a number there, a known zero included, is known); only `null` is unknown
-  const stockScu = i.cell.ownScu ?? i.cell.hintScu;
+  // the one stock of the row (`cellStock`): the number of the column «SCU», and the volume of an option of the list rests on the same one (`stockKnown`)
   const offered = quantity({
     freeScu: i.capacity > 0 ? i.capacity - held : Number.POSITIVE_INFINITY,
-    stockScu,
+    stockScu: cellStock(i.cell),
     budget: i.budget,
     buyPrice: price ?? 0,
   });
-  return { scu: Number.isFinite(offered) && offered > 0 ? offered : null, price, priceIsOwn: own, stockUnknown: stockScu === null };
+  const scu = Number.isFinite(offered) && offered > 0 ? offered : null;
+  // said only of a quantity that was offered: with no ship chosen, a full hold or a budget that buys nothing the quantity is empty, and "по трюму и бюджету" beside nothing is untrue
+  return { scu, price, priceIsOwn: own, stockUnknown: scu !== null && isStockUnknown(i.cell) };
 }
 
 /** The line under the form of a purchase whose stock is unknown, next to the «?» by the quantity (the words of the same note of an option of the list). */

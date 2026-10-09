@@ -401,7 +401,7 @@
                 {#if cell.badge}<TempBadge compact text={cell.badge.text} kind={cell.badge.kind} />{:else}<span class="nomark"></span>{/if}
               </span>
               <span class="range sc-num" data-range={span.kind} title={span.title}>{span.text}</span>
-              <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu === null ? unknownScuTitle(side) : scu.estimated ? LEGEND.approxScu : scu.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
+              <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu === null ? unknownScuTitle(side) : scu.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
             </button>
             {#if best}
               <button
@@ -433,7 +433,7 @@
     --col-scu: 44px;
     --col-roi: 32px;
     --col-gap: 4px;
-    /* the head is 18 px high; the area of press of its sorting buttons is no smaller than 28 × 24 (a transparent extension, see `.sort`) */
+    /* the head is 18 px high; the area of press of its sorting buttons is no smaller than 28 × 24 (a transparent extension below the button, see `.sort`) */
     --head-h: 18px;
     --hit-w: 28px;
     --hit-h: 24px;
@@ -475,7 +475,7 @@
 
   /* The negative margin takes back the letter-spacing that follows the last letter, so that the label ends where the numbers do.
      The area of press is no smaller than 28 × 24 px (`--hit-w`, `--hit-h`) though the label is 17 × 17: the width from `min-width` (the label stays at
-     the right edge, and 28 is within the column of 32, so no column changes), the height from a transparent `::after` that reaches below the head. */
+     the right edge, and 28 is within the column of 32, so no column changes), the height from a transparent `::after` that reaches below the head (nothing can be above it: the table stands at the top of the scrolling body, which clips what is above). */
   .sort {
     position: relative;
     display: inline-flex;

@@ -57,3 +57,16 @@ export function withKeysHint(text: string): string {
 export function assignsMarkKey(key: keyof Settings, value: unknown): boolean {
   return (key === 'hotkeyDepart' || key === 'hotkeyArrive') && typeof value === 'string' && value.trim() !== '';
 }
+
+/** The notice on the screen is the hint about the keys: it is the result of the run with the sentence of the hint at its end (`withKeysHint`). */
+export function isKeysHint(notice: { text: string } | null): boolean {
+  return notice !== null && notice.text.endsWith(KEYS_HINT);
+}
+
+/**
+ * The hint stays on the screen until it is closed (`KEYS_HINT_STAY_MS`), but it has done its work when the player assigns a key of «Взлетел» or «Прилетел»
+ * by hand: it goes at once. Only when the notice on the screen IS the hint (another message is not this change's to take away).
+ */
+export function hintLeavesOnAssign(key: keyof Settings, value: unknown, notice: { text: string } | null): boolean {
+  return assignsMarkKey(key, value) && isKeysHint(notice);
+}

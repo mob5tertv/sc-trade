@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { LEGEND, LEGEND_WORDS, legendTitle, type LegendTerm } from '../../src/ui/vm/legend';
+import { approxTitle, LEGEND, LEGEND_WORDS, legendTitle, type LegendTerm } from '../../src/ui/vm/legend';
 import { RANGE_HEAD_TITLE } from '../../src/ui/vm/terminal-rows';
 
 // The words of the screen that the README explains in «Обозначения» say the same in their tooltips (version 1.1.1): the player does not open the README
@@ -71,6 +71,19 @@ describe('the legend: the words of the screen and what their tooltips say', () =
   });
 });
 
+describe('approxTitle: the legend of «≈» hangs only on a value that carries «≈»', () => {
+  it('is the legend for a number with «≈»: the profit, the ROI and the rate of a run that goes on', () => {
+    expect(approxTitle('≈ 74 880', LEGEND.approxRun)).toBe(LEGEND.approxRun);
+    expect(approxTitle('≈ 13%', LEGEND.approxRun, 'выбери цель')).toBe(LEGEND.approxRun);
+    expect(approxTitle('≈ 266k', LEGEND.approxRun)).toBe(LEGEND.approxRun);
+  });
+
+  it('is no «≈» tooltip on a dash: only the reason of the dash, when the card has one, else nothing', () => {
+    expect(approxTitle('—', LEGEND.approxRun)).toBeUndefined();
+    expect(approxTitle('—', LEGEND.approxRun, 'выбери цель')).toBe('выбери цель');
+  });
+});
+
 describe('legendTitle: the legend and, under it, what is true of this very place', () => {
   it('is the legend alone when the place has nothing to add', () => {
     expect(legendTitle(LEGEND.time)).toBe(LEGEND.time);
@@ -91,7 +104,7 @@ describe('the components hang the legend on the words, and keep no text of their
     rateLearned: ['src/ui/components/TerminalTable.svelte'],
     rateDefault: ['src/ui/components/TerminalTable.svelte'],
     range: ['src/ui/components/RouteList.svelte', 'src/ui/components/TerminalTable.svelte'],
-    approxScu: ['src/ui/components/TerminalTable.svelte'],
+    approxScu: ['src/ui/components/TerminalTable.svelte', 'src/ui/vm/terminal-rows.ts'],
     approxRun: ['src/ui/components/RunCard.svelte'],
     approxStrip: ['src/ui/components/StripView.svelte'],
     approxOptions: ['src/ui/sections/OptionsSection.svelte'],
@@ -109,10 +122,18 @@ describe('the components hang the legend on the words, and keep no text of their
     }
   });
 
+  it('the card of a run hangs «≈» on a value by what it says, never on a dash: the three values go through `approxTitle`', () => {
+    const card = source('src/ui/components/RunCard.svelte');
+    expect((card.match(/approxTitle\(/g) ?? []).length).toBe(3);
+    expect(card).not.toMatch(/\?\s*dashTitle\s*:\s*LEGEND\.approxRun/);
+  });
+
   it('the old tooltips of those words are gone (a second text would drift from the README again)', () => {
     expect(source('src/ui/components/RouteList.svelte')).not.toContain('Прибыль при худшем исходе цен');
     expect(source('src/ui/components/TerminalTable.svelte')).not.toContain('Скорость пополнения выучена по твоим замерам');
     expect(source('src/ui/components/TerminalTable.svelte')).not.toContain('Оценка по таймеру пополнения: сколько там сейчас');
+    expect(source('src/ui/vm/terminal-rows.ts')).not.toContain('Оценка по таймеру пополнения: сколько там сейчас');
+    expect(source('src/ui/vm/terminal-rows.ts')).not.toContain('Минимум и максимум цены по данным UEX');
     expect(source('src/ui/components/TerminalTable.svelte')).not.toMatch(/\bRANGE_HEAD_TITLE\b/);
     expect(source('src/ui/components/RouteList.svelte')).not.toMatch(/\bRANGE_HEAD_TITLE\b/);
   });

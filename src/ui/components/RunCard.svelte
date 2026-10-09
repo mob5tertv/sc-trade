@@ -1,6 +1,6 @@
 <script lang="ts">
   import { formatUec } from '../../core/format';
-  import { LEGEND } from '../vm/legend';
+  import { approxTitle, LEGEND } from '../vm/legend';
   import type { PhaseLine } from '../vm/run-phase';
   import type { RunOutlook } from '../vm/run-outlook';
 
@@ -72,15 +72,15 @@
     <div><dt class="sc-label" title="Всё, что уже продано">Выручка</dt><dd class="sc-num">{outlook.revenue}</dd></div>
     <div>
       <dt class="sc-label" title="Ожидаемая прибыль всего рейса: уже проданное плюс то, что в трюме, по ожидаемой цене в точке цели, минус вложенное">Прибыль</dt>
-      <dd class="sc-num" class:loss={expected?.profitLoss} title={expected === null ? dashTitle : LEGEND.approxRun}>{expected?.profit ?? NONE}</dd>
+      <dd class="sc-num" class:loss={expected?.profitLoss} title={approxTitle(expected?.profit ?? NONE, LEGEND.approxRun, dashTitle)}>{expected?.profit ?? NONE}</dd>
     </div>
     <div>
       <dt class="sc-label" title="Ожидаемое отношение прибыли ко вложенному">ROI</dt>
-      <dd class="sc-num" title={expected === null ? dashTitle : LEGEND.approxRun}>{expected?.roi ?? NONE}</dd>
+      <dd class="sc-num" title={approxTitle(expected?.roi ?? NONE, LEGEND.approxRun, dashTitle)}>{expected?.roi ?? NONE}</dd>
     </div>
     <div>
       <dt class="sc-label" title={LEGEND.rateRun}>UEC/ч</dt>
-      <dd class="sc-num" title={expected === null ? dashTitle : LEGEND.approxRun}>{expected?.rate ?? NONE}</dd>
+      <dd class="sc-num" title={approxTitle(expected?.rate ?? NONE, LEGEND.approxRun, dashTitle)}>{expected?.rate ?? NONE}</dd>
     </div>
   </dl>
 </section>

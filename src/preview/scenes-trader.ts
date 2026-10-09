@@ -203,6 +203,25 @@ export const TRADER_SCENES: readonly Scene[] = [
     },
   },
   {
+    // the hint is on the screen, «Настроить» is not pressed, and the player assigns a key of «Взлетел» by hand in the settings: the hint has done its work and goes at once
+    // (the scene fails when it does not); the same by a real press: `--do "hover:#set-hotkeyDepart;click:#set-hotkeyDepart;press:F9;wait:300;eval:window.__keysHint()"`
+    name: 'keys-hint-assigned-after',
+    title: 'Подсказка про клавиши на экране, клавиша «Взлетел» назначена вручную в настройках: подсказка уходит сразу',
+    dataset: 'run',
+    act: async (app) => {
+      watchKeysHint(app);
+      await sellOut(app);
+      if (app.notice?.action?.label !== 'Настроить') throw new Error('the scene wants the hint about the keys on the screen, and it is not');
+      app.openSettings();
+      await app.toggleSection('settings:keys');
+      await pause(100);
+      if (app.notice?.action?.label !== 'Настроить') throw new Error('the hint went away before a key was assigned');
+      await app.updateSetting('hotkeyDepart', 'F9');
+      await pause(100);
+      if (app.notice !== null) throw new Error(`a key was assigned and the notice is still there: ${app.notice.text}`);
+    },
+  },
+  {
     // the hint was shown once already (the flag): the run that closes now says its result and nothing else
     name: 'keys-hint-shown-before',
     title: 'Подсказка про клавиши уже была показана: рейс закрывается без неё',
