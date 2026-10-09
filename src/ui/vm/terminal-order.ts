@@ -82,11 +82,27 @@ export function orderRows<T extends { commodityId: number }>(rows: readonly T[],
     .map(({ row }) => row);
 }
 
+/** What holds the places of the rows: the cursor stands in a field of the table, and/or a row of it is open. */
+export interface PlaceHolders { fieldFocused: boolean; rowOpen: boolean }
+
 /**
- * The order to show while a field of the table has the focus. A row that is moved in the page takes the focus out of the field it
- * holds (without a blur), and the player is typing into it: so while `frozen` the places of the rows are those of `previousIds` (the
- * order that was on screen when the focus came in), and only the values in the rows are new. A row that has appeared since stands
- * after them, in the sorted order; a row that has gone is gone. Not `frozen`, it is the sorted order as it is. Returns a new list.
+ * The places that are held now (`held`: the commodity ids in the order that was on screen when the holding began; `null`: nothing is held),
+ * once what holds them has changed. While the cursor is in a field of the table or a row is open (version 1.1.1: the row that was opened
+ * does not run away to its place when the sale changes the order) the places are held, and the order taken when the holding began stays
+ * whatever else holds next; when neither does, nothing is held and the sort has its way. `shownIds` is the order on screen now, taken
+ * only when the holding begins (a copy is taken). Returns `held` itself while it holds, a new list when the holding begins, else `null`.
+ */
+export function heldPlaces(held: number[] | null, shownIds: readonly number[], holders: PlaceHolders): number[] | null {
+  if (!holders.fieldFocused && !holders.rowOpen) return null;
+  return held ?? [...shownIds];
+}
+
+/**
+ * The order to show while the places are held (`heldPlaces`: a field of the table has the cursor, or a row is open). A row that is moved in
+ * the page takes the focus out of the field it holds (without a blur), and the player is typing into it, and a row that is open and moves
+ * is lost from the eye: so while `frozen` the places of the rows are those of `previousIds` (the order that was on screen when the holding
+ * began), and only the values in the rows are new. A row that has appeared since stands after them, in the sorted order; a row that has
+ * gone is gone. Not `frozen`, it is the sorted order as it is. Returns a new list.
  */
 export function holdOrder<T extends { commodityId: number }>(previousIds: readonly number[], sorted: readonly T[], frozen: boolean): T[] {
   if (!frozen) return [...sorted];

@@ -5,7 +5,7 @@
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
   import type { CellFinish, EditBase } from '../vm/inputs';
   import type { RoiCell } from '../vm/row-roi';
-  import { DEFAULT_TERMINAL_SORT, holdMark, holdOf, holdOrder, orderRows, terminalAriaSort } from '../vm/terminal-order';
+  import { DEFAULT_TERMINAL_SORT, heldPlaces, holdMark, holdOf, holdOrder, orderRows, terminalAriaSort } from '../vm/terminal-order';
   import type { TerminalSort, TerminalSortKey } from '../vm/terminal-order';
   import { RANGE_HEAD_TITLE, cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
@@ -189,9 +189,10 @@
     side, sort, cargo, percentOf: commodityId => roi.get(commodityId)?.percent ?? null,
   }));
 
-  // While a field of the table has the focus the places of the rows stay as they were when it came in: a row that is moved in the page
-  // takes the focus out of its field without a blur, and the player is typing into it (the keyboard would go back to the game under
-  // his hands). The new values still show in their rows. Leaving the field gives the sort its way.
+  // While a field of the table has the focus, or a row of it is open, the places of the rows stay as they were when that began: a row that
+  // is moved in the page takes the focus out of its field without a blur, and the player is typing into it (the keyboard would go back to
+  // the game under his hands), and an open row that a sale sends to its place in the order runs away with the form from under his eyes.
+  // The new values still show in their rows. When nothing holds them any more (the cursor is out and no row is open) the sort has its way.
   let frozenIds = $state.raw<number[] | null>(null);
   let table = $state<HTMLElement | null>();
   const shown = $derived(holdOrder(frozenIds ?? [], sorted, frozenIds !== null));
@@ -199,27 +200,30 @@
   const isField = (el: unknown): el is HTMLElement =>
     el instanceof HTMLElement && el.matches('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
 
+  /** What holds the places now: whether the cursor is in a field of the table (`fieldFocused`) and whether a row is open. */
+  function holdPlaces(fieldFocused: boolean): void {
+    frozenIds = heldPlaces(frozenIds, shown.map(row => row.commodityId), { fieldFocused, rowOpen: selectedCommodityId !== null });
+  }
+
   function onFieldFocus(event: FocusEvent): void {
-    if (frozenIds === null && isField(event.target)) frozenIds = shown.map(row => row.commodityId);
+    if (isField(event.target)) holdPlaces(true);
   }
 
   // From one field of the table to another (the two inputs of a cell, the trade form under the row) is not leaving.
   function onFieldBlur(event: FocusEvent): void {
     const next = event.relatedTarget;
     if (next instanceof HTMLElement && event.currentTarget instanceof HTMLElement && event.currentTarget.contains(next) && isField(next)) return;
-    frozenIds = null;
+    holdPlaces(false);
   }
 
-  // A field that is taken out of the page (its row folded, the form closed, the other side shown) gives no blur: look when what
-  // holds the focus can have changed.
+  // A field that is taken out of the page (its row folded, the form closed, the other side shown) gives no blur, and a row is opened or
+  // folded by a click that is no field: look when what holds the places can have changed.
   $effect(() => {
     void selectedCommodityId;
     void tradeFor;
     void side;
     void scope;
-    untrack(() => {
-      if (frozenIds !== null && !(table?.contains(document.activeElement) && isField(document.activeElement))) frozenIds = null;
-    });
+    untrack(() => holdPlaces(!!table?.contains(document.activeElement) && isField(document.activeElement)));
   });
 
   const roiTitle = $derived(`${noCapacity ? NO_CAPACITY_HINT : 'Лучший ROI для этого товара'}\nНажми, чтобы отсортировать по ROI`);

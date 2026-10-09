@@ -162,6 +162,25 @@ export const TRADER_SCENES: readonly Scene[] = [
     },
   },
   {
+    // ARC-L1, the sell side, the hold has MEDS and STIM (the cargo stands first): the row of MEDS is opened, then MEDS is sold out. Its row stays the first
+    // one, open (the order is held while a row is open); `--do "click:.row.selected .line;wait:200"` folds it, and then the rows go to their places
+    name: 'open-row-keeps-place',
+    title: 'Продать: раскрытая строка проданного товара остаётся на месте; свёрнута — строки встают по порядку',
+    dataset: 'run',
+    act: async (app) => {
+      await app.expand('preview');
+      app.setViewTerminal(ARC_L1);
+      app.setTerminalSide('sell');
+      await pause(150);
+      const line = [...document.querySelectorAll<HTMLElement>('.table button.line')].find((el) => (el.textContent ?? '').includes('MEDS'));
+      if (line === undefined) throw new Error('the scene wants the row of MEDS on the sell side, and there is none');
+      line.click();
+      await pause(150);
+      await app.sell({ terminalId: ARC_L1, commodityId: MEDS, scu: 120, price: 2540, knownScu: 90 });
+      await pause(300);
+    },
+  },
+  {
     // HUR-L1 is the current location; `--do "click:header input;type:arc;press:Enter;eval:window.__where()"` makes ARC-L1 the viewed one AND the current one
     name: 'pick-no-run',
     title: 'Локация: без рейса Enter в поле делает выбранный терминал и просматриваемым, и текущей локацией',
