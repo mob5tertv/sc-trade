@@ -54,6 +54,7 @@
         "uninstallerIcon": "icons/icon.ico",
         "headerImage": "installer/header.bmp",
         "sidebarImage": "installer/sidebar.bmp",
+        "installerHooks": "installer/hooks.nsh",
         "languages": ["Russian", "English"]
       }
     },
