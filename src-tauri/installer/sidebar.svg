@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="164" height="314" viewBox="0 0 164 314">
+  <!-- The side of the welcome and finish pages of the installer: NSIS draws it at 164 x 314. -->
+  <!-- Rebuild sidebar.bmp with `npm run installer:images`; the colours are the theme of the app (src/ui/theme.css). -->
+  <!-- Glass, a surface in it with the two cut corners of the window of the app, the mark, the name, a line under it. -->
+  <rect width="164" height="314" fill="#07121b"/>
+  <polygon points="20.5,6.5 157.5,6.5 157.5,293.5 143.5,307.5 6.5,307.5 6.5,20.5" fill="#0b1c27" stroke="#2b8fa8" stroke-width="1"/>
+
+  <!-- The mark of the app (src-tauri/icons/source.svg, 1024 x 1024), 96 px. -->
+  <g transform="translate(34 28) scale(0.09375)">
+    <polygon points="288,48 976,48 976,736 736,976 48,976 48,288" fill="#2b8fa8"/>
+    <polygon points="318,120 904,120 904,706 706,904 120,904 120,318" fill="#07121b"/>
+    <polygon points="335,347 480,677 190,677" fill="#3fd0f0"/>
+    <polygon points="544,347 834,347 689,677" fill="#2b8fa8"/>
+  </g>
+
+  <g font-family="'Bahnschrift SemiCondensed', Bahnschrift, 'Segoe UI', sans-serif" text-anchor="middle">
+    <text x="82" y="158" font-size="27" font-weight="700" letter-spacing="2.5"><tspan fill="#3fd0f0">SC</tspan><tspan fill="#d6eef5"> TRADE</tspan></text>
+    <text x="82" y="195" font-size="12.5" fill="#82a8b6">дневник цен и</text>
+    <text x="82" y="210" font-size="12.5" fill="#82a8b6">торговые маршруты</text>
+  </g>
+
+  <!-- A hairline under the name, the accent at its start. -->
+  <line x1="26" y1="172.5" x2="138" y2="172.5" stroke="#1d4654" stroke-width="1"/>
+  <line x1="26" y1="172.5" x2="54" y2="172.5" stroke="#3fd0f0" stroke-width="1"/>
+
+  <!-- A price on its way: three hairlines of a grid, the line of the price, the last point in the accent. -->
+  <g stroke="#1d4654" stroke-width="1">
+    <line x1="18" y1="244.5" x2="146" y2="244.5"/>
+    <line x1="18" y1="264.5" x2="146" y2="264.5"/>
+    <line x1="18" y1="284.5" x2="146" y2="284.5"/>
+  </g>
+  <polyline points="20,278 36,272 50,279 66,263 80,268 96,254 110,262 124,256 142,248" fill="none" stroke="#2b8fa8" stroke-width="1.5" stroke-linejoin="miter"/>
+  <circle cx="142" cy="248" r="3" fill="#3fd0f0"/>
+</svg>
