@@ -240,6 +240,40 @@ export const TRADER_SCENES: readonly Scene[] = [
     },
   },
   {
+    // HUR-L1, the buy side, the row of MEDS (the lowest ROI) is open; a click on «ROI» in the head sorts although the places are held: the rows stand by ROI, best first, the
+    // open row stays open and stands where that order puts it (last); the second click turns the order round. The scene checks the order of the rows on the page and fails
+    // (the scene starts with an error) when it is not so. `--do "click:.table .head .sort:last-of-type"` clicks again.
+    name: 'open-row-sort',
+    title: 'Строка раскрыта, клик по «ROI» в заголовке: строки встают по ROI, раскрытая остаётся раскрытой и стоит на новом месте',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      const clickHead = async (label: string): Promise<void> => {
+        const head = [...document.querySelectorAll<HTMLElement>('.table .head .sort')].find((el) => (el.textContent ?? '').includes(label));
+        if (head === undefined) throw new Error(`the scene wants the header "${label}", and there is none`);
+        head.click();
+        await pause(150);
+      };
+      const codes = (): string[] => [...document.querySelectorAll('.table .row .code')].map((el) => el.textContent ?? '');
+      const percents = (): number[] => [...document.querySelectorAll('.table .row .roi')].map((el) => Number((el.textContent ?? '').replace('%', ''))).filter(Number.isFinite);
+      const ordered = (values: number[], dir: 'desc' | 'asc'): boolean => values.every((v, i) => i === 0 || (dir === 'desc' ? values[i - 1] >= v : values[i - 1] <= v));
+      const medsRow = [...document.querySelectorAll<HTMLElement>('.table button.line')].find((el) => (el.textContent ?? '').includes('MEDS'));
+      if (medsRow === undefined) throw new Error('the scene wants the row of MEDS on the buy side, and there is none');
+      medsRow.click();
+      await pause(150);
+      const before = codes();
+      await clickHead('ROI');
+      const best = percents();
+      if (best.length < 3 || !ordered(best, 'desc')) throw new Error(`a click on ROI with a row open did not sort the rows, best first: ${best.join(', ')}`);
+      if (JSON.stringify(codes()) === JSON.stringify(before)) throw new Error('the rows stand as before the click on ROI');
+      const open = document.querySelector('.table .row.selected .code')?.textContent;
+      if (open !== 'MEDS') throw new Error(`the open row is not the one that was opened: ${String(open)}`);
+      await clickHead('ROI');
+      const worst = percents();
+      if (!ordered(worst, 'asc')) throw new Error(`the second click on ROI did not turn the order round: ${worst.join(', ')}`);
+    },
+  },
+  {
     // ARC-L1, the sell side, the hold has MEDS and STIM (the cargo stands first): the row of MEDS is opened, then MEDS is sold out. Its row stays the first
     // one, open (the order is held while a row is open); `--do "click:.row.selected .line;wait:200"` folds it, and then the rows go to their places
     name: 'open-row-keeps-place',

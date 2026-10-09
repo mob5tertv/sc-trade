@@ -5,7 +5,7 @@
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
   import type { CellFinish, EditBase } from '../vm/inputs';
   import type { RoiCell } from '../vm/row-roi';
-  import { DEFAULT_TERMINAL_SORT, heldPlaces, holdMark, holdOf, holdOrder, orderRows, terminalAriaSort } from '../vm/terminal-order';
+  import { DEFAULT_TERMINAL_SORT, heldPlaces, holdMark, holdOf, holdOrder, orderRows, resortedPlaces, terminalAriaSort } from '../vm/terminal-order';
   import type { TerminalSort, TerminalSortKey } from '../vm/terminal-order';
   import { LEGEND } from '../vm/legend';
   import { cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
@@ -225,6 +225,22 @@
     void side;
     void scope;
     untrack(() => holdPlaces(!!table?.contains(document.activeElement) && isField(document.activeElement)));
+  });
+
+  // A click on «Товар» or «ROI» is the player's own request for a new order: the held places are not allowed to swallow it. With a row open (or the cursor
+  // in a field) the places are taken again from the freshly sorted rows, the open row stays open and stands where the new order puts it, and from then on
+  // the order is held as before (`resortedPlaces`). The first run is the start, not a request.
+  let lastSort: string | null = null;
+  $effect(() => {
+    const now = `${sort.key}:${sort.dir}`;
+    untrack(() => {
+      if (lastSort !== null && now !== lastSort) {
+        frozenIds = resortedPlaces(sorted.map(row => row.commodityId), {
+          fieldFocused: !!table?.contains(document.activeElement) && isField(document.activeElement), rowOpen: selectedCommodityId !== null,
+        });
+      }
+      lastSort = now;
+    });
   });
 
   const roiTitle = $derived(`${noCapacity ? NO_CAPACITY_HINT : 'Лучший ROI для этого товара'}\nНажми, чтобы отсортировать по ROI`);

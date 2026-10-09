@@ -98,6 +98,16 @@ export function heldPlaces(held: number[] | null, shownIds: readonly number[], h
 }
 
 /**
+ * A click on a sort header is the player's own request for a new order, and a held order must not swallow it: with something holding the
+ * places (a row is open, a cursor is in a field) the places are taken AGAIN, from the freshly sorted rows (`sortedIds`), and from then on they
+ * are held as before (`heldPlaces`: a sale that changes the order afterwards does not move the rows). The open row stays open and stands where
+ * the new order puts it. With nothing holding the places there is nothing to take: `null`, and the sort simply shows. Returns a new list or `null`.
+ */
+export function resortedPlaces(sortedIds: readonly number[], holders: PlaceHolders): number[] | null {
+  return holders.fieldFocused || holders.rowOpen ? [...sortedIds] : null;
+}
+
+/**
  * The order to show while the places are held (`heldPlaces`: a field of the table has the cursor, or a row is open). A row that is moved in
  * the page takes the focus out of the field it holds (without a blur), and the player is typing into it, and a row that is open and moves
  * is lost from the eye: so while `frozen` the places of the rows are those of `previousIds` (the order that was on screen when the holding

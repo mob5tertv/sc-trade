@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CargoLine } from '../../src/core/types';
 import {
-  DEFAULT_TERMINAL_SORT, clickedTerminalSort, heldPlaces, holdMark, holdOf, holdOrder, orderRows, terminalAriaSort, type TerminalSort,
+  DEFAULT_TERMINAL_SORT, clickedTerminalSort, heldPlaces, holdMark, holdOf, holdOrder, orderRows, resortedPlaces, terminalAriaSort, type TerminalSort,
 } from '../../src/ui/vm/terminal-order';
 
 // formatUec separates thousands with a non-breaking space
@@ -198,6 +198,31 @@ describe('heldPlaces: the places of the rows are held while a field has the curs
     const taken = heldPlaces(null, shown, open);
     expect(taken).toEqual(shown);
     expect(taken).not.toBe(shown);
+  });
+
+  it('a click on a sort header with a row open is the player\'s own request for a new order: the places are taken again from the freshly sorted rows, and the open row stands where that order puts it', () => {
+    const held = [4, 6, 1, 2, 3, 5]; // MEDS first, open
+    const byRoi = ids(orderRows(ROWS, { side: 'sell', sort: ROI_DESC, cargo: [line(6, 80)], percentOf }));
+    expect(byRoi).toEqual([6, 3, 4, 5, 1, 2]);
+    const renewed = resortedPlaces(byRoi, open);
+    expect(renewed).toEqual(byRoi);
+    expect(renewed).not.toBe(byRoi); // a copy: the list on screen is not the one that is held
+    // from now on the places are held again as before: the sale that changes the order afterwards does not move the rows
+    const afterSale = ids(orderRows(ROWS, { side: 'sell', sort: ROI_DESC, cargo: [], percentOf }));
+    expect(afterSale).not.toEqual(byRoi);
+    expect(heldPlaces(renewed, afterSale, open)).toEqual(byRoi);
+  });
+
+  it('a sort request holds nothing when nothing holds the places: the sort simply shows', () => {
+    expect(resortedPlaces([3, 4, 1], none)).toBeNull();
+    expect(resortedPlaces([], none)).toBeNull();
+  });
+
+  it('a sort request is not a sale: the sale keeps the old places (`heldPlaces`), the request takes the new ones (`resortedPlaces`)', () => {
+    const held = [1, 3, 4];
+    const sortedNow = [3, 4, 1];
+    expect(heldPlaces(held, sortedNow, open)).toEqual([1, 3, 4]);
+    expect(resortedPlaces(sortedNow, open)).toEqual([3, 4, 1]);
   });
 
   it('a sale of the open row does not take it from its place; folding the row gives the sort its way', () => {
