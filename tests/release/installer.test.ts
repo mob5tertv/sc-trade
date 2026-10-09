@@ -501,8 +501,41 @@ describe('the template of the installer', () => {
     ).not.toBe(false);
   });
 
-  it('sets the version in the side picture of the welcome and finish pages', () => {
-    expect(readInstaller('sidebar.svg')).toContain(`>v${packageVersion}</text>`);
+  it('sets the version of package.json in the side picture of the welcome and finish pages: the one text of the picture that is the version, written by hand in the SVG', () => {
+    const svg = readInstaller('sidebar.svg');
+    const versions = [...svg.matchAll(/<text\b[^>]*\bid="version"[^>]*>([^<]*)<\/text>/g)].map((match) => match[1]);
+    expect(versions, 'the <text id="version"> of src-tauri/installer/sidebar.svg: change it with every new version, then run npm run installer:images').toEqual([`v${packageVersion}`]);
+    // no other text of the picture names a version number
+    expect([...svg.matchAll(/>(v?\d+\.\d+\.\d+)</g)].map((match) => match[1])).toEqual([`v${packageVersion}`]);
+  });
+
+  it('draws that version so that it can be read: tall enough, light on the panel, its six signs apart from one another (the dots must not fuse with the digits)', () => {
+    const sidebar = readBmp(resolve(tauriDir, nsis?.sidebarImage ?? 'missing'));
+    // the corner under the chart, inside the frame of the panel (x 6..157, y 7..307); the panel is --sc-surface there
+    const lit = (x: number, y: number) => parseInt(sidebar.pixel(x, y).slice(2, 4), 16) > 0x70; // the green channel: 0x1c on the panel, 0xee in the text
+    const box = { left: 12, right: 112, top: 288, bottom: 305 };
+    const columns: boolean[] = [];
+    const rows = new Set<number>();
+    for (let x = box.left; x <= box.right; x++) {
+      let any = false;
+      for (let y = box.top; y <= box.bottom; y++) {
+        if (lit(x, y)) {
+          any = true;
+          rows.add(y);
+        }
+      }
+      columns.push(any);
+    }
+    const first = columns.indexOf(true);
+    const last = columns.lastIndexOf(true);
+    const signs = columns.filter((on, i) => on && !columns[i - 1]).length; // runs of lit columns: one per sign that does not touch the next
+    expect(first, 'any text at all in the corner').toBeGreaterThanOrEqual(0);
+    expect(last - first + 1, 'width of the text in pixels (20 before this was fixed)').toBeGreaterThanOrEqual(32);
+    expect(rows.size, 'height of the text in pixels').toBeGreaterThanOrEqual(9);
+    expect(signs, 'separate signs: v 1 . 1 . 0').toBeGreaterThanOrEqual(6);
+    // and the text is light on the panel, strong enough to read
+    expect(contrast(theme.text, theme.field), 'the text colour of the version on the panel').toBeGreaterThanOrEqual(7);
+    expect(readInstaller('sidebar.svg')).toMatch(new RegExp(`<text\\b[^>]*\\bid="version"[^>]*\\bfill="#${theme.text}"`));
   });
 });
 
