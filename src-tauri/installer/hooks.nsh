@@ -10,4 +10,6 @@
 ; The text colour does not reach the check boxes of the finish page ("Run SC Trade", the desktop shortcut) while they are
 ; drawn with the visual styles of Windows: they would keep black text on the dark glass. With this define Modern UI 2
 ; draws them as classic check boxes, which take the colour (see Pages\Finish.nsh of Modern UI 2).
+; This define is in the source of Modern UI 2 but not in its readme: after any update of Tauri or of the NSIS it downloads,
+; look at the finish page of the installer once more (the two check boxes must have light text).
 !define MUI_FORCECLASSICCONTROLS

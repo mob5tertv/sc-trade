@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="150" height="57" viewBox="0 0 150 57">
-  <!-- The header of the pages of the installer: NSIS draws it at 150 x 57, at the right end of the header. -->
+  <!-- The header of the pages of the installer: NSIS draws it at 150 x 57, at the LEFT end of the header (the title of the page starts to its right). -->
   <!-- Rebuild header.bmp with `npm run installer:images`; the colours are the theme of the app (src/ui/theme.css). -->
   <!-- Glass, a surface in it with the two cut corners of the window of the app, the mark and the name. -->
   <rect width="150" height="57" fill="#07121b"/>
