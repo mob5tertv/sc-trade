@@ -69,6 +69,14 @@ export function cellScu(cell: Cell | null, side: Side): CellScu | null {
 }
 
 /**
+ * The tooltip of the dash in the quantity column: there is no quantity because nobody knows it, which is not an empty stock
+ * (a known zero is written 0). On the sell side the number is what the buyer already holds.
+ */
+export function unknownScuTitle(side: Side): string {
+  return `${side === 'buy' ? 'Запас' : 'Склад у покупателя'} неизвестен: ни своего замера, ни данных UEX`;
+}
+
+/**
  * The price a cell offers to be corrected or confirmed: the whole number the row writes (`formatUec` rounds with `Math.round`;
  * UEX averages are REAL), mine else the hint. It must be what the row shows and what the typed path (`parsePrice`: whole
  * numbers above zero) would take, so a price that rounds to zero is no price: `null`. The fields of an expanded row and the form

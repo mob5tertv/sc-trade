@@ -17,6 +17,14 @@ import type { RangeView, UexRange } from './terminal-rows';
 /** Shown instead of a value that does not exist. */
 const NONE = '—';
 
+/**
+ * What an option whose volume rests on an unknown stock says. The stock at the purchase terminal is a limit of the volume
+ * (`quantity` of the core); where nobody knows it (`scu` is `null`: neither a measure of mine nor a quantity of UEX) the
+ * limit is absent and the volume is the hold or what the budget buys. The buyer is not asked: what it holds limits nothing
+ * (spec 14.5), so its unknown stock is no reason for the mark.
+ */
+export const UNKNOWN_STOCK_NOTE = 'Запас в точке закупки неизвестен: объём принят по трюму и бюджету';
+
 /** Which end of a suggested trip is named: the destination for trips that start here, the origin for trips that end here. */
 export type RouteMode = 'from' | 'to';
 
@@ -163,6 +171,8 @@ export interface RouteOptionRow {
   /** The profit at the unfavourable end of both price ranges, and whether it is a loss. */
   worst: string; worstLoss: boolean;
   qty: string;
+  /** Set when the volume was counted with no stock at the purchase terminal to limit it (`UNKNOWN_STOCK_NOTE`): the mark «?» and the line of the expanded row say it; `null` when the stock is known (zero is known). */
+  stockNote: string | null;
   /** For the expanded row: the money put in, the profit expected, and the prices at both ends. */
   invested: string; profit: string; profitLoss: boolean;
   buy: PriceView; sell: PriceView;
@@ -211,6 +221,7 @@ export function routeOptionRow(
     roi: formatRoi(o.roi), rate: perHourNarrow(o.uecPerHour),
     worst: formatUec(o.worstProfit), worstLoss: o.worstProfit < 0,
     qty: `${o.qty} SCU`,
+    stockNote: o.buy.scu === null ? UNKNOWN_STOCK_NOTE : null,
     invested: formatUec(o.qty * o.buy.price), profit: formatUec(o.profit), profitLoss: o.profit < 0,
     buy: buyView, sell: sellView,
   };

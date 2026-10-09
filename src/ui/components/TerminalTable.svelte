@@ -5,7 +5,7 @@
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
   import type { CellFinish, EditBase } from '../vm/inputs';
   import type { RoiCell } from '../vm/row-roi';
-  import { cellScu, rangeView } from '../vm/terminal-rows';
+  import { cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
   import TempBadge from './TempBadge.svelte';
   import TrendMark from './TrendMark.svelte';
@@ -282,7 +282,7 @@
                 {#if cell.badge}<TempBadge compact text={cell.badge.text} kind={cell.badge.kind} />{:else}<span class="nomark"></span>{/if}
               </span>
               <span class="range sc-num" data-range={span.kind} title={span.title}>{span.text}</span>
-              <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu?.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
+              <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu === null ? unknownScuTitle(side) : scu.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
             </button>
             {#if best}
               <button

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { badgeText, cellScu, isOwnPrice, rangeOfEstimate, rangeView, sideCounts, terminalRows, uexRangeOf } from '../../src/ui/vm/terminal-rows';
+import {
+  badgeText, cellScu, isOwnPrice, rangeOfEstimate, rangeView, sideCounts, terminalRows, uexRangeOf, unknownScuTitle,
+} from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
 import type { UexSideStats } from '../../src/core/types';
@@ -413,6 +415,21 @@ describe('cellScu', () => {
     const m = buildMarket([px(1, 10, { buy: { avgWeek: 6000 }, dateModified: NOW - 7200 })], []);
     expect(cellScu(buyOf(m), 'buy')).toBeNull();
     expect(cellScu(null, 'sell')).toBeNull();
+  });
+});
+
+describe('unknownScuTitle: what the dash of the SCU column says', () => {
+  it('says that the stock is unknown, and why: neither a measure of mine nor data of UEX', () => {
+    expect(unknownScuTitle('buy')).toBe('Запас неизвестен: ни своего замера, ни данных UEX');
+  });
+
+  it('says the same of the buyer on the sell side, where the number is what the buyer already holds', () => {
+    expect(unknownScuTitle('sell')).toBe('Склад у покупателя неизвестен: ни своего замера, ни данных UEX');
+  });
+
+  it('is for the dash only: a known zero is written 0 and keeps its own tooltip', () => {
+    const m = buildMarket([], [obs({ ts: NOW - 60, terminalId: 1, commodityId: 10, side: 'buy', price: 6100, scu: 0 })]);
+    expect(cellScu(terminalRows(m, ref, 1, ctx)[0].buy, 'buy')).toMatchObject({ text: '0', title: 'Остаток у продавца по твоему замеру, SCU' });
   });
 });
 

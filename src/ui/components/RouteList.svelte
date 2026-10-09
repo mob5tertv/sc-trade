@@ -90,6 +90,7 @@
             <span class="end">{row.bothEnds ? row.origin : row.terminal}</span>
             {#if row.bothEnds}<span class="arrow">→</span><span class="end">{row.dest}</span>{/if}
             {#if row.isTarget}<span class="goal" title="Цель рейса">цель</span>{/if}
+            {#if row.stockNote}<span class="unsure" title={row.stockNote}>?</span>{/if}
           </span>
           <span class="cell sc-num" class:hint={!row.priceIsOwn}>
             <TrendMark trend={row.trend} />
@@ -108,6 +109,7 @@
               <div class="fact"><span class="sc-label">Прибыль</span><span class="sc-num" class:loss={row.profitLoss}>{row.profit}</span></div>
               <div class="fact" title="Прибыль при худшем исходе цен"><span class="sc-label">Худший</span><span class="sc-num" class:loss={row.worstLoss}>{row.worst}</span></div>
             </div>
+            {#if row.stockNote}<p class="stock-note"><span class="unsure" aria-hidden="true">?</span> {row.stockNote}</p>{/if}
             <div class="prices">
               {@render price('Купить', row.buy)}
               {@render price('Продать', row.sell)}
@@ -218,6 +220,19 @@
   .goal {
     flex: none;
     color: var(--sc-good);
+    font-size: var(--sc-font-sm);
+  }
+
+  /* the volume of the trip was counted with no stock to limit it: the mark stands at the end of the names, where it moves no number */
+  .unsure {
+    flex: none;
+    color: var(--sc-warn);
+    font-weight: 600;
+  }
+
+  .stock-note {
+    margin: 0;
+    color: var(--sc-muted);
     font-size: var(--sc-font-sm);
   }
 
