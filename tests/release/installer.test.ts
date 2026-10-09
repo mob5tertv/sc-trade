@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
@@ -13,6 +14,8 @@ interface Nsis {
   headerImage?: string;
   sidebarImage?: string;
   installerHooks?: string;
+  template?: string;
+  startMenuFolder?: string;
 }
 
 interface Bundle {
@@ -81,6 +84,93 @@ function contrast(a: string, b: string): number {
   };
   const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (light + 0.05) / (dark + 0.05);
+}
+
+const installerDir = resolve(tauriDir, 'installer');
+const packageVersion = (JSON.parse(readFileSync(resolve(tauriDir, '..', 'package.json'), 'utf8')) as { version: string }).version;
+/** A file of src-tauri/installer with plain line ends, whatever the checkout did to them. */
+const readInstaller = (name: string) => readFileSync(resolve(installerDir, name), 'utf8').replace(/\r\n/g, '\n');
+/** The colours, macros and functions of the theme: the one file that the hooks include (and so does the preview script). */
+const themeSource = existsSync(resolve(installerDir, 'theme.nsh')) ? readInstaller('theme.nsh') : '';
+
+/** The code of an NSIS script, one entry per line: comments (`;`) and blank lines left out. */
+function codeLines(source: string): string[] {
+  return source
+    .split('\n')
+    .map((line) => line.replace(/\s*;.*$/, '').trim())
+    .filter((line) => line !== '');
+}
+
+/** Every `!define NAME value` of a script, the quotes of the value stripped. */
+function defines(source: string): Map<string, string> {
+  const found = new Map<string, string>();
+  for (const line of codeLines(source)) {
+    const match = /^!define\s+(?:\/\w+\s+)?(\w+)(?:\s+(.*))?$/.exec(line);
+    if (match) found.set(match[1], (match[2] ?? '').trim().replace(/^"(.*)"$/, '$1'));
+  }
+  return found;
+}
+
+/** A value with its `${NAME}` references replaced by the defines of the script. */
+function resolveDefines(source: string, value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const known = defines(source);
+  let result = value;
+  for (let round = 0; round < 8 && /\$\{\w+\}/.test(result); round++) {
+    result = result.replace(/\$\{(\w+)\}/g, (whole, name: string) => known.get(name) ?? whole);
+  }
+  return result;
+}
+
+/** The code lines of every `!macro NAME ... !macroend` of a script. */
+function macros(source: string): Map<string, string[]> {
+  const found = new Map<string, string[]>();
+  let current: string | undefined;
+  for (const line of codeLines(source)) {
+    const start = /^!macro\s+(\w+)/.exec(line);
+    if (start) {
+      current = start[1];
+      found.set(current, []);
+    } else if (/^!macroend\b/.test(line)) {
+      current = undefined;
+    } else if (current !== undefined) {
+      found.get(current)?.push(line);
+    }
+  }
+  return found;
+}
+
+/** `rrggbb` of a colour that NSIS gets as a COLORREF number (0xBBGGRR), the form the messages of a progress bar take. */
+function bgrToRgb(bgr: string): string {
+  const n = parseInt(bgr, 16);
+  return [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff].map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+/** The lines that the marked blocks of the template add (the lines of the original that a block replaces are not among them). */
+function ownLines(template: string): string[] {
+  const own: string[] = [];
+  let inBlock = false;
+  for (const line of template.split('\n')) {
+    if (inBlock) {
+      if (line === '; SC TRADE THEME: end') inBlock = false;
+      else if (!line.startsWith(';upstream|')) own.push(line);
+    } else if (line.startsWith('; SC TRADE THEME:')) {
+      inBlock = true;
+    }
+  }
+  return own;
+}
+
+/** Every `SetCtlColors hwnd text background` of the code, the colours resolved through the defines of `source`. */
+function ctlColors(file: string, code: string[], source: string) {
+  const found: { file: string; line: string; hwnd: string; text: string; background: string }[] = [];
+  for (const line of code) {
+    const match = /^SetCtlColors\s+(\S+)\s+("[^"]*"|\S+)(?:\s+("[^"]*"|\S+))?$/i.exec(line);
+    if (!match) continue;
+    const colour = (raw: string | undefined) => (resolveDefines(source, (raw ?? '').replace(/^"(.*)"$/, '$1')) ?? '').toLowerCase();
+    found.push({ file, line, hwnd: match[1], text: colour(match[2]), background: colour(match[3]) });
+  }
+  return found;
 }
 
 describe('the installer', () => {
@@ -218,8 +308,8 @@ describe('the bitmap writer of scripts/installer', () => {
 describe('the colours of the welcome and finish pages', () => {
   const hooksFile = nsis?.installerHooks;
   const hooks = hooksFile ? readFileSync(resolve(tauriDir, hooksFile), 'utf8') : undefined;
-  /** The value of a `!define NAME value` of the hooks file, without quotes and `#`. */
-  const defined = (name: string) => hooks?.match(new RegExp(`^\\s*!define\\s+${name}\\s+"?#?([0-9A-Fa-f]{6})"?\\s*(?:;.*)?$`, 'm'))?.[1]?.toLowerCase();
+  /** The value of a `!define NAME value` of the theme (the hooks include it): `#` and quotes stripped, references resolved. */
+  const defined = (name: string) => resolveDefines(themeSource, defines(themeSource).get(name))?.replace(/^#/, '').toLowerCase();
 
   it('are optional, but when the hooks file is wired it is there', () => {
     if (hooksFile === undefined) return;
@@ -227,26 +317,280 @@ describe('the colours of the welcome and finish pages', () => {
     expect(existsSync(resolve(tauriDir, hooksFile)), hooksFile).toBe(true);
   });
 
+  it('come from the one theme file that the hooks include, so that the real installer and the preview cannot differ', () => {
+    expect(hooks).toMatch(/^\s*!include\s+"\$\{__FILEDIR__\}\\theme\.nsh"\s*(?:;.*)?$/m);
+    expect(themeSource, 'src-tauri/installer/theme.nsh').not.toBe('');
+  });
+
   it('come as a pair: a background without a text colour, or the other way round, could give dark text on dark', () => {
-    if (hooks === undefined) return;
-    expect(defined('MUI_BGCOLOR'), 'MUI_BGCOLOR').toBeTruthy();
-    expect(defined('MUI_TEXTCOLOR'), 'MUI_TEXTCOLOR').toBeTruthy();
+    expect(defined('MUI_BGCOLOR'), 'MUI_BGCOLOR').toMatch(/^[0-9a-f]{6}$/);
+    expect(defined('MUI_TEXTCOLOR'), 'MUI_TEXTCOLOR').toMatch(/^[0-9a-f]{6}$/);
   });
 
   it('read well: the text is light on the dark glass of the theme, as strong as the body text of the application', () => {
-    if (hooks === undefined) return;
     expect(defined('MUI_BGCOLOR')).toBe(theme.glass);
     expect(contrast(defined('MUI_TEXTCOLOR') ?? '000000', defined('MUI_BGCOLOR') ?? 'ffffff')).toBeGreaterThanOrEqual(7);
   });
 
   it('turn the check boxes of the finish page to classic ones, the only kind that takes the text colour', () => {
-    if (hooks === undefined) return;
-    expect(hooks).toMatch(/^\s*!define\s+MUI_FORCECLASSICCONTROLS\s*(?:;.*)?$/m);
+    expect(themeSource).toMatch(/^\s*!define\s+MUI_FORCECLASSICCONTROLS\s*(?:;.*)?$/m);
   });
 
   it('match the header picture: its edge is the same glass as the header around it', () => {
-    if (hooks === undefined) return;
     const header = readBmp(resolve(tauriDir, nsis?.headerImage ?? 'missing'));
     expect(header.pixel(0, 0)).toBe(defined('MUI_BGCOLOR'));
+  });
+});
+
+describe('the template of the installer', () => {
+  const templateFile = nsis?.template;
+  const template = templateFile && existsSync(resolve(tauriDir, templateFile)) ? readFileSync(resolve(tauriDir, templateFile), 'utf8').replace(/\r\n/g, '\n') : '';
+  const upstream = existsSync(resolve(installerDir, 'installer.upstream.nsi')) ? readInstaller('installer.upstream.nsi') : '';
+  const lock = (JSON.parse(readFileSync(resolve(tauriDir, '..', 'package-lock.json'), 'utf8')) as { packages: Record<string, { version: string }> }).packages;
+  /** What the template says it was made from: `; SC TRADE THEME: pin cli=<version> bundler=<version> upstream-sha256=<hash>`. */
+  const pin = /^; SC TRADE THEME: pin cli=(\S+) bundler=(\S+) upstream-sha256=([0-9a-f]{64})$/m.exec(template);
+
+  it('is set in the configuration, and it and the untouched original it was made from are in the repository', () => {
+    expect(templateFile, 'bundle.windows.nsis.template').toBe('installer/installer.nsi');
+    expect(template, 'src-tauri/installer/installer.nsi').not.toBe('');
+    expect(upstream, 'src-tauri/installer/installer.upstream.nsi').not.toBe('');
+  });
+
+  it('is pinned to the Tauri CLI of the project: when the CLI is updated the template has to be made again', () => {
+    const cli = lock['node_modules/@tauri-apps/cli']?.version;
+    expect(pin, 'the "; SC TRADE THEME: pin ..." line of the template').not.toBeNull();
+    expect(
+      pin?.[1],
+      `обновился Tauri CLI — пересобери шаблон установщика (the Tauri CLI was updated: the template was made for @tauri-apps/cli ${pin?.[1]}, package-lock.json has ${cli}; ` +
+        'take installer.nsi of the tauri-bundler that the new CLI uses, put it in installer.upstream.nsi, repeat the marked edits in installer.nsi and change the pin line)',
+    ).toBe(cli);
+  });
+
+  it('keeps the untouched original: the hash of installer.upstream.nsi is the one the pin line names', () => {
+    expect(createHash('sha256').update(upstream).digest('hex')).toBe(pin?.[3]);
+  });
+
+  it('differs from the original only in blocks that start with "; SC TRADE THEME:" and end with "; SC TRADE THEME: end"', () => {
+    // inside a block the lines of the original that the block replaces stay as ";upstream| <line>"; put back, they give the original
+    const rebuilt: string[] = [];
+    let inBlock = false;
+    for (const line of template.split('\n')) {
+      if (inBlock) {
+        if (line === '; SC TRADE THEME: end') inBlock = false;
+        else if (line.startsWith(';upstream| ')) rebuilt.push(line.slice(';upstream| '.length));
+        else if (line.startsWith(';upstream|')) rebuilt.push(line.slice(';upstream|'.length));
+      } else if (line.startsWith('; SC TRADE THEME:')) {
+        expect(line, 'a block is closed before the next one starts').not.toBe('; SC TRADE THEME: end');
+        inBlock = true;
+      } else {
+        rebuilt.push(line);
+      }
+    }
+    expect(inBlock, 'the last block of the template is closed').toBe(false);
+    expect(rebuilt.join('\n')).toBe(upstream);
+  });
+
+  it('puts the name and the version of the application in the corner of the window, where NSIS prints the copyright line', () => {
+    expect(codeLines(template)).toContain('BrandingText "${PRODUCTNAME} ${VERSION}"');
+  });
+
+  it('never shows the page of the start menu (it has no theme): no folder is set, so the template skips the page', () => {
+    expect(nsis?.startMenuFolder).toBeUndefined();
+  });
+
+  it('brings in no plug-in and no binary: the folder holds scripts and pictures, and our own code calls only System::Call', () => {
+    for (const name of readdirSync(installerDir)) expect(name, 'a binary that is not a picture').not.toMatch(/\.(dll|exe|nlf)$/i);
+    expect(readdirSync(installerDir)).toEqual(expect.arrayContaining(['installer.nsi', 'installer.upstream.nsi', 'theme.nsh']));
+    const own = codeLines(`${themeSource}\n${ownLines(template).join('\n')}`);
+    const plugins = own.map((line) => /^(\w+)::\w+/.exec(line)?.[1]).filter((name) => name !== undefined);
+    for (const name of plugins) expect(name, 'a plug-in call of our own code').toBe('System');
+    expect(own.join('\n')).not.toMatch(/!addplugindir|\.dll"/i);
+  });
+
+  it('sets the version in the side picture of the welcome and finish pages', () => {
+    expect(readInstaller('sidebar.svg')).toContain(`>v${packageVersion}</text>`);
+  });
+});
+
+describe('the theme of the inner pages', () => {
+  const template = readInstaller('installer.nsi');
+  const code = { 'theme.nsh': codeLines(themeSource), 'installer.nsi': codeLines(template) };
+  const everything = `${themeSource}\n${template}`;
+  const colour = (name: string) => (resolveDefines(everything, `\${${name}}`) ?? '').toLowerCase();
+  const calls = [...ctlColors('theme.nsh', code['theme.nsh'], everything), ...ctlColors('installer.nsi', code['installer.nsi'], everything)];
+
+  it('takes its colours from the theme of the application', () => {
+    expect(colour('SCT_GLASS')).toBe(theme.glass);
+    expect(colour('SCT_TEXT')).toBe('d6eef5');
+    expect(colour('SCT_MUTED')).toBe('82a8b6');
+    expect(colour('SCT_ACCENT')).toBe(theme.accent);
+    expect(colour('SCT_FRAME')).toBe(theme.frame);
+  });
+
+  it('writes the colours that a message takes (BBGGRR numbers) as the same colours as the RRGGBB ones', () => {
+    for (const name of ['GLASS', 'TEXT', 'FRAME', 'ACCENT', 'TROUGH']) {
+      expect(bgrToRgb(colour(`SCT_${name}_BGR`).replace(/^0x/, '')), `SCT_${name}_BGR`).toBe(colour(`SCT_${name}`));
+    }
+  });
+
+  it('colours something: the five kinds of control (dialog, label, muted label, field, classic control) each have their call', () => {
+    expect(calls.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('gives every background a text colour of its own in the same call, and no background is left to the system or "transparent"', () => {
+    for (const { line, text, background } of calls) {
+      expect(text, line).toMatch(/^[0-9a-f]{6}$/);
+      expect(background, line).toMatch(/^[0-9a-f]{6}$/);
+    }
+  });
+
+  it('reads well everywhere: every text is at least 7:1 on its background, as strong as the body text of the application', () => {
+    for (const { line, text, background } of calls) expect(contrast(text, background), line).toBeGreaterThanOrEqual(7);
+  });
+
+  it('reads well in the list of the progress page, too: the colours of the list are a light text on a dark background', () => {
+    const [text, background] = colour('MUI_INSTFILESPAGE_COLORS').split(/\s+/);
+    expect(text, 'MUI_INSTFILESPAGE_COLORS').toMatch(/^[0-9a-f]{6}$/);
+    expect(background, 'MUI_INSTFILESPAGE_COLORS').toMatch(/^[0-9a-f]{6}$/);
+    expect(contrast(text, background)).toBeGreaterThanOrEqual(7);
+  });
+
+  const macroNames = macros(themeSource);
+  const body = (name: string) => (macroNames.get(name) ?? []).join('\n');
+
+  it('turns the visual style of a check box, a radio button and a group box off in the macro that colours it, or the text colour does not apply', () => {
+    const classic = body('SCT_PAINT_CLASSIC');
+    expect(classic).toMatch(/SetWindowTheme\(p\$\{HWND\},w" ",w" "\)/);
+    expect(classic).toMatch(/SetCtlColors \$\{HWND\} "\$\{SCT_TEXT\}" "\$\{SCT_GLASS\}"/);
+  });
+
+  it('turns the visual style of the progress bar off and colours the bar with the accent and the trough with the border colour', () => {
+    const progress = body('SCT_PAINT_PROGRESS');
+    expect(progress).toMatch(/SetWindowTheme\(p\$\{HWND\},w" ",w" "\)/);
+    expect(progress).toMatch(/SendMessage \$\{HWND\} 0x0409 0 \$\{SCT_ACCENT_BGR\}/); // PBM_SETBARCOLOR
+    expect(progress).toMatch(/SendMessage \$\{HWND\} 0x2001 0 \$\{SCT_TROUGH_BGR\}/); // PBM_SETBKCOLOR
+  });
+
+  it('calls only the two Windows functions that Modern UI 2 and the title bar need: SetWindowTheme and DwmSetWindowAttribute', () => {
+    const targets = code['theme.nsh'].filter((line) => /^System::Call/.test(line)).map((line) => /['"]([\w.]+::\w+)\(/.exec(line)?.[1]);
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) expect(['UXTHEME::SetWindowTheme', 'dwmapi::DwmSetWindowAttribute']).toContain(target);
+  });
+
+  /** What each page paints: the macro, the handle, as the script writes them. */
+  const pages: { page: string; where: string; code: string; painted: [macro: string, handle: string][] }[] = [
+    {
+      page: 'outer window: the window, the corner text and its background',
+      where: 'SCT_FUNCTIONS_GUIINIT',
+      code: body('SCT_FUNCTIONS_GUIINIT'),
+      painted: [
+        ['SCT_PAINT_DIALOG', '$HWNDPARENT'],
+        ['SCT_PAINT_MUTED', '$mui.Branding.Text'],
+        ['SCT_PAINT_MUTED', '$mui.Branding.Background'],
+      ],
+    },
+    {
+      page: 'the question of the second installation (the reinstall page)',
+      where: 'installer.nsi',
+      code: codeLines(template).join('\n'),
+      painted: [
+        ['SCT_PAINT_DIALOG', '$R4'],
+        ['SCT_PAINT_TEXT', '$R1'],
+        ['SCT_PAINT_CLASSIC', '$R2'],
+        ['SCT_PAINT_CLASSIC', '$R3'],
+      ],
+    },
+    {
+      page: 'folder',
+      where: 'SCT_FUNCTIONS_DIRECTORY',
+      code: body('SCT_FUNCTIONS_DIRECTORY'),
+      painted: [
+        ['SCT_PAINT_DIALOG', '$mui.DirectoryPage'],
+        ['SCT_PAINT_TEXT', '$mui.DirectoryPage.Text'],
+        ['SCT_PAINT_CLASSIC', '$mui.DirectoryPage.DirectoryBox'],
+        ['SCT_PAINT_FIELD', '$mui.DirectoryPage.Directory'],
+        ['SCT_PAINT_MUTED', '$mui.DirectoryPage.SpaceRequired'],
+        ['SCT_PAINT_MUTED', '$mui.DirectoryPage.SpaceAvailable'],
+      ],
+    },
+    {
+      page: 'progress (the installer and the uninstaller)',
+      where: 'SCT_FUNCTIONS_INSTFILES',
+      code: body('SCT_FUNCTIONS_INSTFILES'),
+      painted: [
+        ['SCT_PAINT_DIALOG', '$mui.InstFilesPage'],
+        ['SCT_PAINT_TEXT', '$mui.InstFilesPage.Text'],
+        ['SCT_PAINT_PROGRESS', '$mui.InstFilesPage.ProgressBar'],
+      ],
+    },
+    {
+      page: 'confirm of the removal',
+      where: 'SCT_PAINT_UNCONFIRM',
+      code: body('SCT_PAINT_UNCONFIRM'),
+      painted: [
+        ['SCT_PAINT_DIALOG', '${DIALOG}'],
+        ['SCT_PAINT_TEXT', '${TEXT}'],
+        ['SCT_PAINT_TEXT', '${LOCATION_TEXT}'],
+        ['SCT_PAINT_FIELD', '${LOCATION}'],
+        ['SCT_PAINT_CLASSIC', '${DELETE_DATA}'],
+      ],
+    },
+  ];
+
+  it('hides the three etched lines of the window for good: two are pointed at no window, so that Modern UI 2 cannot show them again', () => {
+    const init = body('SCT_FUNCTIONS_GUIINIT');
+    expect(init).toContain('ShowWindow $mui.Line.Standard ${SW_HIDE}');
+    expect(init).toContain('ShowWindow $mui.Line.FullWindow ${SW_HIDE}');
+    // the pointing comes after the hiding: ShowWindow on 0 is a no-op, and the handle must be still good for the first two lines
+    expect(init.indexOf('StrCpy $mui.Line.Standard 0')).toBeGreaterThan(init.indexOf('ShowWindow $mui.Line.Standard ${SW_HIDE}'));
+    expect(init.indexOf('StrCpy $mui.Line.FullWindow 0')).toBeGreaterThan(init.indexOf('ShowWindow $mui.Line.FullWindow ${SW_HIDE}'));
+    expect(init).toContain('GetDlgItem $0 $HWNDPARENT 1036'); // the line under the header: Modern UI 2 does not touch it
+  });
+
+  it('enables the corner text that lies under the other one: a disabled control draws its text grey whatever colour it has', () => {
+    expect(body('SCT_FUNCTIONS_GUIINIT')).toContain('EnableWindow $mui.Branding.Background 1');
+  });
+
+  it('keeps the registers $R0-$R9 as they are: the installer carries the result of the version check in them to the first section', () => {
+    const functions = ['SCT_FUNCTIONS_GUIINIT', 'SCT_FUNCTIONS_DIRECTORY', 'SCT_FUNCTIONS_INSTFILES'].map(body).join('\n');
+    const macrosUsed = [...macroNames.keys()].filter((name) => name.startsWith('SCT_PAINT_') || name === 'SCT_DWM_SET').map(body).join('\n');
+    expect(`${functions}\n${macrosUsed}`).not.toMatch(/\$R\d/);
+  });
+
+  it.each(pages)('paints every control of the $page ($where)', ({ code: text, painted }) => {
+    expect(text, 'the code is there').not.toBe('');
+    for (const [macro, handle] of painted) {
+      expect(text, `!insertmacro ${macro} ${handle}`).toMatch(new RegExp(`!insertmacro ${macro} ${handle.replace(/[$.{}]/g, '\\$&')}(\\s|$)`));
+    }
+  });
+
+  it('leaves no control that the template creates itself to the defaults of the system: its handle goes to a macro of the theme', () => {
+    const lines = codeLines(template);
+    const created: string[] = [];
+    lines.forEach((line, i) => {
+      const pop = /^Pop (\$\w+)$/.exec(line);
+      if (!pop) return;
+      const before = lines[i - 1] ?? '';
+      if (/^nsDialogs::Create\b|^\$\{NSD_Create\w+\}|CreateWindowEx/.test(before)) created.push(pop[1]);
+    });
+    expect(created.sort(), 'the controls and dialogs of the template').toEqual(['$DeleteAppDataCheckbox', '$R1', '$R2', '$R3', '$R4']);
+    const pass = lines.filter((line) => /^!insertmacro SCT_PAINT_\w+/.test(line)).join('\n');
+    for (const handle of created) expect(pass, handle).toContain(handle);
+  });
+
+  it('hands the controls of the removal page to the one macro that colours them', () => {
+    const lines = codeLines(template).join('\n');
+    expect(lines).toMatch(/!insertmacro SCT_PAINT_UNCONFIRM \$1 \$2 \$3 \$4 \$DeleteAppDataCheckbox/);
+  });
+
+  it('colours the page of the removal while $1 still holds the page: the original puts the font in $1 a few lines below', () => {
+    const lines = codeLines(template);
+    const found = lines.findIndex((line) => line === 'FindWindow $1 "#32770" "" $HWNDPARENT');
+    const painted = lines.findIndex((line) => /^!insertmacro SCT_PAINT_UNCONFIRM \$1 /.test(line));
+    expect(found, 'FindWindow $1 in un.ConfirmShow').toBeGreaterThanOrEqual(0);
+    expect(painted, 'SCT_PAINT_UNCONFIRM $1').toBeGreaterThan(found);
+    // a write to $1 between the two: Pop, StrCpy, GetDlgItem ... $1 and the output (last) argument of SendMessage, or an .r1 of System::Call
+    const writes = lines.slice(found + 1, painted).filter((line) => /^(StrCpy|Pop|IntOp|IntFmt|GetDlgItem|FindWindow|ReadRegStr)\s+\$1\b/.test(line) || /^SendMessage\b.*\s\$1$/.test(line) || /\.r1\b/.test(line));
+    expect(writes, 'lines that replace the page in $1 before it is coloured').toEqual([]);
   });
 });
