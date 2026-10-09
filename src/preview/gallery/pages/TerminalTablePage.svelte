@@ -5,7 +5,7 @@
   import { roiCells } from '../../../ui/vm/row-roi';
   import type { RowRoi } from '../../../ui/vm/row-roi';
   import { sideCounts } from '../../../ui/vm/terminal-rows';
-  import { find, press, typeInto } from '../acts';
+  import { click, find, press, typeInto } from '../acts';
   import { useGallery } from '../context';
   import Frame from '../Frame.svelte';
   import TableDemo from '../TableDemo.svelte';
@@ -68,6 +68,20 @@
     ...gold,
     sell: { ...gold.sell, own: null, hint: null, hintScu: null, badge: null, ownLast: null, trend: null, warn: false, range: { kind: 'none' } },
   }];
+
+  // a click on a head that sorts («Товар» or «ROI»), as many times as asked
+  async function sortBy(frame: HTMLElement, label: string, times = 1): Promise<void> {
+    const button = [...frame.querySelectorAll<HTMLElement>('.head .sort')].find((el) => (el.textContent ?? '').trim() === label);
+    if (button === undefined) throw new Error(`the table has no head "${label}" that sorts`);
+    for (let i = 0; i < times; i++) await click(button);
+  }
+
+  // A price typed into the open row and not saved (no Enter, the cursor still in the field), then the head «ROI» clicked: the
+  // click event does not move the focus, so the table is put in order with a draft in its field. The row moves, stays open, keeps the text.
+  async function sortWithDraft(frame: HTMLElement): Promise<void> {
+    await typeInto(find<HTMLInputElement>(frame, '.in-price'), '12x');
+    await sortBy(frame, 'ROI');
+  }
 
   async function badPrice(frame: HTMLElement): Promise<void> {
     const price = find<HTMLInputElement>(frame, '.in-price');
@@ -146,6 +160,24 @@
 </Frame>
 <Frame name="sell-cargo-buy-side" caption="the same hold, the buy side of Lorville: nothing is marked, nothing moves">
   <TableDemo rows={lorville.rows} side="buy" roi={lorvilleBuy} cargo={hold} />
+</Frame>
+<Frame name="sort-default" caption="Lorville, sell · nothing clicked: the order of the view model (by the name), «Товар» carries the arrow and aria-sort=ascending">
+  <TableDemo rows={lorville.rows} side="sell" roi={lorvilleSell} />
+</Frame>
+<Frame name="sort-roi" caption="Lorville, sell · «ROI» clicked once: the best ROI on top, rows without one (AGRI, BERY, QUAR) at the end, the arrow down on «ROI»" act={(frame) => sortBy(frame, 'ROI')}>
+  <TableDemo rows={lorville.rows} side="sell" roi={lorvilleSell} />
+</Frame>
+<Frame name="sort-roi-asc" caption="Lorville, sell · «ROI» clicked twice: the order is turned round (the worst on top), rows without a ROI are still last, the arrow up" act={(frame) => sortBy(frame, 'ROI', 2)}>
+  <TableDemo rows={lorville.rows} side="sell" roi={lorvilleSell} />
+</Frame>
+<Frame name="sort-back" caption="Lorville, sell · «ROI», then «Товар»: the default order is back" act={async (frame) => { await sortBy(frame, 'ROI'); await sortBy(frame, 'Товар'); }}>
+  <TableDemo rows={lorville.rows} side="sell" roi={lorvilleSell} />
+</Frame>
+<Frame name="sort-cargo" caption="Lorville, sell, MEDS and STIM in the hold · «ROI» clicked: the hold stays first (STIM 70 % before MEDS 54 %, each group by ROI), the others after it by ROI" act={(frame) => sortBy(frame, 'ROI')}>
+  <TableDemo rows={lorville.rows} side="sell" roi={lorvilleSell} cargo={hold} />
+</Frame>
+<Frame name="sort-draft" caption="Lorville, sell · PFOO open, «12x» typed and not saved, then «ROI» clicked: the row moved up to its place by ROI, is still open and holds its text" act={sortWithDraft}>
+  <TableDemo rows={lorville.rows} side="sell" selected={lorvilleId('PFOO')} roi={lorvilleSell} />
 </Frame>
 <Frame name="roi-buy" caption="Lorville, buy · the best trip from here: GOLD above the bar, a row of every other tier, SCRA is dearer here than anyone pays (empty cell)">
   <TableDemo rows={lorville.rows} side="buy" roi={lorvilleBuy} />

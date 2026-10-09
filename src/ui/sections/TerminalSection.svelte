@@ -1,3 +1,11 @@
+<script lang="ts" module>
+  import { DEFAULT_TERMINAL_SORT, type TerminalSort } from '../vm/terminal-order';
+
+  // The header the table of the terminal is ordered by. It is kept here, in the module and not in the component: the section is gone
+  // from the screen whenever the window folds to the mini line, and the choice lives until the program is closed (it is not a setting).
+  const terminalSort = $state<TerminalSort>({ ...DEFAULT_TERMINAL_SORT });
+</script>
+
 <script lang="ts">
   import { untrack } from 'svelte';
   import { cargoOf } from '../../core/run';
@@ -16,6 +24,7 @@
   import { crossedRows, roiCells, type RoiSnapshot } from '../vm/row-roi';
   import { sideCounts, type TerminalRow } from '../vm/terminal-rows';
   import { terminalFullPlace } from '../vm/terminal-place';
+  import { clickedTerminalSort, type TerminalSortKey } from '../vm/terminal-order';
   import { selectedCommodity, type RowPick } from '../vm/terminal-side';
   import {
     goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, tradeDefaults, tradeMode, type TradeDefaults, type TradeMode,
@@ -78,6 +87,14 @@
     }
     app.log.debug('ui', 'select commodity', { terminalId: viewedId, side, commodityId });
     pick = { terminalId: viewedId, side, commodityId };
+  }
+
+  // A click on «Товар» or «ROI»: only the order of the rows changes (the table keeps its rows, so the open row and what was typed stay)
+  function sortBy(key: TerminalSortKey): void {
+    const next = clickedTerminalSort(terminalSort, key);
+    app.log.info('ui', 'terminal sort', { key: next.key, dir: next.dir });
+    terminalSort.key = next.key;
+    terminalSort.dir = next.dir;
   }
 
   // An edit in a cell of the table belongs to the terminal that is viewed now; the table keeps what was typed
@@ -292,6 +309,8 @@
       {pulse}
       noCapacity={app.settings.scuCapacity <= 0}
       {cargo}
+      sort={terminalSort}
+      onSort={sortBy}
     />
   {/if}
 </Section>

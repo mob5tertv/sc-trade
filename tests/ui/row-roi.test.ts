@@ -214,6 +214,14 @@ describe('roiCell: how a row says it', () => {
     expect(roiCell(best({ roi: 0.025 }), 'sell', ref, 50)).toMatchObject({ text: '2,5%', tier: 'poor' });
   });
 
+  it('carries the number that is shown, in whole percents, for the order of the rows: what the eye sorts by', () => {
+    expect(roiCell(best({ roi: 0.62 }), 'sell', ref, 50).percent).toBe(62);
+    expect(roiCell(best({ roi: 0.2996 }), 'sell', ref, 50).percent).toBe(30);
+    expect(roiCell(best({ roi: 0.025 }), 'sell', ref, 50).percent).toBe(2.5);
+    expect(roiCell(best({ roi: 16.99 }), 'sell', ref, 50).percent).toBe(1699); // written 999+, ordered by its real number
+    expect(roiCell(best({ roi: Number.NaN }), 'sell', ref, 50).percent).toBeNull();
+  });
+
   it('the colour follows the number that is shown: 29,96 % reads 30 % and is great', () => {
     expect(roiCell(best({ roi: 0.2996 }), 'sell', ref, 50)).toMatchObject({ text: '30%', tier: 'great' });
     expect(roiTier(0.2996)).toBe('good');

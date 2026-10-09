@@ -1,15 +1,58 @@
 import { describe, expect, it } from 'vitest';
 import type { CargoLine } from '../../src/core/types';
-import { holdMark, holdOf, orderRows } from '../../src/ui/vm/terminal-order';
+import {
+  DEFAULT_TERMINAL_SORT, clickedTerminalSort, holdMark, holdOf, orderRows, terminalAriaSort, type TerminalSort,
+} from '../../src/ui/vm/terminal-order';
 
 // formatUec separates thousands with a non-breaking space
 const nb = (s: string) => s.replace(/ /g, String.fromCharCode(0xa0));
 
 // Six commodities in the order the table has them by default (by name): the id says which is which.
+//   1 ALUM  ROI 12 %      2 BERY  no ROI      3 GOLD  ROI 40 %
+//   4 MEDS  ROI 25 %      5 PFOO  ROI 25 %    6 STIM  ROI  3 %
 const ROWS = [1, 2, 3, 4, 5, 6].map((commodityId) => ({ commodityId }));
+const PERCENT = new Map<number, number | null>([[1, 12], [2, null], [3, 40], [4, 25], [5, 25], [6, 3]]);
+const percentOf = (commodityId: number): number | null => PERCENT.get(commodityId) ?? null;
 const ids = (rows: Array<{ commodityId: number }>): number[] => rows.map((row) => row.commodityId);
 
 const line = (commodityId: number, scu: number, avgBuyPrice = 2115): CargoLine => ({ commodityId, scu, avgBuyPrice });
+const DEFAULT = DEFAULT_TERMINAL_SORT;
+const ROI_DESC: TerminalSort = { key: 'roi', dir: 'desc' };
+const ROI_ASC: TerminalSort = { key: 'roi', dir: 'asc' };
+
+describe('clickedTerminalSort: what a click on a header does', () => {
+  it('starts at the order the table has by default, by the name of the commodity', () => {
+    expect(DEFAULT_TERMINAL_SORT).toEqual({ key: 'name', dir: 'asc' });
+  });
+
+  it('puts the best ROI on top at the first click on «ROI», and turns the order round at every next one', () => {
+    const first = clickedTerminalSort(DEFAULT, 'roi');
+    expect(first).toEqual(ROI_DESC);
+    const second = clickedTerminalSort(first, 'roi');
+    expect(second).toEqual(ROI_ASC);
+    expect(clickedTerminalSort(second, 'roi')).toEqual(ROI_DESC);
+  });
+
+  it('brings the default order back at a click on «Товар», from any order, and keeps it at a second click', () => {
+    expect(clickedTerminalSort(ROI_DESC, 'name')).toEqual(DEFAULT);
+    expect(clickedTerminalSort(ROI_ASC, 'name')).toEqual(DEFAULT);
+    expect(clickedTerminalSort(DEFAULT, 'name')).toEqual(DEFAULT);
+  });
+
+  it('never hands out the shared default object itself: the choice is kept in a state that is written to', () => {
+    expect(clickedTerminalSort(ROI_DESC, 'name')).not.toBe(DEFAULT_TERMINAL_SORT);
+  });
+});
+
+describe('terminalAriaSort: the aria-sort of a header', () => {
+  it('names the direction of the header that is active and nothing for the other one', () => {
+    expect(terminalAriaSort(DEFAULT, 'name')).toBe('ascending');
+    expect(terminalAriaSort(DEFAULT, 'roi')).toBeUndefined();
+    expect(terminalAriaSort(ROI_DESC, 'roi')).toBe('descending');
+    expect(terminalAriaSort(ROI_ASC, 'roi')).toBe('ascending');
+    expect(terminalAriaSort(ROI_DESC, 'name')).toBeUndefined();
+  });
+});
 
 describe('holdOf: which rows are my cargo', () => {
   it('is the cargo by commodity on the sell side, while there is some', () => {
@@ -37,31 +80,52 @@ describe('holdMark: the mark at the name of a commodity that is in the hold', ()
   });
 });
 
-describe('orderRows: my cargo first on the sell side', () => {
-  it('leaves the rows as they came, with no cargo', () => {
-    expect(ids(orderRows(ROWS, { side: 'sell', cargo: [] }))).toEqual([1, 2, 3, 4, 5, 6]);
+describe('orderRows: the order of the rows of the table', () => {
+  it('leaves the default order as it came, with no cargo', () => {
+    expect(ids(orderRows(ROWS, { side: 'sell', sort: DEFAULT, cargo: [], percentOf }))).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('puts the best ROI first, and the rows without one last, at the first click on «ROI»', () => {
+    expect(ids(orderRows(ROWS, { side: 'buy', sort: ROI_DESC, cargo: [], percentOf }))).toEqual([3, 4, 5, 1, 6, 2]);
+  });
+
+  it('puts the worst ROI first when it is turned round, and the rows without one are still last', () => {
+    expect(ids(orderRows(ROWS, { side: 'buy', sort: ROI_ASC, cargo: [], percentOf }))).toEqual([6, 1, 4, 5, 3, 2]);
+  });
+
+  it('keeps rows of the same ROI in the order they came in, in both directions', () => {
+    // 4 and 5 are both 25 %
+    expect(ids(orderRows(ROWS, { side: 'buy', sort: ROI_DESC, cargo: [], percentOf })).filter((id) => id === 4 || id === 5)).toEqual([4, 5]);
+    expect(ids(orderRows(ROWS, { side: 'buy', sort: ROI_ASC, cargo: [], percentOf })).filter((id) => id === 4 || id === 5)).toEqual([4, 5]);
   });
 
   it('puts the commodities of the hold first on the sell side, in the order of the cargo, the others as before', () => {
-    expect(ids(orderRows(ROWS, { side: 'sell', cargo: [line(6, 80), line(4, 120)] }))).toEqual([6, 4, 1, 2, 3, 5]);
+    expect(ids(orderRows(ROWS, { side: 'sell', sort: DEFAULT, cargo: [line(6, 80), line(4, 120)], percentOf }))).toEqual([6, 4, 1, 2, 3, 5]);
   });
 
   it('changes nothing on the buy side, where the cargo is not a mark of any row', () => {
-    expect(ids(orderRows(ROWS, { side: 'buy', cargo: [line(6, 80), line(4, 120)] }))).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(ids(orderRows(ROWS, { side: 'buy', sort: DEFAULT, cargo: [line(6, 80), line(4, 120)], percentOf }))).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('keeps the cargo first whatever the sort is, and sorts inside each of the two groups', () => {
+    const cargo = [line(2, 50), line(4, 120)]; // BERY has no ROI, MEDS 25 %
+    expect(ids(orderRows(ROWS, { side: 'sell', sort: ROI_DESC, cargo, percentOf }))).toEqual([4, 2, 3, 5, 1, 6]);
+    expect(ids(orderRows(ROWS, { side: 'sell', sort: ROI_ASC, cargo, percentOf }))).toEqual([4, 2, 6, 1, 5, 3]);
   });
 
   it('skips a commodity of the hold that the table does not have', () => {
-    expect(ids(orderRows(ROWS, { side: 'sell', cargo: [line(99, 10), line(5, 20)] }))).toEqual([5, 1, 2, 3, 4, 6]);
+    expect(ids(orderRows(ROWS, { side: 'sell', sort: DEFAULT, cargo: [line(99, 10), line(5, 20)], percentOf }))).toEqual([5, 1, 2, 3, 4, 6]);
   });
 
   it('returns a new list and leaves the rows it was given as they were', () => {
     const input = [...ROWS];
-    const out = orderRows(input, { side: 'sell', cargo: [line(6, 80)] });
+    const out = orderRows(input, { side: 'sell', sort: ROI_DESC, cargo: [line(6, 80)], percentOf });
     expect(out).not.toBe(input);
     expect(ids(input)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
   it('is the same list of rows, none lost and none doubled', () => {
-    expect([...ids(orderRows(ROWS, { side: 'sell', cargo: [line(3, 1), line(1, 1)] }))].sort()).toEqual([1, 2, 3, 4, 5, 6]);
+    const out = ids(orderRows(ROWS, { side: 'sell', sort: ROI_DESC, cargo: [line(3, 1), line(1, 1)], percentOf }));
+    expect([...out].sort()).toEqual([1, 2, 3, 4, 5, 6]);
   });
 });

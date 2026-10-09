@@ -5,7 +5,8 @@
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
   import type { CellFinish, EditBase } from '../vm/inputs';
   import type { RoiCell } from '../vm/row-roi';
-  import { holdMark, holdOf, orderRows } from '../vm/terminal-order';
+  import { DEFAULT_TERMINAL_SORT, holdMark, holdOf, orderRows, terminalAriaSort } from '../vm/terminal-order';
+  import type { TerminalSort, TerminalSortKey } from '../vm/terminal-order';
   import { cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
   import TempBadge from './TempBadge.svelte';
@@ -58,10 +59,17 @@
      * wear a mark with their quantity; on the buy side, and with an empty hold, nothing changes.
      */
     cargo?: readonly CargoLine[];
+    /**
+     * The header the rows are ordered by and the direction; that header carries the arrow. The owner keeps the choice, the
+     * table only puts the rows in this order (it never changes `rows`, so no draft is touched by a sort).
+     */
+    sort?: TerminalSort;
+    /** The header «Товар» or «ROI» was clicked. Without it the heads are plain text. */
+    onSort?: (key: TerminalSortKey) => void;
   }
   let {
     rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onReject, onLookup, onTrade, tradeFor = null, tradeForm,
-    roi = NO_ROI, pulse = NO_PULSE, noCapacity = false, cargo = NO_CARGO,
+    roi = NO_ROI, pulse = NO_PULSE, noCapacity = false, cargo = NO_CARGO, sort = DEFAULT_TERMINAL_SORT, onSort,
   }: Props = $props();
 
   /**
@@ -176,7 +184,11 @@
 
   // Only the ORDER of the rows is made here; `rows`, and with it every draft, stays as it was.
   const hold = $derived(holdOf(side, cargo));
-  const shown = $derived(orderRows(rows.filter(row => row[side] !== null), { side, cargo }));
+  const shown = $derived(orderRows(rows.filter(row => row[side] !== null), {
+    side, sort, cargo, percentOf: commodityId => roi.get(commodityId)?.percent ?? null,
+  }));
+
+  const roiTitle = $derived(`${noCapacity ? NO_CAPACITY_HINT : 'Лучший ROI для этого товара'}\nНажми, чтобы отсортировать по ROI`);
   const empty = $derived(rows.length === 0 ? 'Нет цен' : side === 'buy' ? 'Здесь ничего не продают' : 'Здесь ничего не покупают');
 </script>
 
@@ -260,16 +272,34 @@
   </div>
 {/snippet}
 
+{#snippet head(key: TerminalSortKey, label: string, title: string)}
+  <span role="columnheader" class:r={key === 'roi'} aria-sort={terminalAriaSort(sort, key)}>
+    {#if onSort}
+      <button type="button" class="sort" class:on={sort.key === key} {title} onclick={() => onSort(key)}>
+        {#if sort.key === key && key === 'roi'}{@render arrow()}{/if}
+        {label}
+        {#if sort.key === key && key === 'name'}{@render arrow()}{/if}
+      </button>
+    {:else}
+      <span {title}>{label}</span>
+    {/if}
+  </span>
+{/snippet}
+
+{#snippet arrow()}
+  <svg class="arrow" viewBox="0 0 5 4" width="5" height="4" aria-hidden="true"><path d={sort.dir === 'asc' ? 'M2.5 0L5 4H0z' : 'M0 0H5L2.5 4z'} /></svg>
+{/snippet}
+
 {#if shown.length === 0}
   <p class="empty">{empty}</p>
 {:else}
   <div class="table" role="table" aria-label={side === 'buy' ? 'Что можно купить' : 'Что можно продать'}>
     <div class="grid head sc-label" role="row">
-      <span role="columnheader">Товар</span>
+      {@render head('name', 'Товар', 'Порядок по умолчанию: по названию товара')}
       <span role="columnheader" class="r price-head">Цена</span>
       <span role="columnheader" class="r">Мин–макс</span>
       <span role="columnheader" class="r">SCU</span>
-      <span role="columnheader" class="r" title={noCapacity ? NO_CAPACITY_HINT : 'Лучший ROI для этого товара'}>ROI</span>
+      {@render head('roi', 'ROI', roiTitle)}
     </div>
     {#each shown as row (row.commodityId)}
       {@const cell = row[side]}
@@ -352,6 +382,49 @@
 
   .r {
     text-align: right;
+  }
+
+  /* The two heads that sort are buttons as tall as the head, so the head keeps its height and the columns their widths: the label of «ROI»
+     stays at the right edge, where the numbers are, and the arrow takes the room to its left; the arrow of «Товар» stands after the word. */
+  .head [role='columnheader']:has(.sort) {
+    display: flex;
+    align-self: stretch;
+    min-width: 0;
+  }
+
+  .head .r:has(.sort) {
+    justify-content: flex-end;
+  }
+
+  /* The negative margin takes back the letter-spacing that follows the last letter, so that the label ends where the numbers do. */
+  .sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 100%;
+    margin-right: -0.08em;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .sort:hover {
+    color: var(--sc-text);
+  }
+
+  .sort.on {
+    color: var(--sc-accent);
+  }
+
+  .arrow {
+    flex: none;
+    fill: currentColor;
   }
 
   /* the number stands left of its 6 px mark: the caption stands over the number */

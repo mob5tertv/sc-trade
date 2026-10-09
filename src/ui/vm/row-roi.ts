@@ -71,6 +71,8 @@ export function isHot(roi: number, thresholdPct: number): boolean {
 export interface RoiCell {
   /** '62%', '2,5%': the number as the list of options writes it. */
   text: string;
+  /** The same number in whole percents as the table shows it (`shownPercent`; 1699 for what is written «999+»); `null` for a ratio that is not a number. The table is ordered by it. */
+  percent: number | null;
   /** The tier of the number that is shown; the number and the bar are coloured by it. */
   tier: RoiTier;
   /** At or above the threshold: the row stands out with a bar at its edge. */
@@ -91,6 +93,7 @@ export function roiCell(best: RowRoi, side: Side, ref: Reference, thresholdPct: 
   const capped = percent !== null && percent > MAX_SHOWN_PERCENT;
   return {
     text: capped ? `${MAX_SHOWN_PERCENT}+` : formatRoi(best.roi),
+    percent,
     tier: shownTier(best.roi),
     hot: isHot(best.roi, thresholdPct),
     title: `${capped ? `ROI ${formatRoi(best.roi)} · ` : ''}${where} · ${formatUec(best.buyPrice)} → ${formatUec(best.sellPrice)}\nНажми, чтобы открыть варианты`,
