@@ -5,13 +5,14 @@ import { saveSetting } from '../data/repo/settings';
 import type { DatasetName } from './datasets';
 import { prepareDataset } from './seed';
 import { extendForRun, isRunPhaseDataset, RUN_PHASE_DATASETS } from './seed-run';
-import { extendForStats, removeDiary, removeRuns } from './seed-stats';
+import { extendForOld, extendForStats, removeDiary, removeRuns } from './seed-stats';
 import { extendForWindow } from './seed-window';
 
 /**
  * Fills a fresh database with a named dataset: the one place that knows how each name is made. `default`, `run` and
  * `empty` are written by `seed.ts`; `window` is the default dataset with the extras of `seed-window.ts` on top; `stats` is
- * `window` with a long history of runs, `no-runs` is `window` without any run, `no-records` is `window` without a run
+ * `window` with a long history of runs, `stats-old` is `stats` with runs that ended more than thirty days ago (the clearing of the
+ * history, spec 14.14), `no-runs` is `window` without any run, `no-records` is `window` without a run
  * and without a price of the player's own either (a first launch after the first sync); see `seed-stats.ts`.
  * `run-loading`, `run-flight` and `run-unloading` are the default dataset with a run in that phase (`seed-run.ts`).
  * `empty-no-strip` is a first launch of a player who has switched the mini line off: the database has its schema and that one
@@ -32,10 +33,11 @@ export async function prepareAnyDataset(db: Db, dataset: DatasetName, now: numbe
     await db.execute(`PRAGMA user_version = ${MIGRATIONS[MIGRATIONS.length - 1].version + 5}`);
     return;
   }
-  if (dataset === 'window' || dataset === 'stats' || dataset === 'no-runs' || dataset === 'no-records') {
+  if (dataset === 'window' || dataset === 'stats' || dataset === 'stats-old' || dataset === 'no-runs' || dataset === 'no-records') {
     await prepareDataset(db, 'default', now);
     await extendForWindow(db, now);
-    if (dataset === 'stats') await extendForStats(db, now);
+    if (dataset === 'stats-old') await extendForOld(db, now); // before the run that is going is written: a purchase would join it
+    if (dataset === 'stats' || dataset === 'stats-old') await extendForStats(db, now);
     if (dataset === 'no-runs' || dataset === 'no-records') await removeRuns(db);
     if (dataset === 'no-records') await removeDiary(db);
     return;

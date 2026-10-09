@@ -387,15 +387,17 @@ describe('addFinishedRun and removeEmptyRun', () => {
 });
 
 describe('removeEmptyFinishedRuns', () => {
-  it('removes every empty finished run and says how many; the active, the lost and the ones with events stay', async () => {
+  it('removes every empty finished run, done or lost, and says how many; the active and the ones with events stay', async () => {
     const runAt = (status: string, at: number) => db.execute('INSERT INTO run (vehicle_id, scu_capacity, started_at, ended_at, status) VALUES (7, 696, ?, ?, ?)', [at, status === 'active' ? null : at, status]);
     await runAt('done', 10); await runAt('done', 20);                          // ids 1 and 2: leftovers
-    await runAt('lost', 30);                                                   // 3
+    await runAt('lost', 30);                                                   // 3: a leftover as well (a clearing of the history that was cut off, spec 14.14)
     await runAt('done', 40);                                                   // 4: has an event
     await db.execute("INSERT INTO run_event (run_id, ts, type, terminal_id, commodity_id, scu, price) VALUES (4, 40, 'sell', 2, 20, 10, 100)");
     await runAt('active', 50);                                                 // 5
-    expect(await removeEmptyFinishedRuns(db)).toBe(2);
-    expect((await listRuns(db)).map(r => [r.run.id, r.run.status])).toEqual([[5, 'active'], [4, 'done'], [3, 'lost']]);
+    await runAt('lost', 60);                                                   // 6: has an event
+    await db.execute("INSERT INTO run_event (run_id, ts, type, terminal_id, commodity_id, scu, price) VALUES (6, 60, 'buy', 1, 20, 10, 100)");
+    expect(await removeEmptyFinishedRuns(db)).toBe(3);
+    expect((await listRuns(db)).map(r => [r.run.id, r.run.status])).toEqual([[6, 'lost'], [5, 'active'], [4, 'done']]);
     expect(await removeEmptyFinishedRuns(db)).toBe(0);
   });
 });
@@ -409,7 +411,7 @@ describe('the leftovers of an income that was cut off', () => {
     await leftover(10); await leftover(20);
     await recordBuy(deps, buyIn(10));
     expect(await emptyDoneRuns()).toBe(0);
-    expect(sink.lines.filter(l => l.line.startsWith('[run] removed')).map(l => l.line)).toEqual(['[run] removed the empty runs of an income that was cut off {"count":2}']);
+    expect(sink.lines.filter(l => l.line.startsWith('[run] removed')).map(l => l.line)).toEqual(['[run] removed the finished runs without events (an income or a clearing that was cut off) {"count":2}']);
   });
 
   it('are removed by a call that is refused as well: it is the first touch that counts', async () => {
@@ -445,7 +447,7 @@ describe('the leftovers of an income that was cut off', () => {
     await leftover(10);
     const broken = { ...deps, db: failingOn(db, 'DELETE FROM run') };
     expect((await recordBuy(broken, buyIn(10))).run.status).toBe('active');
-    expect(sink.lines.some(l => l.line.startsWith('[run] cannot remove the empty runs of an income that was cut off'))).toBe(true);
+    expect(sink.lines.some(l => l.line.startsWith('[run] cannot remove the finished runs without events'))).toBe(true);
     expect(await emptyDoneRuns()).toBe(1);
   });
 });

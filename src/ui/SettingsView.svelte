@@ -4,8 +4,11 @@
   import type { TriggerName } from '../platform/triggers';
   import Icon from './components/Icon.svelte';
   import Section from './components/Section.svelte';
+  import MessageLines from './MessageLines.svelte';
   import { app } from './state.svelte';
+  import { stats } from './stats.svelte';
   import { headerModel } from './vm/header';
+  import { CLEAR_BUTTONS, historyStatus } from './vm/history-clearing';
   import { parseNumberText } from './vm/settings-validation';
   import WindowGrip from './WindowGrip.svelte';
 
@@ -247,6 +250,17 @@
       {/each}
     </select>
   </div>
+  <!-- the history of the runs (spec 14.14): how many, since when, and what can be cleared; each button asks first, under the header -->
+  {@const history = stats.historyCounts}
+  <p class="line" data-history>{historyStatus(history)}</p>
+  {#if history.finished > 0}
+    <div class="buttons">
+      {#if history.old > 0}
+        <button class="sc-btn" type="button" data-clear="old" title={CLEAR_BUTTONS.old.title} onclick={() => app.askClearHistory('old')}>{CLEAR_BUTTONS.old.label}</button>
+      {/if}
+      <button class="sc-btn wipe" type="button" data-clear="all" title={CLEAR_BUTTONS.all.title} onclick={() => app.askClearHistory('all')}>{CLEAR_BUTTONS.all.label}</button>
+    </div>
+  {/if}
   <div class="buttons">
     <button class="sc-btn" type="button" onclick={() => app.openLogs()}>Открыть папку логов</button>
     <button class="sc-btn" type="button" disabled={app.referenceBusy} onclick={() => app.refreshReference()}>
@@ -266,6 +280,9 @@
     <Icon name="minus" />
   </button>
 </header>
+
+<!-- the question of a button (the clearing of the history) and the message after it, under the header that stands still -->
+<MessageLines />
 
 <!-- the header stands still; when the groups are taller than the window allows, this area scrolls -->
 <div class="groups">
@@ -385,6 +402,12 @@
 
   .quit {
     margin-left: auto;
+    border-color: var(--sc-bad);
+    color: var(--sc-bad);
+  }
+
+  /* the button that deletes the whole history looks like the other one that ends something */
+  .wipe {
     border-color: var(--sc-bad);
     color: var(--sc-bad);
   }

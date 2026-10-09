@@ -24,9 +24,9 @@ async function dataset(name: Parameters<typeof prepareDataset>[1]) {
 }
 
 describe('datasets', () => {
-  it('are default, run, empty, window (seed-window.ts), stats, no-runs, no-records (seed-stats.ts), the three run phases (seed-run.ts), empty-no-strip and newer-schema (prepare.ts)', () => {
+  it('are default, run, empty, window (seed-window.ts), stats, stats-old, no-runs, no-records (seed-stats.ts), the three run phases (seed-run.ts), empty-no-strip and newer-schema (prepare.ts)', () => {
     expect([...DATASET_NAMES]).toEqual([
-      'default', 'run', 'empty', 'window', 'stats', 'no-runs', 'no-records', 'run-loading', 'run-flight', 'run-unloading',
+      'default', 'run', 'empty', 'window', 'stats', 'stats-old', 'no-runs', 'no-records', 'run-loading', 'run-flight', 'run-unloading',
       'empty-no-strip', 'newer-schema',
     ]);
     expect(isDatasetName('run')).toBe(true);
