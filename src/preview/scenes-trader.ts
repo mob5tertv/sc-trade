@@ -74,7 +74,41 @@ async function openNarrowStats(app: SceneApp, view: 'Маршруты' | 'Ист
   }
 }
 
+/**
+ * HUR-L1, the buy side, the row of ALUM (UEX knows its price there and nobody knows the stock: the dash in the column «SCU») is opened and
+ * "Купил" is pressed: the form offers the whole hold and says that the stock is unknown. A click on the button is the ordinary click of the form.
+ */
+async function openFormWithoutStock(app: SceneApp): Promise<void> {
+  await app.expand('preview');
+  const find = (selector: string, text: string): HTMLElement => {
+    const found = [...document.querySelectorAll<HTMLElement>(selector)].find((el) => (el.textContent ?? '').includes(text));
+    if (found === undefined) throw new Error(`the scene wants "${selector}" with "${text}", and there is none`);
+    return found;
+  };
+  find('.table button.line', 'ALUM').click();
+  await pause(120);
+  find('.expand button', 'Купил').click();
+  await pause(150);
+}
+
 export const TRADER_SCENES: readonly Scene[] = [
+  {
+    // nobody knows the stock of ALUM at HUR-L1: the form still offers the whole hold, and now says so: a «?» by the quantity and one line under the form
+    name: 'trade-stock-unknown',
+    title: '«Купил» товар с неизвестным запасом: «?» у количества и строка «Запас неизвестен: количество — по трюму и бюджету»',
+    dataset: 'default',
+    act: openFormWithoutStock,
+  },
+  {
+    // the same form in the narrowest window (380 px): the sum gives way, the «?» and the line stay
+    name: 'trade-stock-unknown-narrow',
+    title: '«Купил» товар с неизвестным запасом в самом узком окне (380 px)',
+    dataset: 'default',
+    act: async (app) => {
+      await app.updateSetting('panelWidth', 380);
+      await openFormWithoutStock(app);
+    },
+  },
   { name: 'stats-routes-narrow', title: 'Мои маршруты: рейтинг маршрутов в самом узком окне (380 px)', dataset: 'stats', act: (app) => openNarrowStats(app, 'Маршруты') },
   { name: 'stats-history-narrow', title: 'Мои маршруты: история рейсов в самом узком окне (380 px)', dataset: 'stats', act: (app) => openNarrowStats(app, 'История') },
   {

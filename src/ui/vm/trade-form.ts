@@ -14,6 +14,12 @@ export interface TradeDefaults {
   price: number | null;
   /** The price is mine (a price I saw, not cold). `false`: it is the one of UEX, or mine gone cold, that the row shows; the form marks it until it is touched. */
   priceIsOwn: boolean;
+  /**
+   * A purchase whose quantity rests on no stock: nobody knows how much the seller has (neither a reading of mine nor a quantity of UEX), so what
+   * is offered is the hold and the budget alone and the real stock may be smaller. The form says so (`STOCK_UNKNOWN_NOTE`). Always `false` for
+   * a sale: what the buyer already holds limits nothing.
+   */
+  stockUnknown: boolean;
 }
 
 interface DefaultsInput {
@@ -39,17 +45,23 @@ export function tradeDefaults(i: DefaultsInput): TradeDefaults {
   const own = priceIsOwn(i.cell);
   if (i.side === 'sell') {
     const onBoard = i.cargo.find((line) => line.commodityId === i.commodityId)?.scu ?? 0;
-    return { scu: onBoard > 0 ? onBoard : null, price, priceIsOwn: own };
+    return { scu: onBoard > 0 ? onBoard : null, price, priceIsOwn: own, stockUnknown: false };
   }
   const held = i.cargo.reduce((sum, line) => sum + line.scu, 0);
+  // the one stock of the row: the number of the column «SCU» (`cellScu`), and the volume of an option of the list rests on the same one (`stockKnown`:
+  // a number there, a known zero included, is known); only `null` is unknown
+  const stockScu = i.cell.ownScu ?? i.cell.hintScu;
   const offered = quantity({
     freeScu: i.capacity > 0 ? i.capacity - held : Number.POSITIVE_INFINITY,
-    stockScu: i.cell.ownScu ?? i.cell.hintScu,
+    stockScu,
     budget: i.budget,
     buyPrice: price ?? 0,
   });
-  return { scu: Number.isFinite(offered) && offered > 0 ? offered : null, price, priceIsOwn: own };
+  return { scu: Number.isFinite(offered) && offered > 0 ? offered : null, price, priceIsOwn: own, stockUnknown: stockScu === null };
 }
+
+/** The line under the form of a purchase whose stock is unknown, next to the «?» by the quantity (the words of the same note of an option of the list). */
+export const STOCK_UNKNOWN_NOTE = 'Запас неизвестен: количество — по трюму и бюджету';
 
 /**
  * The quantity the trade is counted from, as it goes into the record (`knownScu`): the quantity of my own that the row
