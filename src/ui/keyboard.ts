@@ -10,6 +10,8 @@ import type { KeyboardHolds } from './vm/keyboard-holds';
 //  - a press on a text field takes the keyboard first and puts the cursor into the field afterwards; when Windows
 //    refuses the take, nobody holds the keyboard and the cursor is taken out of the field again;
 //  - a press on anything else is told to the holds: right after the pointer left a field it may have activated the window;
+//  - a number field (`data-select-on-focus`) that gets the cursor has its whole number selected, so that typing replaces
+//    it; a click on a field that has the cursor already puts the caret where the click was;
 //  - `Esc` in a field (when nothing else used it) leaves the field and gives the keyboard back to the game,
 //    the window stays open;
 //  - a watchdog gives the keyboard back when the field is gone (an answer was sent and the screen was redrawn), and
@@ -39,6 +41,45 @@ function fieldAt(target: EventTarget | null): HTMLElement | null {
   // them): that is a click on the field, and it needs the keyboard like one.
   const field = hit instanceof HTMLLabelElement ? hit.control : hit;
   return field instanceof HTMLElement && isEditable(field) ? field : null;
+}
+
+/**
+ * The attribute of a number field whose whole content is selected when it gets the cursor: the price and the quantity of
+ * the open row of the table, of the form of a trade and of the quick entry. The fields of the settings and the search
+ * boxes do not carry it (a search box has a rule of its own).
+ */
+const SELECT_ON_FOCUS = 'data-select-on-focus';
+
+/** The number field at `target` (what an event hit); `null` when it is no such field. */
+function numberFieldAt(target: EventTarget | null): HTMLInputElement | null {
+  return target instanceof HTMLInputElement && target.hasAttribute(SELECT_ON_FOCUS) ? target : null;
+}
+
+/**
+ * Whether a press on a number field is the one that brings it the cursor (and so selects its number), or a click on a
+ * field that is being edited already (the caret goes where the click was). `focused`: the field has the focus of the
+ * page. That alone is not "being edited": a field keeps the focus of the page while the keyboard is with the game (the
+ * player clicked the game and came back), and the press that brings the keyboard back is a first click again.
+ */
+export function pressBringsCursor(press: { focused: boolean; keyboardHeld: boolean }): boolean {
+  return !press.focused || !press.keyboardHeld;
+}
+
+/**
+ * Whether the press that has just ended leaves the whole number selected. `start`, `end`: the selection of the field
+ * when the button goes up (`null` when the field cannot say), `length`: how long its text is.
+ *
+ * The browser works against a selection made when the field gets the focus: the same press that gave the focus puts
+ * a caret where the mouse is, and a press that landed inside the selection takes it away when the button goes up. So
+ * the press that brought the cursor ends with everything selected once more (and the release is kept from undoing it),
+ * unless the player dragged over a part of the number with that very press: that part is what he wants. A press on a
+ * field that had the cursor already changes nothing: the caret stays where the browser put it.
+ */
+export function pressSelectsAll(press: { broughtCursor: boolean; start: number | null; end: number | null; length: number }): boolean {
+  if (!press.broughtCursor) return false;
+  const { start, end, length } = press;
+  if (start === null || end === null || start === end) return true;
+  return start === 0 && end === length;
 }
 
 // The player opens the window with a click while still holding a key of the game (`F` shows its
@@ -89,8 +130,41 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     if (event.relatedTarget === null) pointerAt(null);
   };
 
+  /** The number field the mouse button went down on, and whether that press is the one that brings it the cursor. */
+  let pressedNumber: { field: HTMLInputElement; broughtCursor: boolean } | null = null;
+
+  // The whole number is selected when the field gets the cursor from Tab or from the program. A press of the mouse that
+  // is going on selects when its button goes up: selected now, the number would be dragged away by the rest of the press
+  // (a press inside a selection starts a drag of the selected text), and the player could not select a part of it.
+  const onFocusIn = (event: FocusEvent): void => {
+    const field = numberFieldAt(event.target);
+    if (field !== null && pressedNumber?.field !== field) field.select();
+  };
+
+  // The button of a press on a number field goes up (see `pressSelectsAll`).
+  const onMouseUp = (event: MouseEvent): void => {
+    const press = pressedNumber;
+    pressedNumber = null;
+    // the cursor is not in the field after all: Windows refused the keyboard and it was taken out, or it has moved on
+    if (press === null || document.activeElement !== press.field) return;
+    const { field, broughtCursor } = press;
+    if (!pressSelectsAll({ broughtCursor, start: field.selectionStart, end: field.selectionEnd, length: field.value.length })) return;
+    field.select();
+    // the release of the button must not take the selection away again
+    event.preventDefault();
+  };
+  // a press that ends with no release of the button (the browser took it over) is over all the same
+  const onPressGone = (): void => {
+    pressedNumber = null;
+  };
+
   const onPointerDown = (event: PointerEvent): void => {
     const field = fieldAt(event.target);
+    const number = numberFieldAt(field);
+    // read before the hold: it is this press that makes the window hold the keyboard
+    pressedNumber = number === null
+      ? null
+      : { field: number, broughtCursor: pressBringsCursor({ focused: document.activeElement === number, keyboardHeld: holds.held }) };
     if (field === null) {
       // whatever was seen last, the pointer is over no field now
       pointerAt(null);
@@ -160,6 +234,10 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   document.addEventListener('pointerover', onPointerOver, true);
   document.addEventListener('pointerout', onPointerOut, true);
   document.addEventListener('pointerdown', onPointerDown, true);
+  document.addEventListener('focusin', onFocusIn, true);
+  document.addEventListener('mouseup', onMouseUp, true);
+  document.addEventListener('pointercancel', onPressGone, true);
+  document.addEventListener('dragend', onPressGone, true);
   window.addEventListener('keydown', onKeyDown);
   resetHeldKeys();
 
@@ -171,6 +249,10 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     document.removeEventListener('pointerover', onPointerOver, true);
     document.removeEventListener('pointerout', onPointerOut, true);
     document.removeEventListener('pointerdown', onPointerDown, true);
+    document.removeEventListener('focusin', onFocusIn, true);
+    document.removeEventListener('mouseup', onMouseUp, true);
+    document.removeEventListener('pointercancel', onPressGone, true);
+    document.removeEventListener('dragend', onPressGone, true);
     window.removeEventListener('keydown', onKeyDown);
   };
 }

@@ -182,6 +182,7 @@
       type="text"
       inputmode="numeric"
       autocomplete="off"
+      data-select-on-focus
       placeholder="Цена"
       title={badPrice && problem !== null ? problem : 'Цена, UEC за SCU'}
       aria-label="Цена, UEC за SCU"
@@ -197,6 +198,7 @@
       type="text"
       inputmode="numeric"
       autocomplete="off"
+      data-select-on-focus
       placeholder="SCU"
       title={badScu && problem !== null ? problem : 'Количество, SCU (можно не вводить)'}
       aria-label="Количество, SCU (можно не вводить)"

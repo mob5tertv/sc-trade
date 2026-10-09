@@ -83,7 +83,8 @@
 <!--
   The form of a trade under the row it belongs to: in the flow of the window, never over it (the window is as big as its
   content, whatever sticks out is cut). The fields take the keyboard when they are clicked, like every field of the window;
-  the button writes the trade, Enter in a field does the same.
+  the button writes the trade, Enter in a field does the same. `data-select-on-focus`: a field that gets the cursor has its whole
+  number selected, so that typing replaces it (ui/keyboard.ts).
 -->
 <form class="trade sc-reveal" aria-label={title} novalidate onsubmit={submit}>
   <div class="line">
@@ -92,6 +93,7 @@
       type="text"
       inputmode="numeric"
       autocomplete="off"
+      data-select-on-focus
       aria-label="Количество, SCU"
       title="Количество, SCU"
       placeholder="SCU"
@@ -107,6 +109,7 @@
       type="text"
       inputmode="numeric"
       autocomplete="off"
+      data-select-on-focus
       aria-label="Цена за SCU, UEC"
       title={priceHint}
       placeholder="UEC"

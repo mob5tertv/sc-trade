@@ -233,6 +233,8 @@
   <!-- the price of UEX (or my cold one) stands in the field, muted, until the player touches it or sends it: then it is his -->
   {@const foreign = !base.priceIsOwn && !draft?.typed.price && !draft?.sent}
   {@const estimated = cell.ownScu !== null && cell.ownScuBase !== null}
+  <!-- `data-select-on-focus`: the number is selected whole when the field gets the cursor (ui/keyboard.ts). A selection is not typing:
+       no draft is made by it, and a price that is not mine stays muted -->
   <div class="expand sc-reveal">
     <div class="edit">
       <input
@@ -242,6 +244,7 @@
         inputmode="numeric"
         autocomplete="off"
         data-cell={key}
+        data-select-on-focus
         aria-label="{row.code}: цена {side === 'buy' ? 'покупки' : 'продажи'}, UEC за SCU"
         aria-invalid={draft?.bad.price ? 'true' : undefined}
         placeholder={placeholder(cell.hint)}
@@ -256,6 +259,7 @@
         inputmode="numeric"
         autocomplete="off"
         data-cell={key}
+        data-select-on-focus
         aria-label={side === 'buy' ? `${row.code}: количество у продавца, SCU` : `${row.code}: количество у покупателя на складе, SCU`}
         aria-invalid={draft?.bad.scu ? 'true' : undefined}
         placeholder={placeholder(cell.hintScu)}
