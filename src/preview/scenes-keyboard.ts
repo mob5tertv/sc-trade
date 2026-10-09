@@ -197,6 +197,8 @@ async function confirmTrade(): Promise<void> {
 /** The prices the application was told to write so far, and how many times the log says the keyboard went back by itself. */
 const pricesWritten = (): string[] => (window.__preview?.log ?? []).filter((line) => line.includes('[ui] record price'));
 const wentBackLines = (): string[] => (window.__preview?.log ?? []).filter((line) => line.includes('[ui] the keyboard was not used'));
+/** The settings the application has written so far. */
+const settingChanges = (): string[] => (window.__preview?.log ?? []).filter((line) => line.includes('[ui] change setting'));
 
 /** The trades the service has written so far (its own lines in the log). */
 const tradesWritten = (): string[] => (window.__preview?.log ?? []).filter((line) => /\[run\] (buy|sell|income) /.test(line));
@@ -499,6 +501,58 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       expectKeyboard(app, `after ${KEYBOARD_IDLE_MS / 1000} s without a key`, { held: false, owner: 'game', cursor: null });
       if (wentBackLines().length !== 1) throw new Error(`the log must say once that the keyboard went back by itself, and it says so ${wentBackLines().length} times`);
       if (pricesWritten().length !== 1) throw new Error(`the price was written ${pricesWritten().length} times, not once`);
+    },
+  },
+  {
+    // Trace N of the second review. «Бюджет» of the settings holds 90000; the player empties the field and presses neither Tab nor
+    // Enter. An empty field is not "nothing typed": it was not empty before he touched it, and the settings save a field that is
+    // left — the automatic return would write "no budget" by a timer. So the keyboard stays.
+    name: 'keyboard-idle-emptied',
+    title: 'Настройки: поле «Бюджет» (90000) стёрто, ни Tab, ни Enter, 16,5 с тишины: клавиатура осталась у окна, бюджет не изменён',
+    dataset: 'default',
+    act: async (app) => {
+      await app.updateSetting('budget', 90000);
+      await app.expand('preview');
+      app.openSettings();
+      await pause(100);
+      watchKeys(app);
+      const changes = settingChanges().length;
+      const budget = await clickField('#set-budget', 1);
+      if (budget.value !== '90000') throw new Error(`the scene needs 90000 in the budget field, and it holds "${budget.value}"`);
+      typeInto('#set-budget', '');
+      await pause(KEYBOARD_IDLE_MS + 1500);
+      expectKeyboard(app, `${(KEYBOARD_IDLE_MS + 1500) / 1000} s after the budget was emptied`, { held: true, owner: 'overlay', text: '' });
+      if (document.activeElement !== budget) throw new Error('the cursor is not in the budget field any more');
+      if (settingChanges().length !== changes) throw new Error(`nobody confirmed the empty budget, and a setting was written: ${settingChanges().at(-1)}`);
+      if (app.settings.budget !== 90000) throw new Error(`the budget is ${app.settings.budget}, not 90000`);
+      if (wentBackLines().length !== 0) throw new Error('the log says the keyboard went back by itself, over a field that was emptied and not confirmed');
+    },
+  },
+  {
+    // Trace P of the second review, and the pin of "a field of the quick entry is a field of a form". A commodity is typed and picked
+    // with Enter: the list puts its name in place of the letters, and the cursor goes to the price, which is empty. Nothing else was
+    // typed, so only the pick holds the keyboard: it is the player's entry too, and a window without the keyboard could fold over the
+    // line. (With a price typed as well the keyboard would stay whatever the rules took the fields for, and the scene would pin nothing.)
+    name: 'keyboard-idle-quick',
+    title: 'Быстрый ввод: товар набран и выбран Enter, курсор в пустой цене, 16,5 с тишины: клавиатура осталась у окна, выбранный товар на месте',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      await pressButton(element('button.entry'));
+      await until('the cursor in the commodity field of the quick entry', cursorIn(QUICK_COMMODITY));
+      const commodity = input(QUICK_COMMODITY);
+      typeInto(QUICK_COMMODITY, 'sti');
+      await pause(60);
+      commodity.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+      await until('the cursor in the price of the quick entry', cursorIn('.quick .in-price'));
+      const picked = commodity.value;
+      if (picked === '' || picked === 'sti') throw new Error(`Enter picked no commodity: the field holds "${picked}"`);
+      await pause(KEYBOARD_IDLE_MS + 1500);
+      expectKeyboard(app, `${(KEYBOARD_IDLE_MS + 1500) / 1000} s after the commodity was picked`, { held: true, owner: 'overlay', cursor: 'quick in-price', text: '' });
+      if (commodity.value !== picked) throw new Error(`the picked commodity is gone from its field: "${commodity.value}", not "${picked}"`);
+      if (wentBackLines().length !== 0) throw new Error('the log says the keyboard went back by itself, over a line of the quick entry that is not saved');
+      if (pricesWritten().length !== 0) throw new Error(`nothing was confirmed, and a price was written: ${pricesWritten()[0]}`);
     },
   },
   {

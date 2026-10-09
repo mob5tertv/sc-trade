@@ -363,7 +363,8 @@
 <MessageLines />
 
 <!-- the header stands still; when the groups are taller than the window allows, this area scrolls -->
-<div class="groups">
+<!-- `data-saves-on-leave`: every field in here is saved at Enter and when it is left; the keyboard rules read it (ui/keyboard.ts) -->
+<div class="groups" data-saves-on-leave>
   {@render group('settings:ship', 'Корабль и поиск', summaries.ship, ship)}
   {@render group('settings:fresh', 'Свежесть цен', summaries.fresh, fresh)}
   {@render group('settings:routes', 'Расчёт маршрутов', summaries.routes, routes)}

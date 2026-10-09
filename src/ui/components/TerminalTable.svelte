@@ -236,6 +236,7 @@
   {@const estimated = cell.ownScu !== null && cell.ownScuBase !== null}
   <!-- `data-select-on-focus`: the number is selected whole when the field gets the cursor (ui/keyboard.ts). A selection is not typing:
        no draft is made by it, and a price that is not mine stays muted -->
+  <!-- `data-cell` on both fields: the cell is saved whole at Enter and when the cursor leaves both; the keyboard rules read it too (ui/keyboard.ts) -->
   <div class="expand sc-reveal">
     <div class="edit">
       <input
