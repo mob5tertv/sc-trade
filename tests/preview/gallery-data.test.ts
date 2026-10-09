@@ -246,9 +246,18 @@ describe('the gallery run, mini line and history', () => {
     expect(data.strip.idle).toEqual({ kind: 'idle', location: 'HUR-L1', target: 'ARC-L1', session: null });
     expect(data.strip.run).toMatchObject({ kind: 'run', target: 'ARC-L1', cargo: nbsp('MEDS 120 по 2 115, STIM 80 по 2 810') });
     if (data.strip.run.kind !== 'run' || data.strip.long.kind !== 'run') throw new Error('expected runs');
-    expect(data.strip.run.expect).not.toBeNull();
+    expect(data.strip.run.profit).not.toBeNull();
     expect(data.strip.run.rate).not.toBeNull();
     expect(data.strip.long.cargo.length).toBeGreaterThan(60);
+  });
+
+  it('has the line of one commodity at an ordinary price: what it cost, what it is expected to bring, the profit and the rate', () => {
+    const { single } = data.strip.cargo;
+    if (single.kind !== 'run') throw new Error('expected a run');
+    expect(single.cargo).toBe(nbsp('MEDS 120 SCU по 2 115'));
+    expect(single.cargoLine).toMatch(/^MEDS 120 SCU по 2.115, ждём \d/);
+    expect(single.profit).toMatch(/^≈ [+-]\d/);
+    expect(single.rate).toMatch(/\/ч$/);
   });
 
   it('has the lines of one, two and three commodities bought for seven-digit prices, and the run without a target', () => {
@@ -256,13 +265,13 @@ describe('the gallery run, mini line and history', () => {
     expect(one).toMatchObject({ kind: 'run', cargo: nbsp('MEDS 600 SCU по 1 234 567') });
     expect(two).toMatchObject({ kind: 'run', cargo: nbsp('MEDS 120 по 1 234 567, STIM 80 по 2 345 678') });
     expect(three).toMatchObject({ kind: 'run', cargo: nbsp('MEDS 120 по 1 234 567, STIM 80 по 2 345 678, PFOO 50 по 1 456 789') });
-    // the target of the dataset pays for all three: the first one is expected in the line, every one in the tooltip, and the rate is there
+    // the target of the dataset pays for all three: the profit and the rate are there, and every one is expected in the tooltip (not in the line)
     if (three.kind !== 'run') throw new Error('expected a run');
-    expect(three.expect).not.toBeNull();
+    expect(three.profit).not.toBeNull();
     expect(three.rate).not.toBeNull();
     expect(three.cargoTitle.split('\n')).toHaveLength(3);
     if (data.strip.noTarget.kind !== 'run') throw new Error('expected a run');
-    expect(data.strip.noTarget).toMatchObject({ target: null, expect: null, rate: null });
+    expect(data.strip.noTarget).toMatchObject({ target: null, profit: null, rate: null });
     expect(data.strip.noTarget.cargoTitle).not.toContain('ждём');
   });
 

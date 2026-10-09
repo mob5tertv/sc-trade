@@ -185,8 +185,19 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
     }
   }
 
+  /**
+   * The settings whose write fails: a scene sets `__previewSettingWriteFails` to their keys (it may change it as the scene goes on). The write of any
+   * other setting, and everything else of the database, goes as usual. It shows what the window does when a setting cannot be saved.
+   */
+  function failsToWrite(name: string, args: Payload): boolean {
+    const keys = (globalThis as { __previewSettingWriteFails?: string[] }).__previewSettingWriteFails ?? [];
+    if (name !== 'execute' || keys.length === 0 || !/^\s*INSERT INTO setting\b/i.test(String(args.query ?? ''))) return false;
+    return keys.includes(String((args.values as unknown[] | undefined)?.[0]));
+  }
+
   function sqlCommand(name: string, args: Payload): unknown {
     if (name !== 'load' && name !== 'execute' && name !== 'select' && name !== 'close') return UNKNOWN;
+    if (failsToWrite(name, args)) throw new Error('[preview] this setting cannot be written (a scene asked for it)');
     return sql({
       op: name,
       db: args.db as string | undefined,

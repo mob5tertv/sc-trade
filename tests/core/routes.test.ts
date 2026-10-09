@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { quantity, routesFrom, routesTo, travelSec } from '../../src/core/routes';
+import { quantity, routesFrom, routesTo, stockKnown, travelSec } from '../../src/core/routes';
 import { buildMarket } from '../../src/core/market';
 import { distKey, pairKey } from '../../src/core/types';
+import type { Estimate } from '../../src/core/types';
 import { obs } from '../helpers/factories';
 import { ctx, GOLD, market, NOW, withBuy, withOwnSellScu, withSell, withUexSellScu } from '../helpers/route-fixtures';
 
@@ -178,8 +179,11 @@ describe('routesTo', () => {
   });
 
   it('applies the commodity filter before the topN cut', () => {
-    // terminal 2 also buys Titanium (20), cheap at terminal 1: that route outranks Gold
-    const m2 = withBuy(withSell(market, 2, 5000, 20), 1, { avgWeek: 100, minWeek: 100, maxWeek: 100 }, 20);
+    // terminal 2 also buys Titanium (20), cheap at terminal 1: that route outranks Gold (its stock there is known by my own reading: a trip on
+    // an unknown stock would stand after the Gold one, whatever it pays)
+    const priced = withBuy(withSell(market, 2, 5000, 20), 1, { avgWeek: 100, minWeek: 100, maxWeek: 100 }, 20);
+    const reading = obs({ id: 7, ts: NOW - 10 * 60, terminalId: 1, commodityId: 20, side: 'buy', price: 100, scu: 500 });
+    const m2 = buildMarket([...priced.uex.values()], [...priced.own.values(), reading]);
     const c = { ...ctx, settings: { ...ctx.settings, topN: 1 } };
     expect(routesTo(m2, 2, c).options.map(o => o.commodityId)).toEqual([20]);
     const gold = routesTo(m2, 2, c, GOLD);
@@ -198,5 +202,71 @@ describe('routesTo', () => {
     const r = routesTo(withSell(market, 777, 9999), 777, ctx);
     expect(r.options).toEqual([]);
     expect(r.trace.dropped.unknownTerminal).toBeGreaterThan(0);
+  });
+});
+
+// Terminal 5 sells Gold at 6000 and nobody knows how much of it is there (`buy.scu` is null): its trips are counted at the whole free space
+// and look the best there are. They must stand after every trip that rests on a stock somebody knows, whatever the sort (spec 14.5, version 1.1).
+describe('trips that rest on an unknown stock stand after the known ones', () => {
+  const unknownStock = withBuy(market, 5, { avgWeek: 6000, minWeek: 5900, maxWeek: 6200 });
+  const near = { ...ctx, distances: new Map([...ctx.distances, [distKey(1, 5), 2], [distKey(5, 2), 60], [distKey(5, 3), 62]]) };
+  const sortedBy = (sort: 'uecPerHour' | 'roi', topN = 5) => ({ ...near, settings: { ...near.settings, sort, topN } });
+  const ends = (options: Array<{ originId: number; destId: number }>) => options.map(o => [o.originId, o.destId]);
+
+  it('would stand first without that rule: the unknown stock buys the most and is the cheapest', () => {
+    // the premise of the tests below, by the numbers: origin 5 beats origin 1 on both metrics
+    const all = routesFrom(unknownStock, [1, 5], 1, sortedBy('uecPerHour', 99)).options;
+    const best = (originId: number, key: 'uecPerHour' | 'roi') => Math.max(...all.filter(o => o.originId === originId).map(o => o[key] ?? 0));
+    expect(best(5, 'uecPerHour')).toBeGreaterThan(best(1, 'uecPerHour'));
+    expect(best(5, 'roi')).toBeGreaterThan(best(1, 'roi'));
+    expect(all.find(o => o.originId === 5)!.buy.scu).toBeNull();
+    expect(all.find(o => o.originId === 1)!.buy.scu).toBe(340);
+  });
+
+  it.each(['uecPerHour', 'roi'] as const)('puts them after the known ones when sorted by %s, each group by that sort', (sort) => {
+    const { options } = routesFrom(unknownStock, [1, 5], 1, sortedBy(sort));
+    expect(ends(options)).toEqual([[1, 2], [1, 3], [5, 2], [5, 3]]);
+  });
+
+  it('chooses the best N after that order: a known trip is not pushed out by an unknown one that ranks higher', () => {
+    const { options, trace } = routesFrom(unknownStock, [1, 5], 1, sortedBy('uecPerHour', 2));
+    expect(ends(options)).toEqual([[1, 2], [1, 3]]);
+    expect(trace.kept).toBe(4);   // `kept` is counted before the cut, as it was
+    // and when there are fewer known trips than N the unknown ones fill what is left
+    expect(ends(routesFrom(unknownStock, [1, 5], 1, sortedBy('uecPerHour', 3)).options)).toEqual([[1, 2], [1, 3], [5, 2]]);
+  });
+
+  it('orders the trips that END at a terminal the same way (the origin with an unknown stock is the cheaper one)', () => {
+    expect(ends(routesTo(unknownStock, 2, sortedBy('uecPerHour')).options)).toEqual([[1, 2], [5, 2]]);
+    expect(ends(routesTo(unknownStock, 2, sortedBy('roi')).options)).toEqual([[1, 2], [5, 2]]);
+  });
+
+  it('counts a stock estimated by the timer from my own reading as known', () => {
+    // terminal 5: my reading of 100 SCU half an hour ago, the refill timer brings it up to date; terminal 6: no reading, UEX does not say, and the cheapest of all
+    const cheapest = withBuy(unknownStock, 6, { avgWeek: 5000, minWeek: 4900, maxWeek: 5200 });
+    const reading = obs({ id: 9, ts: NOW - 30 * 60, terminalId: 5, commodityId: GOLD, side: 'buy', price: 6000, scu: 100 });
+    const m2 = buildMarket([...cheapest.uex.values()], [...cheapest.own.values(), reading]);
+    const { options } = routesFrom(m2, [1, 5, 6], 1, sortedBy('roi'));
+    const stockOf = (originId: number) => options.find(o => o.originId === originId)!.buy;
+    expect(stockOf(5).stock).not.toBeNull();             // the timer made the estimate
+    expect(stockOf(5).scu).toBeGreaterThanOrEqual(100);
+    expect(stockOf(6).scu).toBeNull();
+    // 6 is the best by ROI, and still all of its trips come after every trip of 1 and of 5
+    const order = options.map(o => o.originId);
+    expect(order.indexOf(5)).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf(6)).toBeGreaterThan(Math.max(order.lastIndexOf(1), order.lastIndexOf(5)));
+  });
+});
+
+describe('stockKnown', () => {
+  const buyWith = (scu: number | null) => ({ buy: { scu } as Estimate });
+
+  it('is true for a stock somebody knows, a known zero included', () => {
+    expect(stockKnown(buyWith(340))).toBe(true);
+    expect(stockKnown(buyWith(0))).toBe(true);
+  });
+
+  it('is false only for no stock at all (`null`)', () => {
+    expect(stockKnown(buyWith(null))).toBe(false);
   });
 });

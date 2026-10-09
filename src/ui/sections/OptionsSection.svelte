@@ -7,6 +7,8 @@
   import { stats } from '../stats.svelte';
   import { lookupEmptyText, lookupTarget } from '../vm/lookup';
   import { optionsSummary } from '../vm/options-summary';
+  import { titlePieces } from '../vm/route-pieces';
+  import { terminalLabel } from '../vm/terminal-name';
   import { uexRangeOf } from '../vm/terminal-rows';
 
   const SECTION = 'options';
@@ -21,6 +23,11 @@
   const open = $derived(app.sectionOpen(SECTION));
   const needsCapacity = $derived(app.settings.scuCapacity <= 0);
   const summary = $derived(optionsSummary({ title: lookup.title, preliminary: lookup.preliminary, progress: lookup.progress }));
+  // what is asked, and the terminal with what follows it, give way to each other equally in the header, each with its own ellipsis: the name of the terminal is not
+  // the first thing a narrow window loses ('Где купить Gold для TDD Area …')
+  const summaryPieces = $derived(
+    summary === '' || request === null ? undefined : titlePieces(summary, terminalLabel(app.reference, request.terminalId)),
+  );
 
   // which option a click opened, for the log: the ids of the trip, no prices
   const rowContext = (option: RouteOption) => ({ commodityId: option.commodityId, originId: option.originId, destId: option.destId });
@@ -56,6 +63,7 @@
   <Section
     title="Варианты"
     {summary}
+    {summaryPieces}
     {open}
     onToggle={() => void app.toggleSection(SECTION)}
     onClose={() => app.closeLookup()}

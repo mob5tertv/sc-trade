@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { routePieces } from '../vm/route-pieces';
   import type { HistoryRow } from '../vm/stats-rows';
+  import PieceLine from './PieceLine.svelte';
 
   let { rows }: { rows: HistoryRow[] } = $props();
 
@@ -22,7 +24,8 @@
     {#each rows as row (row.runId)}
       <div class="grid line" role="row" title={STATUS[row.status]}>
         <span class="when sc-num">{row.when}</span>
-        <span class="title {row.status}" title="{row.hint} · {STATUS[row.status]}">{row.title}</span>
+        <!-- the ends of the route give way equally, each with its own ellipsis, and the arrow stays; a title without a route is cut at its end -->
+        <span class="title {row.status}" title="{row.hint} · {STATUS[row.status]}"><PieceLine pieces={routePieces(row.title)} /></span>
         <span class="sc-num profit" class:loss={isLoss(row.profit)} title="Прибыль">{row.profit}</span>
         <span class="sc-num" title="ROI">{row.roi}</span>
         <span class="sc-num" title="Длительность">{row.duration}</span>

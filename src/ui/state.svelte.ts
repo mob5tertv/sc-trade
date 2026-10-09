@@ -51,7 +51,9 @@ import { createLatestRequest } from './vm/latest-request';
 import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './vm/lookup';
 import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
-import { closedRunNotice, stayTimes } from './vm/run-closed';
+import { assignsMarkKey, carryOutKeysHint, keysHintStep, withKeysHint } from './vm/keys-hint';
+import { closedRunNotice, stayTimes, type ClosedRunNotice } from './vm/run-closed';
+import { quitQuestion } from './vm/quit';
 import { markRefusal } from './vm/run-phase';
 import { sameRun } from './vm/same-run';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
@@ -60,6 +62,7 @@ import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, refreshPl
 import { stripModel, type StripModel } from './vm/strip';
 import { rowRoiMap, type RowRoi } from './vm/row-roi';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
+import { arrivalAsksWhere, askedInRun, pickEffect } from './vm/terminal-pick';
 import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
 import { bindNeeded, boundAfter, withoutErrorsOfEmptyKeys } from './vm/trigger-suspension';
@@ -119,7 +122,9 @@ import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 /** What the expanded window shows: the main screen or the settings, which take the whole window. */
 export type View = 'main' | 'settings';
 export type Phase = 'booting' | 'ready' | 'failed';
-export interface Notice { text: string; kind: 'info' | 'error' }
+/** A button of the notice line next to its cross: what it says and what a click does. */
+export interface NoticeAction { label: string; run: () => void }
+export interface Notice { text: string; kind: 'info' | 'error'; action?: NoticeAction }
 
 /** What the "Варианты" section shows (spec 14.2, 14.8). */
 export interface LookupState {
@@ -175,6 +180,9 @@ const LOOKUP_REPEAT = 'settings changed';
 const OPTIONS_SECTION = 'options';
 /** The id of the "Рейс" section among the open sections. */
 const RUN_SECTION = 'run';
+/** The id of the group "Клавиши" of the settings among the open sections, and how long the hint about those keys stays (it has a button to press). */
+const KEYS_SECTION = 'settings:keys';
+const KEYS_HINT_MS = 15_000;
 /** How long a message of the mini line (`flash`) stays, and how long a question waits before it counts as "no". */
 const FLASH_MS = 3000;
 const CONFIRM_MS = 10_000;
@@ -182,7 +190,7 @@ const CONFIRM_BUSY = 'confirm';
 const TRADE_FAILED = 'Не удалось записать сделку. Подробности в логе.';
 const CLEAR_FAILED = 'Не удалось очистить историю. Подробности в логе.';
 const RUN_READ_FAILED = 'Не удалось прочитать рейс из базы. Подробности в логе.';
-const NO_CURRENT_LOCATION = 'Сначала укажи, где ты находишься: найди локацию в поиске и нажми «Я здесь».';
+const NO_CURRENT_LOCATION = 'Сначала укажи, где ты находишься: выбери локацию в поиске (в рейсе — Ctrl+Enter или «Я здесь»).';
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
 
@@ -314,6 +322,15 @@ class AppState {
    * Change it through `#showTerminal`, which also settles the side of the table.
    */
   viewTerminalId = $state<number | null>(null);
+  /** The id of the run an arrival was marked in with no target, and nothing has said where the ship landed since; `null` when there is no such question (`askingWhere`). In memory only. */
+  #askedInRun = $state<number | null>(null);
+  /**
+   * The field of the location asks "Где прилетел?": an arrival was marked with no target, so nothing tells where the ship has landed, and the
+   * next terminal chosen in the field becomes the current location (`pickTerminal`). It ends with that choice, a trade, a take-off, and the
+   * end of the run. The question belongs to the run it was asked in (`askedInRun`): the end of that run, a lost cargo and a cleared history
+   * leave none, and it cannot come back in another run.
+   */
+  askingWhere = $derived(askedInRun(this.#askedInRun, this.activeRun?.run.id ?? null));
   phase = $state<Phase>('booting');
   /** One line for the strip while the application starts. */
   bootStatus = $state('Запуск…');
@@ -1209,7 +1226,10 @@ class AppState {
 
   // ---- actions of the player ----------------------------------------------------------------------
 
-  /** The location search of the header: only changes what the Terminal section shows. */
+  /**
+   * Only changes what the Terminal section shows; the current location stays. For whatever merely looks at a terminal (the scenes of the preview
+   * use it). A choice in the field of the location of the header is `pickTerminal`, which may also make it the current location.
+   */
   setViewTerminal(id: number): void {
     this.#log.info('ui', 'view terminal', { terminalId: id });
     this.#showTerminal(id);
@@ -1217,7 +1237,25 @@ class AppState {
 
   /** "Я здесь": the viewed terminal becomes the current location. */
   async setCurrentTerminal(id: number): Promise<void> {
-    if ((await this.#setLocation(id)) === null) this.#showTerminal(id);
+    if ((await this.#setLocation(id)) === null) {
+      this.#askedInRun = null; // the question "Где прилетел?" is answered
+      this.#showTerminal(id);
+    }
+  }
+
+  /**
+   * A terminal chosen in the field of the location (Enter, Ctrl+Enter, a click on the list). It is always the terminal the window looks at;
+   * whether it is also the current location is `pickEffect`: with no run going it is ("Я здесь" in one press), in a run it is not, so that
+   * the player can read the prices of a far station without losing his "from" (Ctrl+Enter says "Я здесь" anyway), and the field that asks
+   * "Где прилетел?" takes it as the answer. The question ends with the choice.
+   */
+  async pickTerminal(id: number, ctrl = false): Promise<void> {
+    const askingWhere = this.askingWhere;
+    const effect = pickEffect({ runGoing: this.activeRun !== null, ctrl, askingWhere });
+    this.#log.info('ui', 'pick terminal', { terminalId: id, effect, ctrl, askingWhere });
+    this.#askedInRun = null;
+    this.#showTerminal(id);
+    if (effect === 'here') await this.#locateAt(id);
   }
 
   /**
@@ -1499,17 +1537,56 @@ class AppState {
    * Said BEFORE whatever else the trade does after the write, so that a failure of one of those steps (the target that cannot be
    * cleared, the run that cannot be read) lands on top of it and is never covered by it. It carries three numbers to read, so it
    * stays no less than eight seconds where it is said (`stayTimes`); in the mini line an income keeps the usual three, because the
-   * run that goes on has its mark buttons there and they are not drawn while a message is up.
+   * run that goes on has its mark buttons there and they are not drawn while a message is up. Once, after the first run that is closed with no
+   * key for "Взлетел" and "Прилетел", the notice line goes on with a hint about those keys (`keysHintStep`, `#showKeysHint`).
    */
-  #announceClosed(closed: RunWithEvents): void {
+  async #announceClosed(closed: RunWithEvents): Promise<void> {
     try {
       const notice = closedRunNotice(closed);
       this.#log.info('ui', 'run closed', { runId: closed.run.id, status: closed.run.status });
       this.#say(notice.text, notice.kind, stayTimes(notice, FLASH_MS, NOTICE_MS));
+      // the hint has a button to press: it is for the notice line of the expanded window, not for the mini line that lets a message go in three seconds
+      const step = keysHintStep(notice, this.settings, this.mode === 'expanded');
+      await carryOutKeysHint(step, { show: () => this.#showKeysHint(notice), remember: () => this.#rememberKeysHint() });
     } catch (err) {
       // the trade IS written: a notice that cannot be made must not turn it into a failure
       this.#log.error('ui', 'cannot say that the run is closed', { runId: closed.run.id, err });
     }
+  }
+
+  /**
+   * The notice of the closed run goes on with the hint about the keys of the two marks and a button that opens them. It replaces the notice
+   * only while that is still the one of the run in the expanded window (a message that came after it, an error of a later step, stays on top),
+   * and says whether the hint is on the screen: only then the flag is written (`carryOutKeysHint`).
+   */
+  #showKeysHint(notice: ClosedRunNotice): boolean {
+    if (this.mode !== 'expanded' || this.notice?.text !== notice.text) return false;
+    this.#log.info('ui', 'keys hint shown');
+    this.notify(withKeysHint(notice.text), notice.kind, KEYS_HINT_MS, { label: 'Настроить', run: () => void this.openKeysSettings() });
+    return true;
+  }
+
+  /**
+   * Writes the flag `keysHintShown`: the hint was shown, or the keys are there, and it never comes (again). Quiet: a write that fails is one line
+   * in the log and nothing on the screen (it must not cover the result of the run with an error of the settings); the hint may then come once more.
+   * Never rejects.
+   */
+  async #rememberKeysHint(): Promise<void> {
+    if (this.settings.keysHintShown) return;
+    try {
+      await saveSetting(this.#syncDeps().db, this.#log, 'keysHintShown', true);
+      this.settings = { ...this.settings, keysHintShown: true };
+    } catch (err) {
+      this.#log.warn('ui', 'cannot remember that the hint about the keys is dealt with', { err });
+    }
+  }
+
+  /** The button "Настроить" of the hint about the keys: the settings open with the group "Клавиши" unfolded, and the hint has done its work. */
+  async openKeysSettings(): Promise<void> {
+    this.#log.info('ui', 'keys hint: open the settings of the keys');
+    this.dismissNotice();
+    this.openSettings();
+    await this.openSection(KEYS_SECTION);
   }
 
   /**
@@ -1558,6 +1635,7 @@ class AppState {
       }
       await this.#reloadRun(mayHaveWritten);
       if (failure === null) {
+        this.#askedInRun = null; // a trade says where the ship is: it is the terminal of the trade
         await this.#locateAt(input.terminalId);
         if (startsRun) void this.openSection(RUN_SECTION);
       }
@@ -1596,11 +1674,14 @@ class AppState {
         failure = this.#tradeFailure(what, err, { ...input });
         mayHaveWritten = !(err instanceof TradeError);
       }
-      if (failure === null && closed !== null) this.#announceClosed(closed);
+      if (failure === null && closed !== null) await this.#announceClosed(closed);
       if (failure === null && finished) await this.#runEnded('done');
       await this.#reloadRun(mayHaveWritten);
       if (income && mayHaveWritten) void stats.reload('income sale');
-      if (failure === null) await this.#locateAt(input.terminalId);
+      if (failure === null) {
+        this.#askedInRun = null; // a trade says where the ship is: it is the terminal of the trade
+        await this.#locateAt(input.terminalId);
+      }
       return failure;
     });
   }
@@ -1631,6 +1712,8 @@ class AppState {
       await this.#reloadRun(mayHaveWritten);
       if (failure === null) {
         const cargoAboard = cargoOf(this.activeRun?.events ?? []).length > 0;
+        // an arrival with no target does not know where the ship landed: the field of the location asks (`askingWhere`); a take-off ends the question
+        this.#askedInRun = arrivalAsksWhere(type, this.settings.targetTerminalId) ? this.activeRun?.run.id ?? null : null;
         await this.#followTarget(arrivalView(type, this.settings.targetTerminalId, cargoAboard, this.settings.currentTerminalId));
       }
       return failure;
@@ -1651,7 +1734,7 @@ class AppState {
         mayHaveWritten = !(err instanceof TradeError);
         this.#say(failure, 'error');
       }
-      if (closed !== null) this.#announceClosed(closed);
+      if (closed !== null) await this.#announceClosed(closed);
       if (failure === null) await this.#runEnded('lost'); // before the run is read again, as after the last sale
       await this.#reloadRun(mayHaveWritten);
       return failure;
@@ -1661,6 +1744,7 @@ class AppState {
   /** A run is over (the hold was sold or lost): the target of that run goes. Called before the state reads the run that is over. */
   async #runEnded(how: 'done' | 'lost'): Promise<void> {
     this.#log.info('ui', 'run ended, the target is cleared', { how });
+    this.#askedInRun = null;
     await this.updateSetting('targetTerminalId', null);
   }
 
@@ -1723,6 +1807,8 @@ class AppState {
     }
     this.settings = { ...this.settings, [key]: value };
     await this.#applySetting(key);
+    // a key given to "Взлетел" or "Прилетел" means the player knows the keys: the hint after the first closed run is never needed (written quietly)
+    if (assignsMarkKey(key, value)) await this.#rememberKeysHint();
     return null;
   }
 
@@ -1772,6 +1858,17 @@ class AppState {
     }
   }
 
+  /**
+   * The button "Выход" of "Настройки" → "Данные": while a run goes it asks first, the way the clearing of the history does (the run is saved and
+   * goes on counting after the next start); without a run the program is left at once.
+   */
+  askQuit(): void {
+    const question = quitQuestion(this.activeRun !== null);
+    this.#log.info('ui', 'quit asked', { runGoing: question !== null });
+    if (question === null) void this.quit();
+    else this.ask(question, () => this.quit());
+  }
+
   async quit(): Promise<void> {
     this.#log.info('ui', 'quit');
     try {
@@ -1784,10 +1881,10 @@ class AppState {
 
   // ---- messages ---------------------------------------------------------------------------------
 
-  /** A short Russian message under the header (the line exists only while there is one); it goes away by itself. */
-  notify(text: string, kind: Notice['kind'], ms: number = NOTICE_MS): void {
+  /** A short Russian message under the header (the line exists only while there is one); it goes away by itself. `action` adds a button beside the cross. */
+  notify(text: string, kind: Notice['kind'], ms: number = NOTICE_MS, action?: NoticeAction): void {
     clearTimeout(this.#noticeTimer);
-    this.notice = { text, kind };
+    this.notice = action === undefined ? { text, kind } : { text, kind, action };
     this.#noticeTimer = setTimeout(() => this.dismissNotice(), ms);
   }
 

@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { routePieces } from '../vm/route-pieces';
   import { ariaSortOf, type RouteSort, type RouteSortKey } from '../vm/route-sort';
   import type { RouteRow } from '../vm/stats-rows';
+  import PieceLine from './PieceLine.svelte';
 
   interface Props {
     /** The rows in the order they are to be shown: the owner sorts them (`sortRoutes`). */
@@ -41,7 +43,8 @@
     </div>
     {#each rows as row (row.key)}
       <div class="grid line" role="row">
-        <span class="route" title={row.route}>{row.route}</span>
+        <!-- both ends of the route give way equally, each with its own ellipsis, and the arrow stays: 'Port Tre… → TDD Are…' (the full name is the tooltip) -->
+        <span class="route" title={row.route}><PieceLine pieces={routePieces(row.route)} /></span>
         <span class="code" title={row.commodityHint ?? undefined}>{row.commodity}</span>
         <span class="sc-num strong" title="UEC в час">{row.rate}</span>
         <span class="sc-num" title="Число завершённых рейсов">{row.runs}</span>

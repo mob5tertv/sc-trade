@@ -2,7 +2,8 @@ import { formatCompact, formatDuration, formatUec } from '../../core/format';
 import type { RouteCtx } from '../../core/routes';
 import { cargoOf } from '../../core/run';
 import type { Settings } from '../../core/settings';
-import type { CargoLine, Estimate, Market, Reference, RunWithEvents } from '../../core/types';
+import type { CargoLine, Market, Reference, RunWithEvents } from '../../core/types';
+import { expectedProfitText } from './run-outlook';
 import { nextMarkOf, phaseCaps, runPhases, type RunPhase } from './run-phase';
 import { expectedRun, priceAtTarget, type PricedLine } from './run-rate';
 import type { SessionFigure } from './stats-view';
@@ -26,13 +27,23 @@ export type StripModel =
     next: 'depart' | 'arrive' | null;
     /** What is in the hold and what it was bought for: 'MEDS 120 SCU по 2 115'; with several commodities 'MEDS 120 по 2 115, STIM 80 по 2 810'. */
     cargo: string;
+    /**
+     * The same as the line of the strip says it: for ONE commodity, when the target pays a known price for it, what it is expected to sell for stands
+     * right after the price it was bought for, 'MEDS 120 SCU по 2 115, ждём 2 351'. With several commodities it is `cargo` (which commodity would a
+     * "ждём" be for?): the expectation of each one is in `cargoTitle`.
+     */
+    cargoLine: string;
     /** The cargo for a tooltip, a line for every commodity: 'MEDS 120 SCU · куплено по 2 115 · ждём 2 351'; empty for an empty hold. */
     cargoTitle: string;
     target: string | null;
-    /** 'ждём 6 900 (6 400–7 100)': with the range, for a tooltip. */
-    expect: string | null;
-    /** 'ждём 6 900': the same without the range, for the one-line strip. */
-    expectShort: string | null;
+    /**
+     * The profit the whole run is expected to bring at the target, the number of the card of the run (`expectedRun`), with the sign of a gain: '≈ +66 720'.
+     * `null` without a target, or without a price at it for everything aboard (a sum over part of the hold is not the result of the run).
+     */
+    profit: string | null;
+    /** The expected profit is a loss: the profit and the rate are in the colour of one. */
+    profitLoss: boolean;
+    /** The expected UEC per hour of the whole run, '337k/ч' (the card of the run says '≈ 337k'): `null` while the time of the run is not known. */
     rate: string | null;
   };
 
@@ -51,18 +62,15 @@ const commodityCode = (ref: Reference, commodityId: number): string => {
 /**
  * What is in the hold and what each commodity was bought for (the average over its purchases, a whole number):
  * 'MEDS 120 SCU по 2 115'. With several commodities the word SCU is left out, so that the line does not grow:
- * 'MEDS 120 по 2 115, STIM 80 по 2 810'.
+ * 'MEDS 120 по 2 115, STIM 80 по 2 810'. `expected[i]` is the price the target is expected to pay for `cargo[i]` (`null`: none known);
+ * for the ONE commodity of the hold it follows the price it was bought for, 'MEDS 120 SCU по 2 115, ждём 2 351'. With several it is not said
+ * here: a "ждём" in a line of several commodities would not tell which of them it is for (the tooltip, `cargoTitle`, has one for each).
  */
-export function cargoText(ref: Reference, cargo: CargoLine[]): string {
+export function cargoText(ref: Reference, cargo: CargoLine[], expected: ReadonlyArray<number | null> = []): string {
   const unit = cargo.length === 1 ? ' SCU' : '';
-  return cargo.map(({ commodityId, scu, avgBuyPrice }) => `${commodityCode(ref, commodityId)} ${scu}${unit} по ${formatUec(avgBuyPrice)}`).join(', ');
-}
-
-/** 'ждём 6 900 (6 400–7 100)', and its short form 'ждём 6 900'; no brackets when both bounds are the price. */
-function expectTexts(sell: Estimate): { full: string; short: string } {
-  const [price, low, high] = [sell.price, sell.low, sell.high].map(formatUec);
-  const short = `ждём ${price}`;
-  return { full: low === price && high === price ? short : `${short} (${low}–${high})`, short };
+  const text = cargo.map(({ commodityId, scu, avgBuyPrice }) => `${commodityCode(ref, commodityId)} ${scu}${unit} по ${formatUec(avgBuyPrice)}`).join(', ');
+  const price = cargo.length === 1 ? expected[0] ?? null : null;
+  return price === null ? text : `${text}, ждём ${formatUec(price)}`;
 }
 
 /**
@@ -71,18 +79,19 @@ function expectTexts(sell: Estimate): { full: string; short: string } {
  */
 export function cargoTitle(ref: Reference, priced: PricedLine[]): string {
   return priced.map(({ line, sell }) => [
-    `${commodityCode(ref, line.commodityId)} ${line.scu} SCU`, `куплено по ${formatUec(line.avgBuyPrice)}`, sell && expectTexts(sell).short,
+    `${commodityCode(ref, line.commodityId)} ${line.scu} SCU`, `куплено по ${formatUec(line.avgBuyPrice)}`, sell && `ждём ${formatUec(sell.price)}`,
   ].filter(Boolean).join(' · ')).join('\n');
 }
 
 /**
  * What the small strip shows: the current location (and the target, when one is set) and what the session that is going
- * has earned (`session`) without a run; during a run the phase with its own timer, the cargo with what it was bought for, the
- * target terminal, what the first commodity is expected to sell for there and the expected UEC per hour (that line is full:
- * no session in it). The tooltip of the cargo has every commodity with its own expectation (`cargoTitle`).
- * The rate is the number of the card of the run, over the whole run (`expectedRun`): none while the time of the run is not
- * known, or while the target pays for only a part of the hold. A target that is unset or missing from the reference leaves
- * the last three out.
+ * has earned (`session`) without a run; during a run the phase with its own timer, the cargo with what it was bought for (and,
+ * for one commodity, what it is expected to sell for), the target terminal, then the profit the run is expected to bring and the
+ * expected UEC per hour (that line is full: no session in it). The tooltip of the cargo has every commodity with its own
+ * expectation (`cargoTitle`).
+ * The profit and the rate are the numbers of the card of the run, over the whole run (`expectedRun`): the profit is none while the
+ * target pays for only a part of the hold, the rate is none besides while the time of the run is not known. A target that is unset
+ * or missing from the reference leaves the last three out.
  */
 export function stripModel(
   active: RunWithEvents | null, m: Market, ref: Reference, s: Settings, ctx: RouteCtx, session: SessionFigure | null = null,
@@ -106,18 +115,41 @@ export function stripModel(
 
   if (!target) {
     const unpriced = cargo.map((line): PricedLine => ({ line, sell: null }));
-    return { ...head, cargoTitle: cargoTitle(ref, unpriced), target: null, expect: null, expectShort: null, rate: null };
+    return { ...head, cargoLine: head.cargo, cargoTitle: cargoTitle(ref, unpriced), target: null, profit: null, profitLoss: false, rate: null };
   }
 
   const priced = priceAtTarget(cargo, m, target.id, ctx);
-  const firstSell = priced[0]?.sell ?? null;
-  const expect = firstSell ? expectTexts(firstSell) : null;
-  const rate = expectedRun(active, m, target.id, ctx)?.rate ?? null;
+  const expected = expectedRun(active, m, target.id, ctx);
   return {
     ...head,
+    cargoLine: cargoText(ref, cargo, priced.map(({ sell }) => sell?.price ?? null)),
     cargoTitle: cargoTitle(ref, priced),
     target: terminalName(target),
-    expect: expect?.full ?? null, expectShort: expect?.short ?? null,
-    rate: rate === null ? null : `≈ ${formatCompact(rate)}/ч`,
+    profit: expected === null ? null : expectedProfitText(expected.profit, true),
+    profitLoss: expected !== null && expected.profit < 0,
+    rate: expected === null || expected.rate === null ? null : `${formatCompact(expected.rate)}/ч`,
   };
+}
+
+/** The profit and the rate of a run as one text, '≈ +66 720 · 337k/ч' (the profit alone while the time of the run is not known); `null` when there is no profit. */
+export function outlookText(model: StripModel): string | null {
+  if (model.kind !== 'run' || model.profit === null) return null;
+  return [model.profit, model.rate].filter((part) => part !== null).join(' · ');
+}
+
+/**
+ * Everything the strip knows, for the tooltip of the line (the line itself cuts a long cargo): the location with the target and the session
+ * without a run; with a run the phase with its timer, the whole time of the run, the target and the outlook of the run on the first line, and then a
+ * line for every commodity of the hold (`cargoTitle`: the quantity, what it was bought for and what it is expected to sell for), so that the expected
+ * price of each is under the cursor anywhere on the line, also with several commodities, where the line itself names none.
+ */
+export function stripTitle(model: StripModel): string {
+  if (model.kind === 'idle') {
+    return [model.target === null ? model.location : `${model.location} → ${model.target}`, model.session?.line].filter(Boolean).join(' · ');
+  }
+  const head = [
+    `${model.phaseLabel} ${model.phaseTimer}`, `всего ${model.timer}`,
+    model.target === null ? 'цель не выбрана' : `→ ${model.target}`, outlookText(model),
+  ].filter(Boolean).join(' · ');
+  return model.cargoTitle === '' ? head : `${head}\n${model.cargoTitle}`;
 }

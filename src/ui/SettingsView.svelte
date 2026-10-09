@@ -358,7 +358,10 @@
     <button class="sc-btn" type="button" disabled={app.referenceBusy} onclick={() => app.refreshReference()}>
       {app.referenceBusy ? 'Обновление…' : 'Обновить справочник'}
     </button>
-    <button class="sc-btn quit" type="button" onclick={() => app.quit()}>Выход</button>
+  </div>
+  <!-- leaving stands apart, in a row of its own at the right: with a run going it asks first (the question is under the header) -->
+  <div class="buttons leave">
+    <button class="sc-btn quit" type="button" title="Закрыть программу. Идущий рейс сохранится" onclick={() => app.askQuit()}>Выход</button>
   </div>
 {/snippet}
 
@@ -498,8 +501,12 @@
     padding: 4px var(--sc-pad-x);
   }
 
+  /* the row of the leaving button: the button at the right, apart from the others */
+  .leave {
+    justify-content: flex-end;
+  }
+
   .quit {
-    margin-left: auto;
     border-color: var(--sc-bad);
     color: var(--sc-bad);
   }

@@ -199,6 +199,13 @@ describe('validateSetting: where the window stands', () => {
     expect(validateSetting('windowLocked', false, S)).toBeNull();
     expect(validateSetting('windowLocked', 1 as unknown as boolean, S)).not.toBeNull();
   });
+
+  it('wants the flag of the hint about the keys to be a yes or a no', () => {
+    expect(validateSetting('keysHintShown', true, S)).toBeNull();
+    expect(validateSetting('keysHintShown', false, S)).toBeNull();
+    expect(validateSetting('keysHintShown', 'yes' as unknown as boolean, S)).not.toBeNull();
+    expect(validateSetting('keysHintShown', null as unknown as boolean, S)).not.toBeNull();
+  });
 });
 
 describe('validateSetting: open sections', () => {

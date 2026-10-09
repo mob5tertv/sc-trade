@@ -139,7 +139,19 @@ function evaluate(
   };
 }
 
+/**
+ * Whether anything is known about the stock at the purchase terminal: a number there, a known zero included, and a stock counted by
+ * the refill timer from my own reading. Only `null` is unknown: the volume of such a trip was counted with no stock to limit it
+ * (the mark «?» of the option says so).
+ */
+export function stockKnown(option: Pick<RouteOption, 'buy'>): boolean {
+  return option.buy.scu !== null;
+}
+
 type Compare = (a: RouteOption, b: RouteOption) => number;
+
+/** Trips that rest on a known stock before those that rest on an unknown one, whatever the sort: a trip counted at the whole free space must not stand first. */
+const byKnownStock: Compare = (a, b) => Number(!stockKnown(a)) - Number(!stockKnown(b));
 
 const byRoi: Compare = (a, b) => b.roi - a.roi;
 /** Higher UEC per hour first, routes without a time after all the others. */
@@ -148,10 +160,13 @@ const byUecPerHour: Compare = (a, b) => {
   return b.uecPerHour - a.uecPerHour;
 };
 
-/** Best first by the chosen metric, then by the other one; ids make a tie deterministic. */
+/**
+ * The trips with a known stock first, then those with an unknown one; inside each group best first by the chosen metric, then by the other
+ * one; ids make a tie deterministic. The best N are taken from this order (`finish`), so an unknown stock fills only what the known ones leave.
+ */
 function ranking(sort: RouteSettings['sort']): Compare {
   const [first, second] = sort === 'roi' ? [byRoi, byUecPerHour] : [byUecPerHour, byRoi];
-  return (a, b) => first(a, b) || second(a, b) || a.originId - b.originId || a.destId - b.destId || a.commodityId - b.commodityId;
+  return (a, b) => byKnownStock(a, b) || first(a, b) || second(a, b) || a.originId - b.originId || a.destId - b.destId || a.commodityId - b.commodityId;
 }
 
 function finish(found: RouteOption[], trace: RouteTrace, settings: RouteSettings): RouteResult {

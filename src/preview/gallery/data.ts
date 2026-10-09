@@ -90,8 +90,11 @@ export interface GalleryData {
     idle: StripModel; run: StripModel; long: StripModel;
     /** The run of the dataset without a target: no price there, no rate, and no expectation in the tooltip of the cargo. */
     noTarget: StripModel;
-    /** A hold of one, two and three commodities, each bought for a seven-digit price: how the line takes the longest cargo it can have. */
-    cargo: { one: StripModel; two: StripModel; three: StripModel };
+    /**
+     * A hold of one, two and three commodities, each bought for a seven-digit price: how the line takes the longest cargo it can have. `single` is a
+     * hold of one commodity at an ordinary price: the line the trader reads, 'MEDS 120 SCU по 2 115, ждём …' and the profit expected after the target.
+     */
+    cargo: { single: StripModel; one: StripModel; two: StripModel; three: StripModel };
   };
   runCard: { cargo: Array<{ code: string; scu: number; avgBuyPrice: number }>; timer: string; phases: PhaseLine; outlook: RunOutlook };
   sell: { commodityCode: string; here: SellHere; alternatives: SellAlternative[] };
@@ -153,6 +156,7 @@ const PLAYER_PRICES: PlayerPrice[] = [
  * the events of a run of the dataset by the real view model.
  */
 const PRICED_HOLDS = {
+  single: [{ code: 'MEDS', scu: 120, price: 2_115 }],
   one: [{ code: 'MEDS', scu: 600, price: 1_234_567 }],
   two: [{ code: 'MEDS', scu: 120, price: 1_234_567 }, { code: 'STIM', scu: 80, price: 2_345_678 }],
   three: [{ code: 'MEDS', scu: 120, price: 1_234_567 }, { code: 'STIM', scu: 80, price: 2_345_678 }, { code: 'PFOO', scu: 50, price: 1_456_789 }],
@@ -423,7 +427,7 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
     },
     strip: {
       idle, run, long: longRun, noTarget,
-      cargo: { one: heldRun(PRICED_HOLDS.one), two: heldRun(PRICED_HOLDS.two), three: heldRun(PRICED_HOLDS.three) },
+      cargo: { single: heldRun(PRICED_HOLDS.single), one: heldRun(PRICED_HOLDS.one), two: heldRun(PRICED_HOLDS.two), three: heldRun(PRICED_HOLDS.three) },
     },
     runCard, sell: { commodityCode: codeOf(first.commodityId), here, alternatives },
     history, sessions: sessionList, routeStats: stats,

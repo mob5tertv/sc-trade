@@ -94,7 +94,7 @@ const AFFECTS_LOOKUP: Record<keyof Settings, 'always' | 'from' | 'never'> = {
   idleCollapseSec: 'never', openSections: 'never', windowDx: 'never', windowDy: 'never', windowLocked: 'never',
   uiScale: 'never',
   roiHighlightPct: 'never',
-  currentTerminalId: 'never', targetTerminalId: 'never',
+  currentTerminalId: 'never', targetTerminalId: 'never', keysHintShown: 'never',
 };
 
 export function affectsLookup(key: keyof Settings, kind: LookupKind): boolean {

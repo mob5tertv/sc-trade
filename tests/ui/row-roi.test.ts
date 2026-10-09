@@ -49,6 +49,16 @@ describe('rowRoiMap: what the table shows next to a commodity', () => {
     expect(map.get(GOLD)).toMatchObject({ otherId: 3, buyPrice: 6400 });
   });
 
+  it('counts the trips that rest on an unknown stock too: the order of the list of options (known stocks first) does not touch the best ROI of a row', () => {
+    // terminal 2, the cheapest source of Gold, says nothing of its stock (UEC has none, I have no reading); 3 and 5 have a stock of 500
+    const unknown = marketOf(quotes.map((q) => (q.terminalId === 2 && q.commodityId === GOLD ? { ...q, scuBuy: 0 } : q)));
+    const options = routesTo(unknown, HERE, { ...ctx, settings: { ...ctx.settings, topN: 99 } }, GOLD).options;
+    expect(options.map((o) => [o.originId, o.buy.scu])).toEqual([[3, 500], [5, 500], [2, null]]);   // the unknown stock is last in the list…
+    // …and the row still says the best there is
+    expect(rowRoiMap(unknown, HERE, 'sell', ctx).get(GOLD)).toMatchObject({ otherId: 2, buyPrice: 6000, sellPrice: 8000 });
+    expect(rowRoiMap(unknown, HERE, 'sell', ctx)).toEqual(rowRoiMap(market, HERE, 'sell', ctx));
+  });
+
   it('a commodity that no source can supply has no value at all', () => {
     const empty = marketOf(quotes, [ownPrice(2, GOLD, 'buy', 6000, 0), ownPrice(3, GOLD, 'buy', 6400, 0), ownPrice(5, GOLD, 'buy', 7000, 0)]);
     expect(rowRoiMap(empty, HERE, 'sell', ctx).has(GOLD)).toBe(false);

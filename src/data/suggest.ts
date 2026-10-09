@@ -1,5 +1,5 @@
 import { buildMarket } from '../core/market';
-import { routesFrom, routesTo } from '../core/routes';
+import { routesFrom, routesTo, stockKnown } from '../core/routes';
 import type { RouteCtx, RouteOption, RouteResult } from '../core/routes';
 import type { Settings } from '../core/settings';
 import { distKey } from '../core/types';
@@ -99,13 +99,15 @@ const byRoi = (a: RouteOption, b: RouteOption): number => (
 /**
  * The distances that are not in the cache yet, for the best `MAX_MEASURED_OPTIONS` candidates that
  * lack any, grouped by the terminal UEX is asked from. A pair recorded as unknown counts as known.
+ * "Best" follows the order the options are shown in: the trips that rest on a known stock first, then those on an
+ * unknown one (`stockKnown`), each group by ROI, so that the budget is not spent on the options that stand below.
  */
 function missingDistances(
   candidates: RouteOption[], distances: Map<string, number | null>, needs: (o: RouteOption) => Need[],
 ): Map<number, Map<string, [number, number]>> {
   const groups = new Map<number, Map<string, [number, number]>>();
   let measured = 0;
-  for (const option of [...candidates].sort(byRoi)) {
+  for (const option of [...candidates].sort((a, b) => Number(!stockKnown(a)) - Number(!stockKnown(b)) || byRoi(a, b))) {
     if (measured === MAX_MEASURED_OPTIONS) break;
     const lacking = needs(option).filter(({ pair: [a, b] }) => !distances.has(distKey(a, b)));
     if (lacking.length === 0) continue;
