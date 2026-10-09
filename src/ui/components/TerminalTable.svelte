@@ -9,6 +9,7 @@
   import type { TerminalSort, TerminalSortKey } from '../vm/terminal-order';
   import { RANGE_HEAD_TITLE, cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
+  import { tradeEntryField } from '../vm/trade-form';
   import TempBadge from './TempBadge.svelte';
   import TrendMark from './TrendMark.svelte';
 
@@ -233,6 +234,9 @@
   <!-- the price of UEX (or my cold one) stands in the field, muted, until the player touches it or sends it: then it is his -->
   {@const foreign = !base.priceIsOwn && !draft?.typed.price && !draft?.sent}
   {@const estimated = cell.ownScu !== null && cell.ownScuBase !== null}
+  <!-- `data-select-on-focus`: the number is selected whole when the field gets the cursor (ui/keyboard.ts). A selection is not typing:
+       no draft is made by it, and a price that is not mine stays muted -->
+  <!-- `data-cell` on both fields: the cell is saved whole at Enter and when the cursor leaves both; the keyboard rules read it too (ui/keyboard.ts) -->
   <div class="expand sc-reveal">
     <div class="edit">
       <input
@@ -242,6 +246,7 @@
         inputmode="numeric"
         autocomplete="off"
         data-cell={key}
+        data-select-on-focus
         aria-label="{row.code}: цена {side === 'buy' ? 'покупки' : 'продажи'}, UEC за SCU"
         aria-invalid={draft?.bad.price ? 'true' : undefined}
         placeholder={placeholder(cell.hint)}
@@ -256,6 +261,7 @@
         inputmode="numeric"
         autocomplete="off"
         data-cell={key}
+        data-select-on-focus
         aria-label={side === 'buy' ? `${row.code}: количество у продавца, SCU` : `${row.code}: количество у покупателя на складе, SCU`}
         aria-invalid={draft?.bad.scu ? 'true' : undefined}
         placeholder={placeholder(cell.hintScu)}
@@ -270,12 +276,15 @@
         <span class="unit" title={side === 'sell' ? 'Столько уже лежит на складе у покупателя, а не сколько он готов купить' : undefined}>SCU</span>
       {/if}
       <span class="spacer"></span>
+      <!-- `data-opens-entry`: the button opens the form of a trade, and the cursor goes into the field of the form with that name
+           (ui/keyboard.ts), the one the player types into first (`tradeEntryField`): the quantity of a purchase, the price of a sale
+           of the cargo, the quantity of a sale of goods that are not in the hold. The row itself and the lookups are plain buttons. -->
       {#if side === 'buy'}
         <button type="button" class="sc-btn sc-btn--act" aria-label="Где продать {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где продать</button>
-        <button type="button" class="sc-btn sc-btn--act" aria-label="Купил {row.code}" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Купил</button>
+        <button type="button" class="sc-btn sc-btn--act" aria-label="Купил {row.code}" data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>Купил</button>
       {:else}
         <button type="button" class="sc-btn sc-btn--act" aria-label="Где купить {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где купить</button>
-        <button type="button" class="sc-btn sc-btn--act" aria-label="Продал {row.code}" onclick={() => onTrade({ commodityId: row.commodityId, side })}>Продал</button>
+        <button type="button" class="sc-btn sc-btn--act" aria-label="Продал {row.code}" data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>Продал</button>
       {/if}
     </div>
     <!-- One line, never wrapped. The warning, the plaque and the rate mark keep their size; the texts between them give way

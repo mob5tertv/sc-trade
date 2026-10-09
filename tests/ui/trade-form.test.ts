@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { cargoOf } from '../../src/core/run';
 import type { CargoLine } from '../../src/core/types';
 import type { Cell } from '../../src/ui/vm/terminal-rows';
 import { getActiveRun, listRuns } from '../../src/data/repo/runs';
 import { recordBuy, recordSell } from '../../src/data/trade';
 import { cellEditBase } from '../../src/ui/vm/inputs';
-import { goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, tradeDefaults, tradeMode } from '../../src/ui/vm/trade-form';
+import {
+  confirmStep, goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, PRICE_CHECK_NOTE, tradeDefaults, tradeEntryField, tradeLimit, tradeMode,
+} from '../../src/ui/vm/trade-form';
 import { bought, GOLD, runOf, sold, TITA } from '../helpers/run-wiring-fixtures';
 import { buyIn as goldBought, sellIn as goldSold, tradeFixture } from '../helpers/trade-fixtures';
 
@@ -207,5 +210,98 @@ describe('tradeDefaults, an income', () => {
     expect(d).toEqual({ scu: null, price: 6900, priceIsOwn: true });
     const other = tradeDefaults({ side: 'sell', commodityId: GOLD, cell: cell({ hint: 6500 }), cargo: [tita(40)], capacity: 696, budget: null });
     expect(other).toEqual({ scu: null, price: 6500, priceIsOwn: false });
+  });
+});
+
+describe('tradeEntryField: where the cursor goes when «Купил» / «Продал» of the row opens the form', () => {
+  it('a purchase: into the quantity', () => {
+    expect(tradeEntryField('buy', false)).toBe('trade-scu');
+    expect(tradeEntryField('buy', true)).toBe('trade-scu'); // the hold says nothing about a purchase
+  });
+
+  it('a sale of what is in the hold: into the price, for the form holds the whole cargo already', () => {
+    expect(tradeEntryField('sell', true)).toBe('trade-price');
+  });
+
+  it('a sale of goods that are not in the hold (an income): into the quantity, which is empty there', () => {
+    expect(tradeEntryField('sell', false)).toBe('trade-scu');
+  });
+
+  it('on the sell side the cursor is in the quantity exactly when the form starts with an empty one, so nothing typed lands on the price', () => {
+    const row = cell({ hint: 6500 });
+    for (const cargo of [[], [tita(40)], [gold(96)], [gold(96), tita(40)]]) {
+      const inHold = cargo.some((line) => line.commodityId === GOLD);
+      const starts = tradeDefaults({ side: 'sell', commodityId: GOLD, cell: row, cargo, capacity: 696, budget: null });
+      expect(tradeEntryField('sell', inHold) === 'trade-scu').toBe(starts.scu === null);
+    }
+  });
+});
+
+describe('confirmStep: a price that is not mine is not written without a look (task 47)', () => {
+  /** The form holds a price of UEX (or mine gone cold) that nobody touched, was not asked about it yet, and the quantity fits. */
+  const step = (over: Partial<Parameters<typeof confirmStep>[0]> = {}) => confirmStep({ priceIsOwn: false, priceTouched: false, asked: false, fits: true, ...over });
+
+  it('the first confirmation writes nothing: the player is asked to check the price', () => {
+    expect(step()).toBe('check-price');
+  });
+
+  it('the second confirmation writes', () => {
+    expect(step({ asked: true })).toBe('write');
+  });
+
+  it('a price of mine that is fresh is written at once, as before', () => {
+    expect(step({ priceIsOwn: true })).toBe('write');
+    expect(step({ priceIsOwn: true, asked: true })).toBe('write');
+  });
+
+  it('a price the player put his hand to is written at once, whatever he typed (the same number too: he confirmed it by typing)', () => {
+    expect(step({ priceTouched: true })).toBe('write');
+  });
+
+  it('a quantity the service is going to refuse goes to the service as before: its refusal comes first, and the question is not spent on it', () => {
+    expect(step({ fits: false })).toBe('write'); // nothing is written by it: the service answers «В трюме только N SCU»
+    expect(step({ fits: true })).toBe('check-price'); // the quantity was put right: now the price is asked about
+  });
+
+  it('has one sentence for the line under the form', () => {
+    expect(PRICE_CHECK_NOTE).toBe('Цена справочная — проверь её и подтверди ещё раз');
+  });
+});
+
+describe('tradeLimit: the largest quantity the service takes, as far as the screen knows', () => {
+  const limit = (over: Partial<Parameters<typeof tradeLimit>[0]> = {}) => tradeLimit({ mode: 'sell', commodityId: GOLD, cargo: [gold(96), tita(40)], capacity: 696, ...over });
+
+  it('a sale from the run: what the hold has of this commodity, not the whole hold', () => {
+    expect(limit()).toBe(96);
+    expect(limit({ commodityId: TITA })).toBe(40);
+    expect(limit({ cargo: [tita(40)] })).toBe(0); // sold out meanwhile: the service refuses any quantity
+  });
+
+  it('a purchase: the free space of the hold, every commodity counted, never below zero', () => {
+    expect(limit({ mode: 'buy' })).toBe(560); // 696 − 96 − 40
+    expect(limit({ mode: 'buy', cargo: [] })).toBe(696);
+    expect(limit({ mode: 'buy', cargo: [gold(700)] })).toBe(0);
+  });
+
+  it('nothing limits a purchase while the ship is not set, and nothing limits an income', () => {
+    expect(limit({ mode: 'buy', capacity: 0 })).toBeNull();
+    expect(limit({ mode: 'income' })).toBeNull();
+    expect(limit({ mode: 'income', cargo: [] })).toBeNull();
+  });
+
+  it('is the very quantity above which the service refuses, with the refusals the form shows as before', async () => {
+    const { deps } = await tradeFixture();
+    await recordBuy(deps, goldBought(96));
+    const cargo = cargoOf((await getActiveRun(deps.db))?.events ?? []);
+    const capacity = deps.settings.scuCapacity;
+
+    const free = tradeLimit({ mode: 'buy', commodityId: 10, cargo, capacity });
+    expect(free).toBe(600);
+    await expect(recordBuy(deps, goldBought(601))).rejects.toMatchObject({ code: 'no_space', message: 'Свободно только 600 SCU' });
+
+    const aboard = tradeLimit({ mode: 'sell', commodityId: 10, cargo, capacity });
+    expect(aboard).toBe(96);
+    await expect(recordSell(deps, goldSold(97, 7000))).rejects.toMatchObject({ code: 'oversell', message: 'В трюме только 96 SCU' });
+    await expect(recordSell(deps, goldSold(96, 7000))).resolves.toMatchObject({ finished: true });
   });
 });

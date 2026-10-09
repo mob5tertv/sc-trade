@@ -1056,3 +1056,77 @@ describe('the remembered window while the window is armed', () => {
     expect(await holds.drop()).toBe(true);
   });
 });
+
+// A button that opens an entry («+ цена», «Купил», «Продал») is a field for the holds: `ui/keyboard.ts` tells them the very
+// same things about it (`pointerOverField`, `hold('field')`, `release('field')`), so the model is not changed for it. The
+// walks below are the ways of such a button, each as the page reports it, and what Windows is asked along the way.
+describe('a button that opens an entry is a field for the holds', () => {
+  it('hovered and pressed: armed by the pointer, held by the press of the player, and one take is all that is asked', async () => {
+    const { holds, calls, changes } = setup();
+    await holds.pointerOverField(true); // the pointer comes over «+ цена»
+    expect(holds.state).toBe('armed');
+    expect(await holds.hold('field')).toBe(true); // the press: the keyboard is held, the cursor may go into the field of the entry
+    expect(holds.state).toBe('held');
+    expect(calls).toEqual(['arm:start', 'arm:end', 'take:start', 'take:end']);
+    expect(changes).toEqual([true]);
+    // the entry is open now and its button is a plain one (it closes the entry): the pointer on it is over no field,
+    // which changes nothing while the keyboard is held
+    await holds.pointerOverField(false);
+    expect(calls).toHaveLength(4);
+    // Esc in the field of the entry: the keyboard goes back, and nothing keeps the window activatable
+    await holds.release('field');
+    expect(calls.slice(4)).toEqual(['give:start:true', 'give:end:true']);
+    expect(holds.state).toBe('idle');
+  });
+
+  it('the field of the entry never appears: the watchdog releases the holder, the focus goes back, no holder is left without a field', async () => {
+    const { holds, calls, changes } = setup();
+    await holds.pointerOverField(true);
+    expect(await holds.hold('field')).toBe(true);
+    await holds.pointerOverField(false); // the mouse was dragged off the button, so no click came and nothing opened
+    await holds.release('field'); // the watchdog: no field is being edited
+    expect(holds.held).toBe(false);
+    expect(holds.state).toBe('idle'); // not activatable
+    expect(calls).toEqual(['arm:start', 'arm:end', 'take:start', 'take:end', 'give:start:true', 'give:end:true']);
+    expect(changes).toEqual([true, false]);
+    // releasing once more (the watchdog comes round again) asks nothing
+    await holds.release('field');
+    expect(calls).toHaveLength(6);
+  });
+
+  it('the field never appears and the pointer still rests on the button: released, and armed for the next press, as over a field', async () => {
+    const { holds, calls } = setup();
+    await holds.pointerOverField(true);
+    await holds.hold('field');
+    await holds.release('field');
+    expect(holds.held).toBe(false);
+    expect(holds.state).toBe('armed');
+    expect(calls.slice(4)).toEqual(['give:start:true', 'give:end:true', 'arm:start', 'arm:end']);
+  });
+
+  it('pressed with no pointer seen before (the press beats the arm) and Windows refuses: no holder, and the second press takes the keyboard', async () => {
+    const { holds, calls, changes, windows } = setup();
+    windows.refusals = 1;
+    const holding = holds.hold('field'); // the press on «Купил»
+    const over = holds.pointerOverField(true); // the page says where the pointer is right after the press
+    expect(await holding).toBe(false); // the form opens all the same (a click is a click), with no cursor in it
+    await over;
+    expect(holds.held).toBe(false);
+    expect(holds.state).toBe('armed');
+    expect(calls.some((call) => call.startsWith('give'))).toBe(false); // nothing was taken, nothing is given back
+    expect(await holds.hold('field')).toBe(true); // the second press activates the armed window by itself
+    expect(calls).toEqual(['take:start', 'take:refused', 'take:start', 'take:end']);
+    expect(changes).toEqual([true, false, true]);
+  });
+
+  it('a plain button («Маршрут», a tab, a row) asks Windows for nothing: hovered, pressed, and with the watchdog going round', async () => {
+    const { holds, calls, changes } = setup({ settleMs: 500 });
+    await holds.pointerOverField(false); // the pointer comes over the button: it is no field
+    expect(await holds.pressOutsideField()).toBe('none'); // the press
+    await holds.refreshRemembered(); // the watchdog
+    expect(await holds.focusGained()).toBe('none'); // the web view reports a focus for a click on a window that was never activated
+    expect(calls).toEqual([]);
+    expect(changes).toEqual([]);
+    expect(holds.state).toBe('idle');
+  });
+});

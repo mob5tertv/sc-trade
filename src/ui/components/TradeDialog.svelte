@@ -3,6 +3,7 @@
   import { formatUec } from '../../core/format';
   import type { Side } from '../../core/types';
   import { resolveTrade } from '../vm/inputs';
+  import { confirmStep, PRICE_CHECK_NOTE } from '../vm/trade-form';
 
   interface Props {
     /** What is being written, for the screen reader and the tooltip: 'Купил MEDS'. */
@@ -14,9 +15,16 @@
     /**
      * The price the form starts with is mine (a price I saw, not cold). `false`: it is the one of UEX, or mine gone cold, that the
      * row shows: it stands in the field muted, as in the field of the expanded row, until the player touches it. The row above
-     * already says whose it is and how old (its plaque), so the form says nothing more. Default: mine, nothing is marked.
+     * already says whose it is and how old (its plaque). Untouched, such a price is not written by the first confirmation: the form
+     * asks the player to check it, and the next confirmation writes (`confirmStep`). Default: mine, nothing is marked or asked.
      */
     defaultPriceIsOwn?: boolean;
+    /**
+     * The largest quantity the service takes (`tradeLimit`): what the hold has for a sale, its free space for a purchase; `null` when
+     * nothing limits it. The form refuses nothing by it: a larger quantity goes to the service, which says why, and that refusal
+     * comes before anything is asked about the price. Default: no limit.
+     */
+    maxScu?: number | null;
     /** One muted line under the fields: what the trade is (an income says that the goods are not in the hold); `null` for none. */
     note?: string | null;
     /**
@@ -29,8 +37,12 @@
     onCancel: () => void;
     /** The form was confirmed with a number that cannot be a trade (nothing was written): which of the two fields was marked. */
     onReject?: (fields: { scu: boolean; price: boolean }) => void;
+    /** The form was confirmed with a price that is not mine and that nobody touched: nothing was written, the player was asked to check it. */
+    onPriceCheck?: () => void;
   }
-  let { title, side, defaultScu, defaultPrice, defaultPriceIsOwn = true, note = null, error, onConfirm, onCancel, onReject }: Props = $props();
+  let {
+    title, side, defaultScu, defaultPrice, defaultPriceIsOwn = true, maxScu = null, note = null, error, onConfirm, onCancel, onReject, onPriceCheck,
+  }: Props = $props();
 
   // Seeded from the defaults once, when the form opens: they are plain numbers in the fields, easy to overtype. What the
   // player typed stays when the owner hands in a new `error` (a derived text would start again from the defaults).
@@ -58,7 +70,23 @@
     return trade.ok ? formatUec(trade.scu * trade.price) : null;
   });
 
-  function submit(e: Event): void {
+  // A price that is not mine and that nobody touched is not written by one press of Enter (`confirmStep`): the first confirmation
+  // writes nothing and asks, the next one writes. `checkShown`: the question stands under the fields, until the price is touched or
+  // the form is confirmed again.
+  let priceAsked = $state(false);
+  let checkShown = $state(false);
+  let priceInput = $state<HTMLInputElement | null>();
+  const stepFor = (scu: number) => confirmStep({
+    priceIsOwn: defaultPriceIsOwn || defaultPrice === null, priceTouched, asked: priceAsked, fits: maxScu === null || scu <= maxScu,
+  });
+  // The next press on the button of the form asks about the price. For the keyboard the button is then one that opens an entry
+  // (ui/keyboard.ts): the press on it brings the keyboard to the window, and the cursor goes into the price.
+  const asksNext = $derived.by(() => {
+    const trade = resolveTrade(scuText, priceText);
+    return trade.ok && stepFor(trade.scu) === 'check-price';
+  });
+
+  function submit(e: SubmitEvent & { currentTarget: HTMLFormElement }): void {
     e.preventDefault();
     if (confirmed) return;
     const trade = resolveTrade(scuText, priceText);
@@ -70,20 +98,44 @@
       if (!again) onReject?.({ scu: trade.scu, price: trade.price });
       return;
     }
+    if (stepFor(trade.scu) === 'check-price') {
+      priceAsked = true;
+      checkShown = true;
+      onPriceCheck?.();
+      // Enter in a field of the form: the keyboard is with the window, and the cursor goes into the price, its number selected. After a
+      // press on the button the keyboard rules put it there, and only when the window got the keyboard: with the keyboard at the game
+      // no field may look as if it were being edited.
+      if (document.activeElement instanceof HTMLInputElement && e.currentTarget.contains(document.activeElement)) {
+        priceInput?.focus();
+        priceInput?.select();
+      }
+      return;
+    }
+    checkShown = false;
     confirmed = true;
     onConfirm({ scu: trade.scu, price: trade.price });
   }
 
   // Esc takes the form back and is left to go on: the window hands the keyboard back to the game (it never closes by Esc).
+  // A held Enter is one confirmation: its repeats submit nothing, so the confirmation that follows a question is a press of its own.
   function onKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape') onCancel();
+    else if (e.key === 'Enter' && e.repeat) e.preventDefault();
+  }
+
+  // ...and so is a double click on the button: its second click confirms nothing.
+  function onSubmitClick(e: MouseEvent): void {
+    if (e.detail > 1) e.preventDefault();
   }
 </script>
 
 <!--
   The form of a trade under the row it belongs to: in the flow of the window, never over it (the window is as big as its
   content, whatever sticks out is cut). The fields take the keyboard when they are clicked, like every field of the window;
-  the button writes the trade, Enter in a field does the same.
+  the button writes the trade, Enter in a field does the same. `data-select-on-focus`: a field that gets the cursor has its whole
+  number selected, so that typing replaces it (ui/keyboard.ts). `data-entry-field`: the names by which the buttons that open the
+  form («Купил», «Продал» of the row) say which field the cursor goes into. The button of the form itself is such a button
+  (`data-opens-entry`) while its next press only asks about the price: the cursor goes into the price then.
 -->
 <form class="trade sc-reveal" aria-label={title} novalidate onsubmit={submit}>
   <div class="line">
@@ -92,6 +144,8 @@
       type="text"
       inputmode="numeric"
       autocomplete="off"
+      data-select-on-focus
+      data-entry-field="trade-scu"
       aria-label="Количество, SCU"
       title="Количество, SCU"
       placeholder="SCU"
@@ -102,22 +156,31 @@
     />
     <span class="unit">SCU ×</span>
     <input
+      bind:this={priceInput}
       class="sc-input sc-num in-price"
       class:foreign
       type="text"
       inputmode="numeric"
       autocomplete="off"
+      data-select-on-focus
+      data-entry-field="trade-price"
       aria-label="Цена за SCU, UEC"
       title={priceHint}
       placeholder="UEC"
       aria-invalid={badPrice ? 'true' : undefined}
       value={priceText}
-      oninput={(e) => { priceText = e.currentTarget.value; priceTouched = true; badPrice = false; confirmed = false; }}
+      oninput={(e) => { priceText = e.currentTarget.value; priceTouched = true; checkShown = false; badPrice = false; confirmed = false; }}
       onkeydown={onKeydown}
     />
     <span class="unit">UEC</span>
     <span class="total sc-num" title="Сумма сделки, UEC">{total === null ? '' : `= ${total}`}</span>
-    <button type="submit" class="sc-btn sc-btn--primary" title="Записать сделку (Enter)">{side === 'buy' ? 'Купил' : 'Продал'}</button>
+    <button
+      type="submit"
+      class="sc-btn sc-btn--primary"
+      title="Записать сделку (Enter)"
+      data-opens-entry={asksNext ? 'trade-price' : undefined}
+      onclick={onSubmitClick}
+    >{side === 'buy' ? 'Купил' : 'Продал'}</button>
     <button type="button" class="sc-btn" title="Не записывать (Esc)" onclick={() => onCancel()}>Отмена</button>
   </div>
   {#if note}
@@ -125,6 +188,9 @@
   {/if}
   {#if badScu || badPrice}
     <p class="hint bad">Нужны целые числа: количество от 1, цена больше нуля.</p>
+  {/if}
+  {#if checkShown}
+    <p class="hint check" role="status">{PRICE_CHECK_NOTE}</p>
   {/if}
   {#if error}
     <p class="hint bad" role="alert">{error}</p>
@@ -184,6 +250,11 @@
 
   .note {
     color: var(--sc-muted);
+  }
+
+  /* the question about a price that is not mine: a caution, not a refusal */
+  .check {
+    color: var(--sc-warn);
   }
 
   .bad {

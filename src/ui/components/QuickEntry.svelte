@@ -145,9 +145,11 @@
   }
 </script>
 
+<!-- `data-entry-field`: the button that opens the line («+ цена») puts the cursor into its first field, the commodity (ui/keyboard.ts) -->
 <form
   class="quick"
   aria-label="Быстрый ввод цены"
+  data-entry-field="quick"
   onsubmit={(event) => {
     event.preventDefault();
     void save();
@@ -182,6 +184,7 @@
       type="text"
       inputmode="numeric"
       autocomplete="off"
+      data-select-on-focus
       placeholder="Цена"
       title={badPrice && problem !== null ? problem : 'Цена, UEC за SCU'}
       aria-label="Цена, UEC за SCU"
@@ -197,6 +200,7 @@
       type="text"
       inputmode="numeric"
       autocomplete="off"
+      data-select-on-focus
       placeholder="SCU"
       title={badScu && problem !== null ? problem : 'Количество, SCU (можно не вводить)'}
       aria-label="Количество, SCU (можно не вводить)"

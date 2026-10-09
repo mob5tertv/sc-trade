@@ -26,6 +26,16 @@ async function typeInto(selector: string, text: string): Promise<void> {
 const QUANTITY = 'form.trade input[aria-label="Количество, SCU"]';
 const submit = (): void => document.querySelector<HTMLFormElement>('form.trade')?.requestSubmit();
 
+/**
+ * Confirms the form the way a player does: once, and once more when the form answers with its question about a price that is
+ * not his («Цена справочная — проверь её и подтверди ещё раз», task 47: such a price is not written by one confirmation).
+ */
+async function confirm(): Promise<void> {
+  submit();
+  await pause(100);
+  if (document.querySelector('form.trade .check') !== null) submit();
+}
+
 // ids of the preview data: terminals MIC-L1 4, ARC-L1 1, HUR-L1 3; Gold is commodity 2
 const MIC_L1 = 4;
 const ARC_L1 = 1;
@@ -50,7 +60,7 @@ async function openSellForm(code: string): Promise<void> {
 async function sellThroughForm(code: string, scu: number): Promise<void> {
   await openSellForm(code);
   await typeInto(QUANTITY, String(scu));
-  submit();
+  await confirm();
   await pause(500);
 }
 
@@ -134,7 +144,7 @@ export const INCOME_SCENES: readonly Scene[] = [
       await openSellForm('GOLD');
       await typeInto(QUANTITY, '50');
       await app.buy({ terminalId: HUR_L1, commodityId: GOLD, scu: 20, price: 6100 });
-      submit();
+      await confirm();
       await pause(500);
     },
   },
@@ -148,7 +158,7 @@ export const INCOME_SCENES: readonly Scene[] = [
       await openSellForm('GOLD');
       await typeInto(QUANTITY, '50');
       await app.buy({ terminalId: HUR_L1, commodityId: GOLD, scu: 20, price: 6100 });
-      submit();
+      await confirm();
       await pause(500);
       await click('.expand button', 'Продал');
     },

@@ -80,6 +80,20 @@ export function tradeMode(side: Side, active: RunWithEvents | null, commodityId:
   return cargoOf(active?.events ?? []).some((line) => line.commodityId === commodityId) ? 'sell' : 'income';
 }
 
+/** The two fields of the form by the names its buttons know them by (`data-entry-field` in `TradeDialog`, `data-opens-entry` on the buttons). */
+export type TradeEntryField = 'trade-scu' | 'trade-price';
+
+/**
+ * The field of the form the cursor goes into when «Купил» / «Продал» of the row opens it: the one the player types
+ * into first. A purchase: the quantity. A sale of what is in the hold: the price, for the form holds the whole cargo
+ * already. A sale of goods that are not in the hold (an income): the quantity, which is empty there — with the cursor
+ * in the price, whose number is selected, the quantity he types would replace the price.
+ * `inHold`: the commodity is in the hold of the run (`tradeMode` then says `sell`, and `tradeDefaults` offers the cargo).
+ */
+export function tradeEntryField(side: Side, inHold: boolean): TradeEntryField {
+  return side === 'sell' && inHold ? 'trade-price' : 'trade-scu';
+}
+
 /** The one muted line under the form of an income. */
 export const INCOME_NOTE = 'Нет в трюме — запишется как доход без закупки';
 
@@ -94,3 +108,46 @@ export function goodsCameAboard(mode: TradeMode, active: RunWithEvents | null, c
 
 /** What the notice line says when `goodsCameAboard`. */
 export const GOODS_ABOARD_NOTICE = 'Этот товар уже в трюме — нажми «Продал» ещё раз';
+
+/**
+ * The largest quantity the service takes for the form, as far as the screen knows: for a sale from the run what the hold
+ * has of the commodity, for a purchase the free space of the hold (every commodity counted, never below zero). `null`:
+ * nothing limits it, which is an income (it is checked against no hold) and a purchase while the ship is not set.
+ * The same counts as in the service (`recordSell`, `recordBuy`), which stays the one that refuses and says why.
+ */
+export function tradeLimit(i: { mode: TradeMode; commodityId: number; cargo: CargoLine[]; capacity: number }): number | null {
+  if (i.mode === 'income') return null;
+  if (i.mode === 'sell') return i.cargo.find((line) => line.commodityId === i.commodityId)?.scu ?? 0;
+  if (i.capacity <= 0) return null;
+  return Math.max(0, i.capacity - i.cargo.reduce((sum, line) => sum + line.scu, 0));
+}
+
+/** What a confirmation of the form does: it writes the trade, or it writes nothing and asks the player to look at the price. */
+export type ConfirmStep = 'write' | 'check-price';
+
+export interface Confirmation {
+  /** The price the form started with is mine and not cold (`TradeDefaults.priceIsOwn`), or the form started with none (the player typed it). */
+  priceIsOwn: boolean;
+  /** The player typed into the price field, whatever he typed: the very same number is a number he put there. */
+  priceTouched: boolean;
+  /** The form has asked about the price already: this is the confirmation that follows. */
+  asked: boolean;
+  /** The quantity is one the service takes, as far as the screen knows (`tradeLimit`). */
+  fits: boolean;
+}
+
+/**
+ * A price that is not mine (the one of UEX, or mine gone cold) and that the player did not touch is not written by one press of
+ * Enter: the first confirmation asks him to check it (`PRICE_CHECK_NOTE`, the cursor goes into the price), the second one
+ * writes. A price of mine, or one he put his hand to, is written at once. The same for a purchase, a sale and an income.
+ *
+ * The refusals come first. The numbers the form itself refuses never get here. A quantity the service is going to refuse
+ * (more than the hold has, more than its free space) is sent to the service as before, which writes nothing and says why;
+ * the question about the price is not spent on it and is asked once the quantity is right.
+ */
+export function confirmStep(c: Confirmation): ConfirmStep {
+  return c.priceIsOwn || c.priceTouched || c.asked || !c.fits ? 'write' : 'check-price';
+}
+
+/** The line under the form after the confirmation that only asked. */
+export const PRICE_CHECK_NOTE = 'Цена справочная — проверь её и подтверди ещё раз';

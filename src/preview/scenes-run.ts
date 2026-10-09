@@ -101,7 +101,10 @@ export const RUN_SCENES: readonly Scene[] = [
       app.setTerminalSide('sell');
       await pause(60);
       await openTradeForm('MEDS', 'Продал');
+      // confirmed the way a player does: once, and once more when the form asks about a price that is not his (task 47)
       document.querySelector<HTMLFormElement>('form.trade')?.requestSubmit();
+      await pause(100);
+      if (document.querySelector('form.trade .check') !== null) document.querySelector<HTMLFormElement>('form.trade')?.requestSubmit();
       await pause(400);
       await click('.table button.line', 'STIM');
       await click('.expand button', 'Продал');
