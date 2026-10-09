@@ -115,7 +115,7 @@
       event.preventDefault();
       pick(chosen.id, event.ctrlKey);
     } else if (event.key === 'Escape' && (open || query !== '' || editing)) {
-      // The first Esc closes the list; the panel collapses only on the next one.
+      // Esc closes the list and drops the query. The same press ends with the keyboard at the game (ui/keyboard.ts); the window stays open.
       event.preventDefault();
       event.stopPropagation();
       reset();
@@ -135,9 +135,12 @@
 </script>
 
 <div class="box">
+  <!-- `data-picked`: what is picked in the box, the text it shows when nothing is typed over it (empty: nothing is picked). The keyboard
+       rules read it (ui/keyboard.ts): for them the box holds its pick, and what is typed over it is a query, which keeps no keyboard. -->
   <input
     bind:this={input}
     value={shown}
+    data-picked={value ?? ''}
     class="sc-input"
     class:has-value={!editing && value !== undefined}
     class:asking

@@ -1,8 +1,53 @@
 import { describe, expect, it } from 'vitest';
-import { pressBringsCursor, pressSelectsAll } from '../../src/ui/keyboard';
+import { cursorPlace, escapeGivesBack, pressBringsCursor, pressSelectsAll } from '../../src/ui/keyboard';
 
 // The decisions of the DOM side of the keyboard rules that need no DOM. The listeners themselves run in the preview
 // (`src/preview/scenes-keyboard.ts`), against a real browser.
+
+describe('cursorPlace: what has the cursor of the page, as the watchdog reads it', () => {
+  /** A plain button, unless said: no text field, in no group that opens an entry. */
+  const place = (over: Partial<Parameters<typeof cursorPlace>[0]> = {}) => cursorPlace({ editable: false, inEntryGroup: false, entryOpen: false, ...over });
+
+  it('a text field is a field: the keyboard is in use there', () => {
+    expect(place({ editable: true })).toBe('field');
+    // whatever stands around it
+    expect(place({ editable: true, inEntryGroup: true, entryOpen: true })).toBe('field');
+  });
+
+  it('a control inside a group that opens an entry, with the field of that entry on the page, is part of the entry: the cursor that came to a side of the switch by Tab is still in the line', () => {
+    expect(place({ inEntryGroup: true, entryOpen: true })).toBe('entry');
+  });
+
+  it('the same control is nothing while the field of its entry is not on the page: there is no entry to be in', () => {
+    expect(place({ inEntryGroup: true, entryOpen: false })).toBe('nowhere');
+  });
+
+  it('anything else is nothing, and the keyboard goes back: a plain button, a row, the page itself', () => {
+    expect(place()).toBe('nowhere');
+    // an entry that is on the page does not make a button next to it a part of it
+    expect(place({ entryOpen: true })).toBe('nowhere');
+  });
+});
+
+// The rule takes the key and who holds the keyboard, and nothing else: what the field made of the key (a row of the table
+// stops it, a search box and the quick entry stop it and take its default away) is not among what it is told, so no test
+// here can show that such a field does not keep the keyboard. That is shown where the fields are, by the scenes `esc-row`,
+// `esc-quick` and `esc-search`.
+describe('escapeGivesBack: does this key give the keyboard back to the game', () => {
+  it('Esc does, while the window holds the keyboard', () => {
+    expect(escapeGivesBack({ key: 'Escape', keyboardHeld: true })).toBe(true);
+  });
+
+  it('Esc with the keyboard at the game is nobody\'s business', () => {
+    expect(escapeGivesBack({ key: 'Escape', keyboardHeld: false })).toBe(false);
+  });
+
+  it('no other key does', () => {
+    for (const key of ['Enter', 'Tab', 'Backspace', 'Delete', 'Esc', 'escape', 'a', '1', 'F8']) {
+      expect(escapeGivesBack({ key, keyboardHeld: true }), key).toBe(false);
+    }
+  });
+});
 
 describe('pressBringsCursor: is this press the one that brings a number field the cursor', () => {
   it('is, when the field has no cursor yet', () => {

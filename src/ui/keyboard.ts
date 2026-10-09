@@ -1,7 +1,8 @@
 import type { Logger } from '../data/logger';
 import { createHeldKeyGuard } from './vm/held-keys';
+import { GONE_SIGN_MS } from './vm/keyboard-badge';
 import type { KeyboardHolds } from './vm/keyboard-holds';
-import { createTypingMemory, KEYBOARD_IDLE_MS, keyboardUnused, type EditedField, type FieldPlace } from './vm/keyboard-idle';
+import { createTypingMemory, entryText, KEYBOARD_IDLE_MS, keyboardUnused, type EditedField, type FieldPlace } from './vm/keyboard-idle';
 
 // The DOM side of the keyboard rules. The overlay never takes the keyboard from the game by itself; it
 // does so only while the player edits a text field. Everything else (who holds the keyboard, what taking
@@ -10,20 +11,29 @@ import { createTypingMemory, KEYBOARD_IDLE_MS, keyboardUnused, type EditedField,
 //    pointer leaving the field makes it not activatable again;
 //  - a press on a text field takes the keyboard first and puts the cursor into the field afterwards; when Windows
 //    refuses the take, nobody holds the keyboard and the cursor is taken out of the field again;
-//  - a button that opens an entry (`data-opens-entry`: «+ цена», «Купил», «Продал») is a field for all of the above: the
-//    pointer over it arms the window, the player's press on it takes the keyboard, and the cursor goes into the field of
-//    the entry once that field is there. What counts as a field or as such a button is decided in one place, `takerAt`;
+//  - a button that opens an entry (`data-opens-entry`: «+ цена», «Купил», «Продал», the switch «Куп.» / «Прод.» of the quick
+//    entry) is a field for all of the above: the pointer over it arms the window, the player's press on it takes the
+//    keyboard, and the cursor goes into the field of the entry once that field is there. What counts as a field or as such
+//    a button is decided in one place, `takerAt`;
 //  - a press on anything else is told to the holds: right after the pointer left a field it may have activated the window;
 //  - a number field (`data-select-on-focus`) that gets the cursor has its whole number selected, so that typing replaces
 //    it; a click on a field that has the cursor already puts the caret where the click was;
-//  - `Esc` in a field (when nothing else used it) leaves the field and gives the keyboard back to the game,
-//    the window stays open;
+//  - `Esc`, pressed while the window holds the keyboard, ends with the keyboard at the game, always and by ONE press (the sign
+//    of the header says «Esc — в игру»), and the window stays open. The field deals with what was typed into it first (the
+//    row of the table drops its draft, a search box closes its list and drops the query, the quick entry empties the field,
+//    the form of a trade closes, a field of the settings takes its saved number back), and only then the cursor is taken out
+//    of it: see `afterEscape`. A press on a field that lands before that calls the return off (a new press is a new intention);
 //  - a watchdog gives the keyboard back when the field is gone (an answer was sent and the screen was redrawn), and
-//    while the window is armed keeps the remembered window (the one the focus goes back to) up to date;
+//    while the window is armed keeps the remembered window (the one the focus goes back to) up to date. The cursor of the
+//    page on a side of the switch «Куп.» / «Прод.» (it comes there by Tab) is not "the field is gone": a control inside a
+//    group that opens an entry is part of that entry while its field is on the page (`cursorPlace`, `entryAround`);
 //  - the same watchdog gives the keyboard back, the way `Esc` does, when it is held and not used: no key for a while and
 //    nothing that the player entered and did not confirm, in whatever field (the rule and its invariant are
 //    `vm/keyboard-idle.ts`; here the fields are told to its memory: what stood in a field before it was typed into, what
-//    was typed, Enter and Esc, a field that is left, and where the page says those save: `CELL_MARK`, `SAVES_ON_LEAVE_MARK`);
+//    was typed, Enter and Esc, a field that is left, and where the page says those save: `CELL_MARK`, `SAVES_ON_LEAVE_MARK`).
+//    Of a search box the memory is told what is picked in it, never the query typed over it (`PICKED_MARK`): a query is a
+//    search, not an entry, and keeps no keyboard. That return, and only that one, is told to the page (`goneByItself`), so
+//    that a sign says for a few seconds where the keyboard is: the player may be looking elsewhere;
 //  - the guard against a game key that is still held down.
 
 /** The holder name of a text field being edited. */
@@ -59,9 +69,10 @@ function fieldAt(target: EventTarget | null): HTMLElement | null {
 
 /**
  * The attribute of a button that opens an entry, with the name of the entry: «+ цена» (while the quick entry is closed),
- * «Купил» and «Продал» of an open row, and the button of the form of a trade while its next press only asks about the
- * price. The field the cursor goes into carries the same name in `data-entry-field`, on itself or on an element around
- * it (then the first field inside is meant).
+ * «Купил» and «Продал» of an open row, the button of the form of a trade while its next press only asks about the
+ * price, and the switch of the side of the quick entry («Куп.» / «Прод.»: the press picks the side, and the cursor goes
+ * into the price, so that the line is never left without one). The field the cursor goes into carries the same name in
+ * `data-entry-field`, on itself or on an element around it (then the first field inside is meant).
  */
 const OPENS_ENTRY = 'data-opens-entry';
 const ENTRY_FIELD = 'data-entry-field';
@@ -96,6 +107,37 @@ function entryField(name: string): HTMLElement | null {
 }
 
 /**
+ * The entry a control is a part of, by its name: the control stands INSIDE a group that opens an entry (`data-opens-entry` on
+ * an element around it: the two sides of the switch of the quick entry, which is one such group). `null` for anything else,
+ * also for a button that carries the mark itself («Купил», «+ цена»): such a button opens an entry, it is no part of one.
+ * The neighbour of `takerAt`: that one says what a PRESS treats as a field, this one what the CURSOR of the page does when
+ * it came there without a press (by Tab).
+ */
+function entryAround(control: Element | null): string | null {
+  const group = control?.parentElement?.closest(`[${OPENS_ENTRY}]`) ?? null;
+  const entry = group?.getAttribute(OPENS_ENTRY) ?? '';
+  return entry === '' ? null : entry;
+}
+
+/** What has the cursor of the page, as the watchdog reads it (`cursorPlace`). */
+export type CursorPlace = 'field' | 'entry' | 'nowhere';
+
+/**
+ * What has the cursor of the page, for the watchdog that gives the keyboard back when nothing is being edited.
+ *  - `field`: a text field (`editable`). The keyboard is in use, and goes only by the rule of the unused keyboard.
+ *  - `entry`: no text field, but a control inside a group that opens an entry (`inEntryGroup`) while the field of that entry
+ *    is on the page (`entryOpen`): a side of the switch «Куп.» / «Прод.» that the cursor came to by Tab. It is part of the line
+ *    being entered: the arrows pick the side, Tab goes on to the price. The keyboard stays as it stays in an EMPTY field: what
+ *    was entered elsewhere in the window holds it, and with nothing entered it goes after the same time without a key.
+ *  - `nowhere`: anything else (a plain button, a row, the page itself; the same control while its entry is not on the page).
+ *    Nothing is being edited, and the keyboard goes back to the game.
+ */
+export function cursorPlace(active: { editable: boolean; inEntryGroup: boolean; entryOpen: boolean }): CursorPlace {
+  if (active.editable) return 'field';
+  return active.inEntryGroup && active.entryOpen ? 'entry' : 'nowhere';
+}
+
+/**
  * The attribute of a number field whose whole content is selected when it gets the cursor: the price and the quantity of
  * the open row of the table, of the form of a trade and of the quick entry. The fields of the settings and the search
  * boxes do not carry it (a search box has a rule of its own).
@@ -110,15 +152,27 @@ function numberFieldAt(target: EventTarget | null): HTMLInputElement | null {
 /** A field that holds text the player types: every field but a select, whose choice is applied at once and is never "typed and not saved". */
 const holdsTypedText = (field: Element | null): boolean => isEditable(field) && !(field instanceof HTMLSelectElement);
 
-/** What stands in a field; a list holds a choice, not a text. */
+/**
+ * The mark by which a search box says, on its field, what is PICKED in it: the text the box shows when nothing is typed
+ * over it (empty: nothing is picked). For the rules of the unused keyboard the box holds that and nothing else: what is
+ * typed over it is a query, a search and not an entry, and does not keep the keyboard at the window (`entryText` and the
+ * exception in the header of `vm/keyboard-idle.ts`). `SearchBox.svelte` writes it, and `tests/ui/keyboard-marks.test.ts`
+ * fails when it is gone from there.
+ */
+export const PICKED_MARK = 'data-picked';
+
+/**
+ * What a field holds for the rules of the unused keyboard: the text that stands in it; of a search box, what is picked in
+ * it (`PICKED_MARK`), never the query. A list holds a choice, not a text.
+ */
 function textOf(field: Element): string {
-  if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) return field.value;
+  if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) return entryText(field.value, field.getAttribute(PICKED_MARK));
   return holdsTypedText(field) ? (field.textContent ?? '') : '';
 }
 
 /**
  * The two marks by which the PAGE says that a field is saved by Enter and when the cursor leaves it (and dealt with at
- * Esc: the table drops the draft, a field of the settings is saved by the blur Esc causes). Only there do those acts
+ * Esc: the table drops the draft, a field of the settings takes its saved number back). Only there do those acts
  * of the player settle what he typed (`FieldPlace.commits`); a field without a mark is
  * assumed to be saved by nothing, so the keyboard stays over what was typed into it. Each mark is written by the
  * component that does the saving, and `tests/ui/keyboard-marks.test.ts` fails when either is gone from its component:
@@ -154,6 +208,9 @@ function refusedAt(field: Element): boolean {
   return false;
 }
 
+/** A control that is part of an entry and no text field (a side of the switch), as the rule of the unused keyboard reads it: a field with nothing in it. */
+const NO_TEXT: EditedField = { text: '', refused: false, choosing: false };
+
 /** The field with the cursor as the rule of the unused keyboard reads it; `listPressed` is what the listeners have kept. */
 const editedField = (field: Element, listPressed: boolean): EditedField => ({
   text: textOf(field), refused: refusedAt(field), choosing: listPressed && field instanceof HTMLSelectElement,
@@ -186,6 +243,16 @@ export function pressSelectsAll(press: { broughtCursor: boolean; start: number |
   return start === 0 && end === length;
 }
 
+/**
+ * Whether a key that went down gives the keyboard back to the game: `Esc`, while the window holds the keyboard. Nothing
+ * else is asked, and that is the rule: what the field makes of the key (it may stop it, or take its default away, having
+ * dropped a draft or closed a list) does not keep the keyboard at the window. One press of Esc always ends at the game.
+ * With the keyboard at the game the key is nobody's business here.
+ */
+export function escapeGivesBack(press: { key: string; keyboardHeld: boolean }): boolean {
+  return press.key === 'Escape' && press.keyboardHeld;
+}
+
 // The player opens the window with a click while still holding a key of the game (`F` shows its
 // cursor), and Windows keeps repeating that key into the window. A key types only after it was pressed
 // again inside the window; `Esc` and the other keys pressed fresh work as usual.
@@ -198,8 +265,13 @@ export function resetHeldKeys(): void {
   heldKeyLogged = false;
 }
 
-/** Starts listening; returns the function that stops. */
-export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
+/**
+ * Starts listening; returns the function that stops. `goneByItself` is told `true` when the keyboard went back to the game
+ * BY ITSELF (the watchdog found it unused; not by Esc, not by a click on the game, not because the field was gone), and
+ * `false` when the player need not be told any more: `GONE_SIGN_MS` later, or at once when he presses a field or a button
+ * that opens an entry. The sign «Клавиатура у игры» stands while it is `true` (`vm/keyboard-badge.ts`).
+ */
+export function installKeyboard(holds: KeyboardHolds, log: Logger, goneByItself: (gone: boolean) => void = () => undefined): () => void {
   /** When the player last pressed a field or a button that opens an entry: the press that takes the keyboard, or keeps it. */
   let lastPressAt = Number.NEGATIVE_INFINITY;
   /** When a key was last pressed in the window (a key that the guard of the held keys let through), or a choice made from a list. */
@@ -214,13 +286,72 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   // the window layer has already logged a failure of its own; the listeners have nothing to add
   const quietly = (job: Promise<void>): Promise<void> => job.catch(() => undefined);
 
-  // Capture phase on the window: it runs before the field, the search list and the Esc handler.
+  /**
+   * The keyboard goes back to the game and the window stays as it is: the field loses the cursor (a field that suspends
+   * something while it has the cursor, like a key field of the settings, hears of it the usual way, by its blur) and the
+   * holder of the fields is released.
+   */
+  const giveBack = (): void => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    void quietly(holds.release(FIELD));
+  };
+
+  /** The time the sign «Клавиатура у игры» still has; `undefined` while nobody is being told that the keyboard went by itself. */
+  let goneSign: number | undefined;
+  /** The player need not be told any more that the keyboard went by itself: the sign has had its time, or he pressed a field. */
+  const goneSignOver = (): void => {
+    if (goneSign === undefined) return;
+    window.clearTimeout(goneSign);
+    goneSign = undefined;
+    goneByItself(false);
+  };
+  /** The keyboard goes back by itself: the player is told, for `GONE_SIGN_MS`. */
+  const tellGoneByItself = (): void => {
+    window.clearTimeout(goneSign);
+    goneSign = window.setTimeout(goneSignOver, GONE_SIGN_MS);
+    goneByItself(true);
+  };
+
+  /** The return of the keyboard that a press of `Esc` has asked for and that has not happened yet; one at a time. */
+  let escapeReturn: number | undefined;
+  /**
+   * `Esc` was pressed while the window holds the keyboard: the keyboard goes back to the game, whatever the field makes of
+   * the key. ONE press is enough everywhere. THE ORDER is the point: the field first, the keyboard after it. A row of the
+   * table drops its draft at Esc, and it saves a cell that is left; were the cursor taken out before the row has heard the
+   * key, the blur would save the very price Esc was pressed to drop. The key is heard here in the capture phase, before
+   * every field, because some fields stop it (the row, the search box, the quick entry) and nothing would be heard after
+   * them. So the return waits for the end of the press: a task of its own, which runs after every listener of this key
+   * and after the page was redrawn by what they did (the draft is gone, the form of a trade is closed).
+   */
+  const afterEscape = (): void => {
+    if (escapeReturn !== undefined) return;
+    escapeReturn = window.setTimeout(() => {
+      escapeReturn = undefined;
+      // the keyboard went away meanwhile (the player clicked the game): there is nothing to give back
+      if (!holds.held) return;
+      log.info('ui', 'escape: the keyboard goes back to the game');
+      giveBack();
+    }, 0);
+  };
+  /**
+   * The return that Esc has asked for is called off: the player pressed a field (or a button that opens an entry) before it
+   * happened. A new press is a new intention, and this one asks for the keyboard: the return would take the cursor out of
+   * the very field he has pressed. Esc has done its part in the field it was pressed in all the same. A press on what is no
+   * field asks for no keyboard and calls nothing off: there one Esc still ends at the game.
+   */
+  const escapeCalledOff = (): void => {
+    window.clearTimeout(escapeReturn);
+    escapeReturn = undefined;
+  };
+
+  // Capture phase on the window: it runs before the field and the search list.
   const onKeyDownCapture = (event: KeyboardEvent): void => {
     if (!heldKeys.shouldSwallow(event)) {
       // a key of the player: the keyboard is in use. Enter and Esc in a field deal with what was typed there (the memory
       // knows where they really do)
       lastKeyAt = performance.now();
       if (event.target instanceof Element && holdsTypedText(event.target)) typing.key(event.target, event.key, placeOf(event.target));
+      if (escapeGivesBack({ key: event.key, keyboardHeld: holds.held })) afterEscape();
       return;
     }
     event.preventDefault();
@@ -261,16 +392,6 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     const next = event.relatedTarget;
     if (place.cell !== null && next instanceof Element && isEditable(next) && cellOf(next) === place.cell) return;
     typing.left(field, place);
-  };
-
-  /**
-   * The keyboard goes back to the game and the window stays as it is: the field loses the cursor (a field that suspends
-   * something while it has the cursor, like a key field of the settings, hears of it the usual way, by its blur) and the
-   * holder of the fields is released.
-   */
-  const giveBack = (): void => {
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-    void quietly(holds.release(FIELD));
   };
 
   /** What the pointer was last seen on, whatever it is; `null` when it is not over the window. */
@@ -390,6 +511,10 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     const { element: field, entry } = taker;
     const pressedAt = performance.now();
     lastPressAt = pressedAt;
+    // the player is back at a field: he need not be told any longer that the keyboard had gone by itself
+    goneSignOver();
+    // ...and a return that Esc asked for a moment ago is not what he wants any more
+    escapeCalledOff();
     if (!holds.held) {
       const armed = holds.state === 'armed';
       if (entry === null) log.debug('ui', 'field pressed, the window needs the keyboard', { field: field.id || field.tagName, armed });
@@ -422,13 +547,6 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     pointerOn(event.target);
   };
 
-  // Bubble phase: a field or a search list that used Esc itself (closed its list, dropped a draft) comes first.
-  const onKeyDown = (event: KeyboardEvent): void => {
-    if (event.key !== 'Escape' || event.defaultPrevented || !holds.held) return;
-    log.info('ui', 'escape: the keyboard goes back to the game');
-    giveBack();
-  };
-
   // The field may vanish with a redraw (an answer was sent): there is no event for that, so look.
   const watchdog = window.setInterval(() => {
     // The same goes for what is under the pointer, which changes with no move of the pointer: the field is gone (the
@@ -442,8 +560,12 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     if (!holds.held) return;
     const now = performance.now();
     const active = document.activeElement;
-    if (active === null || !isEditable(active)) {
+    const around = entryAround(active);
+    const place = cursorPlace({ editable: isEditable(active), inEntryGroup: around !== null, entryOpen: around !== null && entryField(around) !== null });
+    if (active === null || place === 'nowhere') {
       if (now - lastPressAt < PRESS_GRACE_MS) return;
+      // Esc has just closed what had the cursor (the form of a trade) and is about to give the keyboard back itself
+      if (escapeReturn !== undefined) return;
       log.debug('ui', 'no field is being edited, the keyboard goes back to the game');
       void quietly(holds.release(FIELD));
       return;
@@ -452,9 +574,14 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     // to the window. The keyboard was taken by the last press on a field (or on an entry button); a look while that take
     // is still on its way counts from the press too. Nothing is written per look, one line when the keyboard goes.
     // What was typed is read against the page as it is now, in every field that was typed into, not only this one.
+    // The cursor on a side of the switch (`entry`) is read as the cursor in a field with nothing in it: the same rule.
     const typed = typing.read((field) => ({ text: field.isConnected ? textOf(field) : null, refused: refusedAt(field) }));
-    if (!keyboardUnused({ now, lastKeyAt, takenAt: lastPressAt, field: editedField(active, listPressed), typed })) return;
+    const field = place === 'field' ? editedField(active, listPressed) : NO_TEXT;
+    if (!keyboardUnused({ now, lastKeyAt, takenAt: lastPressAt, field, typed })) return;
     log.info('ui', `the keyboard was not used for ${KEYBOARD_IDLE_MS / 1000} s: it goes back to the game`);
+    // Told before the keyboard is given: the sign «Esc — в игру» stands until the holder is released, and «Клавиатура у игры»
+    // takes its place at that very moment, with nothing shown in between.
+    tellGoneByItself();
     giveBack();
   }, WATCHDOG_MS);
 
@@ -474,11 +601,12 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   document.addEventListener('mouseup', onMouseUp, true);
   document.addEventListener('pointercancel', onPressGone, true);
   document.addEventListener('dragend', onPressGone, true);
-  window.addEventListener('keydown', onKeyDown);
   resetHeldKeys();
 
   return () => {
     window.clearInterval(watchdog);
+    escapeCalledOff();
+    goneSignOver();
     stopEntryLook();
     window.removeEventListener('keydown', onKeyDownCapture, true);
     window.removeEventListener('keyup', onKeyUpCapture, true);
@@ -494,6 +622,5 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     document.removeEventListener('mouseup', onMouseUp, true);
     document.removeEventListener('pointercancel', onPressGone, true);
     document.removeEventListener('dragend', onPressGone, true);
-    window.removeEventListener('keydown', onKeyDown);
   };
 }

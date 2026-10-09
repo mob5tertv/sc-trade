@@ -82,7 +82,8 @@
 
   const commodityItems = $derived(commoditySearchItems(app.reference));
   const boostIds = $derived(viewedId === null ? new Set<number>() : new Set(app.market.byTerminal.get(viewedId)));
-  const sideFor = (commodityId: number): Side => defaultSide(rows.find((row) => row.commodityId === commodityId));
+  // the side the quick entry shows: by what the terminal trades the commodity on, and by the tab where that does not say (`null`: no commodity yet)
+  const sideFor = (commodityId: number | null): Side => defaultSide(commodityId === null ? undefined : rows.find((row) => row.commodityId === commodityId), side);
 
   function select(commodityId: number | null): void {
     if (commodityId === null) {

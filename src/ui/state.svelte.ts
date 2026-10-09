@@ -294,6 +294,11 @@ class AppState {
    */
   keysSignGoneAt = Number.NEGATIVE_INFINITY;
   /**
+   * The keyboard went back to the game by itself a moment ago (nobody used it for a while), and the player is still being told so by the
+   * sign «Клавиатура у игры», which stands where «Esc — в игру» stood (`keyboardSign`). The listeners of the keyboard say when (`showKeyboardGone`).
+   */
+  keyboardGoneSign = $state(false);
+  /**
    * Who needs the keyboard (see `HoldEffects` in vm/keyboard-holds.ts). The only way to the keyboard: the
    * window never takes the focus from the game by itself. `hold('field')` takes it, `release` gives it back.
    */
@@ -1011,6 +1016,15 @@ class AppState {
     this.#log.info('ui', 'the sign: the keyboard goes back to the game');
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     await this.keyboard.release('field').catch(() => undefined);
+  }
+
+  /**
+   * The listeners of the keyboard (`installKeyboard`) say that the keyboard went back to the game by itself (`true`), and that the player
+   * need not be told any more (`false`: the sign has had its time, or he pressed a field). Only the sign follows it; nothing is logged
+   * here (the return itself is one line of the listeners).
+   */
+  showKeyboardGone(shown: boolean): void {
+    this.keyboardGoneSign = shown;
   }
 
   /** Something needs the window to stay as it is (a dialog is open): it does not fold by itself while that lasts. */

@@ -73,7 +73,7 @@ export interface GalleryData {
   boostIds: Set<number>;
   /** The range UEX knows for a side of a terminal: it stands beside a price of mine in the lists of trips. */
   uexRange: UexRangeOf;
-  sideFor: (commodityId: number) => Side;
+  sideFor: (commodityId: number | null) => Side;
   routes: {
     /** Trips from the viewed terminal only. */
     from: RouteOption[];
@@ -416,7 +416,8 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
     terminalItems: terminalSearchItems(reference, settings.starSystemId),
     boostIds: new Set(market.byTerminal.get(VIEWED_TERMINAL)),
     uexRange: (terminalId, commodityId, side) => uexRangeOf(market, terminalId, commodityId, side, ctx),
-    sideFor: (commodityId) => defaultSide(rows.find((r) => r.commodityId === commodityId)),
+    // the gallery shows the line under a table that is on its «Купить» side
+    sideFor: (commodityId) => defaultSide(commodityId === null ? undefined : rows.find((r) => r.commodityId === commodityId), 'buy'),
     routes: { from, nearby, to, ladder },
     runCounts: ownRunCounts(runs),
     titles: {

@@ -3,26 +3,31 @@
   import SearchBox from './components/SearchBox.svelte';
   import { app } from './state.svelte';
   import { searchTerminals, terminalSearchItems } from './vm/header';
-  import { BADGE_TEXT, indicatorClick, indicatorFace } from './vm/keyboard-badge';
+  import { indicatorClick, indicatorFace } from './vm/keyboard-badge';
   import { locationFieldTitle, locationPlaceholder } from './vm/terminal-pick';
   import { windowHeader } from './vm/window-header';
   import WindowGrip from './WindowGrip.svelte';
 
   const header = $derived(windowHeader(app.reference, app.settings, app.viewTerminalId, app.pricesSyncedAt, app.uexOk, app.now, app.priceSync, app.referenceOk));
   const items = $derived(terminalSearchItems(app.reference, app.settings.starSystemId));
-  // While the window holds the keyboard the slot of the UEX indicator says «Esc — в игру» instead (nothing else of the header moves or shrinks)
-  const face = $derived(indicatorFace(app.keyboardHeld, header.uex));
+  // While the window holds the keyboard the slot of the UEX indicator says «Esc — в игру» instead, and for a few seconds after the keyboard
+  // went back by itself it says «Клавиатура у игры», muted (nothing else of the header moves or shrinks)
+  const face = $derived(indicatorFace(app.keyboardHeld, header.uex, app.keyboardGoneSign));
   // After an arrival with no target the field asks "Где прилетел?": it shows no old name, only the question, and the next terminal chosen is the answer
   const asking = $derived(app.askingWhere);
   const locationTitle = $derived(locationFieldTitle(header.locationTitle, { runGoing: app.activeRun !== null, askingWhere: asking }));
 
-  /** The click on the slot: the sign gives the keyboard back, the indicator refreshes the prices; right after the sign went away it does nothing. */
+  /**
+   * The click on the slot: the sign «Esc — в игру» gives the keyboard back, the indicator refreshes the prices; right after that sign went away,
+   * and while «Клавиатура у игры» stands in the slot, it does nothing.
+   */
   function clickSlot(): void {
     const now = performance.now();
-    const what = indicatorClick(app.keyboardHeld, now, app.keysSignGoneAt);
+    const what = indicatorClick(app.keyboardHeld, now, app.keysSignGoneAt, app.keyboardGoneSign);
     if (what === 'give-back') void app.giveKeyboardBack();
     else if (what === 'refresh') void app.refreshPrices();
     // an ignored click is silent on the screen: the log is where "UEX did not refresh when I clicked" is explained
+    else if (app.keyboardGoneSign) app.log.debug('ui', 'indicator click ignored: the sign «Клавиатура у игры» stands in the slot');
     else app.log.debug('ui', 'indicator click ignored: the sign «Esc — в игру» went away just now', { agoMs: Math.round(now - app.keysSignGoneAt) });
   }
 
@@ -42,7 +47,7 @@
     <SearchBox
       {items}
       find={searchTerminals}
-      value={asking ? undefined : header.location ?? undefined}
+      value={asking ? undefined : header.location ?? '' /* never without a value: with no place viewed the box still drops an unpicked query when it is left */}
       title={locationTitle}
       placeholder={locationPlaceholder(asking)}
       label="Локация: три буквы и Enter"
@@ -58,19 +63,23 @@
   {/if}
   <!-- how fresh the prices of UEX are; a click refreshes them now, and while that goes the text is its progress. While the window holds
        the keyboard the same button is the sign «Esc — в игру» (a click gives the keyboard back and refreshes nothing): the indicator stays
-       under it, unseen, so the slot keeps the width of its text, and a refresh that is going keeps going. -->
+       under it, unseen, so the slot keeps the width of its text, and a refresh that is going keeps going. For a few seconds after the
+       keyboard went back by itself the slot is the muted sign «Клавиатура у игры»: it only tells, a click does nothing then, and the
+       button says so (`aria-disabled`). -->
   <button
     class="uex"
     class:sign={face.sign}
+    class:gone={face.muted}
     class:stale={face.stale}
     class:busy={face.busy}
     type="button"
     aria-busy={face.busy}
+    aria-disabled={face.muted ? 'true' : undefined}
     title={face.title}
     onclick={clickSlot}
   >
     <span class="face" class:ghost={face.sign}><span class="mark" aria-hidden="true"></span>{header.uex.text}</span>
-    {#if face.sign}<span class="keys">{BADGE_TEXT}</span>{/if}
+    {#if face.sign}<span class="keys">{face.text}</span>{/if}
   </button>
   <button class="sc-btn sc-btn--primary route" type="button" title="Лучшие варианты из текущей локации" onclick={() => app.newRoute()}>
     Маршрут
@@ -176,6 +185,21 @@
   .uex.sign,
   .uex.sign:hover {
     color: var(--sc-accent);
+  }
+
+  /* «Клавиатура у игры» only tells: muted, no hand, nothing lights under the pointer. It stands in two lines, «Клавиатура» over «у игры»
+     (its one breaking space is after the first word), so the slot is no wider for it than for «Esc — в игру» and the header does not move. */
+  .uex.sign.gone,
+  .uex.sign.gone:hover {
+    background: transparent;
+    color: var(--sc-muted);
+    cursor: default;
+  }
+
+  .uex.gone .keys {
+    line-height: 11px;
+    text-align: center;
+    white-space: normal;
   }
 
   /* data of UEX is nobody's reading of mine: an empty square, as in the tables */

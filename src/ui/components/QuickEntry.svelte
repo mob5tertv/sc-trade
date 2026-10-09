@@ -14,8 +14,11 @@
     commodityItems: Searchable[];
     /** What the viewed terminal trades: those commodities come first in the search. */
     boostIds: Set<number>;
-    /** The side a commodity starts with at the viewed terminal. */
-    sideFor: (commodityId: number) => Side;
+    /**
+     * The side the line shows for a commodity at the viewed terminal while the player has not picked one by hand; `null`: no commodity
+     * is chosen yet (the owner answers with the side of the table the player is looking at, `defaultSide`).
+     */
+    sideFor: (commodityId: number | null) => Side;
     /** Writes the price; answers the sentence to show when it was not saved, `null` when it was. */
     onSave: (entry: PriceEntry) => Promise<string | null>;
     /** Enter was pressed with something missing or unreadable (nothing was saved): which of the parts it was, never what was typed. */
@@ -29,7 +32,7 @@
   const groupName = `side-${uid}`;
 
   let commodityId = $state<number | null>(null);
-  /** The side the player picked by hand; `null` while the side follows what the terminal trades. */
+  /** The side the player picked by hand; `null` while the side follows what the terminal trades and the tab he is on (`sideFor`). */
   let pickedSide = $state<Side | null>(null);
   let priceText = $state('');
   let scuText = $state('');
@@ -54,7 +57,9 @@
   let scuInput = $state<HTMLInputElement | null>();
 
   const chosen = $derived(commodityId === null ? undefined : commodityItems.find((c) => c.id === commodityId));
-  const side = $derived<Side>(pickedSide ?? (commodityId === null ? 'buy' : sideFor(commodityId)));
+  // The one side of the line: the switch shows it and the price is written to it. With no commodity chosen it is not "buy" but what
+  // the owner says for the empty line (the tab), so the switch never shows a side the price would not go to.
+  const side = $derived<Side>(pickedSide ?? sideFor(commodityId));
 
   // Enter in the commodity field takes the first match, and the player goes on with the price.
   function pickCommodity(id: number): void {
@@ -136,7 +141,8 @@
     commodityBox?.focus();
   }
 
-  // Esc takes back what was typed into the field; with nothing typed it goes on and closes the panel.
+  // Esc takes back what was typed into the field. The same press gives the keyboard back to the game, whatever is done here
+  // (ui/keyboard.ts): the line stays as it is then, with the commodity that was picked, and nothing is written.
   function onFieldKeydown(event: KeyboardEvent, text: string, clear: () => void): void {
     if (event.key !== 'Escape' || text === '') return;
     event.preventDefault();
@@ -146,6 +152,9 @@
 </script>
 
 <!-- `data-entry-field`: the button that opens the line («+ цена») puts the cursor into its first field, the commodity (ui/keyboard.ts) -->
+<!-- The commodity box has a value at all times, an empty one while no commodity is picked: a search box with a value to go back to drops
+     what was typed and not picked when it is left. A query is a search, not an entry: it keeps no keyboard (vm/keyboard-idle.ts), and when
+     the keyboard has gone back to the game by itself no stray letter is left in «Товар». -->
 <form
   class="quick"
   aria-label="Быстрый ввод цены"
@@ -162,12 +171,15 @@
       {boostIds}
       placeholder="Товар"
       label="Товар: три буквы кода или названия и Enter"
-      value={chosen ? `${chosen.code} ${chosen.name}` : undefined}
+      value={chosen ? `${chosen.code} ${chosen.name}` : ''}
       invalid={badCommodity}
       title={badCommodity && problem !== null ? problem : undefined}
       onPick={pickCommodity}
     />
-    <div class="sc-seg" role="radiogroup" aria-label="Сторона">
+    <!-- `data-opens-entry`: for the keyboard the switch is a button that opens an entry (ui/keyboard.ts). The pointer over it arms the
+         window like a field, the press on a side takes the keyboard (or keeps it), and the cursor goes into the price (`data-entry-field`
+         with the same name), its number selected: picking a side never leaves the line without a cursor, with its keys going to the game. -->
+    <div class="sc-seg" role="radiogroup" aria-label="Сторона" data-opens-entry="quick-price">
       <label class="side" class:is-on={side === 'buy'} title="Цена, по которой здесь можно купить">
         <input type="radio" name={groupName} checked={side === 'buy'} onchange={() => (pickedSide = 'buy')} />
         <span>Куп.</span>
@@ -185,6 +197,7 @@
       inputmode="numeric"
       autocomplete="off"
       data-select-on-focus
+      data-entry-field="quick-price"
       placeholder="Цена"
       title={badPrice && problem !== null ? problem : 'Цена, UEC за SCU'}
       aria-label="Цена, UEC за SCU"

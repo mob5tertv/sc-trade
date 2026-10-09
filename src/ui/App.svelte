@@ -19,7 +19,7 @@
     if (!element) return;
     let disposed = false;
     let unwatch: (() => void) | undefined;
-    const stopKeyboard = installKeyboard(app.keyboard, app.log);
+    const stopKeyboard = installKeyboard(app.keyboard, app.log, (gone) => app.showKeyboardGone(gone));
     // the grip moves the window without taking the focus (no `startDragging()`, no keyboard)
     const stopDrag = installDrag({
       begin: () => app.dragBegin(),
