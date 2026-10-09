@@ -69,13 +69,13 @@ describe('historyRows', () => {
     expect(h[0].title).toBe('GOLD: смешанный рейс');
   });
 
-  it('calls a run that only bought a run without sales, and a run that sold in several places a mixed one', () => {
+  it('calls a lost run that never sold "груз потерян", and a run that sold in several places a mixed one', () => {
     // R4 bought gold and lost it, nothing was sold; R5 bought at one terminal and sold at two
-    expect(historyRows([R4], ref, NOW)[0].title).toBe('GOLD: рейс без продаж');
+    expect(historyRows([R4], ref, NOW)[0]).toMatchObject({ title: 'GOLD: груз потерян', status: 'lost' });
     expect(historyRows([R5], ref, NOW)[0].title).toBe('GOLD: смешанный рейс');
   });
 
-  it('calls an active run that has only bought a run without sales, with every commodity bought', () => {
+  it('calls an active run that has only bought "идёт", with every commodity bought', () => {
     const loading = {
       run: run({ id: 10, startedAt: 1000, endedAt: null, status: 'active' }),
       events: [
@@ -83,7 +83,7 @@ describe('historyRows', () => {
         ev({ id: 102, runId: 10, ts: 1100, type: 'buy', terminalId: 1, commodityId: 20, scu: 10, price: 100 }),
       ],
     };
-    expect(historyRows([loading], ref, 2000)[0]).toMatchObject({ title: 'GOLD, TITA: рейс без продаж', status: 'active' });
+    expect(historyRows([loading], ref, 2000)[0]).toMatchObject({ title: 'GOLD, TITA: идёт', status: 'active' });
   });
 
   it('does not take a sale without a price or a quantity for a sale', () => {
@@ -94,7 +94,7 @@ describe('historyRows', () => {
         ev({ id: 112, runId: 11, ts: 2000, type: 'sell', terminalId: 2, commodityId: 10, scu: null, price: null }),
       ],
     };
-    expect(historyRows([half], ref, NOW)[0].title).toBe('GOLD: рейс без продаж');
+    expect(historyRows([half], ref, NOW)[0].title).toBe('GOLD: груз потерян');
   });
 
   describe('a sale without a purchase (income, task 32)', () => {
@@ -102,7 +102,7 @@ describe('historyRows', () => {
 
     it('is called by its code and "продажа без закупки", not a mixed run, with the revenue as the profit and dashes for ROI, time and rate', () => {
       expect(historyRows([income], ref, NOW)[0]).toEqual({
-        runId: 21, when: expect.stringMatching(/^\d\d\.\d\d \d\d:\d\d$/), title: 'TITA: продажа без закупки', status: 'done',
+        runId: 21, when: expect.stringMatching(/^\d\d\.\d\d \d\d:\d\d$/), title: 'TITA: продажа без закупки', hint: 'TITA: продажа без закупки', status: 'done',
         profit: nb('444 000'), roi: '—', duration: '—', rate: '—',
       });
     });
@@ -119,7 +119,7 @@ describe('historyRows', () => {
     });
 
     it('leaves the titles of the runs that bought alone: a purchase makes it a run again', () => {
-      expect(historyRows([R4], ref, NOW)[0].title).toBe('GOLD: рейс без продаж');
+      expect(historyRows([R4], ref, NOW)[0].title).toBe('GOLD: груз потерян');
       expect(historyRows([R5], ref, NOW)[0].title).toBe('GOLD: смешанный рейс');
       expect(historyRows([R1], ref, NOW)[0].title).toBe('GOLD: ARC-L1 → TDD Area 18');
     });
@@ -150,7 +150,7 @@ describe('historyRows', () => {
 
     it('is not a loss: with purchases only, profit, ROI and rate are dashes and the time is what has passed', () => {
       const [row] = historyRows([going([bought])], ref, 1000 + 12 * 60 + 1);
-      expect(row).toMatchObject({ status: 'active', title: 'GOLD: рейс без продаж', profit: '—', roi: '—', duration: '12:01', rate: '—' });
+      expect(row).toMatchObject({ status: 'active', title: 'GOLD: идёт', profit: '—', roi: '—', duration: '12:01', rate: '—' });
     });
 
     it('shows no partial figure after it sold part of its cargo', () => {
@@ -182,7 +182,7 @@ describe('historyRows', () => {
     expect(roiOf(960)).toBe('-4%');
   });
 
-  it('lists every commodity of a mixed run once, in the order of first use', () => {
+  describe('a run of several commodities that sold (task 44)', () => {
     const mixed = {
       run: run({ id: 7, startedAt: 1000, endedAt: 2000, status: 'done' }),
       events: [
@@ -192,7 +192,48 @@ describe('historyRows', () => {
         ev({ id: 74, runId: 7, ts: 2000, type: 'sell', terminalId: 2, commodityId: 20, scu: 10, price: 120 }),
       ],
     };
-    expect(historyRows([mixed], ref, NOW)[0].title).toBe('GOLD, TITA: смешанный рейс');
+
+    it('shows where it went instead of the cut "смешанный ре…": the route, and "смеш." for the goods', () => {
+      expect(historyRows([mixed], ref, NOW)[0].title).toBe('смеш.: ARC-L1 → TDD Area 18');
+    });
+
+    it('lists every commodity once, in the order of first use, in the hint of the row', () => {
+      expect(historyRows([mixed], ref, NOW)[0].hint).toBe('GOLD, TITA: смешанный рейс, ARC-L1 → TDD Area 18');
+    });
+
+    it('goes from the first purchase to the last sale when it bought and sold in several places', () => {
+      const wide = {
+        run: mixed.run,
+        events: [
+          ev({ id: 71, runId: 7, ts: 1000, type: 'buy', terminalId: 3, commodityId: 10, scu: 10, price: 100 }),
+          ev({ id: 72, runId: 7, ts: 1100, type: 'buy', terminalId: 1, commodityId: 20, scu: 10, price: 100 }),
+          ev({ id: 73, runId: 7, ts: 1800, type: 'sell', terminalId: 2, commodityId: 10, scu: 10, price: 120 }),
+          ev({ id: 74, runId: 7, ts: 2000, type: 'sell', terminalId: 4, commodityId: 20, scu: 10, price: 120 }),
+        ],
+      };
+      expect(historyRows([wide], ref, NOW)[0].title).toBe('смеш.: CRU-L1 → Ruin Station');
+    });
+
+    it('names a terminal the reference lacks by its number, and a trade without a terminal by a dash', () => {
+      const gone = { run: mixed.run, events: mixed.events.map((e) => (e.id === 71 ? { ...e, terminalId: 777 } : e.id === 74 ? { ...e, terminalId: null } : e)) };
+      expect(historyRows([gone], ref, NOW)[0].title).toBe('смеш.: #777 → —');
+    });
+
+    it('keeps the commodities it has not sold yet in the list while it goes: "идёт" has no route to show', () => {
+      const loading = { run: run({ id: 8, startedAt: 1000, endedAt: null, status: 'active' }), events: mixed.events.slice(0, 2) };
+      expect(historyRows([loading], ref, 1500)[0]).toMatchObject({ title: 'GOLD, TITA: идёт', hint: 'GOLD, TITA: идёт' });
+    });
+
+    it('says "груз потерян" for the lost one that never sold, and shows the route of the one that sold before it was lost', () => {
+      const lost = { run: run({ id: 9, startedAt: 1000, endedAt: 1500, status: 'lost' }), events: mixed.events.slice(0, 2) };
+      expect(historyRows([lost], ref, NOW)[0]).toMatchObject({ title: 'GOLD, TITA: груз потерян', status: 'lost' });
+      const soldPart = { run: lost.run, events: mixed.events.slice(0, 3) };
+      expect(historyRows([soldPart], ref, NOW)[0]).toMatchObject({ title: 'смеш.: ARC-L1 → TDD Area 18', status: 'lost' });
+    });
+
+    it('is told apart from a run of one commodity sold in several places, which keeps its name', () => {
+      expect(historyRows([R5], ref, NOW)[0]).toMatchObject({ title: 'GOLD: смешанный рейс', hint: 'GOLD: смешанный рейс' });
+    });
   });
 
   it('falls back to ids for terminals and commodities missing from the reference', () => {
@@ -226,7 +267,7 @@ describe('historyRows', () => {
 
 describe('sessionRows', () => {
   it('formats sessions and empty rates', () => {
-    expect(sessionRows([{ startTs: 30000, endTs: 30000, runIds: [], runCount: 0, profit: 0, uecPerHour: null }])[0]).toMatchObject({ runs: 0, duration: '0:00', rate: '—' });
+    expect(sessionRows([{ startTs: 30000, endTs: 30000, runIds: [3], runCount: 1, profit: 50_000, uecPerHour: null }])[0]).toMatchObject({ runs: 1, duration: '0:00', rate: '—' });
   });
 
   it('formats a session with runs, in the given order', () => {
@@ -250,6 +291,32 @@ describe('sessionRows', () => {
 
   it('is empty without sessions', () => {
     expect(sessionRows([])).toEqual([]);
+  });
+
+  describe('a session of nothing (task 44)', () => {
+    const prices = { startTs: 30000, endTs: 30000, runIds: [], runCount: 0, profit: 0, uecPerHour: null };
+    const flight = { startTs: 1000, endTs: 2000, runIds: [1], runCount: 1, profit: -100_000, uecPerHour: -360_000 };
+    const income = { startTs: 5000, endTs: 5000, runIds: [9], runCount: 0, profit: 444_000, uecPerHour: null };
+
+    it('is not listed: no run and no profit (the player only wrote prices, or the history was cleared)', () => {
+      expect(sessionRows([prices])).toEqual([]);
+      expect(sessionRows([{ ...prices, startTs: 100, endTs: 7000, uecPerHour: 0 }])).toEqual([]);
+    });
+
+    it('is left out of a list of sessions that have something, and the others keep their order', () => {
+      expect(sessionRows([prices, flight, { ...prices, startTs: 20 }, income]).map((r) => [r.runs, r.profit])).toEqual([
+        [1, nb('-100 000')],
+        [0, nb('444 000')],
+      ]);
+    });
+
+    it('is listed when it holds only a sale without a purchase: no run, but a profit', () => {
+      expect(sessionRows([income])).toHaveLength(1);
+    });
+
+    it('is listed when its run earned nothing: the run is there', () => {
+      expect(sessionRows([{ ...flight, profit: 0, uecPerHour: 0 }])).toHaveLength(1);
+    });
   });
 });
 

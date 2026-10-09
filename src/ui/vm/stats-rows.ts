@@ -52,7 +52,12 @@ export function routeRows(stats: RouteStat[], ref: Reference): RouteRow[] {
 }
 
 export interface HistoryRow {
-  runId: number; when: string; title: string; status: 'active' | 'done' | 'lost';
+  runId: number; when: string;
+  /** What the row says of the run, short: 'GOLD: ARC-L1 → TDD Area 18', 'смеш.: ARC-L1 → TDD Area 18', 'GOLD: груз потерян'. */
+  title: string;
+  /** The same in full, for the tooltip: it lists every commodity of a run whose title says only "смеш.". */
+  hint: string;
+  status: 'active' | 'done' | 'lost';
   profit: string; roi: string; duration: string; rate: string;
 }
 
@@ -70,23 +75,40 @@ function tradedCommodityIds(events: RunEvent[]): number[] {
   return [...ids];
 }
 
+/** The word for the commodities of a run that traded in several: the list is too long for the line, and stands in the hint of the row. */
+const SEVERAL_COMMODITIES = 'смеш.';
+
 /**
- * 'GOLD: ARC-L1 → TDD Area 18' for a simple run; 'GOLD, TITA: рейс без продаж' for one that only bought (nothing sold
- * yet, or the cargo was lost), 'GOLD, TITA: смешанный рейс' for one that sold but is not a single route, 'GOLD: продажа
- * без закупки' for one that only sold (goods the application never saw bought, spec 14.10); the dash for a run without trades.
+ * The title of a row and its hint. 'GOLD: ARC-L1 → TDD Area 18' for a simple run; a run that has not sold anything says what
+ * became of its cargo: 'GOLD, TITA: идёт' while it goes, 'GOLD, TITA: груз потерян' when it was lost; 'GOLD: смешанный рейс' for
+ * one commodity that sold in several places; 'GOLD: продажа без закупки' for a run that only sold (goods the application never
+ * saw bought, spec 14.10); the dash for a run without trades. A run of several commodities that sold is no route either, but it
+ * has two ends: 'смеш.: ARC-L1 → TDD Area 18', the terminal of its first purchase and the one of its last sale. The hint of that
+ * row lists the commodities ('GOLD, TITA: смешанный рейс, ARC-L1 → TDD Area 18'); every other row's hint is its title.
  */
-function runTitle(events: RunEvent[], ref: Reference): string {
+function runLabel(status: HistoryRow['status'], events: RunEvent[], ref: Reference): { title: string; hint: string } {
   const ids = tradedCommodityIds(events);
-  if (ids.length === 0) return NONE;
-  return `${ids.map(id => commodityName(ref, id)).join(', ')}: ${runKind(events, ref)}`;
+  if (ids.length === 0) return { title: NONE, hint: NONE };
+  const commodities = ids.map(id => commodityName(ref, id)).join(', ');
+  const same = (kind: string) => ({ title: `${commodities}: ${kind}`, hint: `${commodities}: ${kind}` });
+
+  if (isIncomeRun(events)) return same('продажа без закупки');
+  const route = simpleRoute(events);
+  if (route !== null) return same(routeName(ref, route.originId, route.destId));
+  if (!events.some(e => e.type === 'sell' && isTrade(e))) return same(status === 'lost' ? 'груз потерян' : status === 'active' ? 'идёт' : 'рейс без продаж');
+  if (ids.length === 1) return same('смешанный рейс');
+
+  const ends = mixedRoute(events, ref);
+  return { title: `${SEVERAL_COMMODITIES}: ${ends}`, hint: `${commodities}: смешанный рейс, ${ends}` };
 }
 
-/** The part of a run's title after the commodities: the route, or what kind of run it is when it is not one route. */
-function runKind(events: RunEvent[], ref: Reference): string {
-  if (isIncomeRun(events)) return 'продажа без закупки';
-  const route = simpleRoute(events);
-  if (route !== null) return routeName(ref, route.originId, route.destId);
-  return events.some(e => e.type === 'sell' && isTrade(e)) ? 'смешанный рейс' : 'рейс без продаж';
+/** 'ARC-L1 → TDD Area 18': from the terminal of the first purchase to the one of the last sale; a trade without a terminal is a dash. */
+function mixedRoute(events: RunEvent[], ref: Reference): string {
+  const trades = events.filter(isTrade);
+  const from = trades.find(e => e.type === 'buy')?.terminalId ?? null;
+  const to = trades.findLast(e => e.type === 'sell')?.terminalId ?? null;
+  const name = (id: number | null): string => (id === null ? NONE : terminalName(ref, id));
+  return `${name(from)} → ${name(to)}`;
 }
 
 /**
@@ -98,10 +120,12 @@ function historyRow({ run, events }: RunWithEvents, ref: Reference, now: number)
   const totals = runTotals(run, events, now);
   const going = run.status === 'active';
   const income = isIncomeRun(events);
+  const { title, hint } = runLabel(run.status, events, ref);
   return {
     runId: run.id,
     when: formatStamp(run.startedAt),
-    title: runTitle(events, ref),
+    title,
+    hint,
     status: run.status,
     profit: going ? NONE : formatUec(totals.profit),
     roi: going || totals.roi === null ? NONE : formatRoi(totals.roi),
@@ -127,9 +151,18 @@ export function liveRows(rows: HistoryRow[], runs: RunWithEvents[], ref: Referen
 
 export interface SessionRow { when: string; duration: string; runs: number; profit: string; rate: string }
 
-/** One row per session, in the given order (`sessions` delivers the newest first). */
+/**
+ * A session of nothing: no run ended in it and it earned nothing (the player only wrote prices, or the history was cleared).
+ * A session that holds only a sale without a purchase is not one: it has no run, but it has its profit.
+ */
+const isEmptySession = (s: Session): boolean => s.runIds.length === 0 && Math.round(s.profit) === 0;
+
+/**
+ * One row per session, in the given order (`sessions` delivers the newest first). A session of nothing is not listed: a line
+ * of '0:00, 0 рейсов' says nothing. The session that is going is read from the sessions as they are (`currentSession`), not from here.
+ */
 export function sessionRows(list: Session[]): SessionRow[] {
-  return list.map(s => ({
+  return list.filter(s => !isEmptySession(s)).map(s => ({
     when: formatStamp(s.startTs),
     duration: formatDuration(s.endTs - s.startTs),
     runs: s.runCount,                                  // the runs of the session; its incomes are in the profit only

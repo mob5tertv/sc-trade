@@ -22,7 +22,7 @@
     {#each rows as row (row.runId)}
       <div class="grid line" role="row" title={STATUS[row.status]}>
         <span class="when sc-num">{row.when}</span>
-        <span class="title {row.status}" title="{row.title} · {STATUS[row.status]}">{row.title}</span>
+        <span class="title {row.status}" title="{row.hint} · {STATUS[row.status]}">{row.title}</span>
         <span class="sc-num profit" class:loss={isLoss(row.profit)} title="Прибыль">{row.profit}</span>
         <span class="sc-num" title="ROI">{row.roi}</span>
         <span class="sc-num" title="Длительность">{row.duration}</span>
