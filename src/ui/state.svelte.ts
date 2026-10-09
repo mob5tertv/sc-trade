@@ -43,7 +43,7 @@ import {
 } from '../platform/window';
 import { resetHeldKeys } from './keyboard';
 import { stats } from './stats.svelte';
-import { arrivalView, type ArrivalView } from './vm/arrival-view';
+import { arrivalView, landingView, type ArrivalView } from './vm/arrival-view';
 import { clearedText, clearQuestion, countFor, oldRunsBefore, type ClearScope } from './vm/history-clearing';
 import { shouldCollapse } from './vm/idle';
 import { createKeyboardHolds, type KeyboardHolds } from './vm/keyboard-holds';
@@ -51,7 +51,7 @@ import { createLatestRequest } from './vm/latest-request';
 import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './vm/lookup';
 import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
-import { assignsMarkKey, carryOutKeysHint, keysHintStep, withKeysHint } from './vm/keys-hint';
+import { assignsMarkKey, carryOutKeysHint, hintLeavesOnAssign, KEYS_HINT_STAY_MS, keysHintStep, withKeysHint } from './vm/keys-hint';
 import { closedRunNotice, stayTimes, type ClosedRunNotice } from './vm/run-closed';
 import { quitQuestion } from './vm/quit';
 import { markRefusal } from './vm/run-phase';
@@ -67,7 +67,7 @@ import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
 import { bindNeeded, boundAfter, withoutErrorsOfEmptyKeys } from './vm/trigger-suspension';
 import { uexErrorText } from './vm/uex-error';
-import { effectiveScalePct } from './vm/ui-scale';
+import { effectiveScalePct, scaleNoticeStep, scaleNoticeText } from './vm/ui-scale';
 import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 
 // The one application state. Everything the screens show lives here, and every action of the player
@@ -180,9 +180,8 @@ const LOOKUP_REPEAT = 'settings changed';
 const OPTIONS_SECTION = 'options';
 /** The id of the "Рейс" section among the open sections. */
 const RUN_SECTION = 'run';
-/** The id of the group "Клавиши" of the settings among the open sections, and how long the hint about those keys stays (it has a button to press). */
+/** The id of the group "Клавиши" of the settings among the open sections (the hint about those keys opens it). */
 const KEYS_SECTION = 'settings:keys';
-const KEYS_HINT_MS = 15_000;
 /** How long a message of the mini line (`flash`) stays, and how long a question waits before it counts as "no". */
 const FLASH_MS = 3000;
 const CONFIRM_MS = 10_000;
@@ -732,7 +731,10 @@ class AppState {
       }
       this.mode = next;
       this.#touch();
-      if (next === 'expanded') whenExpanded?.();
+      if (next === 'expanded') {
+        whenExpanded?.();
+        void this.#announceScale(); // the one word on the larger window, where it can be read
+      }
       // before the first show the first show decides what is visible
       if (!this.#windowReady) return;
       try {
@@ -1247,13 +1249,19 @@ class AppState {
    * A terminal chosen in the field of the location (Enter, Ctrl+Enter, a click on the list). It is always the terminal the window looks at;
    * whether it is also the current location is `pickEffect`: with no run going it is ("Я здесь" in one press), in a run it is not, so that
    * the player can read the prices of a far station without losing his "from" (Ctrl+Enter says "Я здесь" anyway), and the field that asks
-   * "Где прилетел?" takes it as the answer. The question ends with the choice.
+   * "Где прилетел?" takes it as the answer, and shows it the way an arrival at a target is shown (`landingView`: the "sell" side while there
+   * is cargo aboard). The question ends with the choice.
    */
   async pickTerminal(id: number, ctrl = false): Promise<void> {
     const askingWhere = this.askingWhere;
     const effect = pickEffect({ runGoing: this.activeRun !== null, ctrl, askingWhere });
     this.#log.info('ui', 'pick terminal', { terminalId: id, effect, ctrl, askingWhere });
     this.#askedInRun = null;
+    if (askingWhere) {
+      const cargoAboard = cargoOf(this.activeRun?.events ?? []).length > 0;
+      await this.#followTarget(landingView(id, cargoAboard, this.settings.currentTerminalId), 'pick after "where did I land": the view follows the choice');
+      return;
+    }
     this.#showTerminal(id);
     if (effect === 'here') await this.#locateAt(id);
   }
@@ -1562,7 +1570,7 @@ class AppState {
   #showKeysHint(notice: ClosedRunNotice): boolean {
     if (this.mode !== 'expanded' || this.notice?.text !== notice.text) return false;
     this.#log.info('ui', 'keys hint shown');
-    this.notify(withKeysHint(notice.text), notice.kind, KEYS_HINT_MS, { label: 'Настроить', run: () => void this.openKeysSettings() });
+    this.notify(withKeysHint(notice.text), notice.kind, KEYS_HINT_STAY_MS, { label: 'Настроить', run: () => void this.openKeysSettings() });
     return true;
   }
 
@@ -1578,6 +1586,30 @@ class AppState {
       this.settings = { ...this.settings, keysHintShown: true };
     } catch (err) {
       this.#log.warn('ui', 'cannot remember that the hint about the keys is dealt with', { err });
+    }
+  }
+
+  /**
+   * The one word on the larger window (`scaleNoticeStep`): once, when «Авто» has made the window larger than 100 %, the notice line says what it
+   * picked and where to change it, and the notice stays until it is closed or another message takes its place. It is said where it can be read (the
+   * expanded window, once the start is over) and never over a message that is up (it waits for the next expansion). The flag `scaleNoticeShown`
+   * is written after the notice is on the screen; where the player chose the scale himself only the flag is written. Quiet and never rejects:
+   * a write that fails is one line in the log, and the word may then come once more.
+   */
+  async #announceScale(): Promise<void> {
+    try {
+      if (this.phase !== 'ready') return;
+      const step = scaleNoticeStep(this.settings, this.uiScalePct);
+      if (step === 'none') return;
+      if (step === 'show') {
+        if (this.mode !== 'expanded' || this.notice !== null) return;
+        this.#log.info('ui', 'scale notice shown', { pct: this.uiScalePct });
+        this.notify(scaleNoticeText(this.uiScalePct), 'info', null);
+      }
+      await saveSetting(this.#syncDeps().db, this.#log, 'scaleNoticeShown', true);
+      this.settings = { ...this.settings, scaleNoticeShown: true };
+    } catch (err) {
+      this.#log.warn('ui', 'cannot say or remember the word on the larger window', { err });
     }
   }
 
@@ -1606,13 +1638,14 @@ class AppState {
    * "sell" side while there is cargo aboard, and then the current location, the way a trade saves it (`#locateAt`: nothing is
    * written or logged when the ship is there already). What to change is decided by `arrivalView`. The side is chosen after
    * the viewed terminal is set, from the rows of the terminal now viewed (`#showTerminal`), and this runs after the run and the
-   * market were read again, so the rows are those of the arrival. The target stays: the run is not over.
+   * market were read again, so the rows are those of the arrival. The target stays: the run is not over. The terminal picked as the
+   * answer to "Где прилетел?" is carried out the same way (`pickTerminal`).
    */
-  async #followTarget(view: ArrivalView): Promise<void> {
+  async #followTarget(view: ArrivalView, say = 'arrival: the view follows the target'): Promise<void> {
     if (view.show === null) return;
     if (view.preferSide !== null) this.terminalSide = view.preferSide;
     this.#showTerminal(view.show);
-    this.#log.info('ui', 'arrival: the view follows the target', { terminalId: view.show, side: this.terminalSide });
+    this.#log.info('ui', say, { terminalId: view.show, side: this.terminalSide });
     if (view.locateAt !== null) await this.#setLocation(view.locateAt);
   }
 
@@ -1808,7 +1841,10 @@ class AppState {
     this.settings = { ...this.settings, [key]: value };
     await this.#applySetting(key);
     // a key given to "Взлетел" or "Прилетел" means the player knows the keys: the hint after the first closed run is never needed (written quietly)
+    if (hintLeavesOnAssign(key, value, this.notice)) this.dismissNotice(); // the hint on the screen has done its work
     if (assignsMarkKey(key, value)) await this.#rememberKeysHint();
+    // «Авто» chosen in the settings may make the window larger right now; a scale the player picks himself is remembered quietly (no word on it, ever)
+    if (key === 'uiScale') await this.#announceScale();
     return null;
   }
 
@@ -1881,11 +1917,14 @@ class AppState {
 
   // ---- messages ---------------------------------------------------------------------------------
 
-  /** A short Russian message under the header (the line exists only while there is one); it goes away by itself. `action` adds a button beside the cross. */
-  notify(text: string, kind: Notice['kind'], ms: number = NOTICE_MS, action?: NoticeAction): void {
+  /**
+   * A short Russian message under the header (the line exists only while there is one); it goes away by itself, after `ms`, or stays (`null`)
+   * until the cross, its button or another message. `action` adds a button beside the cross.
+   */
+  notify(text: string, kind: Notice['kind'], ms: number | null = NOTICE_MS, action?: NoticeAction): void {
     clearTimeout(this.#noticeTimer);
     this.notice = action === undefined ? { text, kind } : { text, kind, action };
-    this.#noticeTimer = setTimeout(() => this.dismissNotice(), ms);
+    this.#noticeTimer = ms === null ? undefined : setTimeout(() => this.dismissNotice(), ms);
   }
 
   /** The cross of the notice line: the player puts the message away before its time (the timer does it without a line). */

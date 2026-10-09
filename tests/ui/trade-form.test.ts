@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { cargoOf } from '../../src/core/run';
+import { stockKnown } from '../../src/core/routes';
+import type { RouteOption } from '../../src/core/routes';
 import type { CargoLine } from '../../src/core/types';
+import { cellScu } from '../../src/ui/vm/terminal-rows';
 import type { Cell } from '../../src/ui/vm/terminal-rows';
 import { getActiveRun, listRuns } from '../../src/data/repo/runs';
 import { recordBuy, recordSell } from '../../src/data/trade';
 import { cellEditBase } from '../../src/ui/vm/inputs';
 import {
-  confirmStep, goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, PRICE_CHECK_NOTE, tradeDefaults, tradeEntryField, tradeLimit, tradeMode,
+  confirmStep, goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, PRICE_CHECK_NOTE, STOCK_UNKNOWN_NOTE, tradeDefaults, tradeEntryField, tradeLimit,
+  tradeMode,
 } from '../../src/ui/vm/trade-form';
 import { bought, GOLD, runOf, sold, TITA } from '../helpers/run-wiring-fixtures';
 import { buyIn as goldBought, sellIn as goldSold, tradeFixture } from '../helpers/trade-fixtures';
@@ -25,7 +29,7 @@ const buyIn = (over: Partial<Parameters<typeof tradeDefaults>[0]> = {}) => trade
 
 describe('tradeDefaults, buying', () => {
   it('offers what the core would carry: the smallest of the free space, the stock and the budget', () => {
-    expect(buyIn()).toEqual({ scu: 340, price: 6120, priceIsOwn: true });                                                  // the stock is the limit
+    expect(buyIn()).toEqual({ scu: 340, price: 6120, priceIsOwn: true, stockUnknown: false });                                                  // the stock is the limit
     expect(buyIn({ cargo: [gold(500)] })).toMatchObject({ scu: 196 });                                   // 696 − 500 free
     expect(buyIn({ budget: 1_000_000 })).toMatchObject({ scu: 163 });                                    // 1 000 000 / 6120
   });
@@ -48,10 +52,10 @@ describe('tradeDefaults, buying', () => {
     expect(buyIn({ cell: cell({ own: 6120, hint: 7345.6, ownScu: 5 }) })).toMatchObject({ price: 6120 }); // mine, whole, unchanged
   });
   it('offers no price when the one of the row rounds to zero (the typed price is refused there too), and then no budget limit', () => {
-    expect(buyIn({ cell: cell({ hint: 0.3, ownScu: 50 }), budget: 1000 })).toEqual({ scu: 50, price: null, priceIsOwn: false });
+    expect(buyIn({ cell: cell({ hint: 0.3, ownScu: 50 }), budget: 1000 })).toEqual({ scu: 50, price: null, priceIsOwn: false, stockUnknown: false });
   });
   it('does not guess a quantity when nothing limits it, or when nothing can be carried', () => {
-    expect(buyIn({ capacity: 0, cell: cell({ own: 6120 }) })).toEqual({ scu: null, price: 6120, priceIsOwn: true });       // no ship, no stock
+    expect(buyIn({ capacity: 0, cell: cell({ own: 6120 }) })).toEqual({ scu: null, price: 6120, priceIsOwn: true, stockUnknown: false });      // no ship, no stock: nothing is offered, so nothing is said of it
     expect(buyIn({ capacity: 0 })).toMatchObject({ scu: 340 });                                          // no ship: the stock
     expect(buyIn({ cargo: [gold(696)] })).toMatchObject({ scu: null });                                  // the hold is full
     expect(buyIn({ cell: cell({ own: 6120, ownScu: 0 }) })).toMatchObject({ scu: null });                // a known empty stock
@@ -61,14 +65,62 @@ describe('tradeDefaults, buying', () => {
   });
 });
 
+describe('tradeDefaults, buying: the stock at the seller is unknown (version 1.1.1)', () => {
+  it('says so when neither my reading nor a quantity of UEX is there: the quantity offered then rests on the hold and the budget alone', () => {
+    expect(buyIn({ cell: cell({ own: 6120 }) })).toMatchObject({ scu: 696, stockUnknown: true });         // the whole hold, silently, until now
+    expect(buyIn({ cell: cell({ own: 6120 }), budget: 1_000_000 })).toMatchObject({ scu: 163, stockUnknown: true });
+    expect(buyIn({ cell: cell({ hint: 6000 }) })).toMatchObject({ stockUnknown: true });
+  });
+
+  it('says it only when a quantity was actually offered: with no ship chosen or a full hold the quantity is empty, and "по трюму и бюджету" beside nothing would be untrue', () => {
+    const none = cell({ own: 6120 });
+    expect(buyIn({ cell: none, capacity: 0 })).toEqual({ scu: null, price: 6120, priceIsOwn: true, stockUnknown: false });   // no ship: nothing limits it, nothing is offered
+    expect(buyIn({ cell: none, cargo: [gold(696)] })).toMatchObject({ scu: null, stockUnknown: false });                      // the hold is full
+    expect(buyIn({ cell: none, cargo: [gold(695)] })).toMatchObject({ scu: 1, stockUnknown: true });                          // one SCU is still offered
+    expect(buyIn({ cell: none, budget: 10 })).toMatchObject({ scu: null, stockUnknown: false });                              // the budget buys nothing
+  });
+
+  it('says nothing when a stock is known: my reading, my estimate of the refill timer, a quantity of UEX, and a known zero', () => {
+    expect(buyIn({ cell: cell({ own: 6120, ownScu: 340 }) }).stockUnknown).toBe(false);
+    expect(buyIn({ cell: cell({ own: 6120, ownScu: 427, ownScuBase: { scu: 380, age: '7 мин' } }) }).stockUnknown).toBe(false);
+    expect(buyIn({ cell: cell({ own: 6120, hintScu: 90 }) }).stockUnknown).toBe(false);
+    expect(buyIn({ cell: cell({ own: 6120, ownScu: 0 }) }).stockUnknown).toBe(false);                    // nothing there is not "nobody knows"
+    expect(buyIn({ cell: cell({ own: 6120, hintScu: 0 }) }).stockUnknown).toBe(false);
+  });
+
+  it('is never said of a sale: what the buyer already holds limits nothing', () => {
+    const sell = (c: ReturnType<typeof cell>) => tradeDefaults({ side: 'sell', commodityId: GOLD, cell: c, cargo: [gold(96)], capacity: 696, budget: null });
+    expect(sell(cell({ own: 6900 })).stockUnknown).toBe(false);
+    expect(sell(cell()).stockUnknown).toBe(false);
+  });
+
+  it('is the very predicate of the "?" of the list of options (`stockKnown`) and of the dash of the column «SCU» of the row (`cellScu`)', () => {
+    const values: Array<number | null> = [null, 0, 12];
+    for (const ownScu of values) {
+      for (const hintScu of values) {
+        const c = cell({ own: 6120, ownScu, hintScu });
+        const unknown = buyIn({ cell: c }).stockUnknown;
+        // an option rests on the same number: my estimate wins over the quantity of UEX
+        const option = { buy: { scu: ownScu ?? hintScu } } as unknown as Pick<RouteOption, 'buy'>;
+        expect(unknown, `option ${ownScu}/${hintScu}`).toBe(!stockKnown(option));
+        expect(unknown, `row ${ownScu}/${hintScu}`).toBe(cellScu({ ...c, ownScuRate: null } as Cell, 'buy') === null);
+      }
+    }
+  });
+
+  it('has the words of the brief', () => {
+    expect(STOCK_UNKNOWN_NOTE).toBe('Запас неизвестен: количество — по трюму и бюджету');
+  });
+});
+
 describe('tradeDefaults, selling', () => {
   const sellIn = (over: Partial<Parameters<typeof tradeDefaults>[0]> = {}) => tradeDefaults({
     side: 'sell', commodityId: GOLD, cell: cell({ own: 6900 }), cargo: [gold(96), tita(40)], capacity: 696, budget: null, ...over,
   });
 
   it('is the whole cargo of this commodity at the price of the row', () => {
-    expect(sellIn()).toEqual({ scu: 96, price: 6900, priceIsOwn: true });
-    expect(sellIn({ commodityId: TITA, cell: cell({ hint: 3000 }) })).toEqual({ scu: 40, price: 3000, priceIsOwn: false });
+    expect(sellIn()).toEqual({ scu: 96, price: 6900, priceIsOwn: true, stockUnknown: false });
+    expect(sellIn({ commodityId: TITA, cell: cell({ hint: 3000 }) })).toEqual({ scu: 40, price: 3000, priceIsOwn: false, stockUnknown: false });
   });
   it('is not limited by what the buyer already holds', () => {
     expect(sellIn({ cell: cell({ own: 6900, ownScu: 0, hintScu: 12 }) })).toMatchObject({ scu: 96 });
@@ -78,9 +130,9 @@ describe('tradeDefaults, selling', () => {
     expect(sellIn({ cell: cell() })).toMatchObject({ price: null });
   });
   it('offers the whole price the row shows, and none when it rounds to zero', () => {
-    expect(sellIn({ cell: cell({ hint: 3000.6 }) })).toEqual({ scu: 96, price: 3001, priceIsOwn: false });
-    expect(sellIn({ cell: cell({ own: 6900 }) })).toEqual({ scu: 96, price: 6900, priceIsOwn: true });
-    expect(sellIn({ cell: cell({ hint: 0.3 }) })).toEqual({ scu: 96, price: null, priceIsOwn: false });
+    expect(sellIn({ cell: cell({ hint: 3000.6 }) })).toEqual({ scu: 96, price: 3001, priceIsOwn: false, stockUnknown: false });
+    expect(sellIn({ cell: cell({ own: 6900 }) })).toEqual({ scu: 96, price: 6900, priceIsOwn: true, stockUnknown: false });
+    expect(sellIn({ cell: cell({ hint: 0.3 }) })).toEqual({ scu: 96, price: null, priceIsOwn: false, stockUnknown: false });
   });
 });
 
@@ -207,9 +259,9 @@ describe('tradeDefaults, whose the price is (task 44)', () => {
 describe('tradeDefaults, an income', () => {
   it('starts with no quantity, the player types it, and with the price of the row', () => {
     const d = tradeDefaults({ side: 'sell', commodityId: GOLD, cell: cell({ own: 6900, ownScu: 12 }), cargo: [], capacity: 696, budget: null });
-    expect(d).toEqual({ scu: null, price: 6900, priceIsOwn: true });
+    expect(d).toEqual({ scu: null, price: 6900, priceIsOwn: true, stockUnknown: false });
     const other = tradeDefaults({ side: 'sell', commodityId: GOLD, cell: cell({ hint: 6500 }), cargo: [tita(40)], capacity: 696, budget: null });
-    expect(other).toEqual({ scu: null, price: 6500, priceIsOwn: false });
+    expect(other).toEqual({ scu: null, price: 6500, priceIsOwn: false, stockUnknown: false });
   });
 });
 

@@ -17,17 +17,27 @@ export interface ArrivalView {
 const UNTOUCHED: ArrivalView = { locateAt: null, show: null, preferSide: null };
 
 /**
- * After a mark that was WRITTEN: only an arrival with a target changes anything. The target becomes the location (unless the
- * ship is there already) and the viewed terminal (even then: the player may have been looking at another one), on the "sell"
- * side when there is cargo aboard, since that is what is done at the target next. The target itself is not taken away.
+ * The window once the terminal the ship has landed at is KNOWN: the target of an arrival, or the terminal the player picks as the answer to
+ * "Где прилетел?" (version 1.1.1: the same rule for both, this one function). The terminal becomes the location (unless the ship is there
+ * already) and the viewed terminal (even then: the player may have been looking at another one), on the "sell" side when there is cargo
+ * aboard, since that is what is done there next.
+ */
+export function landingView(terminalId: number, cargoAboard: boolean, currentTerminalId: number | null): ArrivalView {
+  return {
+    locateAt: currentTerminalId === terminalId ? null : terminalId,
+    show: terminalId,
+    preferSide: cargoAboard ? 'sell' : null,
+  };
+}
+
+/**
+ * After a mark that was WRITTEN: only an arrival with a target changes anything (`landingView` at the target). The target itself is not
+ * taken away. An arrival without a target changes nothing here: the field of the location asks where the ship has landed, and the pick
+ * that answers is shown by `landingView` too.
  */
 export function arrivalView(
   type: 'depart' | 'arrive', targetTerminalId: number | null, cargoAboard: boolean, currentTerminalId: number | null,
 ): ArrivalView {
   if (type !== 'arrive' || targetTerminalId === null) return UNTOUCHED;
-  return {
-    locateAt: currentTerminalId === targetTerminalId ? null : targetTerminalId,
-    show: targetTerminalId,
-    preferSide: cargoAboard ? 'sell' : null,
-  };
+  return landingView(targetTerminalId, cargoAboard, currentTerminalId);
 }

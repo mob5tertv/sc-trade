@@ -3,7 +3,7 @@
   import { formatUec } from '../../core/format';
   import type { Side } from '../../core/types';
   import { resolveTrade } from '../vm/inputs';
-  import { confirmStep, PRICE_CHECK_NOTE } from '../vm/trade-form';
+  import { confirmStep, PRICE_CHECK_NOTE, STOCK_UNKNOWN_NOTE } from '../vm/trade-form';
 
   interface Props {
     /** What is being written, for the screen reader and the tooltip: 'Купил MEDS'. */
@@ -39,9 +39,15 @@
     onReject?: (fields: { scu: boolean; price: boolean }) => void;
     /** The form was confirmed with a price that is not mine and that nobody touched: nothing was written, the player was asked to check it. */
     onPriceCheck?: () => void;
+    /**
+     * A purchase whose stock at the seller is unknown (`TradeDefaults.stockUnknown`): a «?» stands by the quantity and one line under the form says
+     * that the quantity rests on the hold and the budget alone. Default: the stock is known, nothing is said.
+     */
+    stockUnknown?: boolean;
   }
   let {
     title, side, defaultScu, defaultPrice, defaultPriceIsOwn = true, maxScu = null, note = null, error, onConfirm, onCancel, onReject, onPriceCheck,
+    stockUnknown = false,
   }: Props = $props();
 
   // Seeded from the defaults once, when the form opens: they are plain numbers in the fields, easy to overtype. What the
@@ -154,6 +160,7 @@
       oninput={(e) => { scuText = e.currentTarget.value; badScu = false; confirmed = false; }}
       onkeydown={onKeydown}
     />
+    {#if stockUnknown}<span class="unsure" role="img" aria-label={STOCK_UNKNOWN_NOTE} title={STOCK_UNKNOWN_NOTE}>?</span>{/if}
     <span class="unit">SCU ×</span>
     <input
       bind:this={priceInput}
@@ -185,6 +192,9 @@
   </div>
   {#if note}
     <p class="hint note">{note}</p>
+  {/if}
+  {#if stockUnknown}
+    <p class="hint note"><span class="unsure" aria-hidden="true">?</span> {STOCK_UNKNOWN_NOTE}</p>
   {/if}
   {#if badScu || badPrice}
     <p class="hint bad">Нужны целые числа: количество от 1, цена больше нуля.</p>
@@ -250,6 +260,13 @@
 
   .note {
     color: var(--sc-muted);
+  }
+
+  /* the stock at the seller is unknown: the same «?» as after the name of an option of the list, by the quantity that rests on no stock */
+  .unsure {
+    flex: none;
+    color: var(--sc-warn);
+    font-weight: 600;
   }
 
   /* the question about a price that is not mine: a caution, not a refusal */

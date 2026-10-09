@@ -7,6 +7,13 @@ import type { Settings } from '../../core/settings';
 /** The sentence that follows the result of the run in the notice line. */
 export const KEYS_HINT = 'В полёте курсора нет: назначь клавиши «Взлетел» и «Прилетел»';
 
+/**
+ * How long the notice that carries the hint stays on the screen (version 1.1.1): no time of its own (`null`). At the last sale the player
+ * looks at the kiosk, not at the corner of the window, and the hint is given once in a lifetime, so it waits there until the cross or
+ * "Настроить" is pressed, or another notice takes its place. Folding the window does not take it away: it is there at the next expansion.
+ */
+export const KEYS_HINT_STAY_MS: number | null = null;
+
 type HintSettings = Pick<Settings, 'keysHintShown' | 'hotkeyDepart' | 'hotkeyArrive'>;
 
 /** What a closed run does about the hint: put it on the screen (`show`), only write the flag because the keys are there (`remember`), or nothing. */
@@ -49,4 +56,17 @@ export function withKeysHint(text: string): string {
 /** A key written into the field of "Взлетел" or "Прилетел": the player knows the keys, so the hint is never needed. A key taken off is not one. */
 export function assignsMarkKey(key: keyof Settings, value: unknown): boolean {
   return (key === 'hotkeyDepart' || key === 'hotkeyArrive') && typeof value === 'string' && value.trim() !== '';
+}
+
+/** The notice on the screen is the hint about the keys: it is the result of the run with the sentence of the hint at its end (`withKeysHint`). */
+export function isKeysHint(notice: { text: string } | null): boolean {
+  return notice !== null && notice.text.endsWith(KEYS_HINT);
+}
+
+/**
+ * The hint stays on the screen until it is closed (`KEYS_HINT_STAY_MS`), but it has done its work when the player assigns a key of «Взлетел» or «Прилетел»
+ * by hand: it goes at once. Only when the notice on the screen IS the hint (another message is not this change's to take away).
+ */
+export function hintLeavesOnAssign(key: keyof Settings, value: unknown, notice: { text: string } | null): boolean {
+  return assignsMarkKey(key, value) && isKeysHint(notice);
 }

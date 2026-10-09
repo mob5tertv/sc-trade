@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { LEGEND } from '../vm/legend';
   import { outlookText, stripTitle, type StripModel } from '../vm/strip';
 
   interface Props {
@@ -36,7 +37,7 @@
       <span class="part timer" title="Всего: {model.timer}"><span class="phase">{model.phaseLabel}</span>{model.phaseTimer}</span>
       <span class="part cargo" title={model.cargoTitle || undefined}>{model.cargoLine}</span>
       <span class="part" class:muted={model.target === null}>{model.target === null ? 'цель не выбрана' : `→ ${model.target}`}</span>
-      {#if outlook}<span class="part rate" class:loss={model.profitLoss}>{outlook}</span>{/if}
+      {#if outlook}<span class="part rate" class:loss={model.profitLoss} title={LEGEND.approxStrip}>{outlook}</span>{/if}
     {/if}
   </button>
   {#if showMarks}

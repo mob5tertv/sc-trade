@@ -6,8 +6,8 @@ import { logicalSize, parseMonitor } from '../../src/preview/monitor';
 import { affectsLookup } from '../../src/ui/vm/lookup';
 import { validateSetting } from '../../src/ui/vm/settings-validation';
 import {
-  autoScalePct, effectiveScalePct, monitorToKnow, PRIMARY_MONITOR, scaleFactor, UI_SCALE_AUTO, UI_SCALES, uiScaleChoice, uiScaleHint,
-  uiScaleLabel,
+  autoScalePct, effectiveScalePct, monitorToKnow, PRIMARY_MONITOR, scaleFactor, scaleNoticeStep, scaleNoticeText, UI_SCALE_AUTO, UI_SCALES, uiScaleChoice,
+  uiScaleHint, uiScaleLabel,
 } from '../../src/ui/vm/ui-scale';
 import { migratedDb } from '../helpers/test-db';
 
@@ -201,5 +201,59 @@ describe('the setting uiScale', () => {
     expect((await loadSettings(db, log)).uiScale).toBe(125);
     await saveSetting(db, log, 'uiScale', 0);
     expect((await loadSettings(db, log)).uiScale).toBe(0);
+  });
+});
+
+describe('scaleNoticeStep: the one word about the larger window (version 1.1.1)', () => {
+  const fresh = { uiScale: UI_SCALE_AUTO, scaleNoticeShown: false };
+
+  it('says it once, when «Авто» has made the window larger than 100 %: at 125 and at 150', () => {
+    expect(scaleNoticeStep(fresh, 125)).toBe('show');
+    expect(scaleNoticeStep(fresh, 150)).toBe('show');
+  });
+
+  it('says nothing, and remembers nothing, while «Авто» keeps 100 %: nothing got larger, and the monitor may be another one the next time', () => {
+    expect(scaleNoticeStep(fresh, 100)).toBe('none');
+  });
+
+  it('is given once: nothing happens after it was shown, at any scale', () => {
+    expect(scaleNoticeStep({ ...fresh, scaleNoticeShown: true }, 125)).toBe('none');
+    expect(scaleNoticeStep({ uiScale: 125, scaleNoticeShown: true }, 125)).toBe('none');
+  });
+
+  it('is never said when the player chose the scale himself, and the flag is written quietly: he knows it, and «Авто» later will not speak of a scale he used', () => {
+    for (const chosen of [100, 110, 125, 150]) expect(scaleNoticeStep({ uiScale: chosen, scaleNoticeShown: false }, chosen), String(chosen)).toBe('remember');
+  });
+
+  it('reads a stored value that is none of the five as «Авто», the way the window does', () => {
+    expect(scaleNoticeStep({ uiScale: 77, scaleNoticeShown: false }, 125)).toBe('show');
+  });
+
+  it('starts as "not shown" in the settings of a new installation, with «Авто»', () => {
+    expect(DEFAULT_SETTINGS.scaleNoticeShown).toBe(false);
+    expect(scaleNoticeStep(DEFAULT_SETTINGS, effectiveScalePct(DEFAULT_SETTINGS.uiScale, monitor(1440)))).toBe('show');
+    expect(scaleNoticeStep(DEFAULT_SETTINGS, effectiveScalePct(DEFAULT_SETTINGS.uiScale, monitor(1080, 1920)))).toBe('none');
+  });
+});
+
+describe('scaleNoticeText: the words of the notice line', () => {
+  it('says what «Авто» picked and where to change it', () => {
+    expect(scaleNoticeText(125)).toBe('Окно стало крупнее: масштаб «Авто» выбрал 125 %. Изменить — Настройки → Окно → Масштаб');
+    expect(scaleNoticeText(150)).toBe('Окно стало крупнее: масштаб «Авто» выбрал 150 %. Изменить — Настройки → Окно → Масштаб');
+  });
+});
+
+describe('the flag scaleNoticeShown', () => {
+  it('does not restart the lookup on screen: it only remembers', () => {
+    expect(affectsLookup('scaleNoticeShown', 'from')).toBe(false);
+    expect(affectsLookup('scaleNoticeShown', 'to')).toBe(false);
+  });
+
+  it('is saved like any other setting: a fresh database holds false, true is read back', async () => {
+    const db = await migratedDb();
+    const log = createLogger(memorySink());
+    expect((await loadSettings(db, log)).scaleNoticeShown).toBe(false);
+    await saveSetting(db, log, 'scaleNoticeShown', true);
+    expect((await loadSettings(db, log)).scaleNoticeShown).toBe(true);
   });
 });

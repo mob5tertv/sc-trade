@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { LEGEND } from '../../src/ui/vm/legend';
 import {
-  RANGE_HEAD_TITLE, badgeText, cellScu, isOwnPrice, rangeOfEstimate, rangeView, sideCounts, terminalRows, uexRangeOf, unknownScuTitle,
+  RANGE_HEAD_TITLE, badgeText, cellScu, cellStock, isOwnPrice, isStockUnknown, rangeOfEstimate, rangeView, sideCounts, terminalRows, uexRangeOf,
+  unknownScuTitle,
 } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
 import { obsKey } from '../../src/core/types';
@@ -367,6 +369,28 @@ describe('sideCounts', () => {
   });
 });
 
+describe('cellStock and isStockUnknown: the one stock of a cell, for the column «SCU», the form of a purchase and the list of options', () => {
+  const stock = (ownScu: number | null, hintScu: number | null) => ({ ownScu, hintScu });
+
+  it('is my number (the estimate of the refill timer included), else the quantity of UEX, else nothing', () => {
+    expect(cellStock(stock(340, 900))).toBe(340);
+    expect(cellStock(stock(null, 90))).toBe(90);
+    expect(cellStock(stock(null, null))).toBeNull();
+  });
+
+  it('counts a known zero as known: nothing on the shelf is not "nobody knows"', () => {
+    expect(cellStock(stock(0, 90))).toBe(0);
+    expect(isStockUnknown(stock(0, null))).toBe(false);
+    expect(isStockUnknown(stock(null, 0))).toBe(false);
+  });
+
+  it('is unknown only when there is no number at all, and that is when the column shows a dash', () => {
+    expect(isStockUnknown(stock(null, null))).toBe(true);
+    expect(isStockUnknown(stock(12, null))).toBe(false);
+    expect(isStockUnknown(stock(null, 12))).toBe(false);
+  });
+});
+
 describe('cellScu', () => {
   const nb = (s: string) => s.replace(/ /g, String.fromCharCode(0xa0));
   const buyOf = (m: Parameters<typeof terminalRows>[0], index = 0) => terminalRows(m, ref, 1, ctx)[index].buy;
@@ -381,7 +405,7 @@ describe('cellScu', () => {
 
   it('shows the stock moved by the refill timer as an estimate and says so', () => {
     expect(cellScu(buyOf(marketWithStock), 'buy')).toEqual({
-      text: '130', own: true, estimated: true, title: 'Оценка по таймеру пополнения: сколько там сейчас',
+      text: '130', own: true, estimated: true, title: LEGEND.approxScu,   // the tooltip of «≈» is the legend's: one text for the column and for the open row
     });
   });
 

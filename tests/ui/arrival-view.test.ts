@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrivalView } from '../../src/ui/vm/arrival-view';
+import { arrivalView, landingView } from '../../src/ui/vm/arrival-view';
 
 const ARC_L1 = 1;
 const HUR_L1 = 3;
@@ -37,5 +37,32 @@ describe('arrivalView', () => {
 
   it('the location is another terminal than the target and than the one seen: only the target matters', () => {
     expect(arrivalView('arrive', MIC_L1, true, HUR_L1)).toEqual({ locateAt: MIC_L1, show: MIC_L1, preferSide: 'sell' });
+  });
+});
+
+// The answer to "Где прилетел?" (an arrival with no target) shows the terminal by the same rule as an arrival with a target: one function.
+describe('landingView: the window once the terminal the ship stands at is known', () => {
+  it('cargo aboard: the terminal is the location and is shown, on the sell side', () => {
+    expect(landingView(ARC_L1, true, HUR_L1)).toEqual({ locateAt: ARC_L1, show: ARC_L1, preferSide: 'sell' });
+  });
+
+  it('an empty hold: the terminal is the location and is shown, the side is chosen as usual', () => {
+    expect(landingView(ARC_L1, false, HUR_L1)).toEqual({ locateAt: ARC_L1, show: ARC_L1, preferSide: null });
+  });
+
+  it('from no location at all: the terminal is the location', () => {
+    expect(landingView(MIC_L1, true, null)).toEqual({ locateAt: MIC_L1, show: MIC_L1, preferSide: 'sell' });
+  });
+
+  it('the ship stands there already: the location is not written again, the terminal is still shown', () => {
+    expect(landingView(ARC_L1, true, ARC_L1)).toEqual({ locateAt: null, show: ARC_L1, preferSide: 'sell' });
+  });
+
+  it('is the very rule of an arrival with a target (arrivalView does not keep a second copy of it)', () => {
+    for (const cargo of [true, false]) {
+      for (const current of [null, HUR_L1, ARC_L1]) {
+        expect(arrivalView('arrive', ARC_L1, cargo, current)).toEqual(landingView(ARC_L1, cargo, current));
+      }
+    }
   });
 });

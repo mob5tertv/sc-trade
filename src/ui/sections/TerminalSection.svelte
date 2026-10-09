@@ -294,6 +294,7 @@
       defaultScu={tradeState.defaults.scu}
       defaultPrice={tradeState.defaults.price}
       defaultPriceIsOwn={tradeState.defaults.priceIsOwn}
+      stockUnknown={tradeState.defaults.stockUnknown}
       maxScu={tradeMaxScu}
       note={tradeState.mode === 'income' ? INCOME_NOTE : null}
       error={tradeState.error}

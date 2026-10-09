@@ -4,6 +4,7 @@ import { formatAge, formatUec } from '../../core/format';
 import { priceWarning } from '../../core/input';
 import { priceKey } from '../../core/types';
 import type { Estimate, Market, Reference, Side, StockEstimate, Temp } from '../../core/types';
+import { LEGEND, RANGE_PERIOD } from './legend';
 import { priceTrend } from './price-trend';
 import type { PriceTrend } from './price-trend';
 
@@ -51,20 +52,34 @@ export function badgeText(e: Estimate): { text: string; kind: Temp | 'uex' } {
 export interface CellScu { text: string; own: boolean; estimated: boolean; title: string }
 
 /**
+ * The quantity of a cell as every screen counts it, the one place that does: my own (the estimate of the refill timer included) wins over the one
+ * UEX has; a known zero is a number. `null`: nobody knows. The column «SCU» shows it (a dash for `null`), the form of a purchase limits its quantity by
+ * it, and the list of options rests on the same number (`stockKnown`: only `null` is unknown there too).
+ */
+export function cellStock(cell: Pick<Cell, 'ownScu' | 'hintScu'>): number | null {
+  return cell.ownScu ?? cell.hintScu;
+}
+
+/** Nobody knows the quantity of the cell: the dash of the column «SCU», the «?» of the option and of the form of a purchase. */
+export function isStockUnknown(cell: Pick<Cell, 'ownScu' | 'hintScu'>): boolean {
+  return cellStock(cell) === null;
+}
+
+/**
  * The quantity a table row shows for the side it is drawn on: the stock at the seller on the buy side, what the buyer
- * already holds on the sell side. My own quantity wins over the UEX one; `estimated` means the refill timer moved it
- * (the expanded row tells from what). `null` when the cell has no quantity.
+ * already holds on the sell side (`cellStock`). `estimated` means the refill timer moved it (the expanded row tells from what; the tooltip
+ * is the legend of «≈»). `null` when the cell has no quantity.
  */
 export function cellScu(cell: Cell | null, side: Side): CellScu | null {
   if (cell === null) return null;
-  const value = cell.ownScu ?? cell.hintScu;
+  const value = cellStock(cell);
   if (value === null) return null;
   const own = cell.ownScu !== null;
   const estimated = own && cell.ownScuBase !== null;
   const where = side === 'buy' ? 'Остаток у продавца' : 'Склад у покупателя';
   return {
     text: formatUec(value), own, estimated,
-    title: estimated ? 'Оценка по таймеру пополнения: сколько там сейчас' : `${where} по ${own ? 'твоему замеру' : 'данным UEX'}, SCU`,
+    title: estimated ? LEGEND.approxScu : `${where} по ${own ? 'твоему замеру' : 'данным UEX'}, SCU`,
   };
 }
 
@@ -123,10 +138,10 @@ export function uexRangeOf(m: Market, terminalId: number, commodityId: number, s
 }
 
 /**
- * The tooltip of the head «Мин–макс»: which period the two numbers are of. The estimate takes the bounds of the week, and only when
- * the week has no price those of the month, then of all time (`priceRange` of the core).
+ * The period the two numbers of the head «Мин–макс» are of: the text is the legend's (`RANGE_PERIOD`); the tooltip of the head is `LEGEND.range`, which
+ * goes on from it.
  */
-export const RANGE_HEAD_TITLE = 'Минимум и максимум цены по данным UEX за неделю; если за неделю цены нет — за месяц, потом за всё время';
+export const RANGE_HEAD_TITLE = RANGE_PERIOD;
 
 /** The «Мин–макс» cell as it is read: `3 900–4 300`, `= 5 500` or `—` (two kinds of it), and what the tooltip says about it. */
 export interface RangeView { kind: UexRange['kind']; text: string; title: string }

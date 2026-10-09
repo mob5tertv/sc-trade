@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../src/core/settings';
-import { assignsMarkKey, carryOutKeysHint, KEYS_HINT, keysHintStep, withKeysHint } from '../../src/ui/vm/keys-hint';
+import {
+  assignsMarkKey, carryOutKeysHint, hintLeavesOnAssign, isKeysHint, KEYS_HINT, KEYS_HINT_STAY_MS, keysHintStep, withKeysHint,
+} from '../../src/ui/vm/keys-hint';
 
 // A run is closed: the result says `kind` (an error is a loss or a lost cargo), `closesRun` is false for a sale without a purchase.
 const closedRun = { closesRun: true, kind: 'info' as const };
@@ -60,6 +62,12 @@ describe('keysHintStep: what the closing of a run does about the one-time hint',
   });
 });
 
+describe('KEYS_HINT_STAY_MS: how long the hint stays in the notice line', () => {
+  it('has no time of its own (null): the player reads the kiosk at the last sale, so the hint stays until the cross, "Настроить" or another notice', () => {
+    expect(KEYS_HINT_STAY_MS).toBeNull();
+  });
+});
+
 describe('carryOutKeysHint: the hint is on the screen BEFORE it is remembered', () => {
   /** The two effects of the state, writing what they do into one list, in the order they happen. */
   function effects(shows: boolean) {
@@ -110,6 +118,35 @@ describe('withKeysHint: the notice line says the result first and the hint after
 
   it('does not double a full stop that is there already', () => {
     expect(withKeysHint('Рейс закрыт: груз потерян.')).toBe(`Рейс закрыт: груз потерян. ${KEYS_HINT}`);
+  });
+});
+
+describe('hintLeavesOnAssign: the sticky hint goes away at once when the player assigns a key of «Взлетел» or «Прилетел» by hand', () => {
+  const hint = { text: withKeysHint('Рейс закрыт: +73 400 · 369k/ч · ROI 15%') };
+  const result = { text: 'Рейс закрыт: +73 400 · 369k/ч · ROI 15%' };
+
+  it('knows the notice that carries the hint: it ends with the sentence of the hint', () => {
+    expect(isKeysHint(hint)).toBe(true);
+    expect(isKeysHint({ text: withKeysHint('Рейс закрыт: груз потерян.') })).toBe(true);
+    expect(isKeysHint(result)).toBe(false);
+    expect(isKeysHint({ text: 'Не удалось сохранить настройку.' })).toBe(false);
+    expect(isKeysHint(null)).toBe(false);
+  });
+
+  it('goes when a key is assigned to either mark while the notice on the screen IS the hint', () => {
+    expect(hintLeavesOnAssign('hotkeyDepart', 'F9', hint)).toBe(true);
+    expect(hintLeavesOnAssign('hotkeyArrive', 'Ctrl+Alt+T', hint)).toBe(true);
+  });
+
+  it('stays when another notice is on the screen (it is not the hint, and not this change\'s to take away), or none', () => {
+    expect(hintLeavesOnAssign('hotkeyDepart', 'F9', result)).toBe(false);
+    expect(hintLeavesOnAssign('hotkeyDepart', 'F9', null)).toBe(false);
+  });
+
+  it('stays when the key is taken off, or the setting is any other one (the key of the panel opens the window and marks nothing)', () => {
+    expect(hintLeavesOnAssign('hotkeyDepart', '', hint)).toBe(false);
+    expect(hintLeavesOnAssign('hotkeyPanel', 'F8', hint)).toBe(false);
+    expect(hintLeavesOnAssign('opacity', 0.9, hint)).toBe(false);
   });
 });
 

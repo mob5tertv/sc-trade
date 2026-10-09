@@ -5,9 +5,10 @@
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
   import type { CellFinish, EditBase } from '../vm/inputs';
   import type { RoiCell } from '../vm/row-roi';
-  import { DEFAULT_TERMINAL_SORT, holdMark, holdOf, holdOrder, orderRows, terminalAriaSort } from '../vm/terminal-order';
+  import { DEFAULT_TERMINAL_SORT, heldPlaces, holdMark, holdOf, holdOrder, orderRows, resortedPlaces, terminalAriaSort } from '../vm/terminal-order';
   import type { TerminalSort, TerminalSortKey } from '../vm/terminal-order';
-  import { RANGE_HEAD_TITLE, cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
+  import { LEGEND } from '../vm/legend';
+  import { cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
   import { tradeEntryField } from '../vm/trade-form';
   import TempBadge from './TempBadge.svelte';
@@ -189,9 +190,10 @@
     side, sort, cargo, percentOf: commodityId => roi.get(commodityId)?.percent ?? null,
   }));
 
-  // While a field of the table has the focus the places of the rows stay as they were when it came in: a row that is moved in the page
-  // takes the focus out of its field without a blur, and the player is typing into it (the keyboard would go back to the game under
-  // his hands). The new values still show in their rows. Leaving the field gives the sort its way.
+  // While a field of the table has the focus, or a row of it is open, the places of the rows stay as they were when that began: a row that
+  // is moved in the page takes the focus out of its field without a blur, and the player is typing into it (the keyboard would go back to
+  // the game under his hands), and an open row that a sale sends to its place in the order runs away with the form from under his eyes.
+  // The new values still show in their rows. When nothing holds them any more (the cursor is out and no row is open) the sort has its way.
   let frozenIds = $state.raw<number[] | null>(null);
   let table = $state<HTMLElement | null>();
   const shown = $derived(holdOrder(frozenIds ?? [], sorted, frozenIds !== null));
@@ -199,26 +201,47 @@
   const isField = (el: unknown): el is HTMLElement =>
     el instanceof HTMLElement && el.matches('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
 
+  /** What holds the places now: whether the cursor is in a field of the table (`fieldFocused`) and whether a row is open. */
+  function holdPlaces(fieldFocused: boolean): void {
+    frozenIds = heldPlaces(frozenIds, shown.map(row => row.commodityId), { fieldFocused, rowOpen: selectedCommodityId !== null });
+  }
+
   function onFieldFocus(event: FocusEvent): void {
-    if (frozenIds === null && isField(event.target)) frozenIds = shown.map(row => row.commodityId);
+    if (isField(event.target)) holdPlaces(true);
   }
 
   // From one field of the table to another (the two inputs of a cell, the trade form under the row) is not leaving.
   function onFieldBlur(event: FocusEvent): void {
     const next = event.relatedTarget;
     if (next instanceof HTMLElement && event.currentTarget instanceof HTMLElement && event.currentTarget.contains(next) && isField(next)) return;
-    frozenIds = null;
+    holdPlaces(false);
   }
 
-  // A field that is taken out of the page (its row folded, the form closed, the other side shown) gives no blur: look when what
-  // holds the focus can have changed.
+  // A field that is taken out of the page (its row folded, the form closed, the other side shown) gives no blur, and a row is opened or
+  // folded by a click that is no field: look when what holds the places can have changed.
   $effect(() => {
     void selectedCommodityId;
     void tradeFor;
     void side;
     void scope;
+    untrack(() => holdPlaces(!!table?.contains(document.activeElement) && isField(document.activeElement)));
+  });
+
+  // EVERY click on «Товар» or «ROI» is the player's own request for an order: the held places are not allowed to swallow it, and a click that changes neither the
+  // key nor the direction of the sort («Товар» while the default order is on, after a sale sent the open row elsewhere) is a request too, so the clicks are counted
+  // and not the changes of the sort. With a row open (or the cursor in a field) the places are taken again from the freshly sorted rows, the open row stays open and
+  // stands where the order puts it, and from then on the order is held as before (`resortedPlaces`). Zero clicks is the start, not a request.
+  let sortClicks = $state(0);
+  function sortClicked(key: TerminalSortKey): void {
+    onSort?.(key);
+    sortClicks += 1;
+  }
+  $effect(() => {
+    if (sortClicks === 0) return;
     untrack(() => {
-      if (frozenIds !== null && !(table?.contains(document.activeElement) && isField(document.activeElement))) frozenIds = null;
+      frozenIds = resortedPlaces(sorted.map(row => row.commodityId), {
+        fieldFocused: !!table?.contains(document.activeElement) && isField(document.activeElement), rowOpen: selectedCommodityId !== null,
+      });
     });
   });
 
@@ -271,7 +294,7 @@
         onblur={e => onBlur(e, row.commodityId, side, cell)}
       />
       {#if estimated && cell.ownScu !== null}
-        <span class="est" title="Оценка по таймеру пополнения: сколько там сейчас">≈ {formatUec(cell.ownScu)}</span>
+        <span class="est" title={LEGEND.approxScu}>≈ {formatUec(cell.ownScu)}</span>
       {:else}
         <span class="unit" title={side === 'sell' ? 'Столько уже лежит на складе у покупателя, а не сколько он готов купить' : undefined}>SCU</span>
       {/if}
@@ -300,9 +323,9 @@
           {@const was = `было ${formatUec(cell.ownScuBase.scu)} · ${cell.ownScuBase.age}`}
           <span class="text muted" title={was}>{was}</span>
           {#if cell.ownScuRate === 'learned'}
-            <span class="rate learned fixed" title="Скорость пополнения выучена по твоим замерам">скорость выучена</span>
+            <span class="rate learned fixed" title={LEGEND.rateLearned}>скорость выучена</span>
           {:else if cell.ownScuRate === 'default'}
-            <span class="rate fixed" title="По твоим замерам скорость пополнения ещё не выучена, взята запасная">скорость запасная</span>
+            <span class="rate fixed" title={LEGEND.rateDefault}>скорость запасная</span>
           {/if}
         {/if}
         {#if cell.ownLast}
@@ -317,7 +340,7 @@
 {#snippet head(key: TerminalSortKey, label: string, title: string)}
   <span role="columnheader" class:r={key === 'roi'} aria-sort={terminalAriaSort(sort, key)}>
     {#if onSort}
-      <button type="button" class="sort" class:on={sort.key === key} {title} onclick={() => onSort(key)}>
+      <button type="button" class="sort" class:on={sort.key === key} {title} onclick={() => sortClicked(key)}>
         {#if sort.key === key && key === 'roi'}{@render arrow()}{/if}
         {label}
         {#if sort.key === key && key === 'name'}{@render arrow()}{/if}
@@ -346,7 +369,7 @@
     <div class="grid head sc-label" role="row">
       {@render head('name', 'Товар', 'Порядок по умолчанию: по названию товара')}
       <span role="columnheader" class="r price-head">Цена</span>
-      <span role="columnheader" class="r" title={RANGE_HEAD_TITLE}>Мин–макс</span>
+      <span role="columnheader" class="r" title={LEGEND.range}>Мин–макс</span>
       <span role="columnheader" class="r">SCU</span>
       {@render head('roi', 'ROI', roiTitle)}
     </div>
@@ -412,6 +435,10 @@
     --col-scu: 44px;
     --col-roi: 32px;
     --col-gap: 4px;
+    /* the head is 18 px high; the area of press of its sorting buttons is no smaller than 28 × 24 (a transparent extension below the button, see `.sort`) */
+    --head-h: 18px;
+    --hit-w: 28px;
+    --hit-h: 24px;
   }
 
   .grid {
@@ -422,8 +449,11 @@
     padding: 0 var(--sc-pad-x);
   }
 
+  /* `z-index`: the head stands over the rows, so that the transparent extension of a sorting button below the head is pressed as the head, not as the row under it */
   .head {
-    height: 18px;
+    position: relative;
+    z-index: 1;
+    height: var(--head-h);
     border-bottom: 1px solid var(--sc-border);
     color: var(--sc-muted);
     white-space: nowrap;
@@ -445,12 +475,17 @@
     justify-content: flex-end;
   }
 
-  /* The negative margin takes back the letter-spacing that follows the last letter, so that the label ends where the numbers do. */
+  /* The negative margin takes back the letter-spacing that follows the last letter, so that the label ends where the numbers do.
+     The area of press is no smaller than 28 × 24 px (`--hit-w`, `--hit-h`) though the label is 17 × 17: the width from `min-width` (the label stays at
+     the right edge, and 28 is within the column of 32, so no column changes), the height from a transparent `::after` that reaches below the head (nothing can be above it: the table stands at the top of the scrolling body, which clips what is above). */
   .sort {
+    position: relative;
     display: inline-flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 3px;
     height: 100%;
+    min-width: var(--hit-w);
     margin-right: -0.08em;
     padding: 0;
     border: 0;
@@ -461,6 +496,15 @@
     text-transform: inherit;
     white-space: nowrap;
     cursor: pointer;
+  }
+
+  .sort::after {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: var(--hit-h);
+    content: '';
   }
 
   .sort:hover {
