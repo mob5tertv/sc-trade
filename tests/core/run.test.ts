@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cargoOf, isIncomeRun, phases, runTotals, simpleRoute } from '../../src/core/run';
+import { cargoOf, isIncomeRun, phases, routeOf, runTotals, simpleRoute } from '../../src/core/run';
 import { ev, run } from '../helpers/factories';
 import { incomeRun } from '../helpers/income-fixtures';
 
@@ -78,7 +78,55 @@ describe('simpleRoute', () => {
   });
 });
 
+describe('routeOf (task 51)', () => {
+  it('is the route of a simple run, with its one commodity in the list', () => {
+    expect(routeOf(E)).toEqual({ originId: 1, destId: 2, commodityIds: [10] });
+  });
+
+  it('lists the commodities of a run of several once each and in ascending order, whatever the order of the trades', () => {
+    const forward = [buy(1000, 10, 100, 1, 30), buy(1100, 10, 100, 1, 10), sell(2000, 10, 120, 2, 10), sell(2100, 10, 120, 2, 30), buy(1200, 5, 100, 1, 20), sell(2200, 5, 120, 2, 20)];
+    expect(routeOf(forward)).toEqual({ originId: 1, destId: 2, commodityIds: [10, 20, 30] });
+    expect(routeOf([...forward].reverse())).toEqual({ originId: 1, destId: 2, commodityIds: [10, 20, 30] });
+  });
+
+  it('is null when the purchases or the sales are at several terminals', () => {
+    const two = [buy(1000, 10, 100, 1, 10), buy(1100, 10, 100, 1, 20), sell(2000, 10, 120, 2, 10), sell(2100, 10, 120, 2, 20)];
+    expect(routeOf(two)).toEqual({ originId: 1, destId: 2, commodityIds: [10, 20] });
+    expect(routeOf([two[0], buy(1100, 10, 100, 3, 20), two[2], two[3]])).toBeNull();
+    expect(routeOf([two[0], two[1], two[2], sell(2100, 10, 120, 3, 20)])).toBeNull();
+  });
+
+  it('is null without a sale or without a purchase, at the same terminal, or when a trade has no terminal', () => {
+    const two = [buy(1000, 10, 100, 1, 10), buy(1100, 10, 100, 1, 20), sell(2000, 10, 120, 2, 10), sell(2100, 10, 120, 2, 20)];
+    expect(routeOf(two.slice(0, 2))).toBeNull();
+    expect(routeOf(two.slice(2))).toBeNull();
+    expect(routeOf([buy(1000, 10, 100, 1, 10), buy(1100, 10, 100, 1, 20), sell(2000, 10, 120, 1, 10)])).toBeNull();
+    expect(routeOf([two[0], two[1], ev({ ts: 5, type: 'sell', terminalId: null, commodityId: 10, scu: 1, price: 1 })])).toBeNull();
+    expect(routeOf([])).toBeNull();
+  });
+
+  it('is null for a run of goods that were never bought: it has no route', () => {
+    expect(routeOf(incomeRun(1, 5000, 120, 3700).events)).toBeNull();
+  });
+
+  it('leaves simpleRoute to the runs of one commodity', () => {
+    const two = [buy(1000, 10, 100, 1, 10), buy(1100, 10, 100, 1, 20), sell(2000, 10, 120, 2, 10), sell(2100, 10, 120, 2, 20)];
+    expect(simpleRoute(two)).toBeNull();
+    expect(simpleRoute(E)).toEqual({ originId: 1, destId: 2, commodityId: 10 });
+  });
+});
+
 describe('phases', () => {
+  it('splits a run of several commodities between two terminals the same way as a simple run', () => {
+    const mixed = [
+      buy(1000, 100, 6000, 1, 10), buy(1060, 50, 8000, 1, 20), ev({ ts: 1300, type: 'depart' }), ev({ ts: 2900, type: 'arrive' }),
+      sell(3000, 100, 7000, 2, 10), sell(3400, 50, 9000, 2, 20),
+    ];
+    expect(phases(mixed)).toEqual({ loadingSec: 300, flightSec: 1600, unloadingSec: 500 });
+    expect(phases(mixed.filter(e => e.type !== 'arrive'))).toBeNull();
+    expect(phases([...mixed, sell(3500, 1, 1, 3, 20)])).toBeNull();                  // sold at a third terminal: no route, no phases
+  });
+
   it('splits phases only with exactly one ordered depart and arrive', () => {
     const marks = [buy(1000, 100, 6000), ev({ ts: 1300, type: 'depart' }), ev({ ts: 2900, type: 'arrive' }), sell(3400, 100, 7000)];
     expect(phases(marks)).toEqual({ loadingSec: 300, flightSec: 1600, unloadingSec: 500 });

@@ -95,11 +95,11 @@ export function routesSummary(rows: RouteRow[], session: SessionFigure | null = 
 
 /** Everything the interface takes from the history, counted once per load. */
 export interface StatsFigures {
-  /** My finished simple runs per route, best rate first. */
+  /** My finished runs per route (a run of mixed cargo between two terminals has its own route), best rate first. */
   stats: RouteStat[];
-  /** Direction (`pairKey`) → my median time there: the estimates take it instead of the one from the distance. */
+  /** Direction (`pairKey`) → my median time there, a run of mixed cargo among the samples: the estimates take it instead of the one from the distance. */
   ownMedian: Map<string, number>;
-  /** Direction (`pairKey`) → how many finished runs I have there. */
+  /** Direction (`pairKey`) → how many finished runs I have there (the same runs `ownMedian` is made of). */
   runCounts: Map<string, number>;
   sessions: Session[];
 }

@@ -3,13 +3,14 @@ import { ownMedianIndex, ownRunCounts, routeStats, sessions } from '../../src/co
 import { pairKey } from '../../src/core/types';
 import type { RunWithEvents } from '../../src/core/types';
 import { incomeRun } from '../helpers/income-fixtures';
+import { GOLD, MIX1, MIX2, MIX3, TITA, TUNG, mixedRun } from '../helpers/mixed-fixtures';
 import { R1, R2, R3, R4, R5, R6, withMarks } from '../helpers/stats-fixtures';
 
 describe('routeStats', () => {
   it('groups simple finished runs by route', () => {
     const s = routeStats([R1, R2, R3, R4, R5, R6]);
     expect(s).toHaveLength(2);
-    expect(s[0]).toMatchObject({ originId: 1, destId: 2, commodityId: 10, runs: 2, medianDurationSec: 2100, totalProfit: 545_000 });
+    expect(s[0]).toMatchObject({ originId: 1, destId: 2, commodityIds: [10], runs: 2, medianDurationSec: 2100, totalProfit: 545_000 });
     expect(s[0].avgRoi).toBeCloseTo(0.1207, 4);
     expect(Math.round(s[0].uecPerHour!)).toBe(467_143);
     expect(s[1]).toMatchObject({ destId: 3, runs: 1, uecPerHour: 180_000 });
@@ -124,5 +125,113 @@ describe('a sale without a purchase (income, task 32)', () => {
 
   it('has a run count of zero for a session without runs', () => {
     expect(sessions([30_000], [])[0]).toMatchObject({ runIds: [], runCount: 0, profit: 0 });
+  });
+});
+
+describe('a run of several commodities between two terminals (task 51)', () => {
+  /** The run with the purchase or the sale at `index` (counting the purchases or the sales only) moved to another terminal. */
+  const moved = (r: RunWithEvents, type: 'buy' | 'sell', index: number, terminalId: number): RunWithEvents => {
+    const same = r.events.filter(e => e.type === type);
+    return { run: r.run, events: r.events.map(e => (e === same[index] ? { ...e, terminalId } : e)) };
+  };
+  const GOODS = [{ commodityId: GOLD, scu: 10, buy: 100, sell: 120 }, { commodityId: TITA, scu: 10, buy: 100, sell: 120 }];
+
+  it('has its own row: two runs of the same set on the same route are one row of two runs, whatever the order of the goods', () => {
+    const s = routeStats([MIX1, MIX2]);                              // MIX2 bought and sold the Titanium first: the set does not care
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ originId: 1, destId: 2, commodityIds: [GOLD, TITA], runs: 2, totalProfit: 156_000, medianDurationSec: 1500 });
+  });
+
+  it('counts the numbers of the row over the whole runs, by the rules of a simple route', () => {
+    const [row] = routeStats([MIX1, MIX2]);
+    expect(row.avgRoi).toBeCloseTo((100_000 / 900_000 + 56_000 / 720_000) / 2, 10);
+    expect(row.uecPerHour).toBeCloseTo((156_000 * 3600) / 3000, 6);       // the total profit over the total time
+    expect(row.medianPhases).toBeNull();                                  // neither run has marks
+  });
+
+  it('takes the phases of the row from the runs that have both marks', () => {
+    const early = mixedRun({ id: 14, startedAt: 30_000, endedAt: 31_000, legs: GOODS, marks: [200, 500] });
+    const late = mixedRun({ id: 15, startedAt: 40_000, endedAt: 42_000, legs: [...GOODS].reverse(), marks: [400, 900] });
+    const s = routeStats([early, MIX1, late]);
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ runs: 3, medianPhases: { loadingSec: 300, flightSec: 700, unloadingSec: 500 } });   // the two runs with marks: (200, 500, 300) and (400, 900, 700)
+  });
+
+  it('is another row for another set of goods on the same route', () => {
+    const s = routeStats([MIX1, MIX2, MIX3]);
+    expect(s).toHaveLength(2);
+    expect(s.map(r => r.commodityIds)).toEqual([[GOLD, TITA], [GOLD, TUNG]]);          // by the rate: 187 200 and 105 000 per hour
+    expect(s.map(r => r.runs)).toEqual([2, 1]);
+  });
+
+  it('is another row for a run of one of the goods: the set is the whole set', () => {
+    const s = routeStats([MIX1, R1]);
+    expect(s.map(r => r.commodityIds)).toEqual([[GOLD], [GOLD, TITA]]);                // by the rate: 517 500 and 180 000 per hour
+    expect(s.map(r => r.runs)).toEqual([1, 1]);
+  });
+
+  it('is two rows beside a simple run on the same route, and the simple row has the numbers it had', () => {
+    const alone = routeStats([R1, R2]);
+    const together = routeStats([R1, MIX1, R2, MIX2]);
+    expect(together).toHaveLength(2);
+    expect(together.find(r => r.commodityIds.length === 1)).toEqual(alone[0]);
+  });
+
+  it('is not a route when it bought at two terminals', () => {
+    expect(routeStats([moved(MIX1, 'buy', 1, 3)])).toEqual([]);
+  });
+
+  it('is not a route when it sold at two terminals', () => {
+    expect(routeStats([moved(MIX1, 'sell', 0, 3)])).toEqual([]);
+  });
+
+  it('is not a route when it bought and sold at the same terminal', () => {
+    expect(routeStats([mixedRun({ id: 16, startedAt: 1, endedAt: 100, from: 2, to: 2, legs: GOODS })])).toEqual([]);
+  });
+
+  it('is not a route when it is lost or still going, even when it sold a part of the goods', () => {
+    const lost = { run: { ...MIX1.run, status: 'lost' as const }, events: MIX1.events.slice(0, 3) };      // both bought, one sold
+    const lostAll = { run: { ...MIX1.run, status: 'lost' as const }, events: MIX1.events };
+    const going = { run: { ...MIX1.run, status: 'active' as const, endedAt: null }, events: MIX1.events };
+    expect(routeStats([lost, lostAll, going])).toEqual([]);
+    expect(ownMedianIndex([lost, lostAll, going]).size).toBe(0);
+    expect(ownRunCounts([lost, lostAll, going]).size).toBe(0);
+  });
+
+  describe('is a sample of the time of its pair, once (my medians feed the estimates)', () => {
+    const pair = pairKey(1, 2);
+
+    it('gives the pair its time, the way a simple run does', () => {
+      expect(ownMedianIndex([MIX1]).get(pair)).toBe(2000);
+      expect(ownRunCounts([MIX1]).get(pair)).toBe(1);
+    });
+
+    it('counts a run of three commodities as one run, not as three', () => {
+      const three = mixedRun({ id: 18, startedAt: 50_000, endedAt: 50_900, legs: [...GOODS, { commodityId: TUNG, scu: 10, buy: 100, sell: 120 }] });
+      expect(ownRunCounts([three]).get(pair)).toBe(1);
+      expect(ownMedianIndex([three]).get(pair)).toBe(900);
+      expect(routeStats([three])[0]).toMatchObject({ commodityIds: [GOLD, TITA, TUNG], runs: 1 });
+    });
+
+    it('is pooled with the simple runs of the pair: the median is over all of them, each run once', () => {
+      const all = [R1, R2, MIX1, MIX2, MIX3];                         // 2400, 1800, 2000, 1000, 1200 seconds
+      expect(ownRunCounts(all).get(pair)).toBe(5);
+      expect(ownMedianIndex(all).get(pair)).toBe(1800);
+      expect([...ownRunCounts(all).keys()]).toEqual([pair]);
+    });
+
+    it('is the same number of runs as the rows of the pair add up to', () => {
+      const all = [R1, R2, MIX1, MIX2, MIX3];
+      expect(routeStats(all).reduce((sum, r) => sum + r.runs, 0)).toBe(ownRunCounts(all).get(pair));
+    });
+
+    it('is no sample of any pair when it bought at two terminals', () => {
+      expect(ownMedianIndex([moved(MIX1, 'buy', 1, 3)]).size).toBe(0);
+      expect(ownRunCounts([moved(MIX1, 'buy', 1, 3)]).size).toBe(0);
+    });
+  });
+
+  it('is in the profit of its session, as it was before the rating took it', () => {
+    expect(sessions([1000, 3000], [MIX1])[0]).toMatchObject({ runIds: [11], runCount: 1, profit: 100_000 });
   });
 });

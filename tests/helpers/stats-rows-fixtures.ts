@@ -7,7 +7,7 @@ export const NOW = 100_000;
 
 /** Gold from terminal 1 to terminal 2: two finished runs, 545 000 profit in 4 200 s (35:00 median, phases 5:00 · 16:40 · 8:20). */
 export const stat: RouteStat = {
-  originId: 1, destId: 2, commodityId: 10, runs: 2,
+  originId: 1, destId: 2, commodityIds: [10], runs: 2,
   medianDurationSec: 2100,
   medianPhases: { loadingSec: 300, flightSec: 1000, unloadingSec: 500 },
   totalProfit: 545_000,

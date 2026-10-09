@@ -74,33 +74,49 @@ export function isIncomeRun(events: RunEvent[]): boolean {
   return trades.some(t => t.type === 'sell') && !trades.some(t => t.type === 'buy');
 }
 
+/** The two ends of a run that buys everything at one terminal and sells everything at another one, and the goods it carries. */
+export interface RunRoute {
+  originId: number; destId: number;
+  /** Every commodity the run trades in, once, the smallest id first: a set, the order of the trades does not matter. */
+  commodityIds: number[];
+}
+
 /**
- * The route of a simple run: one commodity bought at one terminal and sold at another one.
- * `null` for anything else: no sale yet, several commodities or terminals, a trade whose terminal
+ * The route of a run whose purchases are ALL at one terminal and whose sales are ALL at another one, whatever it carries
+ * (task 51): one commodity is a simple run, several are a run of mixed cargo; both are a route of the statistics.
+ * `null` for anything else: no sale yet or no purchase, purchases or sales at several terminals, a trade whose terminal
  * is unknown, or a purchase and a sale at the same terminal.
  */
-export function simpleRoute(events: RunEvent[]): { originId: number; destId: number; commodityId: number } | null {
+export function routeOf(events: RunEvent[]): RunRoute | null {
   const trades = tradesOf(events);
-  const commodityIds = new Set(trades.map(t => t.commodityId));
   const originIds = new Set(trades.filter(t => t.type === 'buy').map(t => t.terminalId));
   const destIds = new Set(trades.filter(t => t.type === 'sell').map(t => t.terminalId));
-  if (commodityIds.size !== 1 || originIds.size !== 1 || destIds.size !== 1) return null;
-  const [commodityId] = commodityIds;
+  if (originIds.size !== 1 || destIds.size !== 1) return null;
   const [originId] = originIds;
   const [destId] = destIds;
   if (originId === null || destId === null || originId === destId) return null;
-  return { originId, destId, commodityId };
+  return { originId, destId, commodityIds: [...new Set(trades.map(t => t.commodityId))].sort((a, b) => a - b) };
+}
+
+/**
+ * The route of a simple run: one commodity bought at one terminal and sold at another one. `routeOf` of a run of one commodity;
+ * `null` for a run of several commodities and for everything that has no route.
+ */
+export function simpleRoute(events: RunEvent[]): { originId: number; destId: number; commodityId: number } | null {
+  const route = routeOf(events);
+  if (route === null || route.commodityIds.length !== 1) return null;
+  return { originId: route.originId, destId: route.destId, commodityId: route.commodityIds[0] };
 }
 
 export interface Phases { loadingSec: number; flightSec: number; unloadingSec: number }
 
 /**
- * Splits a simple run into loading (first purchase to departure), flight (departure to arrival) and
- * unloading (arrival to last sale). Needs exactly one departure and one arrival, in that order and
- * between the first purchase and the last sale; otherwise only the total time is known and the answer is `null`.
+ * Splits a run that has a route (`routeOf`: one commodity or several between the same two terminals) into loading (first purchase to
+ * departure), flight (departure to arrival) and unloading (arrival to last sale). Needs exactly one departure and one arrival, in that
+ * order and between the first purchase and the last sale; otherwise only the total time is known and the answer is `null`.
  */
 export function phases(events: RunEvent[]): Phases | null {
-  if (simpleRoute(events) === null) return null;
+  if (routeOf(events) === null) return null;
   const departs = events.filter(e => e.type === 'depart');
   const arrives = events.filter(e => e.type === 'arrive');
   if (departs.length !== 1 || arrives.length !== 1) return null;

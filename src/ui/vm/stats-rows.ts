@@ -27,8 +27,17 @@ function formatStamp(unixSec: number): string {
   return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+/** The word for the commodities of a run or of a route that trades in several: the list is too long for the line, and stands in the hint of the row. */
+const SEVERAL_COMMODITIES = 'смеш.';
+
 export interface RouteRow {
-  key: string; route: string; commodity: string; runs: number; time: string;
+  /** The route and its set of goods: a simple route and a mixed cargo of the same two terminals have keys of their own. */
+  key: string; route: string;
+  /** The code of the commodity of a simple route; 'смеш.' for the route of a mixed cargo. */
+  commodity: string;
+  /** The goods of a route of mixed cargo, for the tooltip of the cell: 'Смешанный груз: GOLD, TITA'; `null` for a simple route. */
+  commodityHint: string | null;
+  runs: number; time: string;
   /** Loading · flight · unloading, or `null` when no run of the route has both marks. */
   phases: string | null;
   profit: string; roi: string; rate: string;
@@ -36,13 +45,19 @@ export interface RouteRow {
   stat: RouteStat;
 }
 
-/** One row per route statistic, in the given order (`routeStats` sorts them, best rate first). */
+/** The goods of a route of mixed cargo by their codes, in the order of the codes (a set has no order of its own). */
+function mixedGoods(ref: Reference, commodityIds: number[]): string {
+  return `Смешанный груз: ${commodityIds.map(id => commodityName(ref, id)).sort().join(', ')}`;
+}
+
+/** One row per route statistic, in the given order (`routeStats` sorts them, best rate first). A route of mixed cargo (task 51) says "смеш." for its goods. */
 export function routeRows(stats: RouteStat[], ref: Reference): RouteRow[] {
   return stats.map(s => ({
     stat: s,
-    key: `${pairKey(s.originId, s.destId)}:${s.commodityId}`,
+    key: `${pairKey(s.originId, s.destId)}:${s.commodityIds.join(',')}`,
     route: routeName(ref, s.originId, s.destId),
-    commodity: commodityName(ref, s.commodityId),
+    commodity: s.commodityIds.length === 1 ? commodityName(ref, s.commodityIds[0]) : SEVERAL_COMMODITIES,
+    commodityHint: s.commodityIds.length === 1 ? null : mixedGoods(ref, s.commodityIds),
     runs: s.runs,
     time: formatDuration(s.medianDurationSec),
     phases: s.medianPhases && [s.medianPhases.loadingSec, s.medianPhases.flightSec, s.medianPhases.unloadingSec].map(formatDuration).join(' · '),
@@ -76,15 +91,13 @@ function tradedCommodityIds(events: RunEvent[]): number[] {
   return [...ids];
 }
 
-/** The word for the commodities of a run that traded in several: the list is too long for the line, and stands in the hint of the row. */
-const SEVERAL_COMMODITIES = 'смеш.';
-
 /**
  * The title of a row and its hint. 'GOLD: ARC-L1 → TDD Area 18' for a simple run; a run that has not sold anything says what
  * became of its cargo: 'GOLD, TITA: идёт' while it goes, 'GOLD, TITA: груз потерян' when it was lost; 'GOLD: смешанный рейс' for
  * one commodity that sold in several places; 'GOLD: продажа без закупки' for a run that only sold (goods the application never
- * saw bought, spec 14.10); the dash for a run without trades. A run of several commodities that sold is no route either, but it
- * has two ends: 'смеш.: ARC-L1 → TDD Area 18', the terminal of its first purchase and the one of its last sale. The hint of that
+ * saw bought, spec 14.10); the dash for a run without trades. A run of several commodities that sold is no simple route (when it bought
+ * at one terminal and sold at another it has a route of mixed cargo in the rating, task 51), and it has two ends:
+ * 'смеш.: ARC-L1 → TDD Area 18', the terminal of its first purchase and the one of its last sale. The hint of that
  * row lists the commodities ('GOLD, TITA: смешанный рейс, ARC-L1 → TDD Area 18'); every other row's hint is its title.
  */
 function runLabel(status: HistoryRow['status'], events: RunEvent[], ref: Reference): { title: string; hint: string } {
