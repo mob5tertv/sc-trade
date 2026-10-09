@@ -53,6 +53,7 @@ import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
 import { assignsMarkKey, keysHint, withKeysHint } from './vm/keys-hint';
 import { closedRunNotice, stayTimes, type ClosedRunNotice } from './vm/run-closed';
+import { quitQuestion } from './vm/quit';
 import { markRefusal } from './vm/run-phase';
 import { sameRun } from './vm/same-run';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
@@ -1784,6 +1785,17 @@ class AppState {
       this.#log.error('ui', 'cannot open the logs folder', { err });
       this.notify('Не удалось открыть папку логов.', 'error');
     }
+  }
+
+  /**
+   * The button "Выход" of "Настройки" → "Данные": while a run goes it asks first, the way the clearing of the history does (the run is saved and
+   * goes on counting after the next start); without a run the program is left at once.
+   */
+  askQuit(): void {
+    const question = quitQuestion(this.activeRun !== null);
+    this.#log.info('ui', 'quit asked', { runGoing: question !== null });
+    if (question === null) void this.quit();
+    else this.ask(question, () => this.quit());
   }
 
   async quit(): Promise<void> {

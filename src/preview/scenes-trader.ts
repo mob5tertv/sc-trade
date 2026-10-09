@@ -46,7 +46,29 @@ async function sellOut(app: SceneApp): Promise<void> {
   await pause(200);
 }
 
+/** The settings with the group "Данные" unfolded, where the button "Выход" is (`--do "click:.quit"`). */
+async function openDataSettings(app: SceneApp): Promise<void> {
+  await app.expand('preview');
+  app.openSettings();
+  await app.toggleSection('settings:data');
+  await pause(100);
+}
+
 export const TRADER_SCENES: readonly Scene[] = [
+  {
+    // a run is going: the button asks first, in a line under the header (`--do "click:.quit;wait:200"`)
+    name: 'settings-quit-run',
+    title: 'Настройки → Данные, идёт рейс: «Выход» спрашивает «Идёт рейс. Закрыть программу?»',
+    dataset: 'run',
+    act: openDataSettings,
+  },
+  {
+    // no run: the button leaves at once (the preview's log says `quit`; no question)
+    name: 'settings-quit-idle',
+    title: 'Настройки → Данные, рейса нет: «Выход» закрывает программу сразу',
+    dataset: 'default',
+    act: openDataSettings,
+  },
   {
     // no key for the marks: the notice of the closed run goes on with the hint and its button (`--do "click:.notice .action"` opens the keys)
     name: 'keys-hint',
