@@ -3,7 +3,8 @@ import type { Run, RunEvent, RunWithEvents } from '../../core/types';
 
 // What a run is doing right now and for how long: loading, flight or unloading (spec 14.7, the live timers of 15c).
 //
-// The rules are those of `phases()` in core/run.ts, which splits a FINISHED simple run: loading is the time from the
+// The rules are those of `phases()` in core/run.ts, which splits a FINISHED run that has a route (one pair of
+// terminals, whatever it carried): loading is the time from the
 // first purchase to the take-off, flight from the take-off to the arrival, unloading from the arrival to the last
 // sale. Here the same three phases are followed while the run goes on, and a run that has several flights is
 // followed too, which `phases()` cannot express (it wants exactly one take-off and one arrival, and answers `null`

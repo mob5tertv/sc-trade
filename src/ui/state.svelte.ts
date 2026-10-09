@@ -274,7 +274,7 @@ class AppState {
   // ---- window and screen ------------------------------------------------------------------------
   mode = $state<WindowMode>('mini');
   /**
-   * The primary monitor in logical pixels as the window layer last placed the window on it; `null` before the first placement. «Авто»
+   * The primary monitor in logical pixels as the start told it (`knowMonitor`) or as the window layer last placed the window on it; `null` until either. «Авто»
    * of the scale reads it (and the field of the settings, to say what «Авто» picked). Taken at every fit (`#followMonitorScale`).
    */
   scaleMonitor = $state.raw<Size | null>(null);

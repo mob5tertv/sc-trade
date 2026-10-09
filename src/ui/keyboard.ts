@@ -117,8 +117,9 @@ function textOf(field: Element): string {
 }
 
 /**
- * The two marks by which the PAGE says that a field is saved by Enter and when the cursor leaves it (and taken back by
- * Esc). Only there do those acts of the player settle what he typed (`FieldPlace.commits`); a field without a mark is
+ * The two marks by which the PAGE says that a field is saved by Enter and when the cursor leaves it (and dealt with at
+ * Esc: the table drops the draft, a field of the settings is saved by the blur Esc causes). Only there do those acts
+ * of the player settle what he typed (`FieldPlace.commits`); a field without a mark is
  * assumed to be saved by nothing, so the keyboard stays over what was typed into it. Each mark is written by the
  * component that does the saving, and `tests/ui/keyboard-marks.test.ts` fails when either is gone from its component:
  *  - `CELL_MARK`, on a field itself: the table gives the two fields of one cell of an open row (price and quantity) the

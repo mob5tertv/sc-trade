@@ -39,7 +39,8 @@ function median(values: number[]): number {
 
 /**
  * The runs with status 'done' that have a route (`routeOf`: one commodity or several, all bought at one terminal and all sold at
- * another one), in the given order, each run once. A finished run always has an end; should one lack it, it lasts zero seconds
+ * another one), in the given order, each run once. Nothing bought is left unsold in such a run: the data layer writes 'done' only
+ * when the hold is empty for every commodity. A finished run always has an end; should one lack it, it lasts zero seconds
  * rather than until some "now".
  */
 function finishedRoutes(runs: RunWithEvents[]): Finished[] {

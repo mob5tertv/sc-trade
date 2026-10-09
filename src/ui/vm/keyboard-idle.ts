@@ -42,8 +42,9 @@ export interface FieldPlace {
    */
   inForm: boolean;
   /**
-   * The page says that the component of this field saves it at Enter and when the cursor leaves it, and takes it back at
-   * Esc: a cell of the table, a field of the settings. Only there do those acts of the player settle what he typed.
+   * The page says that the component of this field saves it at Enter and when the cursor leaves it, and deals with it at
+   * Esc too (the table drops the draft, the settings save): a cell of the table, a field of the settings. Only there do
+   * those acts of the player settle what he typed.
    * Without that mark nothing is assumed: a component that does not save at those events would lose the text.
    */
   commits: boolean;

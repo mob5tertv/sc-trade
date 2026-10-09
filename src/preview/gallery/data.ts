@@ -384,7 +384,7 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
 
   const history = historyRows(runs, reference, now);
   const sessionList = sessionRows(sessions(await allRecordTimestamps(db), runs));
-  // the dataset has one finished route; the table of routes also gets finished runs of other routes, so that a sort has something to put in order
+  // the dataset has few finished routes (one of them a mixed cargo); the table of routes also gets finished runs of other routes, so that a sort has something to put in order
   const stats = routeRows(routeStats([...runs, ...routeRuns(now, (code) => commodityByCode(reference, code))]), reference);
 
   // the prices the player saw at the viewed terminal, then its table
