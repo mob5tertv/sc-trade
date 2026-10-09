@@ -1,8 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { escapeGivesBack, pressBringsCursor, pressSelectsAll } from '../../src/ui/keyboard';
+import { cursorPlace, escapeGivesBack, pressBringsCursor, pressSelectsAll } from '../../src/ui/keyboard';
 
 // The decisions of the DOM side of the keyboard rules that need no DOM. The listeners themselves run in the preview
 // (`src/preview/scenes-keyboard.ts`), against a real browser.
+
+describe('cursorPlace: what has the cursor of the page, as the watchdog reads it', () => {
+  /** A plain button, unless said: no text field, in no group that opens an entry. */
+  const place = (over: Partial<Parameters<typeof cursorPlace>[0]> = {}) => cursorPlace({ editable: false, inEntryGroup: false, entryOpen: false, ...over });
+
+  it('a text field is a field: the keyboard is in use there', () => {
+    expect(place({ editable: true })).toBe('field');
+    // whatever stands around it
+    expect(place({ editable: true, inEntryGroup: true, entryOpen: true })).toBe('field');
+  });
+
+  it('a control inside a group that opens an entry, with the field of that entry on the page, is part of the entry: the cursor that came to a side of the switch by Tab is still in the line', () => {
+    expect(place({ inEntryGroup: true, entryOpen: true })).toBe('entry');
+  });
+
+  it('the same control is nothing while the field of its entry is not on the page: there is no entry to be in', () => {
+    expect(place({ inEntryGroup: true, entryOpen: false })).toBe('nowhere');
+  });
+
+  it('anything else is nothing, and the keyboard goes back: a plain button, a row, the page itself', () => {
+    expect(place()).toBe('nowhere');
+    // an entry that is on the page does not make a button next to it a part of it
+    expect(place({ entryOpen: true })).toBe('nowhere');
+  });
+});
 
 describe('escapeGivesBack: does this key give the keyboard back to the game', () => {
   it('Esc does, while the window holds the keyboard', () => {

@@ -24,7 +24,9 @@ import { createTypingMemory, entryText, KEYBOARD_IDLE_MS, keyboardUnused, type E
 //    the form of a trade closes, a field of the settings takes its saved number back), and only then the cursor is taken out
 //    of it: see `afterEscape`;
 //  - a watchdog gives the keyboard back when the field is gone (an answer was sent and the screen was redrawn), and
-//    while the window is armed keeps the remembered window (the one the focus goes back to) up to date;
+//    while the window is armed keeps the remembered window (the one the focus goes back to) up to date. The cursor of the
+//    page on a side of the switch «Куп.» / «Прод.» (it comes there by Tab) is not "the field is gone": a control inside a
+//    group that opens an entry is part of that entry while its field is on the page (`cursorPlace`, `entryAround`);
 //  - the same watchdog gives the keyboard back, the way `Esc` does, when it is held and not used: no key for a while and
 //    nothing that the player entered and did not confirm, in whatever field (the rule and its invariant are
 //    `vm/keyboard-idle.ts`; here the fields are told to its memory: what stood in a field before it was typed into, what
@@ -105,6 +107,37 @@ function entryField(name: string): HTMLElement | null {
 }
 
 /**
+ * The entry a control is a part of, by its name: the control stands INSIDE a group that opens an entry (`data-opens-entry` on
+ * an element around it: the two sides of the switch of the quick entry, which is one such group). `null` for anything else,
+ * also for a button that carries the mark itself («Купил», «+ цена»): such a button opens an entry, it is no part of one.
+ * The neighbour of `takerAt`: that one says what a PRESS treats as a field, this one what the CURSOR of the page does when
+ * it came there without a press (by Tab).
+ */
+function entryAround(control: Element | null): string | null {
+  const group = control?.parentElement?.closest(`[${OPENS_ENTRY}]`) ?? null;
+  const entry = group?.getAttribute(OPENS_ENTRY) ?? '';
+  return entry === '' ? null : entry;
+}
+
+/** What has the cursor of the page, as the watchdog reads it (`cursorPlace`). */
+export type CursorPlace = 'field' | 'entry' | 'nowhere';
+
+/**
+ * What has the cursor of the page, for the watchdog that gives the keyboard back when nothing is being edited.
+ *  - `field`: a text field (`editable`). The keyboard is in use, and goes only by the rule of the unused keyboard.
+ *  - `entry`: no text field, but a control inside a group that opens an entry (`inEntryGroup`) while the field of that entry
+ *    is on the page (`entryOpen`): a side of the switch «Куп.» / «Прод.» that the cursor came to by Tab. It is part of the line
+ *    being entered: the arrows pick the side, Tab goes on to the price. The keyboard stays as it stays in an EMPTY field: what
+ *    was entered elsewhere in the window holds it, and with nothing entered it goes after the same time without a key.
+ *  - `nowhere`: anything else (a plain button, a row, the page itself; the same control while its entry is not on the page).
+ *    Nothing is being edited, and the keyboard goes back to the game.
+ */
+export function cursorPlace(active: { editable: boolean; inEntryGroup: boolean; entryOpen: boolean }): CursorPlace {
+  if (active.editable) return 'field';
+  return active.inEntryGroup && active.entryOpen ? 'entry' : 'nowhere';
+}
+
+/**
  * The attribute of a number field whose whole content is selected when it gets the cursor: the price and the quantity of
  * the open row of the table, of the form of a trade and of the quick entry. The fields of the settings and the search
  * boxes do not carry it (a search box has a rule of its own).
@@ -174,6 +207,9 @@ function refusedAt(field: Element): boolean {
   for (const other of document.querySelectorAll(`[${CELL_MARK}][aria-invalid="true"]`)) if (cellOf(other) === cell) return true;
   return false;
 }
+
+/** A control that is part of an entry and no text field (a side of the switch), as the rule of the unused keyboard reads it: a field with nothing in it. */
+const NO_TEXT: EditedField = { text: '', refused: false, choosing: false };
 
 /** The field with the cursor as the rule of the unused keyboard reads it; `listPressed` is what the listeners have kept. */
 const editedField = (field: Element, listPressed: boolean): EditedField => ({
@@ -512,7 +548,9 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger, goneByItself:
     if (!holds.held) return;
     const now = performance.now();
     const active = document.activeElement;
-    if (active === null || !isEditable(active)) {
+    const around = entryAround(active);
+    const place = cursorPlace({ editable: isEditable(active), inEntryGroup: around !== null, entryOpen: around !== null && entryField(around) !== null });
+    if (active === null || place === 'nowhere') {
       if (now - lastPressAt < PRESS_GRACE_MS) return;
       // Esc has just closed what had the cursor (the form of a trade) and is about to give the keyboard back itself
       if (escapeReturn !== undefined) return;
@@ -524,8 +562,10 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger, goneByItself:
     // to the window. The keyboard was taken by the last press on a field (or on an entry button); a look while that take
     // is still on its way counts from the press too. Nothing is written per look, one line when the keyboard goes.
     // What was typed is read against the page as it is now, in every field that was typed into, not only this one.
+    // The cursor on a side of the switch (`entry`) is read as the cursor in a field with nothing in it: the same rule.
     const typed = typing.read((field) => ({ text: field.isConnected ? textOf(field) : null, refused: refusedAt(field) }));
-    if (!keyboardUnused({ now, lastKeyAt, takenAt: lastPressAt, field: editedField(active, listPressed), typed })) return;
+    const field = place === 'field' ? editedField(active, listPressed) : NO_TEXT;
+    if (!keyboardUnused({ now, lastKeyAt, takenAt: lastPressAt, field, typed })) return;
     log.info('ui', `the keyboard was not used for ${KEYBOARD_IDLE_MS / 1000} s: it goes back to the game`);
     // Told before the keyboard is given: the sign «Esc — в игру» stands until the holder is released, and «Клавиатура у игры»
     // takes its place at that very moment, with nothing shown in between.

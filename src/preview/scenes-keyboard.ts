@@ -136,7 +136,7 @@ interface KeyboardNow {
   /** Who has the keyboard in the mocked Windows, and whether the window can be activated. */
   owner: string | undefined;
   focusable: boolean | undefined;
-  /** Where the cursor is: the classes of the field and of the form around it; its text and its selection. */
+  /** Where the cursor is: the classes of the field and of the form around it (`radio`: a side of the switch); its text and its selection. */
   cursor: string | null;
   text: string | null;
   selection: string | null;
@@ -155,7 +155,7 @@ function keyboardNow(app: SceneApp): KeyboardNow {
     holds: app.keyboard.state,
     owner: state?.keyboard,
     focusable: state?.focusable,
-    cursor: field === null ? null : `${known(field.closest('form'))} ${field.getAttribute('role') ?? known(field)}`.trim(),
+    cursor: field === null ? null : `${known(field.closest('form'))} ${field.getAttribute('role') ?? (field.type === 'radio' ? 'radio' : known(field))}`.trim(),
     text: field === null ? null : field.value,
     selection: field === null ? null : selectionOf(field),
     sign: keyboardSign(app.keyboardHeld, app.keyboardGoneSign),
@@ -1098,6 +1098,73 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       expectSide('after the click on «Прод.»', 'Прод.');
       expectKeyboard(app, 'after the click on «Прод.»', { held: true, holds: 'held', owner: 'overlay', cursor: 'quick in-price' });
       if (askedCount() !== 0) throw new Error('the click on the switch had to ask Windows for the foreground: the press itself must activate the armed window');
+    },
+  },
+  {
+    // The cursor comes to the switch by Tab too (from «Товар», or back from the price). A side of the switch is no text field, and the
+    // watchdog used to find "no field is being edited" there and hand the keyboard to the game in the middle of the line, without a
+    // word. A side of the switch is part of the line now: the keyboard stays, the arrows pick the side, Tab goes on to the price.
+    // A scene cannot press the real Tab (the browser moves the cursor, not the page): it puts the cursor where the browser would.
+    // With the real keys: `--scene entry-ready --do "hover:button.entry;click:button.entry;type:sti;press:Enter;press:Shift+Tab;
+    // wait:2000;eval:window.__keys();press:ArrowRight;wait:300;press:Tab;eval:window.__keys()"`.
+    name: 'side-switch-tab',
+    title: 'Быстрый ввод: товар выбран, Tab на «Куп./Прод.» — через 2 с клавиатура всё ещё у окна; стрелка меняет сторону; Tab ставит курсор в цену',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      await quickWith(app, 'sti');
+      expectSide('STIM is only sold at HUR-L1', 'Куп.');
+      // Shift+Tab from the price: the cursor goes to the side that is picked
+      const buy = sideRadio('Куп.');
+      keyDown(input(QUICK_PRICE), 'Tab');
+      buy.focus();
+      await pause(2000);
+      expectKeyboard(app, '2 s after Tab onto the switch', { held: true, holds: 'held', owner: 'overlay', cursor: 'quick radio' });
+      if (document.activeElement !== buy) throw new Error('the cursor is not on «Куп.» any more');
+      // ArrowRight: the browser picks the next side and moves the cursor to it
+      const sell = sideRadio('Прод.');
+      keyDown(buy, 'ArrowRight');
+      sell.focus();
+      sell.click();
+      await pause(1500);
+      expectSide('after the arrow', 'Прод.');
+      expectKeyboard(app, 'a second and a half after the arrow', { held: true, holds: 'held', owner: 'overlay', cursor: 'quick radio' });
+      if (document.activeElement !== sell) throw new Error('the cursor is not on «Прод.» any more: picking a side with the arrows must not move it');
+      // Tab: on to the price
+      keyDown(sell, 'Tab');
+      input(QUICK_PRICE).focus();
+      await pause(100);
+      expectKeyboard(app, 'after Tab from the switch', { held: true, holds: 'held', owner: 'overlay', cursor: 'quick in-price' });
+      const gone = (window.__preview?.log ?? []).filter((line) => line.includes('no field is being edited') || line.includes('[window] keyboard given'));
+      if (gone.length !== 0) throw new Error(`the keyboard was handed to the game while the cursor was on the switch: ${gone[0]}`);
+      typeInto(QUICK_PRICE, '2400');
+      const written = await sendQuick();
+      if (!written.includes('"side":"sell"') || !written.includes('"price":2400')) throw new Error(`the arrows picked «Прод.», and what was written is ${written}`);
+    },
+  },
+  {
+    // ...and the switch is no way to keep the keyboard for good: with nothing entered in the line the cursor on a side of the switch
+    // is like the cursor in an empty field, and after `KEYBOARD_IDLE_MS` without a key the keyboard is the game's again, with the sign.
+    name: 'side-switch-tab-idle',
+    title: 'Быстрый ввод пустой, Tab из «Товара» на «Куп./Прод.», 16,5 с тишины: клавиатура сама вернулась игре (как из пустого поля)',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      await pressButton(element('button.entry'));
+      await until('the cursor in the commodity field of the quick entry', cursorIn(QUICK_COMMODITY));
+      const buy = sideRadio('Куп.');
+      keyDown(input(QUICK_COMMODITY), 'Tab');
+      buy.focus();
+      await pause(KEYBOARD_IDLE_MS - 1500);
+      expectKeyboard(app, 'a second and a half before the limit', { held: true, holds: 'held', owner: 'overlay', cursor: 'quick radio' });
+      await until('the keyboard to go back to the game by itself', () => !app.keyboardHeld, 3000);
+      await pause(200);
+      expectKeyboard(app, `${KEYBOARD_IDLE_MS / 1000} s after Tab onto the switch, with nothing entered`, { held: false, owner: 'game', sign: 'gone' });
+      if (document.activeElement === buy) throw new Error('the cursor is still on the switch after the keyboard went back');
+      if (wentBackLines().length !== 1) throw new Error(`the log must say once that the keyboard went back by itself, and it says so ${wentBackLines().length} times`);
+      if ((window.__preview?.log ?? []).some((line) => line.includes('no field is being edited'))) throw new Error('the watchdog took the cursor on the switch for "no field is being edited"');
     },
   },
   {
