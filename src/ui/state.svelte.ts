@@ -1140,9 +1140,11 @@ class AppState {
 
   /**
    * The answer "yes" to the question of `askClearHistory`: the trade service deletes the runs (the threshold is counted now, at the
-   * answer, not at the question), then the statistics are read again, so that the status line, the rating, the sessions and the
-   * medians all follow the runs that are left, and one notice says how many runs went. A failure is told as well, and the statistics
-   * are read again after it too: a part of the clearing may have been done. The current location and the target are not touched.
+   * answer, not at the question), then the active run is read again (the service repairs half-written runs before it works, as
+   * before every job, so the run on the screen may be gone by now; see `#reloadRun`) and the statistics are read again, so that the
+   * status line, the rating, the sessions and the medians all follow the runs that are left, and one notice says how many runs went.
+   * A failure is told as well, and both are read again after it too: a part of the clearing may have been done. The current location
+   * and the target are not touched.
    */
   async #clearHistory(scope: ClearScope): Promise<void> {
     const endedBefore = scope === 'old' ? oldRunsBefore(this.#syncDeps().now()) : null;
@@ -1154,6 +1156,7 @@ class AppState {
       this.#log.error('ui', 'cannot clear the history', { scope, err });
       if (err instanceof ClearHistoryError) failure = err.message;
     }
+    await this.#reloadRun(false); // nothing of the market was written
     await stats.reload('history cleared'); // never throws
     if (cleared !== null) this.notify(clearedText(cleared.runs), 'info');
     else this.notify(failure, 'error');

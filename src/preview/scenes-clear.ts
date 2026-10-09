@@ -75,4 +75,20 @@ export const CLEAR_SCENES: readonly Scene[] = [
     dataset: 'run',
     act: openData,
   },
+  {
+    // The run that is going is gone from the database behind the state's back (the data layer repairs half-written runs before every job
+    // of the trade service, and a clearing is one): the clearing must read the run again, like every other call of the service, or the
+    // mini line keeps showing a run that is not there. `--do "click:[data-clear=all];click:.ask .yes;wait:600;eval:window.__run()"`
+    // prints `{"shown":false,"strip":"idle"}` once the run is read again, `{"shown":true,"strip":"run"}` while it is not.
+    name: 'settings-history-run-gone',
+    title: 'Очистка истории, пока идущий рейс исчез из базы мимо состояния: после очистки состояние перечитывает рейс',
+    dataset: 'run',
+    act: async (app) => {
+      const { db } = app.suggestDeps();
+      await db.execute("DELETE FROM run_event WHERE run_id IN (SELECT id FROM run WHERE status = 'active')");
+      await db.execute("DELETE FROM run WHERE status = 'active'");
+      (window as unknown as { __run: () => unknown }).__run = () => ({ shown: app.activeRun !== null, strip: app.strip.kind });
+      await openData(app);
+    },
+  },
 ];
