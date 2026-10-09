@@ -9,6 +9,7 @@
   import { stats } from './stats.svelte';
   import { headerModel } from './vm/header';
   import { CLEAR_BUTTONS, historyStatus } from './vm/history-clearing';
+  import { captureKey } from './vm/key-capture';
   import { parseNumberText } from './vm/settings-validation';
   import WindowGrip from './WindowGrip.svelte';
 
@@ -17,10 +18,22 @@
     | 'overheadMin' | 'overheadEmptyMin' | 'topN' | 'refillFullMin' | 'roiHighlightPct' | 'panelWidth' | 'idleCollapseSec';
   type TriggerKey = 'hotkeyPanel' | 'hotkeyDepart' | 'hotkeyArrive';
 
-  const TRIGGERS: ReadonlyArray<{ key: TriggerKey; name: TriggerName; label: string }> = [
-    { key: 'hotkeyPanel', name: 'panel', label: 'Развернуть и свернуть окно' },
-    { key: 'hotkeyDepart', name: 'depart', label: 'Отметка «Взлетел»' },
-    { key: 'hotkeyArrive', name: 'arrive', label: 'Отметка «Прилетел»' },
+  // What the field says in its tooltip: how it is filled, what the key does, and that the press still reaches the game (the hook that
+  // catches the keys never swallows one).
+  const HOW_TO_FILL = 'Нажми клавишу в этом поле — она запишется. Backspace или Delete снимают клавишу.';
+  const TRIGGERS: ReadonlyArray<{ key: TriggerKey; name: TriggerName; label: string; title: string }> = [
+    {
+      key: 'hotkeyPanel', name: 'panel', label: 'Развернуть и свернуть окно',
+      title: `${HOW_TO_FILL} Например F8 или Ctrl+Alt+T. Клавиша разворачивает и сворачивает окно, игра её тоже получает. Без клавиши окно разворачивается кликом по мини-строке.`,
+    },
+    {
+      key: 'hotkeyDepart', name: 'depart', label: 'Отметка «Взлетел»',
+      title: `${HOW_TO_FILL} Клавиша ставит в идущем рейсе отметку «Взлетел», как одноимённая кнопка; игра её тоже получает.`,
+    },
+    {
+      key: 'hotkeyArrive', name: 'arrive', label: 'Отметка «Прилетел»',
+      title: `${HOW_TO_FILL} Клавиша ставит в идущем рейсе отметку «Прилетел», как одноимённая кнопка (с целью окно покажет её терминал); игра её тоже получает.`,
+    },
   ];
 
   const CORNERS: ReadonlyArray<{ id: Settings['stripCorner']; label: string }> = [
@@ -66,6 +79,20 @@
     const text = drafts[key];
     if (text === undefined) return;
     await settle(key, () => app.updateSetting(key, text.trim()));
+  }
+
+  /**
+   * A key field takes the key that is pressed in it (`captureKey`) and saves it as an ordinary change of the field; the check says
+   * next to the field why a key is not taken. What the field does not take (Esc, Tab, a modifier alone) it neither writes nor stops:
+   * Esc still gives the keyboard back to the game and Tab still goes on. A held key repeats the press: one press is one assignment.
+   */
+  function captureTrigger(event: KeyboardEvent, key: TriggerKey): void {
+    const taken = captureKey(event);
+    if (taken.kind === 'pass') return;
+    event.preventDefault();
+    if (event.repeat) return;
+    drafts[key] = taken.kind === 'clear' ? '' : taken.text;
+    void commitTrigger(key);
   }
 
   async function chooseVehicle(value: string): Promise<void> {
@@ -170,7 +197,7 @@
 {#snippet keys()}
   {#each TRIGGERS as trigger (trigger.key)}
     {@const error = errors[trigger.key] ?? app.triggerErrors[trigger.name]}
-    <div class="row" title="Например F8 или Ctrl+Alt+T. Пустое поле: клавиша не назначена, окно разворачивается кликом по мини-строке.">
+    <div class="row" title={trigger.title}>
       <label for="set-{trigger.key}">{trigger.label}</label>
       <input
         id="set-{trigger.key}"
@@ -178,9 +205,10 @@
         type="text"
         autocomplete="off"
         spellcheck="false"
-        placeholder="не назначена"
+        placeholder="нажми клавишу"
         value={drafts[trigger.key] ?? app.settings[trigger.key]}
         aria-invalid={error ? 'true' : undefined}
+        onkeydown={(event) => captureTrigger(event, trigger.key)}
         oninput={(event) => typed(trigger.key, event)}
         onchange={() => commitTrigger(trigger.key)}
       />
