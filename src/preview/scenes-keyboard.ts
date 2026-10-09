@@ -194,6 +194,10 @@ async function confirmTrade(): Promise<void> {
   await pause(200);
 }
 
+/** The prices the application was told to write so far, and how many times the log says the keyboard went back by itself. */
+const pricesWritten = (): string[] => (window.__preview?.log ?? []).filter((line) => line.includes('[ui] record price'));
+const wentBackLines = (): string[] => (window.__preview?.log ?? []).filter((line) => line.includes('[ui] the keyboard was not used'));
+
 /** The trades the service has written so far (its own lines in the log). */
 const tradesWritten = (): string[] => (window.__preview?.log ?? []).filter((line) => /\[run\] (buy|sell|income) /.test(line));
 
@@ -422,8 +426,53 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
       await pause(100);
       expectKeyboard(app, `after ${KEYBOARD_IDLE_MS / 1000} s without a key`, { held: false, owner: 'game', cursor: null });
       if (document.querySelector('.expand') === null) throw new Error('the open row was folded when the keyboard went back');
-      const said = (window.__preview?.log ?? []).filter((line) => line.includes('[ui] the keyboard was not used'));
-      if (said.length !== 1) throw new Error(`the log must say once that the keyboard went back by itself, and it says so ${said.length} times`);
+      if (wentBackLines().length !== 1) throw new Error(`the log must say once that the keyboard went back by itself, and it says so ${wentBackLines().length} times`);
+    },
+  },
+  {
+    // Trace A of the review of task 47. A price is typed into the row and NOT confirmed; the cursor goes on to the quantity (Tab: the
+    // other field of the same cell, so the table saves nothing). The automatic return would take the cursor out of the cell, and the
+    // table saves a cell that is left: a timer would write the price. So the keyboard stays, however long: what was typed still waits.
+    name: 'keyboard-idle-typed',
+    title: 'В цене строки набрано число, курсор ушёл в количество (Tab), 16,5 с тишины: клавиатура осталась у окна, таймер ничего не записал',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      withText('.table button.line', 'MEDS').click();
+      await pause(100);
+      await clickField('.expand .in-price', 1);
+      typeInto('.expand .in-price', '2400');
+      input('.expand .in-scu').focus();
+      await pause(KEYBOARD_IDLE_MS + 1500);
+      expectKeyboard(app, `${(KEYBOARD_IDLE_MS + 1500) / 1000} s after the price was typed and the cursor went to the quantity`, { held: true, owner: 'overlay', cursor: 'in-scu' });
+      if (pricesWritten().length !== 0) throw new Error(`nobody confirmed the price, and it was written: ${pricesWritten()[0]}`);
+      if (wentBackLines().length !== 0) throw new Error('the log says the keyboard went back by itself, over a price that was typed and not confirmed');
+      if (input('.expand .in-price').value !== '2400') throw new Error(`the typed price is gone from its field: "${input('.expand .in-price').value}"`);
+    },
+  },
+  {
+    // ...and the same price confirmed with Enter: it is written once, by the player, and fifteen seconds after that key the keyboard
+    // is the game's again. The blur of the return writes nothing a second time.
+    name: 'keyboard-idle-entered',
+    title: 'В цене строки набрано число и нажат Enter, 16,5 с тишины: цена записана один раз, клавиатура сама вернулась игре',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      withText('.table button.line', 'MEDS').click();
+      await pause(100);
+      const price = await clickField('.expand .in-price', 1);
+      typeInto('.expand .in-price', '2400');
+      price.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+      await until('the price to be written', () => pricesWritten().length === 1);
+      await pause(KEYBOARD_IDLE_MS - 1500);
+      expectKeyboard(app, 'a second and a half before the limit', { held: true, owner: 'overlay', cursor: 'in-price' });
+      await until('the keyboard to go back to the game by itself', () => !app.keyboardHeld);
+      await pause(200);
+      expectKeyboard(app, `after ${KEYBOARD_IDLE_MS / 1000} s without a key`, { held: false, owner: 'game', cursor: null });
+      if (wentBackLines().length !== 1) throw new Error(`the log must say once that the keyboard went back by itself, and it says so ${wentBackLines().length} times`);
+      if (pricesWritten().length !== 1) throw new Error(`the price was written ${pricesWritten().length} times, not once`);
     },
   },
   {

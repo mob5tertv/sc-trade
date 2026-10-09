@@ -1,7 +1,7 @@
 import type { Logger } from '../data/logger';
 import { createHeldKeyGuard } from './vm/held-keys';
 import type { KeyboardHolds } from './vm/keyboard-holds';
-import { KEYBOARD_IDLE_MS, keyboardUnused, settlesTyping, type EditedField } from './vm/keyboard-idle';
+import { createTypingMemory, KEYBOARD_IDLE_MS, keyboardUnused, type EditedField, type FieldPlace } from './vm/keyboard-idle';
 
 // The DOM side of the keyboard rules. The overlay never takes the keyboard from the game by itself; it
 // does so only while the player edits a text field. Everything else (who holds the keyboard, what taking
@@ -21,7 +21,8 @@ import { KEYBOARD_IDLE_MS, keyboardUnused, settlesTyping, type EditedField } fro
 //  - a watchdog gives the keyboard back when the field is gone (an answer was sent and the screen was redrawn), and
 //    while the window is armed keeps the remembered window (the one the focus goes back to) up to date;
 //  - the same watchdog gives the keyboard back, the way `Esc` does, when it is held and not used: no key for a while and
-//    nothing typed into the field that is not saved (the rule is `vm/keyboard-idle.ts`);
+//    nothing that the player typed and did not confirm, in whatever field (the rule and its invariant are
+//    `vm/keyboard-idle.ts`; here the fields are told to its memory: what was typed, Enter and Esc, a cell that is left);
 //  - the guard against a game key that is still held down.
 
 /** The holder name of a text field being edited. */
@@ -108,19 +109,37 @@ function numberFieldAt(target: EventTarget | null): HTMLInputElement | null {
 /** A field that holds text the player types: every field but a select, whose choice is applied at once and is never "typed and not saved". */
 const holdsTypedText = (field: Element | null): boolean => isEditable(field) && !(field instanceof HTMLSelectElement);
 
-/** The field with the cursor as the rule of the unused keyboard reads it; `typed` and `listPressed` are what the listeners have kept. */
-function editedField(field: Element, typed: boolean, listPressed: boolean): EditedField {
-  let text = '';
-  if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) text = field.value;
-  else if (holdsTypedText(field)) text = field.textContent ?? '';
-  return {
-    text,
-    typed,
-    // every field of the window marks a refused entry this way (the cells of the table, the form of a trade, the quick entry, the settings)
-    refused: field.getAttribute('aria-invalid') === 'true',
-    choosing: listPressed && field instanceof HTMLSelectElement,
-  };
+/** What stands in a field; a list holds a choice, not a text. */
+function textOf(field: Element): string {
+  if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) return field.value;
+  return holdsTypedText(field) ? (field.textContent ?? '') : '';
 }
+
+/**
+ * The attribute by which the table marks the two fields of one cell of an open row (price and quantity): they are saved
+ * together, by Enter in either of them and when the cursor leaves both.
+ */
+const cellOf = (field: Element): string | null => (field instanceof HTMLElement ? (field.dataset.cell ?? null) : null);
+
+/** Where a field stands for the memory of what was typed: in a form, in a cell of the table, or alone. */
+const placeOf = (field: Element): FieldPlace => ({ inForm: field.closest('form') !== null, cell: cellOf(field) });
+
+/**
+ * The field, or one of its cell, is marked as refused. Every field of the window marks a refused entry with
+ * `aria-invalid` (the cells of the table, the form of a trade, the quick entry, the settings); a cell is refused whole.
+ */
+function refusedAt(field: Element): boolean {
+  if (field.getAttribute('aria-invalid') === 'true') return true;
+  const cell = cellOf(field);
+  if (cell === null) return false;
+  for (const other of document.querySelectorAll<HTMLElement>('[data-cell][aria-invalid="true"]')) if (cellOf(other) === cell) return true;
+  return false;
+}
+
+/** The field with the cursor as the rule of the unused keyboard reads it; `listPressed` is what the listeners have kept. */
+const editedField = (field: Element, listPressed: boolean): EditedField => ({
+  text: textOf(field), refused: refusedAt(field), choosing: listPressed && field instanceof HTMLSelectElement,
+});
 
 /**
  * Whether a press on a number field is the one that brings it the cursor (and so selects its number), or a click on a
@@ -167,8 +186,11 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   let lastPressAt = Number.NEGATIVE_INFINITY;
   /** When a key was last pressed in the window (a key that the guard of the held keys let through), or a choice made from a list. */
   let lastKeyAt = Number.NEGATIVE_INFINITY;
-  /** Something was typed into the field with the cursor since it got the cursor, and no key has settled it (`settlesTyping`). */
-  let typed = false;
+  /**
+   * What the player typed, by field, until he confirms it or it is gone (`TypingMemory`). It is not forgotten when the
+   * cursor moves on: a price typed into a row still waits while the cursor stands in the quantity.
+   */
+  const typing = createTypingMemory<Element>();
   /** The last press was on a list (a select), which opens it, and nothing was chosen from it since: it may still be open. */
   let listPressed = false;
   // the window layer has already logged a failure of its own; the listeners have nothing to add
@@ -177,9 +199,10 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   // Capture phase on the window: it runs before the field, the search list and the Esc handler.
   const onKeyDownCapture = (event: KeyboardEvent): void => {
     if (!heldKeys.shouldSwallow(event)) {
-      // a key of the player: the keyboard is in use. Enter and Esc deal with what was typed before the field hears of them
+      // a key of the player: the keyboard is in use. Enter and Esc in a field deal with what was typed there (the memory
+      // knows where they really do)
       lastKeyAt = performance.now();
-      if (settlesTyping(event.key)) typed = false;
+      if (event.target instanceof Element && holdsTypedText(event.target)) typing.key(event.target, event.key, placeOf(event.target));
       return;
     }
     event.preventDefault();
@@ -190,14 +213,28 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     }
   };
   const onKeyUpCapture = (event: KeyboardEvent): void => heldKeys.released(event.code);
-  // The player typed into a field (a key, a paste): what stands in it now is his, and not saved. A choice from a list is
-  // applied at once and closes the list; it counts as a key, because the keys or the click that made it went to the open
-  // list, which is drawn outside the page, and the page heard none of them.
+  // The player typed into a field (a key, a paste): what stands in it now is his, and waits to be confirmed. It is heard
+  // twice: before the field's own handlers, so that no typing is ever missed, and after them, so that what they made of
+  // the text is what is remembered. A choice from a list is applied at once and closes the list; it counts as a key,
+  // because the keys or the click that made it went to the open list, which is drawn outside the page, and the page heard
+  // none of them.
   const onInput = (event: Event): void => {
-    if (event.target instanceof HTMLSelectElement) {
+    const field = event.target;
+    if (field instanceof HTMLSelectElement) {
       listPressed = false;
       lastKeyAt = performance.now();
-    } else if (event.target instanceof Element && holdsTypedText(event.target)) typed = true;
+    } else if (field instanceof Element && holdsTypedText(field)) typing.typed(field, textOf(field), placeOf(field));
+  };
+  // The cursor leaves a field. From one field of a cell to the other is not leaving the cell (the table saves nothing
+  // then, and neither does the memory count it); anything else is told. It is the player who takes the cursor out: the
+  // automatic return below does not happen while something typed still waits.
+  const onFocusOut = (event: FocusEvent): void => {
+    const field = event.target;
+    if (!(field instanceof Element) || !holdsTypedText(field)) return;
+    const place = placeOf(field);
+    const next = event.relatedTarget;
+    if (place.cell !== null && next instanceof Element && isEditable(next) && cellOf(next) === place.cell) return;
+    typing.left(field, place);
   };
 
   /**
@@ -277,8 +314,6 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   // is going on selects when its button goes up: selected now, the number would be dragged away by the rest of the press
   // (a press inside a selection starts a drag of the selected text), and the player could not select a part of it.
   const onFocusIn = (event: FocusEvent): void => {
-    // the cursor is in a field anew: nothing was typed into it since
-    typed = false;
     const field = numberFieldAt(event.target);
     if (field !== null && pressedNumber?.field !== field) field.select();
   };
@@ -389,7 +424,9 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     // A field has the cursor, but the player may be gone: he typed a price, pressed Enter and flies on, and his keys go
     // to the window. The keyboard was taken by the last press on a field (or on an entry button); a look while that take
     // is still on its way counts from the press too. Nothing is written per look, one line when the keyboard goes.
-    if (!keyboardUnused({ now, lastKeyAt, takenAt: lastPressAt, field: editedField(active, typed, listPressed) })) return;
+    // What was typed is read against the page as it is now, in every field that was typed into, not only this one.
+    const typed = typing.read((field) => ({ text: field.isConnected ? textOf(field) : null, refused: refusedAt(field) }));
+    if (!keyboardUnused({ now, lastKeyAt, takenAt: lastPressAt, field: editedField(active, listPressed), typed })) return;
     log.info('ui', `the keyboard was not used for ${KEYBOARD_IDLE_MS / 1000} s: it goes back to the game`);
     giveBack();
   }, WATCHDOG_MS);
@@ -403,7 +440,9 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   document.addEventListener('pointerout', onPointerOut, true);
   document.addEventListener('pointerdown', onPointerDown, true);
   document.addEventListener('focusin', onFocusIn, true);
+  document.addEventListener('focusout', onFocusOut, true);
   document.addEventListener('input', onInput, true);
+  window.addEventListener('input', onInput);
   document.addEventListener('mouseup', onMouseUp, true);
   document.addEventListener('pointercancel', onPressGone, true);
   document.addEventListener('dragend', onPressGone, true);
@@ -420,7 +459,9 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     document.removeEventListener('pointerout', onPointerOut, true);
     document.removeEventListener('pointerdown', onPointerDown, true);
     document.removeEventListener('focusin', onFocusIn, true);
+    document.removeEventListener('focusout', onFocusOut, true);
     document.removeEventListener('input', onInput, true);
+    window.removeEventListener('input', onInput);
     document.removeEventListener('mouseup', onMouseUp, true);
     document.removeEventListener('pointercancel', onPressGone, true);
     document.removeEventListener('dragend', onPressGone, true);
