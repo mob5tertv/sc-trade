@@ -1,3 +1,4 @@
+import { KEYBOARD_IDLE_MS } from '../ui/vm/keyboard-idle';
 import type { Scene, SceneApp } from './scenes';
 
 // The scenes of the keyboard: the player's ways to it, through the real listeners of `ui/keyboard.ts` and the strict
@@ -351,6 +352,31 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
         if (focus.length > 0) throw new Error(`${what}: a plain button asked Windows about the focus: ${focus.join(', ')}`);
         expectKeyboard(app, `after the click on ${what}`, { held: false, holds: 'idle', owner: 'game', focusable: false });
       }
+    },
+  },
+  {
+    // The player clicked the price of the open row and typed nothing: after `KEYBOARD_IDLE_MS` without a key the keyboard is the
+    // game's again, the way `Esc` gives it back (the field loses the cursor, the row stays open), with one line in the log. The scene
+    // takes that long. What keeps the keyboard is shown with the real keys: `--scene entry-ready --do "hover:.expand .in-price;
+    // click:.expand .in-price;type:24;wait:16500;eval:window.__keys()"` (typed and not saved: the keyboard stays).
+    name: 'keyboard-idle',
+    title: 'Клавиатура у окна, 15 секунд ни одной клавиши и в поле ничего не набрано: клавиатура сама вернулась игре, строка осталась раскрытой',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      watchKeys(app);
+      withText('.table button.line', 'MEDS').click();
+      await pause(100);
+      await clickField('.expand .in-price', 1);
+      expectKeyboard(app, 'after the click on the price', { held: true, owner: 'overlay', cursor: 'in-price' });
+      await pause(KEYBOARD_IDLE_MS - 1500);
+      expectKeyboard(app, 'a second and a half before the limit', { held: true, owner: 'overlay', cursor: 'in-price' });
+      await until('the keyboard to go back to the game by itself', () => !app.keyboardHeld);
+      await pause(100);
+      expectKeyboard(app, `after ${KEYBOARD_IDLE_MS / 1000} s without a key`, { held: false, owner: 'game', cursor: null });
+      if (document.querySelector('.expand') === null) throw new Error('the open row was folded when the keyboard went back');
+      const said = (window.__preview?.log ?? []).filter((line) => line.includes('[ui] the keyboard was not used'));
+      if (said.length !== 1) throw new Error(`the log must say once that the keyboard went back by itself, and it says so ${said.length} times`);
     },
   },
 ];

@@ -1,6 +1,7 @@
 import type { Logger } from '../data/logger';
 import { createHeldKeyGuard } from './vm/held-keys';
 import type { KeyboardHolds } from './vm/keyboard-holds';
+import { KEYBOARD_IDLE_MS, keyboardUnused, settlesTyping, type EditedField } from './vm/keyboard-idle';
 
 // The DOM side of the keyboard rules. The overlay never takes the keyboard from the game by itself; it
 // does so only while the player edits a text field. Everything else (who holds the keyboard, what taking
@@ -19,6 +20,8 @@ import type { KeyboardHolds } from './vm/keyboard-holds';
 //    the window stays open;
 //  - a watchdog gives the keyboard back when the field is gone (an answer was sent and the screen was redrawn), and
 //    while the window is armed keeps the remembered window (the one the focus goes back to) up to date;
+//  - the same watchdog gives the keyboard back, the way `Esc` does, when it is held and not used: no key for a while and
+//    nothing typed into the field that is not saved (the rule is `vm/keyboard-idle.ts`);
 //  - the guard against a game key that is still held down.
 
 /** The holder name of a text field being edited. */
@@ -101,6 +104,18 @@ function numberFieldAt(target: EventTarget | null): HTMLInputElement | null {
   return target instanceof HTMLInputElement && target.hasAttribute(SELECT_ON_FOCUS) ? target : null;
 }
 
+/** A field that holds text the player types: every field but a select, whose choice is applied at once and is never "typed and not saved". */
+const holdsTypedText = (field: Element | null): boolean => isEditable(field) && !(field instanceof HTMLSelectElement);
+
+/** The field with the cursor as the rule of the unused keyboard reads it; `typed` is what the listeners have kept. */
+function editedField(field: Element, typed: boolean): EditedField {
+  let text = '';
+  if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) text = field.value;
+  else if (holdsTypedText(field)) text = field.textContent ?? '';
+  // every field of the window marks a refused entry this way (the cells of the table, the form of a trade, the quick entry, the settings)
+  return { text, typed, refused: field.getAttribute('aria-invalid') === 'true' };
+}
+
 /**
  * Whether a press on a number field is the one that brings it the cursor (and so selects its number), or a click on a
  * field that is being edited already (the caret goes where the click was). `focused`: the field has the focus of the
@@ -142,13 +157,23 @@ export function resetHeldKeys(): void {
 
 /** Starts listening; returns the function that stops. */
 export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
+  /** When the player last pressed a field or a button that opens an entry: the press that takes the keyboard, or keeps it. */
   let lastPressAt = Number.NEGATIVE_INFINITY;
+  /** When a key was last pressed in the window (a key that the guard of the held keys let through). */
+  let lastKeyAt = Number.NEGATIVE_INFINITY;
+  /** Something was typed into the field with the cursor since it got the cursor, and no key has settled it (`settlesTyping`). */
+  let typed = false;
   // the window layer has already logged a failure of its own; the listeners have nothing to add
   const quietly = (job: Promise<void>): Promise<void> => job.catch(() => undefined);
 
   // Capture phase on the window: it runs before the field, the search list and the Esc handler.
   const onKeyDownCapture = (event: KeyboardEvent): void => {
-    if (!heldKeys.shouldSwallow(event)) return;
+    if (!heldKeys.shouldSwallow(event)) {
+      // a key of the player: the keyboard is in use. Enter and Esc deal with what was typed before the field hears of them
+      lastKeyAt = performance.now();
+      if (settlesTyping(event.key)) typed = false;
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     if (!heldKeyLogged) {
@@ -157,6 +182,20 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     }
   };
   const onKeyUpCapture = (event: KeyboardEvent): void => heldKeys.released(event.code);
+  // the player typed into a field (a key, a paste): what stands in it now is his, and not saved
+  const onInput = (event: Event): void => {
+    if (event.target instanceof Element && holdsTypedText(event.target)) typed = true;
+  };
+
+  /**
+   * The keyboard goes back to the game and the window stays as it is: the field loses the cursor (a field that suspends
+   * something while it has the cursor, like a key field of the settings, hears of it the usual way, by its blur) and the
+   * holder of the fields is released.
+   */
+  const giveBack = (): void => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    void quietly(holds.release(FIELD));
+  };
 
   /** What the pointer was last seen on, whatever it is; `null` when it is not over the window. */
   let under: Element | null = null;
@@ -224,6 +263,8 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   // is going on selects when its button goes up: selected now, the number would be dragged away by the rest of the press
   // (a press inside a selection starts a drag of the selected text), and the player could not select a part of it.
   const onFocusIn = (event: FocusEvent): void => {
+    // the cursor is in a field anew: nothing was typed into it since
+    typed = false;
     const field = numberFieldAt(event.target);
     if (field !== null && pressedNumber?.field !== field) field.select();
   };
@@ -308,8 +349,7 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape' || event.defaultPrevented || !holds.held) return;
     log.info('ui', 'escape: the keyboard goes back to the game');
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-    void quietly(holds.release(FIELD));
+    giveBack();
   };
 
   // The field may vanish with a redraw (an answer was sent): there is no event for that, so look.
@@ -322,10 +362,21 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     // While the pointer rests on a field the window that gets the focus back is the one remembered when the pointer
     // came; the foreground may have changed since. Quiet: no line unless it did.
     if (holds.state === 'armed') void quietly(holds.refreshRemembered());
-    if (!holds.held || isEditable(document.activeElement)) return;
-    if (performance.now() - lastPressAt < PRESS_GRACE_MS) return;
-    log.debug('ui', 'no field is being edited, the keyboard goes back to the game');
-    void quietly(holds.release(FIELD));
+    if (!holds.held) return;
+    const now = performance.now();
+    const active = document.activeElement;
+    if (active === null || !isEditable(active)) {
+      if (now - lastPressAt < PRESS_GRACE_MS) return;
+      log.debug('ui', 'no field is being edited, the keyboard goes back to the game');
+      void quietly(holds.release(FIELD));
+      return;
+    }
+    // A field has the cursor, but the player may be gone: he typed a price, pressed Enter and flies on, and his keys go
+    // to the window. The keyboard was taken by the last press on a field (or on an entry button); a look while that take
+    // is still on its way counts from the press too. Nothing is written per look, one line when the keyboard goes.
+    if (!keyboardUnused({ now, lastKeyAt, takenAt: lastPressAt, field: editedField(active, typed) })) return;
+    log.info('ui', `the keyboard was not used for ${KEYBOARD_IDLE_MS / 1000} s: it goes back to the game`);
+    giveBack();
   }, WATCHDOG_MS);
 
   window.addEventListener('keydown', onKeyDownCapture, true);
@@ -337,6 +388,7 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
   document.addEventListener('pointerout', onPointerOut, true);
   document.addEventListener('pointerdown', onPointerDown, true);
   document.addEventListener('focusin', onFocusIn, true);
+  document.addEventListener('input', onInput, true);
   document.addEventListener('mouseup', onMouseUp, true);
   document.addEventListener('pointercancel', onPressGone, true);
   document.addEventListener('dragend', onPressGone, true);
@@ -353,6 +405,7 @@ export function installKeyboard(holds: KeyboardHolds, log: Logger): () => void {
     document.removeEventListener('pointerout', onPointerOut, true);
     document.removeEventListener('pointerdown', onPointerDown, true);
     document.removeEventListener('focusin', onFocusIn, true);
+    document.removeEventListener('input', onInput, true);
     document.removeEventListener('mouseup', onMouseUp, true);
     document.removeEventListener('pointercancel', onPressGone, true);
     document.removeEventListener('dragend', onPressGone, true);
