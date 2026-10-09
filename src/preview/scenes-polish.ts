@@ -1,4 +1,5 @@
-import type { Scene } from './scenes';
+import type { Scene, SceneApp } from './scenes';
+import { hoverAndPress } from './scenes-keyboard';
 
 // The scenes of task 44, the last polish of the run and the trades (the persona review of an experienced hauler): the form of a
 // trade that marks a price that is not mine, the notice of a run that was closed, the badge that says the window holds the keyboard
@@ -20,7 +21,70 @@ async function click(selector: string, text?: string): Promise<void> {
 const HUR_L1 = 3;
 const ARC_L1 = 1;
 
+/** What the badge of the keyboard says, for `--do "eval:window.__keyboard()"`: whether the window holds the keyboard, whether the badge is drawn, who has the keyboard in the mocked Windows. */
+function watchKeyboard(app: SceneApp): void {
+  (window as unknown as { __keyboard: () => unknown }).__keyboard = () => ({
+    held: app.keyboardHeld,
+    badge: document.querySelector('.badge')?.textContent?.trim() ?? null,
+    owner: window.__preview?.state().keyboard,
+  });
+}
+
 export const POLISH_SCENES: readonly Scene[] = [
+  {
+    // The pointer comes over the field of the location and presses it: the window holds the keyboard, and the header says how to give it
+    // back. Another terminal is viewed, so «Я здесь» is there too: the fullest header. `--do "click:.badge;wait:300;eval:window.__keyboard()"`
+    // gives the keyboard back, and the badge goes away.
+    name: 'keyboard-badge',
+    title: 'Клавиатура у окна (клик в поле локации): в шапке «Esc — в игру», рядом «Я здесь»',
+    dataset: 'default',
+    act: async (app) => {
+      watchKeyboard(app);
+      await app.expand('preview');
+      app.setViewTerminal(5);
+      await pause(60);
+      await hoverAndPress('header input');
+    },
+  },
+  {
+    // the ship stands where the window looks (no «Я здесь»): the header has room for the whole plaque
+    name: 'keyboard-badge-plain',
+    title: 'Клавиатура у окна (клик в поле локации), «Я здесь» нет: в шапке плашка «Esc — в игру» целиком',
+    dataset: 'default',
+    act: async (app) => {
+      watchKeyboard(app);
+      await app.expand('preview');
+      await hoverAndPress('header input');
+    },
+  },
+  {
+    // the same in the narrowest window the settings allow
+    name: 'keyboard-badge-narrow',
+    title: 'Клавиатура у окна, самое узкое окно (380 px), виден «Я здесь»: знак в шапке не вытесняет кнопки',
+    dataset: 'default',
+    act: async (app) => {
+      watchKeyboard(app);
+      await app.updateSetting('panelWidth', 380);
+      await app.expand('preview');
+      app.setViewTerminal(5);
+      await pause(60);
+      await hoverAndPress('header input');
+    },
+  },
+  {
+    // the settings have a header of their own: a field of the settings holds the keyboard. The badge is in that header once
+    // `SettingsView.svelte` mounts `<KeyboardBadge />` there (`__keyboard().badge` is its text, `null` until then).
+    name: 'keyboard-badge-settings',
+    title: 'Клавиатура у окна в настройках (клик в поле «Вместимость»): знак в шапке настроек',
+    dataset: 'default',
+    act: async (app) => {
+      watchKeyboard(app);
+      await app.expand('preview');
+      app.openSettings();
+      await pause(60);
+      await hoverAndPress('#set-scuCapacity');
+    },
+  },
   {
     // A run goes on and its target is taken away; the player looks at ARC-L1, not at the terminal of the purchase: the header of the section
     // offers it as the target. `--do "click:.offer;wait:400;eval:..."` makes it one (the same `setTarget` as the button of an option).

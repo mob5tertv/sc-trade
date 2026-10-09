@@ -3,11 +3,15 @@
   import SearchBox from './components/SearchBox.svelte';
   import { app } from './state.svelte';
   import { searchTerminals, terminalSearchItems } from './vm/header';
+  import KeyboardBadge from './KeyboardBadge.svelte';
+  import { badgeForm } from './vm/keyboard-badge';
   import { windowHeader } from './vm/window-header';
   import WindowGrip from './WindowGrip.svelte';
 
   const header = $derived(windowHeader(app.reference, app.settings, app.viewTerminalId, app.pricesSyncedAt, app.uexOk, app.now, app.priceSync, app.referenceOk));
   const items = $derived(terminalSearchItems(app.reference, app.settings.starSystemId));
+  // the plaque «Esc — в игру» where it fits, the keyboard icon where it would squeeze the location under its floor
+  const badge = $derived(badgeForm(app.settings.panelWidth, header.hereTerminalId !== null));
   const locked = $derived(app.windowLocked);
   const lockTitle = $derived(locked ? 'Открепить окно' : 'Закрепить окно');
 
@@ -20,7 +24,8 @@
      main button and the icons. The ship and the system are in the settings. -->
 <header class="bar">
   <WindowGrip />
-  <div class="location">
+  <!-- while the badge of the keyboard is shown the field may give up its floor: the badge takes what is not there, no button is pushed out -->
+  <div class="location" class:squeezed={app.keyboardHeld}>
     <SearchBox
       {items}
       find={searchTerminals}
@@ -31,6 +36,7 @@
       onPick={(id) => app.setViewTerminal(id)}
     />
   </div>
+  <KeyboardBadge compact={badge === 'compact'} />
   {#if header.hereTerminalId !== null}
     {@const here = header.hereTerminalId}
     <button class="sc-btn sc-btn--act here" type="button" title="Корабль стоит здесь: сделать это место текущей локацией" onclick={() => app.setCurrentTerminal(here)}>
@@ -90,6 +96,11 @@
   .location {
     flex: 1 1 0;
     min-width: 60px;
+  }
+
+  /* the badge of the keyboard is there: the field gives up part of its floor before a button of the header would be pushed out */
+  .location.squeezed {
+    min-width: 24px;
   }
 
   .here,

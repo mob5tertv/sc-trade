@@ -923,6 +923,16 @@ class AppState {
     this.#touch();
   }
 
+  /**
+   * The badge «Esc — в игру» of the headers (it is there while `keyboardHeld`): the keyboard goes back to the game and the window stays
+   * open, the same as `Esc` in a field does it (`installKeyboard`). It takes no keyboard and puts the focus nowhere: the press is on a
+   * button, which is no field. Never rejects: a failure is logged by the window layer.
+   */
+  async giveKeyboardBack(): Promise<void> {
+    this.#log.info('ui', 'keyboard badge: the keyboard goes back to the game');
+    await this.keyboard.release('field').catch(() => undefined);
+  }
+
   /** Something needs the window to stay as it is (a dialog is open): it does not fold by itself while that lasts. */
   holdBusy(why: string): void {
     this.#busy.add(why);

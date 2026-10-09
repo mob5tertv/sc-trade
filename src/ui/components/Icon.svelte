@@ -1,6 +1,6 @@
 <script lang="ts" module>
   // The small line icons of the buttons of the window: one stroke, no fill, the colour of the text around them.
-  export type IconName = 'lock' | 'unlock' | 'gear' | 'minus' | 'back' | 'swap' | 'cross' | 'search';
+  export type IconName = 'lock' | 'unlock' | 'gear' | 'minus' | 'back' | 'swap' | 'cross' | 'search' | 'keyboard';
 </script>
 
 <script lang="ts">
@@ -27,6 +27,8 @@
     cross: ['M3.5 3.5l9 9M12.5 3.5l-9 9'],
     // a magnifier: the search over all the commodities of a terminal
     search: ['M6.8 2.5a4.3 4.3 0 1 0 0 8.6 4.3 4.3 0 0 0 0-8.6z', 'M10 10l4 4'],
+    // a keyboard: the case, a row of keys and the space bar (the window holds the keyboard)
+    keyboard: ['M1.5 3.5h13v9h-13z', 'M4 6.2h.01M6.7 6.2h.01M9.3 6.2h.01M12 6.2h.01', 'M4.5 10h7'],
   };
 </script>
 
