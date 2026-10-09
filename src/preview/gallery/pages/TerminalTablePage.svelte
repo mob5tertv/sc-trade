@@ -60,6 +60,9 @@
   ]));
   const longCells = roiCells(longRoi, 'buy', data.reference, threshold);
 
+  // the longest name there is, in the hold with a five-digit quantity
+  const longHold: CargoLine[] = [{ commodityId: longRows[0].commodityId, scu: 12_345, avgBuyPrice: 1_234_567 }];
+
   // A row with no price at all: the table never draws one (a side has a cell only when a price can be estimated), so it is made up
   // from the UEX row of Gold on the sell side with the price taken away, to see what the field says when there is nothing to correct.
   const gold = data.rows.find((r) => r.code === 'GOLD');
@@ -175,6 +178,9 @@
 </Frame>
 <Frame name="sort-cargo" caption="Lorville, sell, MEDS and STIM in the hold · «ROI» clicked: the hold stays first (STIM 70 % before MEDS 54 %, each group by ROI), the others after it by ROI" act={(frame) => sortBy(frame, 'ROI')}>
   <TableDemo rows={lorville.rows} side="sell" roi={lorvilleSell} cargo={hold} />
+</Frame>
+<Frame name="sort-cargo-narrow" width={380} caption="the same in the narrowest window (380 px): the mark of the hold and the head «ROI» with its arrow take the room of the names, the columns of numbers stay" act={(frame) => sortBy(frame, 'ROI')}>
+  <TableDemo rows={longRows} side="sell" roi={longCells} cargo={longHold} />
 </Frame>
 <Frame name="sort-draft" caption="Lorville, sell · PFOO open, «12x» typed and not saved, then «ROI» clicked: the row moved up to its place by ROI, is still open and holds its text" act={sortWithDraft}>
   <TableDemo rows={lorville.rows} side="sell" selected={lorvilleId('PFOO')} roi={lorvilleSell} />
