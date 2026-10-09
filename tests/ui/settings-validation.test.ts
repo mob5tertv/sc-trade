@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, type Settings } from '../../src/core/settings';
-import { parseNumberText, validateSetting } from '../../src/ui/vm/settings-validation';
+import { draftAfterSave, parseNumberText, validateSetting } from '../../src/ui/vm/settings-validation';
 
 const S = DEFAULT_SETTINGS;
 const withKeys = (keys: Partial<Settings>): Settings => ({ ...S, ...keys });
@@ -226,6 +226,44 @@ describe('validateSetting: choices', () => {
     expect(validateSetting('stripCorner', 'middle' as Settings['stripCorner'], S)).not.toBeNull();
     expect(validateSetting('logLevel', 'warn', S)).toBeNull();
     expect(validateSetting('logLevel', 'trace' as Settings['logLevel'], S)).not.toBeNull();
+  });
+});
+
+describe('draftAfterSave: what a field keeps of the text typed into it once its save has settled', () => {
+  it('a number that was saved leaves nothing: the field shows the saved value', () => {
+    expect(draftAfterSave('number', '2400', '2400', null)).toBeUndefined();
+  });
+
+  it('a number that was refused stays in the field, to be put right, with the reason under it', () => {
+    expect(draftAfterSave('number', 'abc', 'abc', 'Введи число')).toBe('abc');
+  });
+
+  it('a key that was saved leaves nothing: the field shows the saved key', () => {
+    expect(draftAfterSave('key', 'F9', 'F9', null)).toBeUndefined();
+  });
+
+  it('a key that was refused leaves nothing either: the field goes back to the saved key (or to none), it must not look assigned; the reason stays under it', () => {
+    expect(draftAfterSave('key', 'F9', 'F9', 'Эта клавиша уже назначена другому действию')).toBeUndefined();
+    expect(draftAfterSave('key', '', '', 'Клавиша — это текст')).toBeUndefined();
+  });
+
+  it('what was typed meanwhile (a second key pressed at once) is the next change\'s and stays, whatever the first one came to', () => {
+    expect(draftAfterSave('key', 'F10', 'F9', 'Эта клавиша уже назначена другому действию')).toBe('F10');
+    expect(draftAfterSave('key', 'F10', 'F9', null)).toBe('F10');
+    expect(draftAfterSave('number', '25', '2', null)).toBe('25');
+  });
+
+  it('a field that was never typed into has nothing to keep (a choice from a list)', () => {
+    expect(draftAfterSave('number', undefined, undefined, null)).toBeUndefined();
+    expect(draftAfterSave('number', undefined, undefined, 'Неизвестный угол')).toBeUndefined();
+  });
+});
+
+describe('the flag scaleNoticeShown (version 1.1.1)', () => {
+  it('is a yes or no, and a value that is none is refused', () => {
+    expect(validateSetting('scaleNoticeShown', true, S)).toBeNull();
+    expect(validateSetting('scaleNoticeShown', false, S)).toBeNull();
+    expect(validateSetting('scaleNoticeShown', 'yes' as unknown as boolean, S)).not.toBeNull();
   });
 });
 

@@ -67,7 +67,7 @@ import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
 import { bindNeeded, boundAfter, withoutErrorsOfEmptyKeys } from './vm/trigger-suspension';
 import { uexErrorText } from './vm/uex-error';
-import { effectiveScalePct } from './vm/ui-scale';
+import { effectiveScalePct, scaleNoticeStep, scaleNoticeText } from './vm/ui-scale';
 import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 
 // The one application state. Everything the screens show lives here, and every action of the player
@@ -731,7 +731,10 @@ class AppState {
       }
       this.mode = next;
       this.#touch();
-      if (next === 'expanded') whenExpanded?.();
+      if (next === 'expanded') {
+        whenExpanded?.();
+        void this.#announceScale(); // the one word on the larger window, where it can be read
+      }
       // before the first show the first show decides what is visible
       if (!this.#windowReady) return;
       try {
@@ -1586,6 +1589,30 @@ class AppState {
     }
   }
 
+  /**
+   * The one word on the larger window (`scaleNoticeStep`): once, when «Авто» has made the window larger than 100 %, the notice line says what it
+   * picked and where to change it, and the notice stays until it is closed or another message takes its place. It is said where it can be read (the
+   * expanded window, once the start is over) and never over a message that is up (it waits for the next expansion). The flag `scaleNoticeShown`
+   * is written after the notice is on the screen; where the player chose the scale himself only the flag is written. Quiet and never rejects:
+   * a write that fails is one line in the log, and the word may then come once more.
+   */
+  async #announceScale(): Promise<void> {
+    try {
+      if (this.phase !== 'ready') return;
+      const step = scaleNoticeStep(this.settings, this.uiScalePct);
+      if (step === 'none') return;
+      if (step === 'show') {
+        if (this.mode !== 'expanded' || this.notice !== null) return;
+        this.#log.info('ui', 'scale notice shown', { pct: this.uiScalePct });
+        this.notify(scaleNoticeText(this.uiScalePct), 'info', null);
+      }
+      await saveSetting(this.#syncDeps().db, this.#log, 'scaleNoticeShown', true);
+      this.settings = { ...this.settings, scaleNoticeShown: true };
+    } catch (err) {
+      this.#log.warn('ui', 'cannot say or remember the word on the larger window', { err });
+    }
+  }
+
   /** The button "Настроить" of the hint about the keys: the settings open with the group "Клавиши" unfolded, and the hint has done its work. */
   async openKeysSettings(): Promise<void> {
     this.#log.info('ui', 'keys hint: open the settings of the keys');
@@ -1815,6 +1842,8 @@ class AppState {
     await this.#applySetting(key);
     // a key given to "Взлетел" or "Прилетел" means the player knows the keys: the hint after the first closed run is never needed (written quietly)
     if (assignsMarkKey(key, value)) await this.#rememberKeysHint();
+    // «Авто» chosen in the settings may make the window larger right now; a scale the player picks himself is remembered quietly (no word on it, ever)
+    if (key === 'uiScale') await this.#announceScale();
     return null;
   }
 

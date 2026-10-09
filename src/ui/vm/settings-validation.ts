@@ -29,6 +29,20 @@ export function parseNumberText(text: string): number {
   return /^-?(\d+\.?\d*|\.\d+)$/.test(compact) ? Number(compact) : NaN;
 }
 
+/**
+ * What a field of the settings keeps of the text typed into it (`draft`) once the save of it has settled (`typedThen` is what stood there when the save
+ * began; `error` is the sentence the save came to, `null` when it was saved). `undefined`: nothing is kept, the field shows the saved value.
+ *  - What was typed meanwhile (a second key pressed at once) is the next change's: it stays.
+ *  - A number that was saved leaves nothing; a number that was refused stays, to be put right, with the reason under it.
+ *  - A key leaves nothing either way (version 1.1.1): a key that was refused is not the field's value, so the field goes back to the saved key (or to
+ *    none) and does not look as if it were assigned; the reason stays under it until the player starts again.
+ */
+export function draftAfterSave(kind: 'number' | 'key', draft: string | undefined, typedThen: string | undefined, error: string | null): string | undefined {
+  if (draft !== typedThen) return draft;
+  if (kind === 'key') return undefined;
+  return error === null ? undefined : draft;
+}
+
 /** 'Ctrl+Alt+T' written in any case, spacing and order of modifiers → one comparable text; '' for no key. */
 function normalizeKey(text: string): string {
   const parts = text.split('+').map((p) => p.trim().toLowerCase()).filter((p) => p !== '');
@@ -109,6 +123,7 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
     case 'showStrip':
     case 'windowLocked':
     case 'keysHintShown':
+    case 'scaleNoticeShown':
       return typeof v === 'boolean' ? null : 'Нужно да или нет';
 
     case 'vehicleId':

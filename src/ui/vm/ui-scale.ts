@@ -67,6 +67,28 @@ export function monitorToKnow(reading: { width: number; height: number; source: 
   return { width: reading.width, height: reading.height };
 }
 
+/** What the expansion of the window (and the choice of «Авто» in the settings) does about the one-time word on the larger window: say it, only write the flag, or nothing. */
+export type ScaleNoticeStep = 'show' | 'remember' | 'none';
+
+/**
+ * Once, when «Авто» has made the window larger than 100 % (version 1.1.1: at 1440p it is a quarter larger than it was, and a player who picked a narrow
+ * window so that it would not be in the way should be told where to change that). `pct` is the percent the window is zoomed to now.
+ *  - the flag is set already: nothing, ever;
+ *  - the player chose a scale himself: he knows it, so the flag is written quietly and nothing is said (later «Авто» will not speak of a scale he used);
+ *  - «Авто» keeps 100 %: nothing got larger, nothing is said and nothing is remembered (another monitor may make it larger later);
+ *  - «Авто» picked more: the word.
+ */
+export function scaleNoticeStep(s: { uiScale: number; scaleNoticeShown: boolean }, pct: number): ScaleNoticeStep {
+  if (s.scaleNoticeShown) return 'none';
+  if (uiScaleChoice(s.uiScale) !== UI_SCALE_AUTO) return 'remember';
+  return pct > AUTO_DEFAULT_PCT ? 'show' : 'none';
+}
+
+/** The word on the larger window, for the notice line. */
+export function scaleNoticeText(pct: number): string {
+  return `Окно стало крупнее: масштаб «Авто» выбрал ${pct} %. Изменить — Настройки → Окно → Масштаб`;
+}
+
 /** The tooltip of the field; for «Авто» it says what was picked and by what. */
 export function uiScaleHint(value: number, monitor: Size | null): string {
   const what = 'Размер всего окна и мини-строки.';

@@ -13,7 +13,7 @@
   import { captureKey } from './vm/key-capture';
   import { SETTING_HINTS } from './vm/settings-hints';
   import { triggerSuspension } from './vm/trigger-suspension';
-  import { parseNumberText } from './vm/settings-validation';
+  import { draftAfterSave, parseNumberText } from './vm/settings-validation';
   import { UI_SCALES, uiScaleChoice, uiScaleHint, uiScaleLabel } from './vm/ui-scale';
   import WindowGrip from './WindowGrip.svelte';
 
@@ -68,11 +68,12 @@
    * Settles a field: the saved value (or the error) replaces what was typed. Only what was typed when the saving began: a text typed
    * meanwhile (a second key pressed at once) is the next change's and stays until that one has settled.
    */
-  async function settle(key: string, save: () => Promise<string | null>): Promise<void> {
+  async function settle(key: string, save: () => Promise<string | null>, kind: 'number' | 'key' = 'number'): Promise<void> {
     const typedThen = drafts[key];
     const error = await save();
     errors[key] = error;
-    if (error === null && drafts[key] === typedThen) delete drafts[key];
+    // a number that was refused stays to be put right; a key that was refused is not the field's value, so the field goes back to the saved one
+    if (draftAfterSave(kind, drafts[key], typedThen, error) === undefined) delete drafts[key];
   }
 
   async function commitNumber(key: NumberKey): Promise<void> {
@@ -86,7 +87,7 @@
   async function commitTrigger(key: TriggerKey): Promise<void> {
     const text = drafts[key];
     if (text === undefined) return;
-    await settle(key, () => app.updateSetting(key, text.trim()));
+    await settle(key, () => app.updateSetting(key, text.trim()), 'key');
   }
 
   // The assigned keys are global: pressing one in a key field would fire its action. So they are suspended while a key field has the
@@ -132,6 +133,7 @@
     if (taken.kind === 'pass') return;
     event.preventDefault();
     if (event.repeat) return;
+    errors[key] = null; // the reason of the last refusal (a key that is taken) stays until the player starts again
     if (taken.kind === 'refuse') {
       say(key, taken.reason);
       return;

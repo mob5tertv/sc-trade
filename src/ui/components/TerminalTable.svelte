@@ -417,6 +417,10 @@
     --col-scu: 44px;
     --col-roi: 32px;
     --col-gap: 4px;
+    /* the head is 18 px high; the area of press of its sorting buttons is no smaller than 28 × 24 (a transparent extension, see `.sort`) */
+    --head-h: 18px;
+    --hit-w: 28px;
+    --hit-h: 24px;
   }
 
   .grid {
@@ -427,8 +431,11 @@
     padding: 0 var(--sc-pad-x);
   }
 
+  /* `z-index`: the head stands over the rows, so that the transparent extension of a sorting button below the head is pressed as the head, not as the row under it */
   .head {
-    height: 18px;
+    position: relative;
+    z-index: 1;
+    height: var(--head-h);
     border-bottom: 1px solid var(--sc-border);
     color: var(--sc-muted);
     white-space: nowrap;
@@ -450,12 +457,17 @@
     justify-content: flex-end;
   }
 
-  /* The negative margin takes back the letter-spacing that follows the last letter, so that the label ends where the numbers do. */
+  /* The negative margin takes back the letter-spacing that follows the last letter, so that the label ends where the numbers do.
+     The area of press is no smaller than 28 × 24 px (`--hit-w`, `--hit-h`) though the label is 17 × 17: the width from `min-width` (the label stays at
+     the right edge, and 28 is within the column of 32, so no column changes), the height from a transparent `::after` that reaches below the head. */
   .sort {
+    position: relative;
     display: inline-flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 3px;
     height: 100%;
+    min-width: var(--hit-w);
     margin-right: -0.08em;
     padding: 0;
     border: 0;
@@ -466,6 +478,15 @@
     text-transform: inherit;
     white-space: nowrap;
     cursor: pointer;
+  }
+
+  .sort::after {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: var(--hit-h);
+    content: '';
   }
 
   .sort:hover {

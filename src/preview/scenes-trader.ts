@@ -37,6 +37,24 @@ function watchKeysHint(app: SceneApp): void {
   w.__unfold = () => app.expand('preview');
 }
 
+/**
+ * What the word on the larger window has done, for `--do "eval:window.__scaleNotice()"`: the percent the window is zoomed to, the setting and its flag, and what
+ * the notice line says. `window.__fold()` / `window.__unfold()` as in `watchKeysHint`; `window.__setScale(125)` is the player choosing a scale in the settings.
+ */
+function watchScaleNotice(app: SceneApp): void {
+  const w = window as unknown as { __scaleNotice: () => unknown; __fold: () => Promise<void>; __unfold: () => Promise<void>; __setScale: (pct: number) => Promise<unknown> };
+  w.__scaleNotice = () => ({
+    pct: app.uiScalePct,
+    setting: app.settings.uiScale,
+    flag: app.settings.scaleNoticeShown,
+    notice: app.notice === null ? null : { text: app.notice.text, button: app.notice.action?.label ?? null },
+    mode: app.mode,
+  });
+  w.__fold = () => app.collapse('preview');
+  w.__unfold = () => app.expand('preview');
+  w.__setScale = (pct) => app.updateSetting('uiScale', pct);
+}
+
 // ids of the preview data: Medical Supplies 1, Stims 8; terminals: ARC-L1 1
 const MEDS = 1;
 const STIM = 8;
@@ -193,6 +211,32 @@ export const TRADER_SCENES: readonly Scene[] = [
       watchKeysHint(app);
       await app.updateSetting('keysHintShown', true);
       await sellOut(app);
+    },
+  },
+  {
+    // «Авто» on a monitor of 1440 picks 125 %: the first expansion says so, once (`--monitor 2560x1440@1`; `--do "eval:window.__scaleNotice()"`). With `--monitor 1920x1080@1`
+    // «Авто» keeps 100 % and there is no word; `--do "eval:window.__setScale(125)"` first, then `__fold()` / `__unfold()`: the player chose the scale, no word and the flag is set
+    name: 'scale-notice',
+    title: 'Первое разворачивание при масштабе «Авто» больше 100 %: «Окно стало крупнее: масштаб «Авто» выбрал 125 %…» с крестиком',
+    dataset: 'default',
+    act: async (app) => {
+      watchScaleNotice(app);
+      await app.expand('preview');
+      await pause(300);
+    },
+  },
+  {
+    // F9 is the key of "Взлетел"; the field of "Прилетел" is asked for the same key: `--do "click:#set-hotkeyArrive;press:F9;wait:300"`. The key is refused, the field goes back to what
+    // is saved (nothing: «нажми клавишу»), and the reason stays under it until the player presses another key
+    name: 'keys-refused',
+    title: 'Настройки → Клавиши: клавиша, которая уже назначена другому действию, отказана — поле возвращается к сохранённому, причина остаётся под ним',
+    dataset: 'default',
+    act: async (app) => {
+      await app.updateSetting('hotkeyDepart', 'F9');
+      await app.expand('preview');
+      app.openSettings();
+      await app.toggleSection('settings:keys');
+      await pause(100);
     },
   },
   {
