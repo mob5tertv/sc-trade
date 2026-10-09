@@ -14,6 +14,7 @@
   import { SETTING_HINTS } from './vm/settings-hints';
   import { triggerSuspension } from './vm/trigger-suspension';
   import { parseNumberText } from './vm/settings-validation';
+  import { UI_SCALES, uiScaleHint, uiScaleLabel } from './vm/ui-scale';
   import WindowGrip from './WindowGrip.svelte';
 
   type NumberKey =
@@ -165,7 +166,7 @@
     fresh: `${s.hotMin} / ${s.warmMin} / ${s.coolingMin} мин`,
     routes: `вариантов: ${s.topN} · ROI от ${s.roiHighlightPct}%`,
     keys: [s.hotkeyPanel, s.hotkeyDepart, s.hotkeyArrive].filter((key) => key !== '').join(', ') || 'не назначены',
-    window: `${s.panelWidth} px · ${Math.round(s.opacity * 100)}%`,
+    window: `${uiScaleLabel(s.uiScale, app.scaleMonitor)} · ${s.panelWidth} px · ${Math.round(s.opacity * 100)}%`,
     data: `журнал: ${s.logLevel}`,
   });
 </script>
@@ -281,6 +282,20 @@
     </select>
   </div>
   {@render numberField('panelWidth', 'Ширина окна, px (380–640)')}
+  <div class="row" title={uiScaleHint(app.settings.uiScale, app.scaleMonitor)}>
+    <label for="set-ui-scale">Масштаб</label>
+    <select
+      id="set-ui-scale"
+      class="sc-input field"
+      value={app.settings.uiScale}
+      onchange={(event) => settle('uiScale', () => app.updateSetting('uiScale', Number(event.currentTarget.value)))}
+    >
+      {#each UI_SCALES as value (value)}
+        <option {value}>{uiScaleLabel(value, app.scaleMonitor)}</option>
+      {/each}
+    </select>
+  </div>
+  {#if errors.uiScale}<p class="error" role="alert">{errors.uiScale}</p>{/if}
   {@render numberField('idleCollapseSec', 'Сворачивать через, с', {
     placeholder: '0 — не сворачивать',
     title: 'Окно само сворачивается в мини-строку, когда курсор ушёл с него и прошло это время. 0 — не сворачивать.',

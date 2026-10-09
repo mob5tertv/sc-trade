@@ -17,6 +17,12 @@ export interface Settings {
   /** Width of the expanded window in px; its height follows its content. */
   panelWidth: number;
   /**
+   * The size of the whole window (the mini bar, the expanded view, the settings) as a zoom in whole percent: 100, 110, 125 or 150.
+   * 0 is «Авто»: the interface picks one of them by the height of the primary monitor (`src/ui/vm/ui-scale.ts`).
+   * `panelWidth` and the offsets below stay in the player's own pixels; on the screen the window is as big as they say × the zoom.
+   */
+  uiScale: number;
+  /**
    * Where the window stands, mini bar and expanded view alike: the anchor corner of the monitor, and the
    * distances (logical px) of the window from that corner's two edges. The player drags the window; the
    * anchor corner of the window stays fixed while its size changes.
@@ -44,6 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sort: 'uecPerHour', nearby: false,
   hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '',
   panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
+  uiScale: 0,
   idleCollapseSec: 40, openSections: 'terminal,options,settings:ship',
   opacity: 0.92, showStrip: true, logLevel: 'debug',
   serverChangedAt: null, currentTerminalId: null, targetTerminalId: null,
