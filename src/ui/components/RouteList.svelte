@@ -91,7 +91,7 @@
             <span class="end">{row.bothEnds ? row.origin : row.terminal}</span>
             {#if row.bothEnds}<span class="arrow">→</span><span class="end">{row.dest}</span>{/if}
             {#if row.isTarget}<span class="goal" title="Цель рейса">цель</span>{/if}
-            {#if row.stockNote}<span class="unsure" title={row.stockNote}>?</span>{/if}
+            {#if row.stockNote}<span class="unsure" role="img" aria-label={row.stockNote} title={row.stockNote}>?</span>{/if}
           </span>
           <span class="cell sc-num" class:hint={!row.priceIsOwn}>
             <TrendMark trend={row.trend} />

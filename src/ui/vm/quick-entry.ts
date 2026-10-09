@@ -27,7 +27,7 @@ const REJECTION_TEXT: Record<Rejection, string> = {
 /** What the line says under the quick entry when it refuses: a few words, the reason and what it takes. */
 export const rejectionText = (reason: Rejection): string => REJECTION_TEXT[reason];
 
-export type QuickEntryInput ={ ok: true; price: number; scu: number | null } | { ok: false; price: boolean; scu: boolean };
+export type QuickEntryInput = { ok: true; price: number; scu: number | null } | { ok: false; price: boolean; scu: boolean };
 
 /**
  * The price is required; the quantity is optional, so an empty one is "no quantity reading in this observation".
