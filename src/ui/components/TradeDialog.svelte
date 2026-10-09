@@ -11,6 +11,12 @@
     /** The quantity and the price the form starts with; `null` leaves the field empty. */
     defaultScu: number | null;
     defaultPrice: number | null;
+    /**
+     * The price the form starts with is mine (a price I saw, not cold). `false`: it is the one of UEX, or mine gone cold, that the
+     * row shows: it stands in the field muted, as in the field of the expanded row, until the player touches it. The row above
+     * already says whose it is and how old (its plaque), so the form says nothing more. Default: mine, nothing is marked.
+     */
+    defaultPriceIsOwn?: boolean;
     /** One muted line under the fields: what the trade is (an income says that the goods are not in the hold); `null` for none. */
     note?: string | null;
     /**
@@ -24,7 +30,7 @@
     /** The form was confirmed with a number that cannot be a trade (nothing was written): which of the two fields was marked. */
     onReject?: (fields: { scu: boolean; price: boolean }) => void;
   }
-  let { title, side, defaultScu, defaultPrice, note = null, error, onConfirm, onCancel, onReject }: Props = $props();
+  let { title, side, defaultScu, defaultPrice, defaultPriceIsOwn = true, note = null, error, onConfirm, onCancel, onReject }: Props = $props();
 
   // Seeded from the defaults once, when the form opens: they are plain numbers in the fields, easy to overtype. What the
   // player typed stays when the owner hands in a new `error` (a derived text would start again from the defaults).
@@ -32,6 +38,10 @@
   let priceText = $state(untrack(() => (defaultPrice === null ? '' : String(defaultPrice))));
   let badScu = $state(false);
   let badPrice = $state(false);
+  // The price of somebody else stays muted until the player puts his hand to the field: from then on it is his number.
+  let priceTouched = $state(false);
+  const foreign = $derived(!defaultPriceIsOwn && !priceTouched && defaultPrice !== null);
+  const priceHint = $derived(foreign ? 'Цена за SCU, UEC: не твоя (UEX или давняя), поправь её, если видишь другую' : 'Цена за SCU, UEC');
 
   // A double click on the button or a held Enter must not write the trade twice while the owner is still writing it. The
   // form takes a new confirmation when the owner says the write failed (`error` is a text again: after the `null` the owner
@@ -93,15 +103,16 @@
     <span class="unit">SCU ×</span>
     <input
       class="sc-input sc-num in-price"
+      class:foreign
       type="text"
       inputmode="numeric"
       autocomplete="off"
       aria-label="Цена за SCU, UEC"
-      title="Цена за SCU, UEC"
+      title={priceHint}
       placeholder="UEC"
       aria-invalid={badPrice ? 'true' : undefined}
       value={priceText}
-      oninput={(e) => { priceText = e.currentTarget.value; badPrice = false; confirmed = false; }}
+      oninput={(e) => { priceText = e.currentTarget.value; priceTouched = true; badPrice = false; confirmed = false; }}
       onkeydown={onKeydown}
     />
     <span class="unit">UEC</span>
@@ -142,6 +153,11 @@
   .in-price {
     flex: none;
     width: 58px;
+  }
+
+  /* a price that is not mine (UEX, or mine gone cold) reads as what the row says: muted, as in the field of the expanded row */
+  .in-price.foreign {
+    color: var(--sc-muted);
   }
 
   .unit {

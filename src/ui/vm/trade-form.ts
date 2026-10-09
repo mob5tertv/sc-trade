@@ -1,6 +1,7 @@
 import { quantity } from '../../core/routes';
 import { cargoOf } from '../../core/run';
 import type { CargoLine, RunWithEvents, Side } from '../../core/types';
+import { priceIsOwn } from './inputs';
 import { shownPrice } from './terminal-rows';
 import type { Cell } from './terminal-rows';
 
@@ -11,6 +12,8 @@ export interface TradeDefaults {
   /** `null`: nothing can be offered, the field is empty and the player types. */
   scu: number | null;
   price: number | null;
+  /** The price is mine (a price I saw, not cold). `false`: it is the one of UEX, or mine gone cold, that the row shows; the form marks it until it is touched. */
+  priceIsOwn: boolean;
 }
 
 interface DefaultsInput {
@@ -33,9 +36,10 @@ interface DefaultsInput {
  */
 export function tradeDefaults(i: DefaultsInput): TradeDefaults {
   const price = shownPrice(i.cell);
+  const own = priceIsOwn(i.cell);
   if (i.side === 'sell') {
     const onBoard = i.cargo.find((line) => line.commodityId === i.commodityId)?.scu ?? 0;
-    return { scu: onBoard > 0 ? onBoard : null, price };
+    return { scu: onBoard > 0 ? onBoard : null, price, priceIsOwn: own };
   }
   const held = i.cargo.reduce((sum, line) => sum + line.scu, 0);
   const offered = quantity({
@@ -44,7 +48,7 @@ export function tradeDefaults(i: DefaultsInput): TradeDefaults {
     budget: i.budget,
     buyPrice: price ?? 0,
   });
-  return { scu: Number.isFinite(offered) && offered > 0 ? offered : null, price };
+  return { scu: Number.isFinite(offered) && offered > 0 ? offered : null, price, priceIsOwn: own };
 }
 
 /**

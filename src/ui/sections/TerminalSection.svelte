@@ -250,6 +250,7 @@
       side={tradeState.side}
       defaultScu={tradeState.defaults.scu}
       defaultPrice={tradeState.defaults.price}
+      defaultPriceIsOwn={tradeState.defaults.priceIsOwn}
       note={tradeState.mode === 'income' ? INCOME_NOTE : null}
       error={tradeState.error}
       onConfirm={(trade) => void confirmTrade(trade)}

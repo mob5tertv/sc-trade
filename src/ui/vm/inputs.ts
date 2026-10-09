@@ -21,9 +21,14 @@ export interface EditBase { price: number | null; scu: number | null; priceIsOwn
  * path (`parsePrice`) would refuse. A price that rounds to zero is no price here: nothing can be confirmed, the price is required.
  */
 export function cellEditBase(cell: Pick<Cell, 'own' | 'hint' | 'ownScu' | 'ownScuBase'>): EditBase {
-  const price = shownPrice(cell);
-  return { price, scu: cell.ownScuBase === null ? cell.ownScu : null, priceIsOwn: cell.own !== null && price !== null };
+  return { price: shownPrice(cell), scu: cell.ownScuBase === null ? cell.ownScu : null, priceIsOwn: priceIsOwn(cell) };
 }
+
+/**
+ * Whether the price a cell offers to be corrected or confirmed (`shownPrice`) is mine: a price I saw that is not cold, and there is
+ * one to offer. The one definition of the muted field of the expanded row and of the form of a trade.
+ */
+export const priceIsOwn = (cell: Pick<Cell, 'own' | 'hint'>): boolean => cell.own !== null && shownPrice(cell) !== null;
 
 /** The texts of the inputs for a base: plain digits (no grouping, so they are easy to edit), empty for unknown. */
 export function baseTexts(base: EditBase): { price: string; scu: string } {
