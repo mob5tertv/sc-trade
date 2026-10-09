@@ -14,7 +14,7 @@
   import { SETTING_HINTS } from './vm/settings-hints';
   import { triggerSuspension } from './vm/trigger-suspension';
   import { parseNumberText } from './vm/settings-validation';
-  import { UI_SCALES, uiScaleHint, uiScaleLabel } from './vm/ui-scale';
+  import { UI_SCALES, uiScaleChoice, uiScaleHint, uiScaleLabel } from './vm/ui-scale';
   import WindowGrip from './WindowGrip.svelte';
 
   type NumberKey =
@@ -287,7 +287,7 @@
     <select
       id="set-ui-scale"
       class="sc-input field"
-      value={app.settings.uiScale}
+      value={uiScaleChoice(app.settings.uiScale)}
       onchange={(event) => settle('uiScale', () => app.updateSetting('uiScale', Number(event.currentTarget.value)))}
     >
       {#each UI_SCALES as value (value)}

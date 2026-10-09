@@ -31,6 +31,7 @@
     // once per frame; the content is measured in CSS pixels and rounded up so that nothing is cut off.
     // `getBoundingClientRect` measures on the screen, zoom included (width × scale); the observer below reports the size in the
     // root's own pixels, which a change of the scale does not change, so a change of the scale is measured by the state (`#refit`).
+    // This relies on the standard CSS zoom (Chromium / WebView2 128 or newer): there `getBoundingClientRect` returns the zoomed size.
     let frame = 0;
     const size = () => {
       const { width, height } = element.getBoundingClientRect(); // forces the layout, painting or not

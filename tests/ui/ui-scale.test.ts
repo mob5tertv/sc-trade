@@ -6,7 +6,8 @@ import { logicalSize, parseMonitor } from '../../src/preview/monitor';
 import { affectsLookup } from '../../src/ui/vm/lookup';
 import { validateSetting } from '../../src/ui/vm/settings-validation';
 import {
-  autoScalePct, effectiveScalePct, scaleFactor, UI_SCALE_AUTO, UI_SCALES, uiScaleHint, uiScaleLabel,
+  autoScalePct, effectiveScalePct, monitorToKnow, PRIMARY_MONITOR, scaleFactor, UI_SCALE_AUTO, UI_SCALES, uiScaleChoice, uiScaleHint,
+  uiScaleLabel,
 } from '../../src/ui/vm/ui-scale';
 import { migratedDb } from '../helpers/test-db';
 
@@ -89,6 +90,33 @@ describe('effectiveScalePct: what the window is really zoomed to', () => {
   });
 });
 
+describe('monitorToKnow: what the start tells the scale before the window is shown', () => {
+  const reading = (width: number, height: number, source: string) => ({ width, height, scaleFactor: 1, source });
+
+  it('takes the reading of the primary monitor, in logical pixels as it is', () => {
+    expect(monitorToKnow(reading(2560, 1440, PRIMARY_MONITOR))).toEqual({ width: 2560, height: 1440 });
+    expect(monitorToKnow(reading(1920, 1080, 'primary monitor'))).toEqual({ width: 1920, height: 1080 });
+  });
+
+  it('makes «Авто» pick at once: a 3840x2160 monitor at the Windows scale 150 % is logical 2560x1440, 125 %', () => {
+    const logical = logicalOf('3840x2160@1.5');
+    const known = monitorToKnow(reading(logical.width, logical.height, PRIMARY_MONITOR));
+    expect(effectiveScalePct(UI_SCALE_AUTO, known)).toBe(125);
+    expect(effectiveScalePct(UI_SCALE_AUTO, monitorToKnow(reading(1920, 1080, PRIMARY_MONITOR)))).toBe(100);
+  });
+
+  it('does not take the fallback reading of the screen of the webview: that is the screen the window is on, not the primary monitor the window layer places it on', () => {
+    expect(monitorToKnow(reading(2560, 1440, 'screen'))).toBeNull();
+  });
+
+  it('takes no reading that has no usable size', () => {
+    expect(monitorToKnow(reading(0, 0, PRIMARY_MONITOR))).toBeNull();
+    expect(monitorToKnow(reading(2560, NaN, PRIMARY_MONITOR))).toBeNull();
+    expect(monitorToKnow(reading(Infinity, 1440, PRIMARY_MONITOR))).toBeNull();
+    expect(monitorToKnow(reading(2560, -1, PRIMARY_MONITOR))).toBeNull();
+  });
+});
+
 describe('scaleFactor', () => {
   it('is the percent as a factor of the zoom', () => {
     expect(scaleFactor(100)).toBe(1);
@@ -113,6 +141,21 @@ describe('the words of the field', () => {
   it('says «Авто · 125 %» for a monitor of 2160 physical pixels at the Windows scale 150 % (logical 1440)', () => {
     expect(uiScaleLabel(UI_SCALE_AUTO, logicalOf('3840x2160@1.5'))).toBe('Авто · 125 %');
     expect(uiScaleLabel(110, logicalOf('3840x2160@1.5'))).toBe('110 %');
+  });
+
+  it('a stored value that is none of the five is worded as «Авто» is, since the window follows «Авто» for it', () => {
+    expect(uiScaleLabel(133, monitor(1440))).toBe('Авто · 125 %');
+    expect(uiScaleLabel(-10, monitor(1080, 1920))).toBe('Авто · 100 %');
+    expect(uiScaleLabel(NaN, logicalOf('3840x2160@1'))).toBe('Авто · 150 %');
+    expect(uiScaleLabel(133, null)).toBe('Авто · 100 %');
+    expect(uiScaleHint(133, monitor(1440))).toBe(uiScaleHint(UI_SCALE_AUTO, monitor(1440)));
+  });
+
+  it('the select shows «Авто» as chosen for such a value, and the value itself for one of the five', () => {
+    expect(uiScaleChoice(133)).toBe(UI_SCALE_AUTO);
+    expect(uiScaleChoice(-10)).toBe(UI_SCALE_AUTO);
+    expect(uiScaleChoice(NaN)).toBe(UI_SCALE_AUTO);
+    for (const value of UI_SCALES) expect(uiScaleChoice(value)).toBe(value);
   });
 
   it('the hint says what the field is, and for «Авто» what it chose and by what rule', () => {

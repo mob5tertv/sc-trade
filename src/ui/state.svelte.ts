@@ -769,6 +769,14 @@ class AppState {
   }
 
   /**
+   * The start tells the primary monitor (logical pixels) before the window is first shown, so that «Авто» has its scale on from the first frame
+   * and not one fit later (`boot.ts`; only a reading of the primary monitor is passed, see `monitorToKnow`). The fits go on following the monitor.
+   */
+  knowMonitor(monitor: Size): void {
+    this.scaleMonitor = monitor;
+  }
+
+  /**
    * The pointer is over no field: the window is being folded, or is hidden. The page cannot be relied on to say so (a
    * window that shrinks or disappears under the cursor reports no leave), so the holds are told here, and they disarm
    * the window if it was armed. Never throws: a failure is logged by the window layer.
@@ -862,10 +870,16 @@ class AppState {
     return this.#fitQueue(async () => {
       if (!this.#windowReady || this.#content === null || this.#dragging) return;
       try {
-        // the content was measured at another scale than the interface has now (the player changed it, or «Авто» found its monitor)
+        // the content was measured at another scale than the interface has now (the player changed it, or «Авто» found its monitor);
+        // nothing to measure: the stale content is not placed, and the next fit tries again
         this.#followMonitorScale();
-        if (this.uiScalePct !== this.#contentScale) await this.#remeasure();
+        if (this.uiScalePct !== this.#contentScale && !(await this.#remeasure())) return;
         await fitWindow(this.#content, this.layout, this.#log);
+        // The fit has read the monitor it placed the window on, which may not be the one the scale was taken from (the first placement, a
+        // monitor or a Windows scale that changed): when that changes the scale, the window is measured and placed once more. Once, not
+        // a loop: this second fit reads the same monitor again, and a monitor that changes yet again is for the next fit.
+        this.#followMonitorScale();
+        if (this.uiScalePct !== this.#contentScale && (await this.#remeasure())) await fitWindow(this.#content, this.layout, this.#log);
       } catch {
         // already logged by the window layer
       }

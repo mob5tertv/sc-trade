@@ -38,15 +38,39 @@ export function effectiveScalePct(setting: number, monitor: Size | null): number
 /** The percent as the factor of the CSS zoom. */
 export const scaleFactor = (pct: number): number => pct / 100;
 
-/** 'Авто · 125 %' for «Авто» (with what it picked), '110 %' for a percent. The field and the summary of the group «Окно» say it the same way. */
+/** What the select of the field shows as chosen: the stored value when it is one of the five, «Авто» for any other (the window follows «Авто» for it). */
+export function uiScaleChoice(value: number): number {
+  return UI_SCALES.includes(value) ? value : UI_SCALE_AUTO;
+}
+
+/**
+ * 'Авто · 125 %' for «Авто» (with what it picked), '110 %' for a percent. A stored value that is none of the five is worded as «Авто»,
+ * for the window follows «Авто» for it. The field and the summary of the group «Окно» say it the same way.
+ */
 export function uiScaleLabel(value: number, monitor: Size | null): string {
-  return value === UI_SCALE_AUTO ? `Авто · ${autoScalePct(monitor)} %` : `${value} %`;
+  return uiScaleChoice(value) === UI_SCALE_AUTO ? `Авто · ${autoScalePct(monitor)} %` : `${value} %`;
+}
+
+/** The source of a screen reading that is the primary monitor, as `boot.ts` names it. */
+export const PRIMARY_MONITOR = 'primary monitor';
+
+/**
+ * What the start tells the scale about the monitor before the window is shown (`app.knowMonitor`): the size of the primary monitor in logical
+ * pixels, from the reading `boot.ts` makes for the first line of the log. Only that reading is taken. The other one, the screen of the webview
+ * (`screen.width` / `screen.height`), is the screen the window happens to be on, which is not the primary monitor the window layer places the
+ * window on (it asks `currentMonitor` before it falls back to the screen), so it could pick a scale the first fit then undoes. `null`: nothing to
+ * tell, the first placement tells it. A reading with no usable size is nothing either.
+ */
+export function monitorToKnow(reading: { width: number; height: number; source: string }): Size | null {
+  if (reading.source !== PRIMARY_MONITOR) return null;
+  if (!Number.isFinite(reading.width) || !Number.isFinite(reading.height) || !(reading.width > 0) || !(reading.height > 0)) return null;
+  return { width: reading.width, height: reading.height };
 }
 
 /** The tooltip of the field; for «Авто» it says what was picked and by what. */
 export function uiScaleHint(value: number, monitor: Size | null): string {
   const what = 'Размер всего окна и мини-строки.';
-  if (value !== UI_SCALE_AUTO) return what;
+  if (uiScaleChoice(value) !== UI_SCALE_AUTO) return what;
   const rule = AUTO_STEPS.map((step) => `от ${step.fromHeight} — ${step.pct} %`).join(', ');
   return `${what} «${uiScaleLabel(value, monitor)}»: выбрано по высоте основного монитора с учётом масштаба Windows (${rule}, иначе ${AUTO_DEFAULT_PCT} %).`;
 }
