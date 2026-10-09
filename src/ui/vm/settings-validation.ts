@@ -14,7 +14,7 @@ const PANEL_WIDTH_RANGE = { min: 380, max: 640 };
 // Whole percent of ROI; 0 marks every row that pays at all
 const ROI_HIGHLIGHT_RANGE = { min: 0, max: 500 };
 
-const NOT_A_NUMBER = 'Введите число';
+const NOT_A_NUMBER = 'Введи число';
 const THRESHOLD_ORDER = 'Пороги должны быть больше нуля и расти: горячая < тёплая < остывает';
 
 const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);

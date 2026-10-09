@@ -15,6 +15,10 @@
   const toTarget = routes.to[1]?.originId ?? null;
   const log = (option: RouteOption): void => console.info('[gallery] target', option.destId);
 
+  // the same trips with no stock known at the purchase terminal for the first and the third: the volume was counted without it
+  const noStock = (o: RouteOption): RouteOption => ({ ...o, buy: { ...o.buy, scu: null, scuOrigin: null, stock: null } });
+  const unsure = routes.from.map((o, i) => (i === 0 || i === 2 ? noStock(o) : o));
+
   async function openFirst(frame: HTMLElement): Promise<void> {
     await click(find(frame, '.row .line'));
   }
@@ -49,6 +53,15 @@
   await click(find(frame, '.row.tier-great .line, .row .line'));
 }}>
   <RouteList options={routes.ladder} {reference} {runCounts} mode="from" showCommodity={true} emptyText="" anchorTerminalId={viewedId} {uexRange} targetTerminalId={routes.ladder[0].destId} onTarget={log} />
+</Frame>
+<Frame name="unknown-stock" caption="the first and the third trip rest on a stock nobody knows: «?» at the end of the names (it moves no number), the tooltip says why · the second trip has a known stock and no mark">
+  <RouteList options={unsure} {reference} {runCounts} mode="from" showCommodity={true} emptyText="" anchorTerminalId={viewedId} {uexRange} targetTerminalId={target} onTarget={log} />
+</Frame>
+<Frame name="unknown-stock-narrow" width={380} caption="the same in the narrowest window (380 px): the names give way, the numbers stay where they are">
+  <RouteList options={unsure} {reference} {runCounts} mode="from" showCommodity={true} emptyText="" anchorTerminalId={viewedId} {uexRange} targetTerminalId={target} onTarget={log} />
+</Frame>
+<Frame name="unknown-stock-expanded" caption="the first trip expanded: the line under the volume says it in words" act={openFirst}>
+  <RouteList options={unsure} {reference} {runCounts} mode="from" showCommodity={true} emptyText="" anchorTerminalId={viewedId} {uexRange} targetTerminalId={null} onTarget={log} />
 </Frame>
 <Frame name="ranges" caption="«Мин–макс» of the sale price: one price «= price» (MEDS, GOLD; TITA: seven digits), a spread (TUNG), beside my price: one price (AGRI), a spread (DIAM), nothing «—» (STIM; QUAR: UEX has the price, no bounds)">
   <RouteList options={data.ranges.trips} {reference} {runCounts} mode="from" showCommodity={true} emptyText="" anchorTerminalId={viewedId} uexRange={data.ranges.uexRange} targetTerminalId={null} onTarget={log} />

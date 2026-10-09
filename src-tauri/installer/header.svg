@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="150" height="57" viewBox="0 0 150 57">
+  <!-- The header of the pages of the installer: NSIS draws it at 150 x 57, at the LEFT end of the header (the title of the page starts to its right). -->
+  <!-- Rebuild header.bmp with `npm run installer:images`; the colours are the theme of the app (src/ui/theme.css). -->
+  <!-- Glass, a surface in it with the two cut corners of the window of the app, the mark and the name. -->
+  <rect width="150" height="57" fill="#07121b"/>
+  <polygon points="12.5,3.5 146.5,3.5 146.5,44.5 137.5,53.5 3.5,53.5 3.5,12.5" fill="#0b1c27" stroke="#2b8fa8" stroke-width="1"/>
+
+  <!-- The mark of the app (src-tauri/icons/source.svg, 1024 x 1024), 34 px. -->
+  <g transform="translate(11.2 9.7) scale(0.03664)">
+    <polygon points="288,48 976,48 976,736 736,976 48,976 48,288" fill="#2b8fa8"/>
+    <polygon points="318,120 904,120 904,706 706,904 120,904 120,318" fill="#07121b"/>
+    <polygon points="335,347 480,677 190,677" fill="#3fd0f0"/>
+    <polygon points="544,347 834,347 689,677" fill="#2b8fa8"/>
+  </g>
+
+  <text x="54" y="34" font-family="'Bahnschrift SemiCondensed', Bahnschrift, 'Segoe UI', sans-serif" font-size="17" font-weight="700" letter-spacing="1.2"><tspan fill="#3fd0f0">SC</tspan><tspan fill="#d6eef5"> TRADE</tspan></text>
+</svg>

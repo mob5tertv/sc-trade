@@ -5,7 +5,8 @@ import { sellOrContinue, type SellAlternative, type SellHere } from '../../core/
 import type { CargoLine, Market, Reference, RunEvent, RunWithEvents } from '../../core/types';
 import { phaseName } from './run-phase';
 import { ratePerHour } from './run-rate';
-import { terminalLabel, type StripModel } from './strip';
+import type { StripModel } from './strip';
+import { terminalName } from './terminal-name';
 import { isOwnPrice } from './terminal-rows';
 
 // What the "Рейс" section says (spec 14.7, 15c): when it is there, what its header reads, and where the choice
@@ -63,7 +64,7 @@ export function targetOffer(active: RunWithEvents | null, targetId: number | nul
     .filter((e) => e.type === 'buy')
     .reduce<RunEvent | null>((first, e) => (first === null || e.ts < first.ts || (e.ts === first.ts && e.id < first.id) ? e : first), null);
   if (firstBuy?.terminalId === viewedId) return null;
-  const name = terminalLabel(terminal);
+  const name = terminalName(terminal);
   return { terminalId: viewedId, label: `Цель: ${name}`, title: `Сделать целью рейса: ${name}` };
 }
 

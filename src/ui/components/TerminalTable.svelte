@@ -1,17 +1,20 @@
 <script lang="ts">
   import { untrack, type Snippet } from 'svelte';
   import { formatUec } from '../../core/format';
-  import type { Side } from '../../core/types';
+  import type { CargoLine, Side } from '../../core/types';
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
   import type { CellFinish, EditBase } from '../vm/inputs';
   import type { RoiCell } from '../vm/row-roi';
-  import { cellScu, rangeView } from '../vm/terminal-rows';
+  import { DEFAULT_TERMINAL_SORT, holdMark, holdOf, holdOrder, orderRows, terminalAriaSort } from '../vm/terminal-order';
+  import type { TerminalSort, TerminalSortKey } from '../vm/terminal-order';
+  import { RANGE_HEAD_TITLE, cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
   import TempBadge from './TempBadge.svelte';
   import TrendMark from './TrendMark.svelte';
 
   const NO_ROI: ReadonlyMap<number, RoiCell> = new Map();
   const NO_PULSE: ReadonlySet<number> = new Set();
+  const NO_CARGO: readonly CargoLine[] = [];
   const NO_CAPACITY_HINT = 'Укажи корабль в настройках — без вместимости ROI не считается';
 
   interface Props {
@@ -51,10 +54,22 @@
     pulse?: ReadonlySet<number>;
     /** The cargo space is not set: no ROI is counted, and the tooltip of the column says why. */
     noCapacity?: boolean;
+    /**
+     * What is in the hold while a run goes on, in the order of the cargo. On the sell side these commodities come first and
+     * wear a mark with their quantity; on the buy side, and with an empty hold, nothing changes.
+     */
+    cargo?: readonly CargoLine[];
+    /**
+     * The header the rows are ordered by and the direction; that header carries the arrow. The owner keeps the choice, the
+     * table only puts the rows in this order (it never changes `rows`, so no draft is touched by a sort).
+     */
+    sort?: TerminalSort;
+    /** The header «Товар» or «ROI» was clicked. Without it the heads are plain text. */
+    onSort?: (key: TerminalSortKey) => void;
   }
   let {
     rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onReject, onLookup, onTrade, tradeFor = null, tradeForm,
-    roi = NO_ROI, pulse = NO_PULSE, noCapacity = false,
+    roi = NO_ROI, pulse = NO_PULSE, noCapacity = false, cargo = NO_CARGO, sort = DEFAULT_TERMINAL_SORT, onSort,
   }: Props = $props();
 
   /**
@@ -167,7 +182,46 @@
 
   const placeholder = (n: number | null): string => (n === null ? '—' : formatUec(n));
 
-  const shown = $derived(rows.filter(row => row[side] !== null));
+  // Only the ORDER of the rows is made here; `rows`, and with it every draft, stays as it was.
+  const hold = $derived(holdOf(side, cargo));
+  const sorted = $derived(orderRows(rows.filter(row => row[side] !== null), {
+    side, sort, cargo, percentOf: commodityId => roi.get(commodityId)?.percent ?? null,
+  }));
+
+  // While a field of the table has the focus the places of the rows stay as they were when it came in: a row that is moved in the page
+  // takes the focus out of its field without a blur, and the player is typing into it (the keyboard would go back to the game under
+  // his hands). The new values still show in their rows. Leaving the field gives the sort its way.
+  let frozenIds = $state.raw<number[] | null>(null);
+  let table = $state<HTMLElement | null>();
+  const shown = $derived(holdOrder(frozenIds ?? [], sorted, frozenIds !== null));
+
+  const isField = (el: unknown): el is HTMLElement =>
+    el instanceof HTMLElement && el.matches('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+
+  function onFieldFocus(event: FocusEvent): void {
+    if (frozenIds === null && isField(event.target)) frozenIds = shown.map(row => row.commodityId);
+  }
+
+  // From one field of the table to another (the two inputs of a cell, the trade form under the row) is not leaving.
+  function onFieldBlur(event: FocusEvent): void {
+    const next = event.relatedTarget;
+    if (next instanceof HTMLElement && event.currentTarget instanceof HTMLElement && event.currentTarget.contains(next) && isField(next)) return;
+    frozenIds = null;
+  }
+
+  // A field that is taken out of the page (its row folded, the form closed, the other side shown) gives no blur: look when what
+  // holds the focus can have changed.
+  $effect(() => {
+    void selectedCommodityId;
+    void tradeFor;
+    void side;
+    void scope;
+    untrack(() => {
+      if (frozenIds !== null && !(table?.contains(document.activeElement) && isField(document.activeElement))) frozenIds = null;
+    });
+  });
+
+  const roiTitle = $derived(`${noCapacity ? NO_CAPACITY_HINT : 'Лучший ROI для этого товара'}\nНажми, чтобы отсортировать по ROI`);
   const empty = $derived(rows.length === 0 ? 'Нет цен' : side === 'buy' ? 'Здесь ничего не продают' : 'Здесь ничего не покупают');
 </script>
 
@@ -251,16 +305,41 @@
   </div>
 {/snippet}
 
+{#snippet head(key: TerminalSortKey, label: string, title: string)}
+  <span role="columnheader" class:r={key === 'roi'} aria-sort={terminalAriaSort(sort, key)}>
+    {#if onSort}
+      <button type="button" class="sort" class:on={sort.key === key} {title} onclick={() => onSort(key)}>
+        {#if sort.key === key && key === 'roi'}{@render arrow()}{/if}
+        {label}
+        {#if sort.key === key && key === 'name'}{@render arrow()}{/if}
+      </button>
+    {:else}
+      <span {title}>{label}</span>
+    {/if}
+  </span>
+{/snippet}
+
+{#snippet arrow()}
+  <svg class="arrow" viewBox="0 0 5 4" width="5" height="4" aria-hidden="true"><path d={sort.dir === 'asc' ? 'M2.5 0L5 4H0z' : 'M0 0H5L2.5 4z'} /></svg>
+{/snippet}
+
 {#if shown.length === 0}
   <p class="empty">{empty}</p>
 {:else}
-  <div class="table" role="table" aria-label={side === 'buy' ? 'Что можно купить' : 'Что можно продать'}>
+  <div
+    class="table"
+    role="table"
+    aria-label={side === 'buy' ? 'Что можно купить' : 'Что можно продать'}
+    bind:this={table}
+    onfocusin={onFieldFocus}
+    onfocusout={onFieldBlur}
+  >
     <div class="grid head sc-label" role="row">
-      <span role="columnheader">Товар</span>
+      {@render head('name', 'Товар', 'Порядок по умолчанию: по названию товара')}
       <span role="columnheader" class="r price-head">Цена</span>
-      <span role="columnheader" class="r">Мин–макс</span>
+      <span role="columnheader" class="r" title={RANGE_HEAD_TITLE}>Мин–макс</span>
       <span role="columnheader" class="r">SCU</span>
-      <span role="columnheader" class="r" title={noCapacity ? NO_CAPACITY_HINT : 'Лучший ROI для этого товара'}>ROI</span>
+      {@render head('roi', 'ROI', roiTitle)}
     </div>
     {#each shown as row (row.commodityId)}
       {@const cell = row[side]}
@@ -269,12 +348,22 @@
         {@const scu = cellScu(cell, side)}
         {@const span = rangeView(cell.range)}
         {@const best = roi.get(row.commodityId)}
+        {@const held = hold.get(row.commodityId)}
         <!-- the number of the ROI is a button of its own, beside the one of the row (a button inside a button is not allowed):
              a click on it asks for the options and does not open the row -->
         <div class="row {best ? `tier-${best.tier}` : ''}" class:selected class:hot={best?.hot} class:pulse={pulse.has(row.commodityId)} role="row">
           <div class="top">
             <button type="button" class="grid line" aria-expanded={selected} onclick={() => toggle(row.commodityId)}>
-              <span class="name" title={row.name}><span class="code">{row.code}</span><span class="full">{row.name}</span></span>
+              <span class="name" title={row.name}>
+                <span class="code">{row.code}</span><span class="full">{row.name}</span>
+                {#if held}
+                  {@const mark = holdMark(held)}
+                  <span class="hold" title={mark.title}>
+                    <svg class="box" viewBox="0 0 8 8" width="8" height="8" aria-hidden="true"><rect x="0.5" y="0.5" width="7" height="7" fill="none" stroke="currentColor" /><rect x="2.5" y="2.5" width="3" height="3" fill="currentColor" /></svg>
+                    <span class="sc-num">{mark.text}</span>
+                  </span>
+                {/if}
+              </span>
               <span class="price sc-num" class:hint={cell.own === null}>
                 {#if cell.warn}<span class="bang" title="Цена далеко от истории UEX: проверь цифру">!</span>{/if}
                 <TrendMark trend={cell.trend} />
@@ -282,7 +371,7 @@
                 {#if cell.badge}<TempBadge compact text={cell.badge.text} kind={cell.badge.kind} />{:else}<span class="nomark"></span>{/if}
               </span>
               <span class="range sc-num" data-range={span.kind} title={span.title}>{span.text}</span>
-              <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu?.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
+              <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu === null ? unknownScuTitle(side) : scu.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
             </button>
             {#if best}
               <button
@@ -333,6 +422,49 @@
 
   .r {
     text-align: right;
+  }
+
+  /* The two heads that sort are buttons as tall as the head, so the head keeps its height and the columns their widths: the label of «ROI»
+     stays at the right edge, where the numbers are, and the arrow takes the room to its left; the arrow of «Товар» stands after the word. */
+  .head [role='columnheader']:has(.sort) {
+    display: flex;
+    align-self: stretch;
+    min-width: 0;
+  }
+
+  .head .r:has(.sort) {
+    justify-content: flex-end;
+  }
+
+  /* The negative margin takes back the letter-spacing that follows the last letter, so that the label ends where the numbers do. */
+  .sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 100%;
+    margin-right: -0.08em;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .sort:hover {
+    color: var(--sc-text);
+  }
+
+  .sort.on {
+    color: var(--sc-accent);
+  }
+
+  .arrow {
+    flex: none;
+    fill: currentColor;
   }
 
   /* the number stands left of its 6 px mark: the caption stands over the number */
@@ -453,6 +585,20 @@
     overflow: hidden;
     color: var(--sc-muted);
     text-overflow: ellipsis;
+  }
+
+  /* a commodity of my hold (sell side): a box and the quantity after the name; the name gives way to it, the columns of numbers do not move */
+  .hold {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 3px;
+    color: var(--sc-accent);
+    font-size: var(--sc-font-sm);
+  }
+
+  .box {
+    flex: none;
   }
 
   .price {

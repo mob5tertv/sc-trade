@@ -2,6 +2,7 @@ import { formatUec } from '../../core/format';
 import type { RouteOption } from '../../core/routes';
 import type { Settings } from '../../core/settings';
 import type { Reference, Side } from '../../core/types';
+import { terminalLabel } from './terminal-name';
 import type { TerminalRow } from './terminal-rows';
 
 // The lookup of the Terminal tab (spec 14.2): where to buy a commodity the terminal wants, or where to sell
@@ -28,12 +29,6 @@ export function sameRequest(a: LookupRequest | null, b: LookupRequest): boolean 
 /** A buy price asks where to sell it on (trips from the terminal); a sell price asks where to buy (trips to the terminal). */
 export function kindForSide(side: Side): LookupKind {
   return side === 'buy' ? 'from' : 'to';
-}
-
-/** A terminal is known by its nickname; the reference may lack it (a game patch), then it is shown by id. */
-export function terminalLabel(ref: Reference, id: number): string {
-  const t = ref.terminals.get(id);
-  return (t && (t.nickname || t.displayname || t.name)) || `#${id}`;
 }
 
 const commodityLabel = (ref: Reference, id: number): string => ref.commodities.get(id)?.name || `#${id}`;

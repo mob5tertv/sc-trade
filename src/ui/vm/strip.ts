@@ -2,10 +2,11 @@ import { formatCompact, formatDuration, formatUec } from '../../core/format';
 import type { RouteCtx } from '../../core/routes';
 import { cargoOf } from '../../core/run';
 import type { Settings } from '../../core/settings';
-import type { CargoLine, Estimate, Market, Reference, RunWithEvents, Terminal } from '../../core/types';
+import type { CargoLine, Estimate, Market, Reference, RunWithEvents } from '../../core/types';
 import { nextMarkOf, phaseCaps, runPhases, type RunPhase } from './run-phase';
 import { expectedRun, priceAtTarget, type PricedLine } from './run-rate';
 import type { SessionFigure } from './stats-view';
+import { terminalName } from './terminal-name';
 
 export type StripModel =
   | {
@@ -37,12 +38,9 @@ export type StripModel =
 
 const NO_LOCATION = 'Локация не выбрана';
 
-// the nickname is what players know a terminal by; UEX leaves it empty on rare rows
-export const terminalLabel = (t: Terminal): string => t.nickname || t.displayname || t.name;
-
 function locationOf(ref: Reference, terminalId: number | null): string {
   const terminal = terminalId === null ? undefined : ref.terminals.get(terminalId);
-  return terminal ? terminalLabel(terminal) : NO_LOCATION;
+  return terminal ? terminalName(terminal) : NO_LOCATION;
 }
 
 const commodityCode = (ref: Reference, commodityId: number): string => {
@@ -91,7 +89,7 @@ export function stripModel(
 ): StripModel {
   const target = s.targetTerminalId === null ? undefined : ref.terminals.get(s.targetTerminalId);
   if (active === null) {
-    return { kind: 'idle', location: locationOf(ref, s.currentTerminalId), target: target ? terminalLabel(target) : null, session };
+    return { kind: 'idle', location: locationOf(ref, s.currentTerminalId), target: target ? terminalName(target) : null, session };
   }
 
   const { run, events } = active;
@@ -118,7 +116,7 @@ export function stripModel(
   return {
     ...head,
     cargoTitle: cargoTitle(ref, priced),
-    target: terminalLabel(target),
+    target: terminalName(target),
     expect: expect?.full ?? null, expectShort: expect?.short ?? null,
     rate: rate === null ? null : `≈ ${formatCompact(rate)}/ч`,
   };

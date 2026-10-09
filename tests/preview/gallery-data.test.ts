@@ -25,7 +25,7 @@ beforeAll(async () => {
 describe('the gallery table of the viewed terminal', () => {
   it('is the table of HUR-L1, named the way the header names it', () => {
     expect(data.viewedId).toBe(VIEWED_TERMINAL);
-    expect(data.viewedName).toBe('HUR-L1 Green Glade Station');
+    expect(data.viewedName).toBe('HUR-L1');
     expect(data.rows.length).toBeGreaterThanOrEqual(8);
   });
 

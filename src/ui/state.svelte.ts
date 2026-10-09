@@ -1065,6 +1065,7 @@ class AppState {
    */
   applyTriggers(): Promise<void> {
     return this.#triggerQueue(async () => {
+      if (this.#triggersSuspended) return;
       const s = this.settings;
       const outcome = await bindTriggers(
         { panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive },
@@ -1087,6 +1088,27 @@ class AppState {
       }
       this.triggerErrors = shown;
     });
+  }
+
+  #triggersSuspended = false;
+
+  /**
+   * A key field of the settings has the focus: the hook is taken out (an empty set goes through the same queue), so that pressing an
+   * assigned key in the field fires nothing. The saved keys and the errors that are shown stay as they are; `applyTriggers` binds
+   * nothing while this lasts (a key saved from the field would bring the hook back), until `resumeTriggers`.
+   */
+  suspendTriggers(): Promise<void> {
+    this.#triggersSuspended = true;
+    return this.#triggerQueue(async () => {
+      const none = () => undefined;
+      await bindTriggers({ panel: '', depart: '', arrive: '' }, { panel: none, depart: none, arrive: none }, this.#log);
+    });
+  }
+
+  /** The key fields have lost the focus (or are gone): the saved keys are bound again. */
+  resumeTriggers(): Promise<void> {
+    this.#triggersSuspended = false;
+    return this.applyTriggers();
   }
 
   // ---- actions of the player ----------------------------------------------------------------------
