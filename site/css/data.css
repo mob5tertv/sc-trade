@@ -1,0 +1,53 @@
+/* ---- a page of text ("About data") ------------------------------------------------------------------------ */
+
+.doc {
+  display: block;
+  padding: clamp(48px, 8vw, 104px) 0 clamp(64px, 9vw, 128px);
+}
+
+.doc__inner {
+  max-width: calc(760px + 2 * var(--gutter));
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.doc__title {
+  font-size: clamp(2rem, 4.4vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1.06;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.doc__lead {
+  margin-top: 20px;
+  font-size: 1.25rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.doc__part {
+  margin-top: 44px;
+  padding-top: 26px;
+  border-top: 1px solid var(--line);
+}
+
+.doc__part h2 {
+  margin-bottom: 14px;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.doc__part p {
+  color: var(--label);
+  text-wrap: pretty;
+}
+
+.doc__part p + p {
+  margin-top: 12px;
+}
+
+.doc__back {
+  margin-top: 48px;
+}

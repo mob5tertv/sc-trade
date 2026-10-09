@@ -1,0 +1,51 @@
+/*
+ * The question about analytics: a strip at the bottom edge. The two answers are the same button twice — same size,
+ * same weight, side by side — so that saying no is exactly as easy as saying yes.
+ */
+.consent {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 60;
+  border-top: 1px solid var(--frame);
+  background: var(--glass);
+}
+
+.consent__inner {
+  display: flex;
+  align-items: center;
+  gap: 16px 32px;
+  max-width: calc(var(--page) + 2 * var(--gutter));
+  margin: 0 auto;
+  padding: 18px var(--gutter);
+}
+
+.consent__text {
+  flex: 1 1 auto;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.consent__title {
+  margin-bottom: 2px;
+  color: var(--label);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.consent__actions {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 719.98px) {
+  .consent__inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

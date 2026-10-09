@@ -1,0 +1,67 @@
+      <section class="section" id="feedback" aria-labelledby="feedback-title">
+        <div class="section__inner">
+          <header class="section__head">
+            <p class="section__label">{{t.feedback.label}}</p>
+            <h2 class="section__title" id="feedback-title">{{t.feedback.title}}</h2>
+            <p class="section__intro">{{t.feedback.intro}}</p>
+          </header>
+          <div class="feedback">
+            <div class="feedback__main">
+              <form class="panel form" action="{{site.feedback.endpoint}}" method="post" enctype="multipart/form-data" novalidate hidden data-feedback
+                data-sending="{{t.feedback.sending}}"
+                data-error-too_short="{{t.feedback.errors.too_short}}"
+                data-error-too_long="{{t.feedback.errors.too_long}}"
+                data-error-too_many_files="{{t.feedback.errors.too_many_files}}"
+                data-error-file_too_big="{{t.feedback.errors.file_too_big}}"
+                data-error-bad_file_type="{{t.feedback.errors.bad_file_type}}"
+                data-error-rate_limited="{{t.feedback.errors.rate_limited}}"
+                data-error-spam="{{t.feedback.errors.spam}}"
+                data-error-server="{{t.feedback.errors.server}}">
+                <input type="hidden" name="lang" value="{{lang}}">
+                <input type="hidden" name="started" value="">
+                <p class="form__trap" aria-hidden="true">
+                  <label for="feedback-website">{{t.feedback.trap}}</label>
+                  <input id="feedback-website" type="text" name="website" tabindex="-1" autocomplete="off">
+                </p>
+                <p class="field">
+                  <label for="feedback-message">{{t.feedback.message}}</label>
+                  <textarea id="feedback-message" name="message" rows="7" required minlength="10" maxlength="4000" aria-describedby="feedback-message-hint"></textarea>
+                  <span class="field__hint" id="feedback-message-hint">{{t.feedback.message_hint}} <span data-feedback-count></span></span>
+                </p>
+                <p class="field">
+                  <label for="feedback-contact">{{t.feedback.contact}}</label>
+                  <input id="feedback-contact" type="text" name="contact" maxlength="200" autocomplete="off" aria-describedby="feedback-contact-hint">
+                  <span class="field__hint" id="feedback-contact-hint">{{t.feedback.contact_hint}}</span>
+                </p>
+                <p class="field">
+                  <label for="feedback-shots">{{t.feedback.shots}}</label>
+                  <input id="feedback-shots" type="file" name="shots[]" multiple accept="image/png,image/jpeg,image/webp" aria-describedby="feedback-shots-hint">
+                  <span class="field__hint" id="feedback-shots-hint">{{t.feedback.shots_hint}}</span>
+                </p>
+                <p class="field">
+                  <label for="feedback-log">{{t.feedback.log}}</label>
+                  <input id="feedback-log" type="file" name="log" accept=".log,.txt,text/plain" aria-describedby="feedback-log-hint">
+                  <span class="field__hint" id="feedback-log-hint">{{t.feedback.log_hint}} {{t.feedback.log_where}}</span>
+                </p>
+                <p class="form__error" role="alert" data-feedback-error hidden></p>
+                <p class="form__actions">
+                  <button class="button button--primary" type="submit">{{t.feedback.submit}}</button>
+                  <span class="form__progress" data-feedback-progress hidden>
+                    <progress max="100" value="0"></progress>
+                    <span data-feedback-progress-text></span>
+                  </span>
+                </p>
+                <p class="form__privacy">{{t.feedback.privacy}} <a href="{{links.data}}">{{t.feedback.privacy_link}}</a></p>
+              </form>
+              <div class="panel form__done" role="status" tabindex="-1" data-feedback-done hidden>
+                <p>{{t.feedback.success}}</p>
+                <p><button class="button button--ghost" type="button" data-feedback-again>{{t.feedback.again}}</button></p>
+              </div>
+              <noscript>
+                <p class="note">{{t.feedback.noscript}}</p>
+              </noscript>
+            </div>
+            <p class="feedback__side">{{t.feedback.elsewhere}} <a href="{{site.links.twitch}}" target="_blank" rel="noopener noreferrer">{{shown.twitch}}</a></p>
+          </div>
+        </div>
+      </section>

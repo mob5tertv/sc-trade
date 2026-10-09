@@ -46,13 +46,17 @@ import { fillPlaceholders, render } from './template.mjs';
 /** The pages every language has: the template and the file it becomes (in the folder of the language). */
 const PAGES = /** @type {const} */ ([
   { id: 'home', template: 'home.html', file: 'index.html' },
+  { id: 'data', template: 'data.html', file: 'data.html' },
 ]);
 
 /** The style sheets (site/css), joined in this order into assets/css/site.css. */
-const STYLES = ['base.css', 'hero.css', 'sections.css', 'shots.css'];
+const STYLES = ['base.css', 'hero.css', 'sections.css', 'shots.css', 'feedback.css', 'consent.css', 'data.css'];
 
 /** The scripts (site/js), joined in this order into assets/js/site.js; see bundle.mjs. */
-const MAIN_SCRIPTS = ['menu.js', 'copy.js', 'hero-video.js', 'lightbox.js'];
+const MAIN_SCRIPTS = ['menu.js', 'copy.js', 'hero-video.js', 'lightbox.js', 'feedback-rules.js', 'feedback.js'];
+
+/** The scripts of the consent banner: assets/js/consent.js, written only when a GA4 id is set. */
+const CONSENT_SCRIPTS = ['consent-core.js', 'consent.js'];
 
 /** The pictures of the application each block of the home page shows (site/assets/shots/<name>.png). */
 const FEATURE_SHOTS = ['terminal-options', 'mini-run', 'my-routes'];
@@ -153,6 +157,7 @@ export function buildSite(options) {
     write('assets/css/site.css', STYLES.map((name) => readFileSync(join(siteDir, 'css', name), 'utf8').replaceAll('\r\n', '\n').trim()).join('\n\n') + '\n');
     const sources = (/** @type {string[]} */ names) => names.map((name) => ({ name, source: readFileSync(join(siteDir, 'js', name), 'utf8') }));
     write('assets/js/site.js', bundleScripts(sources(MAIN_SCRIPTS)));
+    if (analytics) write('assets/js/consent.js', bundleScripts(sources(CONSENT_SCRIPTS)));
 
     if (installer !== null) {
       mkdirSync(join(work, 'download'), { recursive: true });
@@ -208,7 +213,7 @@ export function buildSite(options) {
             { code: 'x-default', url: pageUrl(config.domain, pageFile(LANGUAGES[0], page.file)) },
           ],
           langs: LANGUAGES.map((other) => ({ code: other, label: other.toUpperCase(), current: other === lang, href: to(pageFile(other, page.file)) })),
-          links: { home: to(home), anchor: page.id === 'home' ? '#' : `${to(home)}#` },
+          links: { home: to(home), data: to(pageFile(lang, 'data.html')), anchor: page.id === 'home' ? '#' : `${to(home)}#` },
           build: {
             version: options.version,
             date: { iso: isoDay, text: new Intl.DateTimeFormat(lang, { dateStyle: 'long', timeZone: 'UTC' }).format(now) },

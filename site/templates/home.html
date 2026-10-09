@@ -10,7 +10,8 @@
 {{#if flags.pictures}}{{> gallery}}
 {{/if}}{{> safety}}
 {{> download}}
+{{> feedback}}
 {{> support}}
     </main>
-{{> footer}}  </body>
+{{> footer}}{{#if flags.analytics}}{{> consent}}{{/if}}  </body>
 </html>

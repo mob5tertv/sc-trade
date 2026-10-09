@@ -11,7 +11,9 @@
           <p>{{t.footer.uex}} <a href="{{site.links.uex}}" target="_blank" rel="noopener noreferrer">{{t.footer.uex_link}}<span class="visually-hidden"> ({{t.footer.external}})</span></a></p>
         </div>
         <div class="site-footer__links">
-{{#each langs}}{{#unless current}}          <a href="{{href}}" hreflang="{{code}}" lang="{{code}}">{{label}}</a>
+          <a href="{{links.data}}">{{t.footer.data_link}}</a>
+{{#if flags.analytics}}          <button class="link-button" type="button" data-consent-open hidden>{{t.footer.consent_change}}</button>
+{{/if}}{{#each langs}}{{#unless current}}          <a href="{{href}}" hreflang="{{code}}" lang="{{code}}">{{label}}</a>
 {{/unless}}{{/each}}        </div>
       </div>
     </footer>

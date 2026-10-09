@@ -1,0 +1,12 @@
+    <section class="consent" aria-labelledby="consent-title" data-consent data-ga4-id="{{site.analytics.ga4Id}}" hidden>
+      <div class="consent__inner">
+        <div class="consent__text">
+          <h2 class="consent__title" id="consent-title">{{t.consent.title}}</h2>
+          <p>{{t.consent.text}} <a href="{{links.data}}">{{t.consent.more}}</a></p>
+        </div>
+        <div class="consent__actions">
+          <button class="button button--ghost" type="button" data-consent-allow>{{t.consent.allow}}</button>
+          <button class="button button--ghost" type="button" data-consent-decline>{{t.consent.decline}}</button>
+        </div>
+      </div>
+    </section>
