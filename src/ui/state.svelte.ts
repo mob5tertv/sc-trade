@@ -273,6 +273,11 @@ class AppState {
   /** The keyboard is with the window: the player is typing. */
   keyboardHeld = $state(false);
   /**
+   * When the keyboard last went away from the window, `performance.now()` ms (`-Infinity` before the first time): the sign «Esc — в игру»
+   * went with it, and a click that comes right after lands on what stands in its place (`indicatorClick`). Not reactive: it is read at a click.
+   */
+  keysSignGoneAt = Number.NEGATIVE_INFINITY;
+  /**
    * Who needs the keyboard (see `HoldEffects` in vm/keyboard-holds.ts). The only way to the keyboard: the
    * window never takes the focus from the game by itself. `hold('field')` takes it, `release` gives it back.
    */
@@ -287,7 +292,10 @@ class AppState {
     },
     (held) => {
       this.keyboardHeld = held;
-      if (!held) this.#touch();
+      if (!held) {
+        this.keysSignGoneAt = performance.now();
+        this.#touch();
+      }
     },
     { settleMs: FOCUS_SETTLE_MS },
   );
@@ -924,12 +932,14 @@ class AppState {
   }
 
   /**
-   * The badge «Esc — в игру» of the headers (it is there while `keyboardHeld`): the keyboard goes back to the game and the window stays
-   * open, the same as `Esc` in a field does it (`installKeyboard`). It takes no keyboard and puts the focus nowhere: the press is on a
-   * button, which is no field. Never rejects: a failure is logged by the window layer.
+   * The sign «Esc — в игру» (it is there while `keyboardHeld`: in the place of the UEX indicator of the header, and as a badge in the
+   * header of the settings): the keyboard goes back to the game and the window stays open, exactly as `Esc` in a field does it
+   * (`installKeyboard`: a line in the log, the focused element is blurred, the last holder is released). It takes no keyboard and puts
+   * the focus nowhere: the press is on a button, which is no field. Never rejects: a failure is logged by the window layer.
    */
   async giveKeyboardBack(): Promise<void> {
-    this.#log.info('ui', 'keyboard badge: the keyboard goes back to the game');
+    this.#log.info('ui', 'the sign: the keyboard goes back to the game');
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     await this.keyboard.release('field').catch(() => undefined);
   }
 

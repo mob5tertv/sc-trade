@@ -4,6 +4,7 @@
   import type { TriggerName } from '../platform/triggers';
   import Icon from './components/Icon.svelte';
   import Section from './components/Section.svelte';
+  import KeyboardBadge from './KeyboardBadge.svelte';
   import MessageLines from './MessageLines.svelte';
   import { app } from './state.svelte';
   import { stats } from './stats.svelte';
@@ -352,6 +353,7 @@
     <Icon name="back" />
   </button>
   <strong class="title">Настройки</strong>
+  <KeyboardBadge />
   <button class="sc-btn sc-btn--ghost sc-btn--icon collapse" type="button" aria-label="Свернуть" title="Свернуть" onclick={() => app.collapse('close button')}>
     <Icon name="minus" />
   </button>
