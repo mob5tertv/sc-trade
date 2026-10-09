@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bindNeeded, triggerSuspension, type Timers } from '../../src/ui/vm/trigger-suspension';
+import { bindNeeded, boundAfter, triggerSuspension, withoutErrorsOfEmptyKeys, type Timers } from '../../src/ui/vm/trigger-suspension';
 
 // A clock of the test: a timer is a job that waits until `tick` reaches its time.
 function fakeTimers(): Timers & { tick(ms: number): void; waiting(): number } {
@@ -121,6 +121,56 @@ describe('triggerSuspension: the assigned keys do not fire while a key field has
       suspension.focus();
       expect(calls).toEqual(['suspend', 'resume', 'suspend']);
     });
+  });
+});
+
+describe('withoutErrorsOfEmptyKeys (task 44, fix round 2): a key that is gone leaves no error behind', () => {
+  const errors = { panel: 'неизвестная клавиша: F5', depart: null, arrive: 'Не удалось включить клавиши. Подробности в логе.' };
+
+  it('clears every error when no key is saved (the call is left out and nothing else would reset them)', () => {
+    expect(withoutErrorsOfEmptyKeys({ panel: '', depart: '', arrive: '' }, errors)).toEqual({ panel: null, depart: null, arrive: null });
+    expect(withoutErrorsOfEmptyKeys({ panel: ' ', depart: '', arrive: '\t' }, errors)).toEqual({ panel: null, depart: null, arrive: null });
+  });
+
+  it('clears the error of the key that is empty and keeps the one of a key that is still saved', () => {
+    expect(withoutErrorsOfEmptyKeys({ panel: '', depart: 'F9', arrive: 'F10' }, errors)).toEqual({ panel: null, depart: null, arrive: errors.arrive });
+    expect(withoutErrorsOfEmptyKeys({ panel: 'F8', depart: '', arrive: '' }, errors)).toEqual({ panel: errors.panel, depart: null, arrive: null });
+  });
+
+  it('is the very same object when there is nothing to clear, so that nothing that follows the errors is woken for nothing', () => {
+    const none = { panel: null, depart: null, arrive: null };
+    expect(withoutErrorsOfEmptyKeys({ panel: '', depart: '', arrive: '' }, none)).toBe(none);
+    expect(withoutErrorsOfEmptyKeys({ panel: 'F8', depart: 'F9', arrive: 'F10' }, errors)).toBe(errors);
+  });
+});
+
+describe('boundAfter (task 44, fix round 2): the flag follows what was bound, and never forgets a hook that may stand', () => {
+  const none = { panel: '', depart: '', arrive: '' };
+  const one = { ...none, panel: 'F8' };
+
+  it('is bound after a set with a key, whether or not the call reached the Rust side: a hook may stand', () => {
+    for (const wasBound of [false, true]) {
+      expect(boundAfter(one, wasBound, true)).toBe(true);
+      expect(boundAfter(one, wasBound, false)).toBe(true);
+    }
+  });
+
+  it('is not bound after an empty set that reached the Rust side: it took the hook out', () => {
+    expect(boundAfter(none, true, true)).toBe(false);
+    expect(boundAfter(none, false, true)).toBe(false);
+  });
+
+  it('stays as it was after an empty set that did not reach the Rust side (the event could not be subscribed to): the old hook may still stand', () => {
+    expect(boundAfter(none, true, false)).toBe(true);
+    expect(boundAfter(none, false, false)).toBe(false);
+  });
+
+  it('is what the call is made on: a flag that was set before the call, with the call not reached yet, is never lower than the flag after it', () => {
+    for (const keys of [none, one]) {
+      for (const wasBound of [false, true]) {
+        expect(boundAfter(keys, wasBound, true) && !boundAfter(keys, wasBound, false)).toBe(false);
+      }
+    }
   });
 });
 

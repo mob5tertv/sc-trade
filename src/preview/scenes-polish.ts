@@ -78,11 +78,19 @@ function watchKeyboard(app: SceneApp, fake: PriceFake): void {
   });
 }
 
-/** `window.__binds()`: how many times the trigger keys went to the Rust side (`set_trigger_keys`) and how many `bound` lines the log got, counted from now on. */
-function watchBinds(): void {
+/**
+ * `window.__binds()`: how many times the trigger keys went to the Rust side (`set_trigger_keys`), how many `bound` lines the log got, counted from
+ * now on, and the errors that are shown next to the keys. `window.__triggerKeys(fate)` says what the mocked Rust side does from now on:
+ * `{ rejected: ['F8'] }` refuses that key, `{ fail: true }` fails the call, `{}` accepts everything (see `TriggerKeysFate` in `ipc.ts`).
+ */
+function watchBinds(app: SceneApp): void {
   const count = (text: string): number => (window.__preview?.log ?? []).filter((line) => line.includes(text)).length;
   const [calls0, bound0] = [count('set_trigger_keys'), count('[trigger] bound')];
-  (window as unknown as { __binds: () => unknown }).__binds = () => ({ calls: count('set_trigger_keys') - calls0, bound: count('[trigger] bound') - bound0 });
+  const global = window as unknown as Record<string, unknown>;
+  global.__binds = () => ({ calls: count('set_trigger_keys') - calls0, bound: count('[trigger] bound') - bound0, errors: app.triggerErrors });
+  global.__triggerKeys = (fate: unknown) => {
+    (globalThis as { __previewTriggerKeys?: unknown }).__previewTriggerKeys = fate;
+  };
 }
 
 /** The player presses the location field: the window holds the keyboard. */
@@ -217,7 +225,7 @@ export const POLISH_SCENES: readonly Scene[] = [
       app.openSettings();
       await app.toggleSection('settings:keys');
       await pause(100);
-      watchBinds();
+      watchBinds(app);
     },
   },
   {
@@ -231,7 +239,40 @@ export const POLISH_SCENES: readonly Scene[] = [
       app.openSettings();
       await app.toggleSection('settings:keys');
       await pause(100);
-      watchBinds();
+      watchBinds(app);
+    },
+  },
+  {
+    // The Rust side refuses the saved key (the mocked check says «неизвестная клавиша: F8»), and the error stands next to the field. The player takes the key
+    // off in its field: `--do "eval:JSON.stringify(window.__binds().errors);click:#set-hotkeyPanel;press:Backspace;click:.title;wait:400;eval:JSON.stringify(window.__binds().errors)"`
+    // must end with no error (nothing is saved, nothing is bound any more, and the call is left out: the errors are reset all the same).
+    name: 'settings-keys-refused',
+    title: 'Настройки → Клавиши: сохранённую клавишу Rust отклонил (ошибка у поля); её сняли Backspace в поле: ошибки под пустым полем нет',
+    dataset: 'default',
+    act: async (app) => {
+      (globalThis as { __previewTriggerKeys?: unknown }).__previewTriggerKeys = { rejected: ['F8'] };
+      await app.updateSetting('hotkeyPanel', 'F8');
+      await app.expand('preview');
+      app.openSettings();
+      await app.toggleSection('settings:keys');
+      await pause(100);
+      watchBinds(app);
+    },
+  },
+  {
+    // The last key is taken off while the call that would unbind it cannot get through: `--do "eval:window.__triggerKeys({fail:true});click:#set-hotkeyPanel;
+    // wait:200;eval:window.__triggerKeys({});press:Backspace;click:.title;wait:400;eval:JSON.stringify(window.__binds())"`: the call at the focus fails (it
+    // would unbind the key), the one after the blur does reach the Rust side (calls: 2), because the flag did not say "nothing is bound" after the failed one.
+    name: 'settings-keys-unreached',
+    title: 'Настройки → Клавиши: вызов, снимающий клавишу, не дошёл до Rust; после выхода из поля он повторяется (два вызова), клавиша не остаётся без хозяина',
+    dataset: 'default',
+    act: async (app) => {
+      await app.updateSetting('hotkeyPanel', 'F8');
+      await app.expand('preview');
+      app.openSettings();
+      await app.toggleSection('settings:keys');
+      await pause(100);
+      watchBinds(app);
     },
   },
   {

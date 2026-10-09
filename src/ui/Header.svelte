@@ -14,9 +14,12 @@
 
   /** The click on the slot: the sign gives the keyboard back, the indicator refreshes the prices; right after the sign went away it does nothing. */
   function clickSlot(): void {
-    const what = indicatorClick(app.keyboardHeld, performance.now(), app.keysSignGoneAt);
+    const now = performance.now();
+    const what = indicatorClick(app.keyboardHeld, now, app.keysSignGoneAt);
     if (what === 'give-back') void app.giveKeyboardBack();
     else if (what === 'refresh') void app.refreshPrices();
+    // an ignored click is silent on the screen: the log is where "UEX did not refresh when I clicked" is explained
+    else app.log.debug('ui', 'indicator click ignored: the sign «Esc — в игру» went away just now', { agoMs: Math.round(now - app.keysSignGoneAt) });
   }
 
   const locked = $derived(app.windowLocked);

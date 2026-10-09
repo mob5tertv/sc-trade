@@ -62,7 +62,7 @@ import { rowRoiMap, type RowRoi } from './vm/row-roi';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
 import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
-import { bindNeeded } from './vm/trigger-suspension';
+import { bindNeeded, boundAfter, withoutErrorsOfEmptyKeys } from './vm/trigger-suspension';
 import { uexErrorText } from './vm/uex-error';
 import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 
@@ -1079,17 +1079,20 @@ class AppState {
       if (this.#triggersSuspended) return;
       const s = this.settings;
       const keys = { panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive };
-      if (!bindNeeded(keys, this.#triggersBound)) return; // no key saved and nothing bound: "no keys" has nothing to change
-      this.#triggersBound = Object.values(keys).some((key) => key.trim() !== '');
-      const outcome = await bindTriggers(
-        keys,
-        {
-          panel: () => void this.toggleMode(),
-          depart: () => void this.mark('depart'),
-          arrive: () => void this.mark('arrive'),
-        },
-        this.#log,
-      );
+      if (!bindNeeded(keys, this.#triggersBound)) {
+        // no key saved and nothing bound: "no keys" has nothing to change, so no call. The errors of keys that are gone must not stay
+        // under their empty fields, and this is the one place that would reset them (a key refused by the Rust side, taken off in its field)
+        this.triggerErrors = withoutErrorsOfEmptyKeys(keys, this.triggerErrors);
+        return;
+      }
+      const wasBound = this.#triggersBound;
+      this.#triggersBound = boundAfter(keys, wasBound, false); // a set with a key may install a hook: bound before the call, whatever comes of it
+      const { outcome, reached } = await this.#sendTriggers(keys, {
+        panel: () => void this.toggleMode(),
+        depart: () => void this.mark('depart'),
+        arrive: () => void this.mark('arrive'),
+      });
+      this.#triggersBound = boundAfter(keys, wasBound, reached);
       const shown: Record<TriggerName, string | null> = {
         panel: triggerErrorText(outcome.panel),
         depart: triggerErrorText(outcome.depart),
@@ -1105,8 +1108,31 @@ class AppState {
   }
 
   #triggersSuspended = false;
-  /** The last set of keys that went to the Rust side had a key in it: a hook may be installed. Nothing saved and nothing bound asks for no call (`bindNeeded`). */
+  /**
+   * A keyboard hook may be installed on the Rust side. Nothing saved and nothing bound asks for no call (`bindNeeded`). It is set BEFORE a set
+   * with a key goes out and goes down only after an EMPTY set that reached the Rust side (`boundAfter`): a call that does not get there (the
+   * event could not be subscribed to) leaves it as it was, so a hook that no saved key asks for any more is taken out by the next call, and
+   * the flag can never say "nothing bound" while one stands.
+   */
   #triggersBound = false;
+
+  /**
+   * `bindTriggers` and whether the set REACHED the Rust side. The result of `bindTriggers` cannot say it for an empty set (no key, no error to
+   * report: a failure looks like success), but it writes the line `trigger bound` only after the Rust command has answered, so that line is
+   * the confirmation. A change of that line leaves `reached` false, which keeps the flag as it was: the safe side.
+   */
+  async #sendTriggers(keys: Record<TriggerName, string>, handlers: Record<TriggerName, () => void>): Promise<{ outcome: Record<TriggerName, string | null>; reached: boolean }> {
+    let reached = false;
+    const watching: Logger = {
+      ...this.#log,
+      info: (module, msg, ctx) => {
+        if (module === 'trigger' && msg === 'bound') reached = true;
+        this.#log.info(module, msg, ctx);
+      },
+    };
+    const outcome = await bindTriggers(keys, handlers, watching);
+    return { outcome, reached };
+  }
 
   /**
    * A key field of the settings has the focus: the hook is taken out (an empty set goes through the same queue), so that pressing an
@@ -1118,9 +1144,10 @@ class AppState {
     return this.#triggerQueue(async () => {
       const s = this.settings;
       if (!bindNeeded({ panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive }, this.#triggersBound)) return;
-      this.#triggersBound = false;
+      const empty = { panel: '', depart: '', arrive: '' };
       const none = () => undefined;
-      await bindTriggers({ panel: '', depart: '', arrive: '' }, { panel: none, depart: none, arrive: none }, this.#log);
+      const { reached } = await this.#sendTriggers(empty, { panel: none, depart: none, arrive: none });
+      this.#triggersBound = boundAfter(empty, this.#triggersBound, reached); // down only if the empty set got there
     });
   }
 

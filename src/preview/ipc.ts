@@ -80,6 +80,12 @@ function failsOnPurpose(): boolean {
   return true;
 }
 
+/**
+ * What `set_trigger_keys` does for a scene: `rejected` names keys the check of the Rust side refuses (the answer says so, per key),
+ * `fail` makes the whole call fail (the hook cannot be installed). A scene sets `__previewTriggerKeys`, and changes it as the scene goes on.
+ */
+interface TriggerKeysFate { rejected?: string[]; fail?: boolean }
+
 export function createIpcHandler(deps: IpcDeps): IpcHandler {
   const { monitor, window: win, sql, log } = deps;
 
@@ -236,9 +242,16 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
       }
       case 'panel_is_foreground':
         return win.isFocused();
-      case 'set_trigger_keys':
+      case 'set_trigger_keys': {
         log('debug', '[preview] set_trigger_keys'); // a scene counts these: how often the application sets the keys again
-        return [null, null, null]; // every key is accepted; there is no keyboard hook
+        // every key is accepted and there is no keyboard hook, unless a scene says otherwise (`__previewTriggerKeys`)
+        const fate = (globalThis as { __previewTriggerKeys?: TriggerKeysFate }).__previewTriggerKeys ?? {};
+        if (fate.fail) throw new Error('[preview] set_trigger_keys fails on purpose (a scene asked for it)');
+        return (['panel', 'depart', 'arrive'] as const).map((name) => {
+          const key = String(args[name] ?? '');
+          return key !== '' && fate.rejected?.includes(key) ? `неизвестная клавиша: ${key}` : null; // the Russian reason of the check of the keys
+        });
+      }
       default:
         return UNKNOWN;
     }

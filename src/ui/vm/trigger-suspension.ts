@@ -12,6 +12,29 @@ export function bindNeeded(keys: Record<string, string>, somethingBound: boolean
   return somethingBound || Object.values(keys).some((key) => key.trim() !== '');
 }
 
+/**
+ * The errors that are shown next to the keys, with those of the keys that are not saved taken away. When the call is left out
+ * (`bindNeeded` says no) nothing else resets them: a key that the Rust side refused, taken off in its field with Backspace, would leave its
+ * error under an empty field. The same object comes back when there is nothing to take away.
+ */
+export function withoutErrorsOfEmptyKeys<K extends string>(keys: Record<K, string>, errors: Record<K, string | null>): Record<K, string | null> {
+  const names = Object.keys(keys) as K[];
+  if (names.every((name) => keys[name].trim() !== '' || errors[name] === null)) return errors;
+  const next = { ...errors };
+  for (const name of names) if (keys[name].trim() === '') next[name] = null;
+  return next;
+}
+
+/**
+ * Whether a hook may stand on the Rust side after `keys` were sent. A set with a key may have installed one, whether or not the call got
+ * there; an EMPTY set takes it out only if it did get there (`reached`), otherwise what was bound before may still be: the flag stays as it
+ * was, and the next call tries again. So the flag never says "nothing bound" while a hook that no saved key asks for may still be installed.
+ */
+export function boundAfter(keys: Record<string, string>, wasBound: boolean, reached: boolean): boolean {
+  if (Object.values(keys).some((key) => key.trim() !== '')) return true;
+  return reached ? false : wasBound;
+}
+
 export interface SuspensionActions {
   suspend(): void;
   resume(): void;
