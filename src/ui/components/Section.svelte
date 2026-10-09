@@ -29,11 +29,27 @@
      * shrink factor). The section that matters less, or is short, takes a small one. Only with `scroll`.
      */
     shrink?: number;
+    /**
+     * A CSS length the body is never taller than (`calc(var(--sc-row-h) * 8 + 18px)`): a longer content scrolls inside it, the same way it does
+     * when the window has no height to spare. Only with `scroll`; the body is as tall as its content below it.
+     */
+    bodyMaxHeight?: string;
+    /** When this value changes the scrolling body goes back to its top (a tab of the section was switched). Only with `scroll`. */
+    resetScrollOn?: unknown;
   }
-  let { title, summary, summaryTitle, open, onToggle, onClose, closeTitle = 'Закрыть', actions, lead, children, scroll = false, shrink = 1 }: Props = $props();
+  let {
+    title, summary, summaryTitle, open, onToggle, onClose, closeTitle = 'Закрыть', actions, lead, children, scroll = false, shrink = 1,
+    bodyMaxHeight, resetScrollOn,
+  }: Props = $props();
 
   const uid = $props.id();
   const bodyId = `${uid}-body`;
+
+  let body: HTMLElement | null | undefined = $state(); // `bind:this`: `null` once the element has gone
+  $effect(() => {
+    void resetScrollOn;
+    if (body) body.scrollTop = 0;
+  });
 </script>
 
 <section class="section" class:open class:scroll style:--shrink={shrink}>
@@ -52,7 +68,7 @@
   </div>
   {#if open}
     {#if lead}<div class="lead sc-reveal">{@render lead()}</div>{/if}
-    <div id={bodyId} class="body sc-reveal">{@render children()}</div>
+    <div id={bodyId} class="body sc-reveal" style:max-height={scroll ? bodyMaxHeight : undefined} bind:this={body}>{@render children()}</div>
   {/if}
 </section>
 

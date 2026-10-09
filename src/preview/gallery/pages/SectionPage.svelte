@@ -18,7 +18,7 @@
 </script>
 
 <Frame name="open" caption="open: chevron, TITLE in spaced caps, one-line summary; the body directly under, no padding">
-  <Section title="Рейс" summary="MEDS 120 SCU, STIM 80 SCU → ARC-L1" open={openA} onToggle={() => (openA = !openA)}>
+  <Section title="Рейс" summary="MEDS 120 по 2 115, STIM 80 по 2 810 → ARC-L1" open={openA} onToggle={() => (openA = !openA)}>
     <HistoryList rows={data.history} />
   </Section>
 </Frame>

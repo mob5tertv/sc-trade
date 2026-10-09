@@ -44,9 +44,14 @@
     white-space: nowrap;
   }
 
+  /* the line of heads stays at the top of the body while the rows scroll under it; the solid twin of the glass hides them */
   .header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     height: 18px;
     border-bottom: 1px solid var(--sc-border);
+    background: var(--sc-bg-solid);
     color: var(--sc-muted);
   }
 

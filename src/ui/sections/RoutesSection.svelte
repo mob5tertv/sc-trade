@@ -14,7 +14,7 @@
   import { app } from '../state.svelte';
   import { stats } from '../stats.svelte';
   import { clickedSort, sortRoutes, type RouteSortKey } from '../vm/route-sort';
-  import { STATS_VIEWS } from '../vm/stats-view';
+  import { LIST_MAX_HEIGHT, STATS_VIEWS } from '../vm/stats-view';
 
   const SECTION = 'routes';
   // When the window has no height to spare, this section gives way before the terminal table does: the table is what
@@ -55,8 +55,20 @@
 <!--
   The summary is what a folded section says. Open, the list under the header says it (its first row is the best route),
   and the switch takes the room the summary would be cut in.
+  The body shows `LIST_ROWS` rows and scrolls beyond that, whichever list is on (the line of heads of each list stays in place),
+  and goes back to its top when the list is switched; when the window has no height to spare it shrinks below that as before.
 -->
-<Section title="Мои маршруты" summary={open ? undefined : stats.summary} {open} onToggle={toggle} {actions} scroll shrink={STATS_SHRINK}>
+<Section
+  title="Мои маршруты"
+  summary={open ? undefined : stats.summary}
+  {open}
+  onToggle={toggle}
+  {actions}
+  scroll
+  shrink={STATS_SHRINK}
+  bodyMaxHeight={LIST_MAX_HEIGHT}
+  resetScrollOn={view}
+>
   {#if view === 'routes'}
     <RoutesTable rows={routes} sort={routeSort} onSort={sortBy} />
   {:else if view === 'history'}

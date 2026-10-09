@@ -30,6 +30,15 @@ export const STATS_VIEWS: ReadonlyArray<{ id: StatsView; label: string; title: s
   { id: 'sessions', label: 'Сессии', title: 'Пауза между записями дольше двух часов начинает новую сессию' },
 ];
 
+/** How many rows a list of the section (routes, history, sessions) shows before it scrolls: older ones are reached with the wheel. The one place of the number. */
+export const LIST_ROWS = 8;
+
+/** The line of column heads that every one of those lists draws above its rows, px. */
+export const LIST_HEAD_PX = 18;
+
+/** The tallest the body of the section is: the line of heads and `LIST_ROWS` rows of the height the lists use (`--sc-row-h`). */
+export const LIST_MAX_HEIGHT = `calc(var(--sc-row-h) * ${LIST_ROWS} + ${LIST_HEAD_PX}px)`;
+
 const NO_FINISHED_RUNS = 'пока нет завершённых рейсов';
 
 /**
