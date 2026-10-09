@@ -30,6 +30,8 @@
   const rows = $derived(app.terminalRows);
   const side = $derived(app.terminalSide);
   const counts = $derived(sideCounts(rows));
+  // what is in the hold while a run goes on: on the sell side the table puts these commodities first and marks them
+  const cargo = $derived(cargoOf(app.activeRun?.events ?? []));
 
   // the full name of the viewed terminal (the location field of the header shows the short one)
   const name = $derived(
@@ -289,6 +291,7 @@
       roi={roiByRow}
       {pulse}
       noCapacity={app.settings.scuCapacity <= 0}
+      {cargo}
     />
   {/if}
 </Section>

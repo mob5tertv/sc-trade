@@ -1,10 +1,11 @@
 <script lang="ts">
   import { untrack, type Snippet } from 'svelte';
   import { formatUec } from '../../core/format';
-  import type { Side } from '../../core/types';
+  import type { CargoLine, Side } from '../../core/types';
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
   import type { CellFinish, EditBase } from '../vm/inputs';
   import type { RoiCell } from '../vm/row-roi';
+  import { holdMark, holdOf, orderRows } from '../vm/terminal-order';
   import { cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
   import TempBadge from './TempBadge.svelte';
@@ -12,6 +13,7 @@
 
   const NO_ROI: ReadonlyMap<number, RoiCell> = new Map();
   const NO_PULSE: ReadonlySet<number> = new Set();
+  const NO_CARGO: readonly CargoLine[] = [];
   const NO_CAPACITY_HINT = 'Укажи корабль в настройках — без вместимости ROI не считается';
 
   interface Props {
@@ -51,10 +53,15 @@
     pulse?: ReadonlySet<number>;
     /** The cargo space is not set: no ROI is counted, and the tooltip of the column says why. */
     noCapacity?: boolean;
+    /**
+     * What is in the hold while a run goes on, in the order of the cargo. On the sell side these commodities come first and
+     * wear a mark with their quantity; on the buy side, and with an empty hold, nothing changes.
+     */
+    cargo?: readonly CargoLine[];
   }
   let {
     rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onReject, onLookup, onTrade, tradeFor = null, tradeForm,
-    roi = NO_ROI, pulse = NO_PULSE, noCapacity = false,
+    roi = NO_ROI, pulse = NO_PULSE, noCapacity = false, cargo = NO_CARGO,
   }: Props = $props();
 
   /**
@@ -167,7 +174,9 @@
 
   const placeholder = (n: number | null): string => (n === null ? '—' : formatUec(n));
 
-  const shown = $derived(rows.filter(row => row[side] !== null));
+  // Only the ORDER of the rows is made here; `rows`, and with it every draft, stays as it was.
+  const hold = $derived(holdOf(side, cargo));
+  const shown = $derived(orderRows(rows.filter(row => row[side] !== null), { side, cargo }));
   const empty = $derived(rows.length === 0 ? 'Нет цен' : side === 'buy' ? 'Здесь ничего не продают' : 'Здесь ничего не покупают');
 </script>
 
@@ -269,12 +278,22 @@
         {@const scu = cellScu(cell, side)}
         {@const span = rangeView(cell.range)}
         {@const best = roi.get(row.commodityId)}
+        {@const held = hold.get(row.commodityId)}
         <!-- the number of the ROI is a button of its own, beside the one of the row (a button inside a button is not allowed):
              a click on it asks for the options and does not open the row -->
         <div class="row {best ? `tier-${best.tier}` : ''}" class:selected class:hot={best?.hot} class:pulse={pulse.has(row.commodityId)} role="row">
           <div class="top">
             <button type="button" class="grid line" aria-expanded={selected} onclick={() => toggle(row.commodityId)}>
-              <span class="name" title={row.name}><span class="code">{row.code}</span><span class="full">{row.name}</span></span>
+              <span class="name" title={row.name}>
+                <span class="code">{row.code}</span><span class="full">{row.name}</span>
+                {#if held}
+                  {@const mark = holdMark(held)}
+                  <span class="hold" title={mark.title}>
+                    <svg class="box" viewBox="0 0 8 8" width="8" height="8" aria-hidden="true"><rect x="0.5" y="0.5" width="7" height="7" fill="none" stroke="currentColor" /><rect x="2.5" y="2.5" width="3" height="3" fill="currentColor" /></svg>
+                    <span class="sc-num">{mark.text}</span>
+                  </span>
+                {/if}
+              </span>
               <span class="price sc-num" class:hint={cell.own === null}>
                 {#if cell.warn}<span class="bang" title="Цена далеко от истории UEX: проверь цифру">!</span>{/if}
                 <TrendMark trend={cell.trend} />
@@ -453,6 +472,20 @@
     overflow: hidden;
     color: var(--sc-muted);
     text-overflow: ellipsis;
+  }
+
+  /* a commodity of my hold (sell side): a box and the quantity after the name; the name gives way to it, the columns of numbers do not move */
+  .hold {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 3px;
+    color: var(--sc-accent);
+    font-size: var(--sc-font-sm);
+  }
+
+  .box {
+    flex: none;
   }
 
   .price {

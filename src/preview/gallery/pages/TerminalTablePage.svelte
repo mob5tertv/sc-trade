@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import type { CargoLine } from '../../../core/types';
   import type { TerminalRow } from '../../../ui/vm/terminal-rows';
   import { roiCells } from '../../../ui/vm/row-roi';
   import type { RowRoi } from '../../../ui/vm/row-roi';
@@ -33,6 +34,12 @@
     if (!row) throw new Error(`the table of Lorville has no ${code}`);
     return row.commodityId;
   };
+
+  // the player's hold on arrival at Lorville: MEDS and STIM, in the order they were bought
+  const hold: CargoLine[] = [
+    { commodityId: lorvilleId('MEDS'), scu: 120, avgBuyPrice: 2115 },
+    { commodityId: lorvilleId('STIM'), scu: 80, avgBuyPrice: 2810 },
+  ];
 
   // The widest things a row can say, made up to measure the columns: the longest names of the commodities, a seven-digit
   // price, a ROI of thousands of percent (written 999+), a five-digit one-price range. Rows of the real table of Levski
@@ -130,6 +137,15 @@
 </Frame>
 <Frame name="roi-sell-all" caption="Lorville, sell · threshold 0: every row that pays has a bar, the colour of its tier (the setting «Выделять ROI от, %» = 0)">
   <TableDemo rows={lorville.rows} side="sell" roi={lorvilleSellAll} />
+</Frame>
+<Frame name="sell-cargo" caption="Lorville, sell, a run is going · MEDS and STIM are in the hold: they stand first, in the order of the cargo, with a box and the quantity after the name · the other rows as before">
+  <TableDemo rows={lorville.rows} side="sell" roi={lorvilleSell} cargo={hold} />
+</Frame>
+<Frame name="sell-cargo-expanded" caption="Lorville, sell · STIM (in the hold) expanded: the mark stays on the name, the fields open under the row">
+  <TableDemo rows={lorville.rows} side="sell" selected={lorvilleId('STIM')} roi={lorvilleSell} cargo={hold} />
+</Frame>
+<Frame name="sell-cargo-buy-side" caption="the same hold, the buy side of Lorville: nothing is marked, nothing moves">
+  <TableDemo rows={lorville.rows} side="buy" roi={lorvilleBuy} cargo={hold} />
 </Frame>
 <Frame name="roi-buy" caption="Lorville, buy · the best trip from here: GOLD above the bar, a row of every other tier, SCRA is dearer here than anyone pays (empty cell)">
   <TableDemo rows={lorville.rows} side="buy" roi={lorvilleBuy} />

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Side } from '../../core/types';
+  import type { CargoLine, Side } from '../../core/types';
   import TerminalTable from '../../ui/components/TerminalTable.svelte';
   import type { RoiCell } from '../../ui/vm/row-roi';
   import type { TerminalRow } from '../../ui/vm/terminal-rows';
@@ -12,8 +12,9 @@
     roi?: ReadonlyMap<number, RoiCell>;
     pulse?: ReadonlySet<number>;
     noCapacity?: boolean;
+    cargo?: readonly CargoLine[];
   }
-  let { rows, side, selected = null, roi, pulse, noCapacity }: Props = $props();
+  let { rows, side, selected = null, roi, pulse, noCapacity, cargo }: Props = $props();
 
   let current = $derived(selected);
 
@@ -38,4 +39,5 @@
   {roi}
   {pulse}
   {noCapacity}
+  {cargo}
 />
