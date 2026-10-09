@@ -1,4 +1,4 @@
-import { isIncomeRun, phases, runTotals, simpleRoute } from './run';
+import { isIncomeRun, phases, routeOf, runTotals } from './run';
 import type { Phases } from './run';
 import { pairKey } from './types';
 import type { RunWithEvents } from './types';
@@ -6,7 +6,14 @@ import type { RunWithEvents } from './types';
 const SEC_PER_HOUR = 3600;
 
 export interface RouteStat {
-  originId: number; destId: number; commodityId: number; runs: number;
+  originId: number; destId: number;
+  /**
+   * The goods of the route as a set, the smallest id first: one for a simple route, several for the route of a run of mixed cargo
+   * (task 51: everything bought at one terminal, everything sold at another one). Runs between the same two terminals with
+   * another set of goods are another route.
+   */
+  commodityIds: number[];
+  runs: number;
   medianDurationSec: number;
   /** Medians over the runs that have departure and arrival marks; `null` when none has. */
   medianPhases: Phases | null;
@@ -17,9 +24,9 @@ export interface RouteStat {
   uecPerHour: number | null;
 }
 
-/** A finished simple run reduced to what the statistics need. */
+/** A finished run that has a route, reduced to what the statistics need. */
 interface Finished {
-  originId: number; destId: number; commodityId: number;
+  originId: number; destId: number; commodityIds: number[];
   durationSec: number; profit: number; roi: number | null; phases: Phases | null;
 }
 
@@ -31,14 +38,15 @@ function median(values: number[]): number {
 }
 
 /**
- * The runs with status 'done' that have a simple route, in the given order. A finished run always
- * has an end; should one lack it, it lasts zero seconds rather than until some "now".
+ * The runs with status 'done' that have a route (`routeOf`: one commodity or several, all bought at one terminal and all sold at
+ * another one), in the given order, each run once. A finished run always has an end; should one lack it, it lasts zero seconds
+ * rather than until some "now".
  */
-function finishedSimple(runs: RunWithEvents[]): Finished[] {
+function finishedRoutes(runs: RunWithEvents[]): Finished[] {
   const out: Finished[] = [];
   for (const { run, events } of runs) {
     if (run.status !== 'done') continue;
-    const route = simpleRoute(events);
+    const route = routeOf(events);
     if (route === null) continue;
     const totals = runTotals(run, events, run.startedAt);
     out.push({ ...route, durationSec: totals.durationSec, profit: totals.profit, roi: totals.roi, phases: phases(events) });
@@ -55,23 +63,26 @@ function medianPhases(list: Phases[]): Phases | null {
   };
 }
 
-/** The player's own statistics per route (origin, destination, commodity), best UEC per hour first; routes without a rate go last. */
+/**
+ * The player's own statistics per route (origin, destination, set of goods), best UEC per hour first; routes without a rate go last.
+ * The numbers of a route are those of its whole runs, whatever they carried.
+ */
 export function routeStats(runs: RunWithEvents[]): RouteStat[] {
   const groups = new Map<string, Finished[]>();
-  for (const f of finishedSimple(runs)) {
-    const key = `${f.originId}>${f.destId}:${f.commodityId}`;
+  for (const f of finishedRoutes(runs)) {
+    const key = `${pairKey(f.originId, f.destId)}:${f.commodityIds.join(',')}`;
     const group = groups.get(key);
     if (group) group.push(f); else groups.set(key, [f]);
   }
 
   const stats: RouteStat[] = [];
   for (const group of groups.values()) {
-    const { originId, destId, commodityId } = group[0];
+    const { originId, destId, commodityIds } = group[0];
     const totalProfit = group.reduce((sum, f) => sum + f.profit, 0);
     const totalSec = group.reduce((sum, f) => sum + f.durationSec, 0);
     const rois = group.flatMap(f => (f.roi === null ? [] : [f.roi]));
     stats.push({
-      originId, destId, commodityId, runs: group.length,
+      originId, destId, commodityIds, runs: group.length,
       medianDurationSec: median(group.map(f => f.durationSec)),
       medianPhases: medianPhases(group.flatMap(f => (f.phases === null ? [] : [f.phases]))),
       totalProfit,
@@ -85,10 +96,13 @@ export function routeStats(runs: RunWithEvents[]): RouteStat[] {
   });
 }
 
-/** Direction (`pairKey`) → the median duration of my finished simple runs there, all commodities together. */
+/**
+ * Direction (`pairKey`) → the median duration of my finished runs there, all commodities together, the runs of mixed cargo between
+ * the two terminals among them. Every run is one sample of its pair, whatever number of goods it carried.
+ */
 export function ownMedianIndex(runs: RunWithEvents[]): Map<string, number> {
   const durations = new Map<string, number[]>();
-  for (const f of finishedSimple(runs)) {
+  for (const f of finishedRoutes(runs)) {
     const key = pairKey(f.originId, f.destId);
     const list = durations.get(key);
     if (list) list.push(f.durationSec); else durations.set(key, [f.durationSec]);
@@ -96,10 +110,10 @@ export function ownMedianIndex(runs: RunWithEvents[]): Map<string, number> {
   return new Map([...durations].map(([key, list]) => [key, median(list)]));
 }
 
-/** Direction (`pairKey`) → the number of my finished simple runs there, all commodities together. */
+/** Direction (`pairKey`) → the number of my finished runs there, all commodities together (the same runs `ownMedianIndex` takes the time of). */
 export function ownRunCounts(runs: RunWithEvents[]): Map<string, number> {
   const counts = new Map<string, number>();
-  for (const f of finishedSimple(runs)) {
+  for (const f of finishedRoutes(runs)) {
     const key = pairKey(f.originId, f.destId);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }

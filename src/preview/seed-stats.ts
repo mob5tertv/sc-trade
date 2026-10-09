@@ -12,8 +12,10 @@ import { loseCargo, recordBuy, recordIncome, recordMark, recordSell, type TradeD
 // player's runs. It is written on top of the `window` dataset by the REAL trade functions (the first purchase starts a
 // run, the sale that empties the hold finishes it, `loseCargo` loses it), at times in the past, session after session:
 //  - 35 runs of mine over nine days in eight sessions (a pause of more than two hours between sessions), done and
-//    lost, a few with the departure and arrival marks, and one of two commodities (a "mixed" run) on a day of its own:
-//    with the two runs of the default history and the one that is going, 39 in all;
+//    lost, a few with the departure and arrival marks, and two of two commodities (the "mixed" runs, GOLD and TUNG from
+//    Lorville to Area 18) in a session of their own on a day of their own: with the two runs of the default history (one of them
+//    mixed too, MEDS and STIM from HUR-L1 to ARC-L1) and the one that is going, 40 in all. The three mixed runs are two rows of
+//    the rating of routes («смеш.»); the pair Lorville → Area 18 has them beside the rows of the Gold and of the Tungsten;
 //  - the three runs on ONE pair, Stims from HUR-L1 to MIC-L1, that take longer than the estimate by the distance: the
 //    "Варианты" from HUR-L1 show my median time and "3 рейса" for that trip;
 //  - a run that is going now: Tungsten bought at Lorville a few minutes ago.
@@ -188,8 +190,9 @@ export async function extendForStats(db: Db, now: number): Promise<void> {
     }
   }
 
-  // one run of two commodities at once, a mixed run in the history: four days and seven hours ago, between two sessions,
-  // so a session of its own
+  // two runs of two commodities at once, mixed runs in the history, both from Lorville to Area 18: four days and seven hours ago,
+  // between two sessions, so a session of their own. They are one route of the rating (task 51): the row «смеш.» with two runs,
+  // beside the simple rows of the Gold and of the Tungsten on the same two terminals.
   const mixed = now - 4 * DAY - 7 * HOUR;
   const gold = commodityIdOf(reference, 'GOLD');
   const tung = commodityIdOf(reference, 'TUNG');
@@ -199,6 +202,15 @@ export async function extendForStats(db: Db, now: number): Promise<void> {
   await recordMark(at(mixed + 24 * MIN), 'arrive');
   await recordSell(at(mixed + 27 * MIN), { terminalId: 5, commodityId: gold, scu: 150, price: 6300 });
   await recordSell(at(mixed + 29 * MIN), { terminalId: 5, commodityId: tung, scu: 250, price: 3700 });
+
+  // the same two goods again, 41 minutes after the first run began (the same session): other quantities and prices, a little slower
+  const again = mixed + 41 * MIN;
+  await recordBuy(at(again), { terminalId: 6, commodityId: gold, scu: 180, price: 5450 });
+  await recordBuy(at(again + 2 * MIN), { terminalId: 6, commodityId: tung, scu: 220, price: 3120 });
+  await recordMark(at(again + 8 * MIN), 'depart');
+  await recordMark(at(again + 25 * MIN), 'arrive');
+  await recordSell(at(again + 28 * MIN), { terminalId: 5, commodityId: gold, scu: 180, price: 6250 });
+  await recordSell(at(again + 31 * MIN), { terminalId: 5, commodityId: tung, scu: 220, price: 3640 });
 
   // the run that is going: Tungsten bought at Lorville twelve minutes ago
   await recordBuy(at(now - 12 * MIN), { terminalId: 6, commodityId: tung, scu: 250, price: 3080 });

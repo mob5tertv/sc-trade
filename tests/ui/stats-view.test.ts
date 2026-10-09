@@ -9,6 +9,7 @@ import { ref } from '../helpers/factories';
 import {
   CLOCK, doneRun, goingRun, HOUR, lostRun, MINUTE, sessionEndedAgo, sessionsOf,
 } from '../helpers/indicator-fixtures';
+import { MIX1, MIX2 } from '../helpers/mixed-fixtures';
 import { R1, R2, R3, R4, R5, R6 } from '../helpers/stats-fixtures';
 import { stat } from '../helpers/stats-rows-fixtures';
 
@@ -164,7 +165,16 @@ describe('figuresOf', () => {
     expect(EMPTY_FIGURES.sessions).toEqual([]);
   });
 
-  it('holds my median time and my run count per direction, from the finished simple runs only', () => {
+  it('counts a finished run of several commodities between two terminals in the time, the count and the rows of its pair, once (task 51)', () => {
+    const f = figuresOf({ runs: [MIX2, R6, R5, R4, MIX1, R3, R2, R1], recordTs: [] });
+    expect(f.ownMedian.get(pairKey(1, 2))).toBe(1900);              // R1 2400, R2 1800, MIX1 2000, MIX2 1000: the middle two are 1800 and 2000
+    expect(f.runCounts.get(pairKey(1, 2))).toBe(4);
+    expect(f.runCounts.get(pairKey(1, 3))).toBe(1);
+    // [destination, number of goods, runs], by the rate: the gold of R1 and R2 (467k), the mixed gold and titanium of MIX1 and MIX2 (187k), the gold of R3 (180k)
+    expect(f.stats.map((s) => [s.destId, s.commodityIds.length, s.runs])).toEqual([[2, 1, 2], [2, 2, 2], [3, 1, 1]]);
+  });
+
+  it('holds my median time and my run count per direction, from the finished runs of one pair of terminals only', () => {
     const f = figuresOf({ runs: [R6, R5, R4, R3, R2, R1], recordTs: [] });
     expect(f.ownMedian.get(pairKey(1, 2))).toBe(2100);
     expect(f.ownMedian.get(pairKey(1, 3))).toBe(1000);

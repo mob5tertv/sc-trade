@@ -42,7 +42,7 @@
     {#each rows as row (row.key)}
       <div class="grid line" role="row">
         <span class="route" title={row.route}>{row.route}</span>
-        <span class="code">{row.commodity}</span>
+        <span class="code" title={row.commodityHint ?? undefined}>{row.commodity}</span>
         <span class="sc-num strong" title="UEC в час">{row.rate}</span>
         <span class="sc-num" title="Число завершённых рейсов">{row.runs}</span>
         <span class="sc-num" title={row.phases ? `Медианное время: погрузка · полёт · разгрузка ${row.phases}` : 'Медианное время рейса'}>{row.time}</span>

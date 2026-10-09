@@ -4,6 +4,7 @@ import { historyRows, liveRows, routeRows, sessionRows } from '../../src/ui/vm/s
 import { routeStats } from '../../src/core/stats';
 import { ev, ref, run } from '../helpers/factories';
 import { incomeRun } from '../helpers/income-fixtures';
+import { MIX1, MIX2 } from '../helpers/mixed-fixtures';
 import { R1, R2, R4, R5, R6, withMarks } from '../helpers/stats-fixtures';
 import { NOW, stat } from '../helpers/stats-rows-fixtures';
 
@@ -14,7 +15,7 @@ describe('routeRows', () => {
   it('formats a route row', () => {
     const stats = routeStats([R1, withMarks(R2, 300, 1000, 500)]);
     expect(routeRows(stats, ref)[0]).toEqual({
-      key: '1>2:10', route: 'ARC-L1 → TDD Area 18', commodity: 'GOLD', runs: 2, time: '35:00',
+      key: '1>2:10', route: 'ARC-L1 → TDD Area 18', commodity: 'GOLD', commodityHint: null, runs: 2, time: '35:00',
       phases: '5:00 · 16:40 · 8:20', profit: nb('545 000'), roi: '12%', rate: '467k', stat: stats[0],
     });
   });
@@ -50,8 +51,41 @@ describe('routeRows', () => {
     expect(routeRows([], ref)).toEqual([]);
   });
 
+  describe('a route of several commodities (task 51)', () => {
+    const mixedStat = routeStats([MIX1, MIX2])[0];
+
+    it('says "смеш." in the column of the goods, and lists the goods in the tooltip', () => {
+      expect(routeRows([mixedStat], ref)[0]).toMatchObject({
+        route: 'ARC-L1 → TDD Area 18', commodity: 'смеш.', commodityHint: 'Смешанный груз: GOLD, TITA', runs: 2, profit: nb('156 000'), stat: mixedStat,
+      });
+    });
+
+    it('has a key of its own, which the key of the simple route of one of the goods is not', () => {
+      const simple = routeRows([{ ...mixedStat, commodityIds: [10] }], ref)[0];
+      const mixed = routeRows([mixedStat], ref)[0];
+      expect(mixed.key).toBe('1>2:10,20');
+      expect(simple.key).toBe('1>2:10');
+      expect(mixed.key).not.toBe(simple.key);
+    });
+
+    it('formats the numbers of the row as those of any route', () => {
+      const [row] = routeRows([mixedStat], ref);
+      expect(row).toMatchObject({ time: '25:00', phases: null, roi: '9,4%', rate: '187k' });
+    });
+
+    it('lists the goods by their codes, in the order of the codes, and by number the ones the reference lacks', () => {
+      const withZinc = { ...ref, commodities: new Map([...ref.commodities, [10, { ...ref.commodities.get(10)!, code: 'ZINC' }]]) };
+      expect(routeRows([mixedStat], withZinc)[0].commodityHint).toBe('Смешанный груз: TITA, ZINC');
+      expect(routeRows([{ ...mixedStat, commodityIds: [10, 20, 999] }], ref)[0].commodityHint).toBe('Смешанный груз: #999, GOLD, TITA');
+    });
+
+    it('has no tooltip for the goods of a simple route, and no "смеш." in its cell', () => {
+      expect(routeRows([stat], ref)[0]).toMatchObject({ commodity: 'GOLD', commodityHint: null });
+    });
+  });
+
   it('falls back to ids for entries missing from the reference', () => {
-    expect(routeRows([{ ...stat, originId: 777, commodityId: 999 }], ref)[0]).toMatchObject({ route: '#777 → TDD Area 18', commodity: '#999' });
+    expect(routeRows([{ ...stat, originId: 777, commodityIds: [999] }], ref)[0]).toMatchObject({ route: '#777 → TDD Area 18', commodity: '#999' });
     expect(routeRows([{ ...stat, destId: 888 }], ref)[0].route).toBe('ARC-L1 → #888');
   });
 

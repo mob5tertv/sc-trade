@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { RouteStat } from '../../src/core/stats';
+import { routeStats, type RouteStat } from '../../src/core/stats';
 import { ref } from '../helpers/factories';
+import { MIX1, MIX3 } from '../helpers/mixed-fixtures';
+import { R1, R2 } from '../helpers/stats-fixtures';
 import {
   ariaSortOf, clickedSort, DEFAULT_ROUTE_SORT, FIRST_DIR, ROUTE_SORT_KEYS, sortRoutes, type RouteSort, type RouteSortKey,
 } from '../../src/ui/vm/route-sort';
@@ -74,6 +76,19 @@ describe('sortRoutes', () => {
     expect(byText.map(row => row.rate)).toEqual(['900k', '1,5M']);
     expect(sortRoutes(byText, { key: 'rate', dir: 'desc' }).map(row => row.stat.destId)).toEqual([3, 2]);
     expect(sortRoutes(byText, { key: 'time', dir: 'asc' }).map(row => row.stat.destId)).toEqual([2, 3]);
+  });
+
+  it('puts the row of a mixed cargo in the order of its numbers, like any other (task 51)', () => {
+    // from the core: the gold of R1 and R2 (467 143 an hour, 2 runs), the mixed gold and titanium (180 000, 1 run), the mixed gold and tungsten (105 000, 1 run)
+    const real = routeRows(routeStats([R1, R2, MIX1, MIX3]), ref);
+    expect(real.map(row => row.commodity)).toEqual(['GOLD', 'смеш.', 'смеш.']);
+    const profits = (sort: RouteSort): number[] => sortRoutes(real, sort).map(row => row.stat.totalProfit);
+    expect(profits({ key: 'rate', dir: 'desc' })).toEqual([545_000, 100_000, 35_000]);
+    expect(profits({ key: 'rate', dir: 'asc' })).toEqual([35_000, 100_000, 545_000]);
+    expect(profits({ key: 'runs', dir: 'desc' })).toEqual([545_000, 100_000, 35_000]);
+    expect(profits({ key: 'time', dir: 'asc' })).toEqual([35_000, 100_000, 545_000]);      // 20:00, 33:20, 35:00
+    expect(profits({ key: 'roi', dir: 'asc' })).toEqual([35_000, 100_000, 545_000]);
+    expect(profits({ key: 'profit', dir: 'asc' })).toEqual([35_000, 100_000, 545_000]);
   });
 
   it('is the order of the core with the default sort', () => {
