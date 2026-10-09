@@ -6,7 +6,7 @@ import { createLogger } from '../data/logger';
 import { loadSettings } from '../data/repo/settings';
 import { loadReference } from '../data/repo/uex-cache';
 import { loadMarket } from '../data/suggest';
-import { loseCargo, recordBuy, recordMark, recordSell, type TradeDeps } from '../data/trade';
+import { loseCargo, recordBuy, recordIncome, recordMark, recordSell, type TradeDeps } from '../data/trade';
 
 // What the scenes of the "Мои маршруты" section need that the window dataset does not have: a long history of the
 // player's runs. It is written on top of the `window` dataset by the REAL trade functions (the first purchase starts a
@@ -202,6 +202,57 @@ export async function extendForStats(db: Db, now: number): Promise<void> {
 
   // the run that is going: Tungsten bought at Lorville twelve minutes ago
   await recordBuy(at(now - 12 * MIN), { terminalId: 6, commodityId: tung, scu: 250, price: 3080 });
+}
+
+/**
+ * The runs of the `stats-old` dataset, for the clearing of the history (spec 14.14): seven runs that ended MORE than thirty days
+ * before `now` (two sessions and a lost run among them, 75 to 33 days ago, and a sale without a purchase 40 days ago), and one that
+ * BEGAN 31 days ago and ENDED 29 days ago, which "older than thirty days" must keep, the clearing goes by the end. Written on top of the
+ * `window` dataset BEFORE `extendForStats` (a purchase joins the run that is going, and the run that is going is written last there).
+ * None of them touches the Stims from HUR-L1 to MIC-L1 (the pair of the options).
+ */
+const OLD_SESSIONS: ReadonlyArray<{ ago: readonly [days: number, hours: number]; legs: readonly Leg[] }> = [
+  { ago: [75, 4], legs: [
+    { from: 11, to: 5, code: 'GOLD', scu: 150, minutes: 34, marks: [6, 25] },
+    { from: 6, to: 5, code: 'TUNG', scu: 320, minutes: 29 },
+  ] },
+  { ago: [52, 6], legs: [
+    { from: 11, to: 4, code: 'AGRI', scu: 300, minutes: 14 },
+    { from: 4, to: 5, code: 'BERY', scu: 220, minutes: 41, lost: true },
+  ] },
+  { ago: [33, 2], legs: [
+    { from: 1, to: 10, code: 'QUAR', scu: 500, minutes: 17 },
+    { from: 9, to: 2, code: 'DIAM', scu: 180, minutes: 33 },
+  ] },
+  // begun 31 days ago, ended 29 days ago (two days later): the end is what counts, so it stays
+  { ago: [31, 0], legs: [{ from: 6, to: 5, code: 'GOLD', scu: 120, minutes: 2 * 24 * 60 }] },
+];
+
+/** Writes the old runs (see `OLD_SESSIONS`) and a sale without a purchase 40 days ago, on top of the `window` dataset. */
+export async function extendForOld(db: Db, now: number): Promise<void> {
+  const reference = await loadReference(db);
+  const settings = await loadSettings(db, quiet);
+  const at = tradeClock(db, settings);
+  const rng = randomOf(20261009);
+
+  let n = 0;
+  for (const session of OLD_SESSIONS) {
+    let t = now - session.ago[0] * DAY - session.ago[1] * HOUR;
+    for (const leg of session.legs) {
+      const commodityId = commodityIdOf(reference, leg.code);
+      const base = BASE[leg.code] ?? 0;
+      const end = t + Math.round(leg.minutes * MIN);
+      await recordBuy(at(t), { terminalId: leg.from, commodityId, scu: leg.scu, price: round5(base * (0.84 + rng() * 0.1)) });
+      if (leg.marks !== undefined) {
+        await recordMark(at(t + leg.marks[0] * MIN), 'depart');
+        await recordMark(at(t + (leg.marks[0] + leg.marks[1]) * MIN), 'arrive');
+      }
+      if (leg.lost) await loseCargo(at(end));
+      else await recordSell(at(end), { terminalId: leg.to, commodityId, scu: leg.scu, price: round5(base * (1.04 + rng() * 0.12)) });
+      t = end + RESTS[n++ % RESTS.length] * MIN;
+    }
+  }
+  await recordIncome(at(now - 40 * DAY), { terminalId: 5, commodityId: commodityIdOf(reference, 'TITA'), scu: 60, price: 8300 });
 }
 
 /** The same data with no run at all (the player has not flown yet): the runs and their events are deleted. */

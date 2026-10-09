@@ -1,6 +1,7 @@
 import type { app } from '../ui/state.svelte';
 import type { DatasetName } from './datasets';
 import { ANCHOR_SCENES } from './scenes-anchor';
+import { CLEAR_SCENES } from './scenes-clear';
 import { INCOME_SCENES } from './scenes-income';
 import { INDICATOR_SCENES } from './scenes-indicators';
 import { KEYBOARD_SCENES } from './scenes-keyboard';
@@ -303,6 +304,7 @@ export const SCENES: readonly Scene[] = [
   },
   ...INCOME_SCENES,
   ...STATS_SCENES,
+  ...CLEAR_SCENES,
   ...INDICATOR_SCENES,
   ...KEYBOARD_SCENES,
   ...REPAIR_SCENES,

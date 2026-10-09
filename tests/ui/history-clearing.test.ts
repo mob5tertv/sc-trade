@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Run } from '../../src/core/types';
 import {
-  clearedText, clearQuestion, countFor, historyCounts, historyStatus, oldRunsBefore, OLD_RUN_DAYS, pluralRuns,
+  CLEAR_BUTTONS, clearedText, clearQuestion, countFor, historyCounts, historyStatus, oldRunsBefore, OLD_RUN_DAYS, pluralRuns,
 } from '../../src/ui/vm/history-clearing';
 import { run } from '../helpers/factories';
 
@@ -90,6 +90,16 @@ describe('historyStatus', () => {
 
   it('says it is empty when there is no finished run', () => {
     expect(historyStatus({ finished: 0, old: 0, since: null })).toBe('История пуста');
+  });
+});
+
+describe('CLEAR_BUTTONS', () => {
+  it('labels the two buttons and says in the hint what each leaves alone', () => {
+    expect(CLEAR_BUTTONS.old.label).toBe('Очистить старше 30 дней');
+    expect(CLEAR_BUTTONS.all.label).toBe('Очистить всю историю');
+    for (const scope of ['old', 'all'] as const) {
+      expect(CLEAR_BUTTONS[scope].title).toContain('Идущий рейс и свои цены остаются');
+    }
   });
 });
 

@@ -67,6 +67,18 @@ export function historyStatus(counts: HistoryCounts): string {
   return `История: ${counts.finished} ${pluralRuns(counts.finished)}, с ${formatDate(counts.since)}`;
 }
 
+/** The labels of the two buttons and what each says when the mouse rests on it. */
+export const CLEAR_BUTTONS: Readonly<Record<ClearScope, { label: string; title: string }>> = {
+  old: {
+    label: `Очистить старше ${OLD_RUN_DAYS} дней`,
+    title: `Удаляет завершённые и потерянные рейсы, которые закончились больше ${OLD_RUN_DAYS} дней назад. Идущий рейс и свои цены остаются.`,
+  },
+  all: {
+    label: 'Очистить всю историю',
+    title: 'Удаляет все завершённые и потерянные рейсы. Идущий рейс и свои цены остаются.',
+  },
+};
+
 /** The question under the header before a clearing: it names the number of runs that will go. */
 export function clearQuestion(scope: ClearScope, runs: number): { text: string; yes: string } {
   const recount = 'Рейтинг маршрутов и сессии пересчитаются по оставшимся.';

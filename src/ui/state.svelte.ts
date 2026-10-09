@@ -18,7 +18,10 @@ import {
   loadMarket, suggestFromDetailed, suggestToDetailed, type SuggestDeps, type SuggestProgress, type SuggestRun,
 } from '../data/suggest';
 import { syncPrices, syncReference, type SyncDeps } from '../data/sync';
-import { loseCargo as closeAsLost, recordBuy, recordIncome, recordMark, recordSell, TradeError, type TradeDeps, type TradeInput } from '../data/trade';
+import {
+  clearHistory as clearRunHistory, ClearHistoryError, loseCargo as closeAsLost, recordBuy, recordIncome, recordMark, recordSell, TradeError,
+  type ClearedHistory, type TradeDeps, type TradeInput,
+} from '../data/trade';
 import { UexError, type UexClient } from '../data/uex-client';
 import { applyLogLevel } from '../platform/tauri-logger';
 import { bindTriggers, type TriggerName } from '../platform/triggers';
@@ -41,6 +44,7 @@ import {
 import { resetHeldKeys } from './keyboard';
 import { stats } from './stats.svelte';
 import { arrivalView, type ArrivalView } from './vm/arrival-view';
+import { clearedText, clearQuestion, countFor, oldRunsBefore, type ClearScope } from './vm/history-clearing';
 import { shouldCollapse } from './vm/idle';
 import { createKeyboardHolds, type KeyboardHolds } from './vm/keyboard-holds';
 import { createLatestRequest } from './vm/latest-request';
@@ -171,6 +175,7 @@ const FLASH_MS = 3000;
 const CONFIRM_MS = 10_000;
 const CONFIRM_BUSY = 'confirm';
 const TRADE_FAILED = 'Не удалось записать сделку. Подробности в логе.';
+const CLEAR_FAILED = 'Не удалось очистить историю. Подробности в логе.';
 const RUN_READ_FAILED = 'Не удалось прочитать рейс из базы. Подробности в логе.';
 const NO_CURRENT_LOCATION = 'Сначала укажи, где ты находишься: найди локацию в поиске и нажми «Я здесь».';
 
@@ -785,6 +790,8 @@ class AppState {
   closeSettings(): void {
     if (this.view === 'main') return;
     this.#log.info('ui', 'close settings');
+    // a question asked in the settings (the clearing of the history) does not follow the player to the main screen
+    if (this.confirm !== null) this.answer(false, 'settings closed');
     this.view = 'main';
     this.#touch();
   }
@@ -1117,6 +1124,39 @@ class AppState {
     if ((await this.updateSetting('serverChangedAt', ts)) === null) {
       this.notify('Отмечено: сервер сменился, свои цены до этого момента считаются холодными.', 'info');
     }
+  }
+
+  /**
+   * "Очистить старше 30 дней" / "Очистить всю историю" of "Настройки" → "Данные" (spec 14.14): asks first, the question names the
+   * number of runs that are counted now; the clearing itself is `#clearHistory`, after "yes". The buttons are there only when
+   * there are such runs, so a question for none is not asked.
+   */
+  askClearHistory(scope: ClearScope): void {
+    const runs = countFor(scope, stats.historyCounts);
+    this.#log.info('ui', 'clear history', { scope, runs });
+    if (runs === 0) return;
+    this.ask(clearQuestion(scope, runs), () => this.#clearHistory(scope));
+  }
+
+  /**
+   * The answer "yes" to the question of `askClearHistory`: the trade service deletes the runs (the threshold is counted now, at the
+   * answer, not at the question), then the statistics are read again, so that the status line, the rating, the sessions and the
+   * medians all follow the runs that are left, and one notice says how many runs went. A failure is told as well, and the statistics
+   * are read again after it too: a part of the clearing may have been done. The current location and the target are not touched.
+   */
+  async #clearHistory(scope: ClearScope): Promise<void> {
+    const endedBefore = scope === 'old' ? oldRunsBefore(this.#syncDeps().now()) : null;
+    let cleared: ClearedHistory | null = null;
+    let failure = CLEAR_FAILED;
+    try {
+      cleared = await clearRunHistory(this.#tradeDeps(), endedBefore);
+    } catch (err) {
+      this.#log.error('ui', 'cannot clear the history', { scope, err });
+      if (err instanceof ClearHistoryError) failure = err.message;
+    }
+    await stats.reload('history cleared'); // never throws
+    if (cleared !== null) this.notify(clearedText(cleared.runs), 'info');
+    else this.notify(failure, 'error');
   }
 
   // ---- the Terminal and the Options sections -----------------------------------------------------

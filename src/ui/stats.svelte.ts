@@ -2,6 +2,7 @@ import { untrack } from 'svelte';
 import type { RunWithEvents } from '../core/types';
 import { app } from './state.svelte';
 import { loadHistorySafely } from './stats-history';
+import { historyCounts as countHistory, type HistoryCounts } from './vm/history-clearing';
 import { createLatestRequest } from './vm/latest-request';
 import { historyRows, liveRows, routeRows, sessionRows, type HistoryRow, type RouteRow, type SessionRow } from './vm/stats-rows';
 import {
@@ -98,6 +99,20 @@ class StatsState {
     } catch (err) {
       app.log.error('ui', 'cannot build the history rows of the run that is going', { err });
       return base;
+    }
+  });
+
+  /**
+   * How many finished runs the history holds, since when, and how many of them ended more than thirty days ago: the status line
+   * and the buttons of the clearing in "Настройки" → "Данные" (spec 14.14). Made of the last load, like the list, and counted at
+   * the one-second clock only while the settings are on screen (nobody else reads it).
+   */
+  historyCounts = $derived.by((): HistoryCounts => {
+    try {
+      return countHistory(this.#history.runs, app.now);
+    } catch (err) {
+      app.log.error('ui', 'cannot count the history', { err });
+      return { finished: 0, old: 0, since: null };
     }
   });
 

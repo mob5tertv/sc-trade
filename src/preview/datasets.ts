@@ -1,9 +1,9 @@
 // The named sets of test data a scene can ask for. The data itself is written by `seed.ts` (and, for `window`, extended
-// by `seed-window.ts`, for `stats`, `no-runs` and `no-records` by `seed-stats.ts`, the runs in each phase by `seed-run.ts`,
+// by `seed-window.ts`, for `stats`, `stats-old`, `no-runs` and `no-records` by `seed-stats.ts`, the runs in each phase by `seed-run.ts`,
 // `empty-no-strip` and `newer-schema` by `prepare.ts`) on the dev server; the browser only needs the names.
 
 export const DATASET_NAMES = [
-  'default', 'run', 'empty', 'window', 'stats', 'no-runs', 'no-records', 'run-loading', 'run-flight', 'run-unloading',
+  'default', 'run', 'empty', 'window', 'stats', 'stats-old', 'no-runs', 'no-records', 'run-loading', 'run-flight', 'run-unloading',
   'empty-no-strip', 'newer-schema',
 ] as const;
 
