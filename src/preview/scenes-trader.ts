@@ -260,11 +260,12 @@ export const TRADER_SCENES: readonly Scene[] = [
   },
   {
     // HUR-L1, the buy side, the row of MEDS (the lowest ROI) is open; a click on «ROI» in the head sorts although the places are held: the rows stand by ROI, best first, the
-    // open row stays open and stands where that order puts it (last); the second click turns the order round. The scene checks the order of the rows on the page and fails
-    // (the scene starts with an error) when it is not so. `--do "click:.table .head .sort:last-of-type"` clicks again.
+    // open row stays open and stands where that order puts it (last); the second click turns the order round. Then ARC-L1, the sell side, the sort is the default one, MEDS is open
+    // and sold out (it keeps the first place), and a click on «Товар» — which changes neither the key nor the direction of the sort — still renews the order: the rows stand in
+    // the default order, the row is still open. The scene checks the order of the rows on the page and fails (the scene starts with an error) when it is not so.
     name: 'open-row-sort',
-    title: 'Строка раскрыта, клик по «ROI» в заголовке: строки встают по ROI, раскрытая остаётся раскрытой и стоит на новом месте',
-    dataset: 'default',
+    title: 'Строка раскрыта, клик по «ROI» или по «Товар» в заголовке: строки встают по порядку, раскрытая остаётся раскрытой и стоит на новом месте',
+    dataset: 'run',
     act: async (app) => {
       await app.expand('preview');
       const clickHead = async (label: string): Promise<void> => {
@@ -290,6 +291,28 @@ export const TRADER_SCENES: readonly Scene[] = [
       await clickHead('ROI');
       const worst = percents();
       if (!ordered(worst, 'asc')) throw new Error(`the second click on ROI did not turn the order round: ${worst.join(', ')}`);
+
+      // the default order back (this click changes the sort), then the sell side of ARC-L1: the hold has MEDS and STIM
+      await clickHead('Товар');
+      app.setViewTerminal(ARC_L1);
+      app.setTerminalSide('sell');
+      await pause(150);
+      const medsHere = [...document.querySelectorAll<HTMLElement>('.table button.line')].find((el) => (el.textContent ?? '').includes('MEDS'));
+      if (medsHere === undefined) throw new Error('the scene wants the row of MEDS on the sell side, and there is none');
+      medsHere.click();
+      await pause(150);
+      await app.sell({ terminalId: ARC_L1, commodityId: MEDS, scu: 120, price: 2540, knownScu: 90 });
+      await pause(300);
+      if (codes()[0] !== 'MEDS') throw new Error(`the sale took the open row from its place (the order is held): ${codes().join(', ')}`);
+      // the sort is the default one already: this click changes neither the key nor the direction, and it is still the request for the order
+      await clickHead('Товар');
+      const now = codes();
+      if (now[0] === 'MEDS') throw new Error(`a click on «Товар» with the default sort did not renew the order of the open table: ${now.join(', ')}`);
+      if (now[0] !== 'STIM') throw new Error(`the cargo (STIM) does not stand first in the default order: ${now.join(', ')}`);
+      const names = [...document.querySelectorAll('.table .row .full')].map((el) => el.textContent ?? '').slice(1);
+      if (!names.every((name, i) => i === 0 || names[i - 1].localeCompare(name, 'en') <= 0)) throw new Error(`the rows are not in the default order, by name: ${names.join(', ')}`);
+      const stillOpen = document.querySelector('.table .row.selected .code')?.textContent;
+      if (stillOpen !== 'MEDS') throw new Error(`the open row is not open any more: ${String(stillOpen)}`);
     },
   },
   {

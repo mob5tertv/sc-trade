@@ -201,7 +201,6 @@ describe('heldPlaces: the places of the rows are held while a field has the curs
   });
 
   it('a click on a sort header with a row open is the player\'s own request for a new order: the places are taken again from the freshly sorted rows, and the open row stands where that order puts it', () => {
-    const held = [4, 6, 1, 2, 3, 5]; // MEDS first, open
     const byRoi = ids(orderRows(ROWS, { side: 'sell', sort: ROI_DESC, cargo: [line(6, 80)], percentOf }));
     expect(byRoi).toEqual([6, 3, 4, 5, 1, 2]);
     const renewed = resortedPlaces(byRoi, open);
@@ -211,6 +210,18 @@ describe('heldPlaces: the places of the rows are held while a field has the curs
     const afterSale = ids(orderRows(ROWS, { side: 'sell', sort: ROI_DESC, cargo: [], percentOf }));
     expect(afterSale).not.toEqual(byRoi);
     expect(heldPlaces(renewed, afterSale, open)).toEqual(byRoi);
+  });
+
+  it('a click that changes neither the key nor the direction of the sort still renews the held order: «Товар» clicked while the default order is on', () => {
+    // the sell side, default sort, MEDS (4) open and sold out: it keeps the first place, the order it would have by the sort is another one
+    const held = heldPlaces(null, ids(orderRows(ROWS, { side: 'sell', sort: DEFAULT, cargo: [line(4, 120), line(6, 80)], percentOf })), open);
+    expect(held).toEqual([4, 6, 1, 2, 3, 5]);
+    const sortedNow = ids(orderRows(ROWS, { side: 'sell', sort: DEFAULT, cargo: [line(6, 80)], percentOf }));
+    expect(heldPlaces(held, sortedNow, open)).toEqual([4, 6, 1, 2, 3, 5]); // a sale: the old places stay
+    // the click on «Товар» is no change of the sort at all...
+    expect(clickedTerminalSort(DEFAULT, 'name')).toEqual(DEFAULT);
+    // ...and the request still takes the new order, whatever the sort did or did not do
+    expect(resortedPlaces(sortedNow, open)).toEqual([6, 1, 2, 3, 4, 5]);
   });
 
   it('a sort request holds nothing when nothing holds the places: the sort simply shows', () => {

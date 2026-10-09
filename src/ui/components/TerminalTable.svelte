@@ -227,19 +227,21 @@
     untrack(() => holdPlaces(!!table?.contains(document.activeElement) && isField(document.activeElement)));
   });
 
-  // A click on «Товар» or «ROI» is the player's own request for a new order: the held places are not allowed to swallow it. With a row open (or the cursor
-  // in a field) the places are taken again from the freshly sorted rows, the open row stays open and stands where the new order puts it, and from then on
-  // the order is held as before (`resortedPlaces`). The first run is the start, not a request.
-  let lastSort: string | null = null;
+  // EVERY click on «Товар» or «ROI» is the player's own request for an order: the held places are not allowed to swallow it, and a click that changes neither the
+  // key nor the direction of the sort («Товар» while the default order is on, after a sale sent the open row elsewhere) is a request too, so the clicks are counted
+  // and not the changes of the sort. With a row open (or the cursor in a field) the places are taken again from the freshly sorted rows, the open row stays open and
+  // stands where the order puts it, and from then on the order is held as before (`resortedPlaces`). Zero clicks is the start, not a request.
+  let sortClicks = $state(0);
+  function sortClicked(key: TerminalSortKey): void {
+    onSort?.(key);
+    sortClicks += 1;
+  }
   $effect(() => {
-    const now = `${sort.key}:${sort.dir}`;
+    if (sortClicks === 0) return;
     untrack(() => {
-      if (lastSort !== null && now !== lastSort) {
-        frozenIds = resortedPlaces(sorted.map(row => row.commodityId), {
-          fieldFocused: !!table?.contains(document.activeElement) && isField(document.activeElement), rowOpen: selectedCommodityId !== null,
-        });
-      }
-      lastSort = now;
+      frozenIds = resortedPlaces(sorted.map(row => row.commodityId), {
+        fieldFocused: !!table?.contains(document.activeElement) && isField(document.activeElement), rowOpen: selectedCommodityId !== null,
+      });
     });
   });
 
@@ -338,7 +340,7 @@
 {#snippet head(key: TerminalSortKey, label: string, title: string)}
   <span role="columnheader" class:r={key === 'roi'} aria-sort={terminalAriaSort(sort, key)}>
     {#if onSort}
-      <button type="button" class="sort" class:on={sort.key === key} {title} onclick={() => onSort(key)}>
+      <button type="button" class="sort" class:on={sort.key === key} {title} onclick={() => sortClicked(key)}>
         {#if sort.key === key && key === 'roi'}{@render arrow()}{/if}
         {label}
         {#if sort.key === key && key === 'name'}{@render arrow()}{/if}
