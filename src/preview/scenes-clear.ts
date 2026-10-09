@@ -91,4 +91,24 @@ export const CLEAR_SCENES: readonly Scene[] = [
       await openData(app);
     },
   },
+  {
+    // A mark is asked for (a hotkey) at the very moment the clearing is answered with "yes": the clearing is a job of the trade queue like every other
+    // write of the service, so the mark waits for it and for the re-read of the run. `eval:window.__order()` says which came first in the log:
+    // «history cleared» before the line of the mark (`clearedFirst: true`); without the queue the mark job starts at once and logs first.
+    name: 'settings-history-mark-waits',
+    title: 'Очистка истории и отметка из горячей клавиши в один момент: отметка ждёт своей очереди после очистки и перечитывания рейса',
+    dataset: 'run',
+    act: async (app) => {
+      (window as unknown as { __order: () => unknown }).__order = () => {
+        const log = window.__preview?.log ?? [];
+        const at = (text: string): number => log.findIndex((line) => line.includes(text));
+        return { clearedAt: at('history cleared'), markAt: at('[ui] mark'), clearedFirst: at('history cleared') >= 0 && at('history cleared') < at('[ui] mark') };
+      };
+      await openData(app);
+      app.askClearHistory('all');
+      app.answer(true);
+      void app.mark('depart');
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    },
+  },
 ];

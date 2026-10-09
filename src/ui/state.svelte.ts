@@ -51,7 +51,7 @@ import { createLatestRequest } from './vm/latest-request';
 import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './vm/lookup';
 import { answerLookup } from './vm/lookup-flow';
 import { createRequestQueue } from './vm/request-queue';
-import { closedRunNotice, shownFor } from './vm/run-closed';
+import { closedRunNotice, stayTimes } from './vm/run-closed';
 import { markRefusal } from './vm/run-phase';
 import { sameRun } from './vm/same-run';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
@@ -1195,15 +1195,20 @@ class AppState {
    */
   async #clearHistory(scope: ClearScope): Promise<void> {
     const endedBefore = scope === 'old' ? oldRunsBefore(this.#syncDeps().now()) : null;
-    let cleared: ClearedHistory | null = null;
-    let failure = CLEAR_FAILED;
-    try {
-      cleared = await clearRunHistory(this.#tradeDeps(), endedBefore);
-    } catch (err) {
-      this.#log.error('ui', 'cannot clear the history', { scope, err });
-      if (err instanceof ClearHistoryError) failure = err.message;
-    }
-    await this.#reloadRun(false); // nothing of the market was written
+    // a job of the trade queue like every other call of the service: the run is read again before the next trade or mark starts, so
+    // that a mark of a hotkey cannot come between the clearing and the re-read
+    const { cleared, failure } = await this.#tradeQueue(async (): Promise<{ cleared: ClearedHistory | null; failure: string }> => {
+      let done: ClearedHistory | null = null;
+      let why = CLEAR_FAILED;
+      try {
+        done = await clearRunHistory(this.#tradeDeps(), endedBefore);
+      } catch (err) {
+        this.#log.error('ui', 'cannot clear the history', { scope, err });
+        if (err instanceof ClearHistoryError) why = err.message;
+      }
+      await this.#reloadRun(false); // nothing of the market was written
+      return { cleared: done, failure: why };
+    });
     await stats.reload('history cleared'); // never throws
     if (cleared !== null) this.notify(clearedText(cleared.runs), 'info');
     else this.notify(failure, 'error');
@@ -1390,17 +1395,16 @@ class AppState {
 
   /**
    * A short message for the player where he looks now: the mini line for 3 seconds, the notice line in the expanded window. The mini
-   * line takes the colour of the message (`kind`). A message with numbers to read (`long`) stays in each of them for no less than
-   * `shownFor` its usual time.
+   * line takes the colour of the message (`kind`). A message that needs another time says how long it stays in each place (`stay`).
    */
-  #say(text: string, kind: Notice['kind'] = 'info', long = false): void {
+  #say(text: string, kind: Notice['kind'] = 'info', stay: { flashMs: number; noticeMs: number } = { flashMs: FLASH_MS, noticeMs: NOTICE_MS }): void {
     this.flash = text;
     this.flashKind = kind;
     clearTimeout(this.#flashTimer);
     this.#flashTimer = setTimeout(() => {
       this.flash = null;
-    }, long ? shownFor(FLASH_MS) : FLASH_MS);
-    if (this.mode === 'expanded') this.notify(text, kind, long ? shownFor(NOTICE_MS) : NOTICE_MS);
+    }, stay.flashMs);
+    if (this.mode === 'expanded') this.notify(text, kind, stay.noticeMs);
   }
 
   /**
@@ -1408,13 +1412,14 @@ class AppState {
    * the player looks at, so that it is not found only in the history. The numbers are those of the row of that run (`closedRunNotice`).
    * Said BEFORE whatever else the trade does after the write, so that a failure of one of those steps (the target that cannot be
    * cleared, the run that cannot be read) lands on top of it and is never covered by it. It carries three numbers to read, so it
-   * stays no less than eight seconds in the mini line too (`shownFor`).
+   * stays no less than eight seconds where it is said (`stayTimes`); in the mini line an income keeps the usual three, because the
+   * run that goes on has its mark buttons there and they are not drawn while a message is up.
    */
   #announceClosed(closed: RunWithEvents): void {
     try {
-      const { text, kind } = closedRunNotice(closed);
+      const notice = closedRunNotice(closed);
       this.#log.info('ui', 'run closed', { runId: closed.run.id, status: closed.run.status });
-      this.#say(text, kind, true);
+      this.#say(notice.text, notice.kind, stayTimes(notice, FLASH_MS, NOTICE_MS));
     } catch (err) {
       // the trade IS written: a notice that cannot be made must not turn it into a failure
       this.#log.error('ui', 'cannot say that the run is closed', { runId: closed.run.id, err });

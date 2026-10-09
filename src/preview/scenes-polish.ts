@@ -253,6 +253,22 @@ export const POLISH_SCENES: readonly Scene[] = [
     },
   },
   {
+    // A run goes on and a cargo that was never bought through the application is sold (an income); the window is folded at once. The mini line says
+    // «Доход записан…» for the usual three seconds, and then draws the mark button again (it is not drawn while a message is up):
+    // `--do "eval:window.__mini();wait:4000;eval:window.__mini()"` prints the message and the buttons right after and four seconds later.
+    name: 'run-income-mini',
+    title: 'Доход записан при идущем рейсе, окно свёрнуто: мини-строка говорит об этом три секунды, затем снова кнопка отметки',
+    dataset: 'run',
+    act: async (app) => {
+      (window as unknown as { __mini: () => unknown }).__mini = () => ({
+        flash: app.flash, marks: document.querySelectorAll('.marks button').length, notice: app.notice?.text ?? null,
+      });
+      await app.expand('preview');
+      await app.sell({ terminalId: 4, commodityId: 2, scu: 150, price: 6742 }, true);
+      await app.collapse('preview');
+    },
+  },
+  {
     // The sale of the last cargo that makes a profit, the window folded after it: the line says it in the accent colour
     name: 'run-sold-mini',
     title: 'Последний груз продан, окно свёрнуто: мини-строка говорит итог рейса',

@@ -10,6 +10,8 @@ import { NONE, runFigures, type RunFigures } from './stats-rows';
 export interface ClosedRunNotice {
   text: string;
   kind: 'info' | 'error';
+  /** A run was closed. `false` for a sale without a purchase: it is a run of its own, and the run that goes on is still going. */
+  closesRun: boolean;
 }
 
 const MINIMUM_MS = 6000;
@@ -20,6 +22,16 @@ const LONG_ENOUGH_MS = 8000;
  * three numbers to read, so a place that lets its messages go sooner than six seconds (the mini line: three) keeps this one for eight.
  */
 export const shownFor = (base: number): number => (base < MINIMUM_MS ? LONG_ENOUGH_MS : base);
+
+/**
+ * How long the notice stays in the mini line (`flashBase` is the time of its ordinary messages) and in the notice line of the expanded
+ * window (`noticeBase`). The notice line always keeps it at least eight seconds. The mini line does too, except for an income: the run
+ * that goes on has its mark buttons there («Взлетел» / «Прилетел»), and they are not drawn while a message is up, so a message that
+ * closed no run keeps the usual short time.
+ */
+export function stayTimes(notice: ClosedRunNotice, flashBase: number, noticeBase: number): { flashMs: number; noticeMs: number } {
+  return { flashMs: notice.closesRun ? shownFor(flashBase) : flashBase, noticeMs: shownFor(noticeBase) };
+}
 
 /** The profit as the player reads it: a gain has a plus, a loss and a zero carry theirs in the number. */
 const signed = (figures: RunFigures): string => (figures.tone === 'gain' ? `+${figures.profit}` : figures.profit);
@@ -38,8 +50,8 @@ export function closedRunNotice(closed: RunWithEvents): ClosedRunNotice {
   const { run, events } = closed;
   const figures = runFigures(run, events, run.endedAt ?? run.startedAt);
   const kind = figures.tone === 'loss' ? 'error' : 'info';
-  if (isIncomeRun(events)) return { text: `Доход записан: ${signed(figures)}`, kind };
-  if (run.status === 'lost') return { text: `Рейс закрыт: груз потерян, ${signed(figures)}`, kind };
+  if (isIncomeRun(events)) return { text: `Доход записан: ${signed(figures)}`, kind, closesRun: false };
+  if (run.status === 'lost') return { text: `Рейс закрыт: груз потерян, ${signed(figures)}`, kind, closesRun: true };
   const parts = [signed(figures), ...known(figures.rate, (rate) => `${rate}/ч`), ...known(figures.roi, (roi) => `ROI ${roi}`)];
-  return { text: `Рейс закрыт: ${parts.join(' · ')}`, kind };
+  return { text: `Рейс закрыт: ${parts.join(' · ')}`, kind, closesRun: true };
 }
