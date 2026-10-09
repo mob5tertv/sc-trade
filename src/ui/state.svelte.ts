@@ -43,7 +43,7 @@ import {
 } from '../platform/window';
 import { resetHeldKeys } from './keyboard';
 import { stats } from './stats.svelte';
-import { arrivalView, type ArrivalView } from './vm/arrival-view';
+import { arrivalView, landingView, type ArrivalView } from './vm/arrival-view';
 import { clearedText, clearQuestion, countFor, oldRunsBefore, type ClearScope } from './vm/history-clearing';
 import { shouldCollapse } from './vm/idle';
 import { createKeyboardHolds, type KeyboardHolds } from './vm/keyboard-holds';
@@ -1247,13 +1247,19 @@ class AppState {
    * A terminal chosen in the field of the location (Enter, Ctrl+Enter, a click on the list). It is always the terminal the window looks at;
    * whether it is also the current location is `pickEffect`: with no run going it is ("Я здесь" in one press), in a run it is not, so that
    * the player can read the prices of a far station without losing his "from" (Ctrl+Enter says "Я здесь" anyway), and the field that asks
-   * "Где прилетел?" takes it as the answer. The question ends with the choice.
+   * "Где прилетел?" takes it as the answer, and shows it the way an arrival at a target is shown (`landingView`: the "sell" side while there
+   * is cargo aboard). The question ends with the choice.
    */
   async pickTerminal(id: number, ctrl = false): Promise<void> {
     const askingWhere = this.askingWhere;
     const effect = pickEffect({ runGoing: this.activeRun !== null, ctrl, askingWhere });
     this.#log.info('ui', 'pick terminal', { terminalId: id, effect, ctrl, askingWhere });
     this.#askedInRun = null;
+    if (askingWhere) {
+      const cargoAboard = cargoOf(this.activeRun?.events ?? []).length > 0;
+      await this.#followTarget(landingView(id, cargoAboard, this.settings.currentTerminalId));
+      return;
+    }
     this.#showTerminal(id);
     if (effect === 'here') await this.#locateAt(id);
   }
@@ -1606,7 +1612,8 @@ class AppState {
    * "sell" side while there is cargo aboard, and then the current location, the way a trade saves it (`#locateAt`: nothing is
    * written or logged when the ship is there already). What to change is decided by `arrivalView`. The side is chosen after
    * the viewed terminal is set, from the rows of the terminal now viewed (`#showTerminal`), and this runs after the run and the
-   * market were read again, so the rows are those of the arrival. The target stays: the run is not over.
+   * market were read again, so the rows are those of the arrival. The target stays: the run is not over. The terminal picked as the
+   * answer to "Где прилетел?" is carried out the same way (`pickTerminal`).
    */
   async #followTarget(view: ArrivalView): Promise<void> {
     if (view.show === null) return;
