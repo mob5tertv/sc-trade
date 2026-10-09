@@ -20,6 +20,11 @@
 {{#each t.data.form}}          <p>{{this}}</p>
 {{/each}}        </section>
 
+        <section class="doc__part" aria-labelledby="data-server">
+          <h2 id="data-server">{{t.data.server_title}}</h2>
+{{#each t.data.server}}          <p>{{this}}</p>
+{{/each}}        </section>
+
         <section class="doc__part" aria-labelledby="data-analytics">
           <h2 id="data-analytics">{{t.data.analytics_title}}</h2>
 {{#if flags.analytics}}{{#each t.data.analytics_on}}          <p>{{this}}</p>
@@ -28,7 +33,8 @@
 
         <section class="doc__part" aria-labelledby="data-contact">
           <h2 id="data-contact">{{t.data.contact_title}}</h2>
-          <p>{{t.data.contact}} <a href="{{site.links.twitch}}" target="_blank" rel="noopener noreferrer">{{shown.twitch}}<span class="visually-hidden"> ({{t.footer.external}})</span></a></p>
+          <p>{{t.data.holder}} {{site.author}}.</p>
+          <p>{{t.data.contact}} <a href="{{site.links.twitch}}" target="_blank" rel="noopener noreferrer">{{shown.twitch}}<span class="visually-hidden"> ({{t.footer.external}})</span></a>. {{t.data.no_email}}</p>
         </section>
 
         <p class="doc__back"><a class="button button--ghost" href="{{links.home}}">{{t.data.back}}</a></p>

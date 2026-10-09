@@ -3,7 +3,7 @@
     "title": "SC Trade — a price diary and trade routes for Star Citizen",
     "description": "A small window over the game: write down terminal prices, see what a route earns and how long a trip takes. An unofficial fan project.",
     "data_title": "About data — SC Trade",
-    "data_description": "What the SC Trade site collects, what the feedback form sends, and what the app never sends anywhere."
+    "data_description": "What the SC Trade site keeps, what the feedback form sends and what the server sees. The app sends nothing to the site."
   },
   "nav": {
     "skip": "Skip to content",
@@ -132,16 +132,16 @@
         "text": "The game has to run in borderless window mode. The window is not drawn over exclusive fullscreen."
       },
       {
-        "title": "The keyboard stays with the game",
-        "text": "The window never takes the keyboard by itself: it gets it only when you click a text field, and gives it back after the input. Esc in a field gives it back at once."
+        "title": "Never takes the keyboard by itself",
+        "text": "The keyboard goes to the window only while you type into a text field — after your click on it — and after the input goes back to the window that had it (usually the game). Esc in a field gives it back at once."
       },
       {
-        "title": "Injects nothing, reads nothing",
-        "text": "The app does not read the game's memory and injects nothing into other processes. It does not read the game's files either: you enter the prices yourself."
+        "title": "No injection, no reading of the game's memory",
+        "text": "The app does not read the game's memory and injects nothing into other processes; it opens no handle of another process. To tell whose window is active, it asks Windows which process the active window belongs to (and, with the cursor diagnostics switched on, the window under the cursor), and compares the process number only with its own: the other number is not kept anywhere and not written to the log."
       },
       {
         "title": "Presses nothing for you",
-        "text": "The app sends no key presses and no clicks. The keys you assign reach the game as usual: the app does not swallow them. Nothing is assigned by default."
+        "text": "The app sends no key presses and no clicks. Keys are assigned in the settings; nothing is assigned by default. While at least one is assigned, Windows calls the app on every press of any key. For a key that is not assigned the app returns at once: it does not read the state of Ctrl, Alt and Shift and remembers nothing. It passes every press on: the game gets it as usual."
       },
       {
         "title": "Online only for UEX data",
@@ -188,7 +188,7 @@
     "verify_title": "How to check the sum",
     "verify_before": "Open PowerShell in the folder with the downloaded file and run:",
     "verify_after": "The Hash line must match the sum on this page; letter case does not matter.",
-    "latest_only": "Only the latest version is ever kept here.",
+    "latest_only": "This page offers only the latest version.",
     "update": "Updating: close the app («Выход» in the tray icon's menu) and run the new installer. Your data stays."
   },
   "feedback": {
@@ -207,7 +207,7 @@
     "trap": "Leave this field empty",
     "submit": "Send",
     "sending": "Sending…",
-    "privacy": "Only what you typed and attached is sent: the text, the contact, the screenshots and the log file. Only the author sees it.",
+    "privacy": "What you typed and attached is sent: the text, the contact, the screenshots and the log file. Only the author sees it.",
     "privacy_link": "More on the “About data” page",
     "noscript": "The form needs JavaScript.",
     "elsewhere": "You can write to the author on Twitch:",
@@ -244,7 +244,7 @@
   },
   "consent": {
     "title": "Analytics",
-    "text": "May the site turn on Google Analytics? It shows the author how many people visit. Nothing is loaded until you allow it.",
+    "text": "May the site turn on Google Analytics? It shows the author how many people visit. Analytics is not loaded until you allow it.",
     "allow": "Allow",
     "decline": "Decline",
     "more": "About data"
@@ -252,7 +252,7 @@
   "data": {
     "label": "About data",
     "title": "What the site collects, and what it does not",
-    "lead": "In short: the app sends nothing to this site, and the site receives only what you send through the form yourself.",
+    "lead": "In short: the app sends nothing to this site, and the site keeps only what you send through the form yourself. The address a request comes from stays on the server for a short time: see “What the server sees” below.",
     "back": "Home",
     "analytics_title": "Analytics on the site",
     "analytics_off": [
@@ -265,10 +265,16 @@
     ],
     "form_title": "The feedback form",
     "form": [
-      "The form sends only what you typed and attached: the text of the message, the contact if you gave one, the pictures and the log file.",
-      "The language of the page and the time the form was shown go with them: that time is used to filter out robots.",
-      "The app's log file holds folder paths with your Windows user name, the Windows version, the screen size, terminal identifiers and prices, and the names of the keys you assigned. It holds no titles of other windows and no names or numbers of other processes.",
-      "Only the author sees the messages. To have your message deleted, write to the author on Twitch."
+      "Through the form you send what you typed and attached: the text of the message, the contact if you gave one, the pictures and the log file.",
+      "The language of the page, the time the form was shown and a hidden field that a person leaves empty go with them: the time and that field are used to filter out robots.",
+      "The app's log file holds folder paths with your Windows user name, the Windows version, the screen size, terminal identifiers and prices, the names of the keys you assigned, and the number of the window that had the keyboard before the app's window took it. It holds no titles of other windows and no names or numbers of other processes.",
+      "Only the author sees the messages and the files attached to them. They are kept for up to 180 days, or deleted earlier at your request."
+    ],
+    "server_title": "What the server sees",
+    "server": [
+      "As on any site, your IP address and the headers your browser sends reach the server with every request.",
+      "They are not stored with a message.",
+      "The address stays for a short time in two places: in the server's error log, for up to 30 days, and in the limiter that keeps one sender from writing too often, for up to a day."
     ],
     "app_title": "The app itself",
     "app": [
@@ -276,8 +282,10 @@
       "It goes online only for UEX data (api.uexcorp.uk). Everything is worked out on your computer.",
       "The settings, your prices and your trips stay on your disk: %APPDATA%\\com.sctrade.app. The logs are in %LOCALAPPDATA%\\com.sctrade.app\\logs."
     ],
-    "contact_title": "Questions",
-    "contact": "You can write to the author on Twitch:"
+    "contact_title": "Who holds the data, and how to reach him",
+    "holder": "The data is held by the author of the site and the app:",
+    "contact": "Today you can write to him on Twitch:",
+    "no_email": "There is no e-mail address yet."
   },
   "notfound": {
     "code": "404",
