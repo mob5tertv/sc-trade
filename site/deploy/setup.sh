@@ -3,34 +3,40 @@
 # SC Trade - sets up the server of the site: Ubuntu 24.04 LTS, run by the owner of the server, as root, from the
 # folder it came in (site/dist-deploy, made by "npm run site:build" and copied to the server whole).
 #
-#   sudo bash setup.sh                     sets everything up; safe to run again
-#   sudo bash setup.sh --dry-run           only prints what it would do: changes nothing
+#   sudo --preserve-env=SSH_CONNECTION bash setup.sh             sets everything up; safe to run again
+#   sudo --preserve-env=SSH_CONNECTION bash setup.sh --dry-run   only prints what it would do: changes nothing
+#   sudo --preserve-env=SSH_CONNECTION bash setup.sh --deploy-key FILE
+#                                          the public key the upload user logs in with
+#                                          (without it: the keys you log in with yourself)
 #   sudo bash setup.sh --reset-password    a new password of the admin page (/admin/) and the restart of the
 #                                          service that makes it count - nothing else
-#   sudo bash setup.sh --deploy-key FILE   the public key the upload user logs in with
-#                                          (without it: the keys you log in with yourself)
 #
-# SSH on another port than 22? "sudo" hides from the script which port your session came in through. Tell it:
-#   sudo --preserve-env=SSH_CONNECTION bash setup.sh
+# "--preserve-env=SSH_CONNECTION" hands the script the port your SSH session came in through, which plain "sudo"
+# hides from it. Where SSH is on port 22 it changes nothing; where it is not, the firewall step needs it. (Logged in
+# as root, there is no "sudo" to hide anything: bash setup.sh.)
 #
 # What it does, step by step - each step says what it is doing:
-#   1. installs caddy, nodejs, ufw and logrotate from the repositories of Ubuntu itself, and upgrades nothing;
+#   1. installs caddy, nodejs, ufw and logrotate from the repositories of Ubuntu itself - waiting up to two minutes
+#      if the system is busy with its own packages - and touches no other package;
 #   2. makes two users: one the service runs as (it cannot log in), one that uploads the files of the site;
 #   3. makes the folders: the site, the data of the service, its settings, the log of the web server;
 #   4. puts the code of the service in place (it comes in this folder, with what it needs: nothing is downloaded);
 #   5. asks for the password of the admin page, twice, showing nothing, and writes its hash into the settings;
 #   6. turns the firewall on: SSH, 80 and 443 come in, nothing else. The ports of SSH are the ones this system
-#      itself names; the firewall is turned on only once ufw lists a rule for each of them - and is not touched at
-#      all when the system names no port;
+#      itself names; the firewall is turned on only once ufw lists a rule for each of them. It is left off - and
+#      the script says so and goes on - when the system names no port, when ufw does not list a rule, or when ufw
+#      cannot be switched on at all;
 #   7. starts the service and waits until it answers on this machine;
 #   8. asks Caddy whether the new Caddyfile is good, and only then puts it in place. This step is the last one
 #      because it is the one most likely to stop on a server nobody has tried it on: when it does, the firewall is
 #      already on and the service already runs.
 #
-# Run again, it installs nothing that is installed, makes no user and no folder that is there and asks for no
-# password. It does put the code of the service in place anew, restart the service and make Caddy read its file.
+# Run again, it makes no user and no folder that is there and asks for no password. It does bring its four
+# packages up to date if Ubuntu has newer ones, put the code of the service in place anew, restart the service and
+# make Caddy read its file.
 #
-# Whenever it stops, it says in one line what this run has done and what it has not.
+# Whenever it stops, it says in one line what this run has done and what it has not. When it ends with the
+# firewall left off, that is the first thing its closing words say.
 #
 # What it never does: it does not change the settings of the SSH server; it downloads no script and runs none from
 # the internet; it takes no password from the command line, shows none and writes none anywhere.
@@ -55,6 +61,8 @@ readonly LOGROTATE_FILE=/etc/logrotate.d/sc-trade-site
 readonly UNIT_FILE=/etc/systemd/system/sc-trade-site.service
 # the steps of the set-up, in the order they are done
 readonly STEPS=(packages users folders code settings firewall service 'web server')
+# how the script is started, for the dry run and for the real one alike: with the port of the session handed on
+readonly START='sudo --preserve-env=SSH_CONNECTION bash setup.sh'
 
 dry_run=false
 reset_password=false
@@ -158,13 +166,14 @@ on_error() {
 usage() {
   printf '%s\n' 'Sets up the server of the SC Trade site (Ubuntu 24.04 LTS). Run it as root, from the folder it came in:'
   printf '%s\n' ''
-  printf '%s\n' '  sudo bash setup.sh                     sets everything up; safe to run again'
-  printf '%s\n' '  sudo bash setup.sh --dry-run           only prints what it would do'
+  printf '%s\n' "  $START             sets everything up; safe to run again"
+  printf '%s\n' "  $START --dry-run   only prints what it would do"
+  printf '%s\n' "  $START --deploy-key FILE"
+  printf '%s\n' '                                         the public key the upload user logs in with'
   printf '%s\n' '  sudo bash setup.sh --reset-password    a new password of the admin page and the restart of the service, nothing else'
-  printf '%s\n' '  sudo bash setup.sh --deploy-key FILE   the public key the upload user logs in with'
   printf '%s\n' ''
-  printf '%s\n' 'SSH on another port than 22? Tell the script which port your session came in through:'
-  printf '%s\n' '  sudo --preserve-env=SSH_CONNECTION bash setup.sh'
+  printf '%s\n' '"--preserve-env=SSH_CONNECTION" hands the script the port your SSH session came in through, which plain'
+  printf '%s\n' '"sudo" hides from it. On port 22 it changes nothing; on any other port the firewall step needs it.'
   printf '%s\n' ''
   printf '%s\n' 'The password is typed on the keyboard when the script asks for it. It is never an argument.'
 }
@@ -176,10 +185,11 @@ valid_domain() {
   [[ $1 =~ $shape ]]
 }
 
-# A full path of two levels or more: the site gets a folder of its own, never one that holds half the system.
+# A full path of two levels or more: the site gets a folder of its own, never one that holds half the system. No
+# step of it is "." or ".." (such a path does not name what it says), and no name in it holds two dots in a row.
 valid_root() {
   local shape='^(/[A-Za-z0-9._-]+){2,}$'
-  [[ $1 =~ $shape && $1 != *..* ]]
+  [[ $1 =~ $shape && $1 != *..* && "$1/" != */./* ]]
 }
 
 valid_port() {
@@ -229,7 +239,8 @@ merge_keys() {
 
 # The ports SSH comes in through, one a line, each once. Only what the system itself says is taken - no port is
 # assumed, and no evidence means no port:
-#   $1  what "sshd -T" printed: every "port N" of the settings of the SSH server;
+#   $1  what "sshd -T" printed: every "port N" of the settings of the SSH server, and the port of every
+#       "listenaddress a.b.c.d:N" or "listenaddress [address]:N" (an address may carry a port no "port" line names);
 #   $2  the value of SSH_CONNECTION: the port the session this script runs in came in through;
 #   $3  what "systemctl show ssh.socket -p Listen" printed: a port set for the socket of systemd, which the
 #       settings of the SSH server do not show;
@@ -238,10 +249,13 @@ merge_keys() {
 ssh_ports() {
   local seen=' ' word value rest address line
   local number='^[0-9]{1,5}$' session='^[^ ]+ [0-9]+ [^ ]+ ([0-9]{1,5})$' stream=':([0-9]{1,5}) \(Stream\)'
+  local listen='^(([0-9]+\.){3}[0-9]+|\[[^]]+\]):([0-9]{1,5})$'
   local -a found=()
   while read -r word value rest; do
     if [[ ${word,,} == port && $value =~ $number && -z $rest ]]; then
       found+=("$value")
+    elif [[ ${word,,} == listenaddress && -z $rest && $value =~ $listen && $value != 127.* && $value != '[::1]:'* ]]; then
+      found+=("${BASH_REMATCH[3]}")
     fi
   done <<< "$1"
   if [[ $2 =~ $session ]]; then
@@ -310,10 +324,13 @@ home_of() {
 
 packages() {
   say '1/8 Packages of Ubuntu: caddy, nodejs, ufw, logrotate'
-  # without a question on the way (a question would hang the run), keeping every settings file that is there, and
-  # without the restart of other services that "needrestart" would do on its own after an install
-  run env DEBIAN_FRONTEND=noninteractive apt-get update
-  if ! run env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold caddy nodejs ufw logrotate; then
+  # without a question on the way (a question would hang the run), keeping every settings file that is there,
+  # without the restart of other services that "needrestart" would do on its own after an install - and waiting up
+  # to two minutes for the lock of the packages: a server that was made a minute ago is busy with its own
+  if ! run env DEBIAN_FRONTEND=noninteractive apt-get update -o DPkg::Lock::Timeout=120; then
+    fail 'the list of packages could not be refreshed (what apt said is above). If it speaks of a lock: a server that was just made is busy with its own packages for its first minutes - wait a few minutes and start this script again.'
+  fi
+  if ! run env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install -y -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold caddy nodejs ufw logrotate; then
     fail 'the packages were not installed (what apt said is above). If it could not find "caddy" or "nodejs": they live in the "universe" part of the repositories of Ubuntu - see that it is on, and start this script again.'
   fi
   if ! $dry_run; then
@@ -349,7 +366,7 @@ users() {
       given=$(home_of "$admin")/.ssh/authorized_keys
     fi
     if [[ ! -r $given ]]; then
-      fail "no public key for the user $DEPLOY_USER: $given cannot be read. Copy the public half of your key (id_ed25519.pub) to the server and name it: sudo bash setup.sh --deploy-key FILE (site/DEPLOY.md, section 4.3, has the commands)"
+      fail "no public key for the user $DEPLOY_USER: $given cannot be read. Copy the public half of your key (id_ed25519.pub) to the server and name it: $START --deploy-key FILE (site/DEPLOY.md, section 4.3, has the commands)"
     fi
     home=$(home_of "$DEPLOY_USER")
     # root writes into a folder that belongs to another user: never through a link that user could have put there
@@ -373,7 +390,7 @@ users() {
     done < "$keys"
     if ((plain == 0)); then
       rm -f "$keys"
-      fail "no public key for the user $DEPLOY_USER: $given holds no plain key (a line with options in front is not taken). Name a file with your public key: sudo bash setup.sh --deploy-key FILE (site/DEPLOY.md, section 4.3, has the commands)"
+      fail "no public key for the user $DEPLOY_USER: $given holds no plain key (a line with options in front is not taken). Name a file with your public key: $START --deploy-key FILE (site/DEPLOY.md, section 4.3, has the commands)"
     fi
     run install -m 0600 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$keys" "$home/.ssh/authorized_keys"
     rm -f "$keys"
@@ -470,14 +487,14 @@ firewall() {
   local -a ports=()
   if $dry_run && ((EUID != 0)); then
     note 'this dry run is not root, and the system tells root more about the ports of SSH: to see the ports the real run'
-    note 'will open, start the dry run the very way you will start the real one (with sudo)'
+    note "will open, start the dry run the very way you will start the real one:  $START --dry-run"
   fi
   # every port SSH comes in through, from what this system itself says, asked four ways: the settings of the SSH
   # server, the session this script runs in, the socket of systemd, the sockets the SSH server listens on. No port
   # is assumed: a firewall that is turned on without the real port of SSH open shuts the owner out of his server.
   mapfile -t ports < <(ssh_ports "$(sshd -T 2> /dev/null || true)" "${SSH_CONNECTION:-}" "$(systemctl show ssh.socket -p Listen 2> /dev/null || true)" "$(ss -Hltnp 2> /dev/null || true)")
   if ((${#ports[@]} == 0)); then
-    firewall_left='the firewall is NOT touched: nothing on this system says which port SSH comes in through, and turned on without that port open it would shut you out. Nothing is shut. site/DEPLOY.md (section 4.3) says how to see the port; then start this script so that it is told of it: sudo --preserve-env=SSH_CONNECTION bash setup.sh'
+    firewall_left="the firewall is NOT touched: nothing on this system says which port SSH comes in through, and turned on without that port open it would shut you out. Nothing is shut. site/DEPLOY.md (section 4.3) says how to see the port; then start this script again so that it is told of it: $START"
     note "$firewall_left"
     return 0
   fi
@@ -503,7 +520,16 @@ firewall() {
   fi
   run ufw default deny incoming
   run ufw default allow outgoing
-  run ufw --force enable
+  if ! run ufw --force enable; then
+    # On some servers ufw cannot work at all (a container that may not set the packet filters of its kernel). That
+    # is no reason to stop before the service and the web server are set up. Whatever ufw has begun is taken back,
+    # so that nothing is left half shut - a firewall that is off is said aloud, here and at the very end; one that
+    # is half on could cut the session this script runs in - and the script says what to use instead.
+    run ufw disable || true
+    firewall_left='the firewall is NOT turned on: ufw could not be switched on (what it said is above; on some kinds of server it cannot work at all). Nothing is shut. Use the firewall in the panel of your hoster instead: let in the port of SSH, 80 and 443, and nothing else.'
+    note "$firewall_left"
+    return 0
+  fi
   run ufw status verbose
   steps_done+=(firewall)
 }
@@ -586,7 +612,7 @@ new_password() {
     note "would ask for the new password (twice, nothing is shown) and write its hash into $CONFIG_FILE"
   else
     if [[ ! -f $CONFIG_FILE || ! -f $CODE_DIR/src/configure.mjs ]]; then
-      fail "there is nothing to give a new password to: $CONFIG_FILE or the code of the service in $CODE_DIR is not there. Set the server up first: sudo bash setup.sh"
+      fail "there is nothing to give a new password to: $CONFIG_FILE or the code of the service in $CODE_DIR is not there. Set the server up first: $START"
     fi
     ask_password
     printf '%s' "$typed_password" | node "$CODE_DIR/src/configure.mjs" --config "$CONFIG_FILE" --reset-password || written=false
@@ -613,11 +639,21 @@ closing_words() {
   if $dry_run; then
     printf '\n%s\n' 'dry run: nothing is changed. Without --dry-run the same steps are done for real.'
     if [[ -n $firewall_left ]]; then
+      printf '%s\n' 'As things are, the real run would leave the firewall OFF:'
       note "$firewall_left"
     fi
     return 0
   fi
-  printf '\n%s\n' 'Done. Check now - site/DEPLOY.md, section 4.6, is the whole list, with what you must see. In short:'
+  # what was left out is said first: nobody reads "Done." and then looks twelve lines down for a warning
+  if [[ -n $firewall_left ]]; then
+    printf '\n%s\n' 'NOT ALL DONE - the firewall is OFF. Everything else is set up.'
+    note "$firewall_left"
+    printf '\n%s\n' 'The rest is done. Check now - site/DEPLOY.md, section 4.6, is the whole list, with what you must see. In short:'
+  else
+    printf '\n%s\n' 'Done. Check now - site/DEPLOY.md, section 4.6, is the whole list, with what you must see. In short:'
+    # the firewall has just been turned on: whether it lets its owner in is tried while there is a way back
+    note '0. before you close this window: log in from a NEW window. If it does not let you in, turn the firewall off here:  sudo ufw disable'
+  fi
   note "1. https://$domain/api/     answers {\"ok\":true}: the service is up and the certificate is there"
   note "2. https://$domain/admin/   asks for the password you have just typed"
   note "3. from your computer:  ssh $DEPLOY_USER@<this server>   logs in without asking for a password"
@@ -629,10 +665,6 @@ closing_words() {
   note "the log of the service    journalctl -u $SERVICE"
   note "the error log of Caddy    $CADDY_LOG (kept for 30 days at the most)"
   note "the Caddyfile before      $CADDYFILE.before-sc-trade"
-  if [[ -n $firewall_left ]]; then
-    printf '\n%s\n' 'ATTENTION - one step was left out:'
-    note "$firewall_left"
-  fi
   printf '\n%s\n' 'NOT done by this script: the settings of the SSH server are exactly as they were.'
   printf '%s\n' 'Worth doing by hand, later: forbid the login with a password (site/DEPLOY.md, section 4.11, has every command).'
   printf '%s\n' 'Before you forbid it:'
@@ -694,7 +726,7 @@ main() {
   fi
 
   if ! $dry_run && ((EUID != 0)); then
-    fail 'run it as root: sudo bash setup.sh (or look first at what it would do: sudo bash setup.sh --dry-run)'
+    fail "run it as root: $START (to look first at what it would do, put --dry-run after it)"
   fi
   local system='' release=''
   if [[ -r /etc/os-release ]]; then
@@ -739,7 +771,7 @@ main() {
 
 # Started as a program, it does its work. Read in by another script ("source"), it only offers its small questions.
 if [[ -z ${BASH_SOURCE[0]:-} ]]; then
-  printf 'Start it from its file: sudo bash setup.sh\n' >&2
+  printf 'Start it from its file: %s\n' "$START" >&2
   exit 1
 fi
 if [[ ${BASH_SOURCE[0]:-} == "$0" ]]; then

@@ -99,6 +99,11 @@ describe('site/deploy/setup.sh, read by bash', () => {
     expect(code).toMatch(/^set -Eeuo pipefail$/m);
   });
 
+  it('says at its top what a second run really does: its four packages may be brought up to date', () => {
+    expect(script).not.toMatch(/installs nothing that is installed/);
+    expect(script).toMatch(/^# Run again, it makes no user and no folder that is there and asks for no password\. It does bring its four\n# packages up to date if Ubuntu has newer ones/m);
+  });
+
   it('starts nothing when it is read in as a library: its work begins only when it is run as a program', () => {
     const { dir, started } = standIns();
     const run = runBash(['-c', 'source "$1"; echo loaded', 'x', forBash(scriptFile)], { path: dir });
@@ -116,8 +121,14 @@ describe('what setup.sh must never do', () => {
     expect(code).not.toMatch(/\brun (add-apt-repository|apt-key|snap|npm|npx|pip|pip3|corepack)\b|nodesource|deb\.nodesource|ppa:|sources\.list/);
     // what it installs, all of it, by name — without a question on the way, and keeping the settings that are there
     const installs = code.match(/apt-get install[^\n]*/g) ?? [];
-    expect(installs).toEqual(['apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold caddy nodejs ufw logrotate; then']);
-    for (const line of doing.filter((row) => /\bapt-get\b/.test(row))) expect(line, line).toMatch(/run env DEBIAN_FRONTEND=noninteractive (NEEDRESTART_SUSPEND=1 )?apt-get (update$|install )/);
+    expect(installs).toEqual(['apt-get install -y -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold caddy nodejs ufw logrotate; then']);
+    // both calls of apt wait up to two minutes for the lock of the packages: a server that was made a minute ago is
+    // still busy with its own first updates
+    const apt = doing.filter((row) => /\bapt-get\b/.test(row));
+    expect(apt).toHaveLength(2);
+    for (const line of apt) expect(line, line).toMatch(/^\s+if ! run env DEBIAN_FRONTEND=noninteractive (NEEDRESTART_SUSPEND=1 )?apt-get (update|install -y) -o DPkg::Lock::Timeout=120( |; then$)/);
+    // and a list of packages that could not be refreshed is said in words of its own, with what to do
+    expect(body('packages')).toMatch(/apt-get update -o DPkg::Lock::Timeout=120; then\n\s+fail '[^']*lock[^']*wait a few minutes/);
     // the dependencies of the service come in the folder: nothing is installed for it on the server
     expect(code).not.toMatch(/npm (ci|install)/);
   });
@@ -412,6 +423,10 @@ describe('the small questions of setup.sh', () => {
     for (const root of ['/var/www/sc-trade.space', '/srv/site']) expect(yes('valid_root', root), root).toBe(true);
     // a path of one level would be a folder that holds half the system: the site is never put there
     for (const root of ['', '/', 'var/www', '/var/www/', '/var/www/../etc', '/var/www/my site', '/var/www/$(id)', '/var/www/a;b', '/var', '/srv', '/home', '/etc']) expect(yes('valid_root', root), root).toBe(false);
+    // nor a path with a step that is "." or "..": what it names is not what it says
+    for (const root of ['/var/./www', '/./var/www', '/var/www/.', '/var/www/..', '/var/../www', '/../var/www', '/var/www/./site', '/./.']) expect(yes('valid_root', root), root).toBe(false);
+    // a name that merely begins with a dot is a name
+    for (const root of ['/var/www/.site', '/srv/site.example/.well-known']) expect(yes('valid_root', root), root).toBe(true);
     for (const port of ['8787', '1024', '65535']) expect(yes('valid_port', port), port).toBe(true);
     for (const port of ['', '80', '1023', '65536', '99999', '8787 ', '87a7', '-8787', '08787x']) expect(yes('valid_port', port), port).toBe(false);
   });
@@ -478,6 +493,11 @@ describe('the small questions of setup.sh', () => {
     // what the SSH server says of its settings
     expect(ports(sshd)).toBe('22\n');
     expect(ports('port 2222\nPort 22022\nport abc\nports 1\nport 0\nport 70000\n')).toBe('2222\n22022\n');
+    // an address the SSH server is told to listen on carries its own port, which no "port" line names
+    expect(ports('port 22\nlistenaddress 0.0.0.0:2222\nlistenaddress [::]:2223\nListenAddress [2001:db8::7]:2225\n')).toBe('22\n2222\n2223\n2225\n');
+    expect(ports('listenaddress 198.51.100.7:2222\n')).toBe('2222\n');
+    // an address only this machine can reach is no way in; and what is not "address:port" gives no port
+    expect(ports('listenaddress 127.0.0.1:2224\nlistenaddress [::1]:2224\nlistenaddress ::1\nlistenaddress 2001:db8::7\nlistenaddress [::]:0\nlistenaddress 0.0.0.0:99999\nlistenaddress host.example:2226 x\nlistenaddress 0.0.0.0:$(id)\n')).toBe('');
     // the port this very session came in through
     expect(ports('', '203.0.113.5 51234 198.51.100.7 2200')).toBe('2200\n');
     expect(ports('', '2001:db8::5 51234 2001:db8::7 22')).toBe('22\n');
@@ -629,8 +649,8 @@ describe('sudo bash setup.sh --dry-run', () => {
     const would = wouldRun(run.out);
     expect(run.out).not.toMatch(/^ {4}\+ /m);
     expect(would).toEqual([
-      'env DEBIAN_FRONTEND=noninteractive apt-get update',
-      'env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold caddy nodejs ufw logrotate',
+      'env DEBIAN_FRONTEND=noninteractive apt-get update -o DPkg::Lock::Timeout=120',
+      'env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install -y -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold caddy nodejs ufw logrotate',
       'useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin sc-trade-site',
       'useradd --create-home --user-group --shell /bin/bash deploy',
       'install -d -m 0755 -o deploy -g deploy /var/www/sc-trade.space',
@@ -782,14 +802,104 @@ describe('sudo bash setup.sh --dry-run', () => {
     const { dir, started } = standIns();
     const run = runBash([script(), '--help'], { path: dir, cwd: site.deploy });
     expect(run.status).toBe(0);
-    expect(run.out).toMatch(/sudo bash setup\.sh --dry-run/);
+    // one way to start it, for the dry run and for the real one: with the port of the session handed on
+    expect(run.out).toContain('  sudo --preserve-env=SSH_CONNECTION bash setup.sh             sets everything up; safe to run again\n');
+    expect(run.out).toContain('  sudo --preserve-env=SSH_CONNECTION bash setup.sh --dry-run   only prints what it would do\n');
     expect(run.out).toMatch(/--reset-password/);
     expect(run.out).toMatch(/--deploy-key FILE/);
     expect(started()).toEqual([]);
+    // and wherever the script says how to start it, it says it that way
+    expect(code).toMatch(/^readonly START='sudo --preserve-env=SSH_CONNECTION bash setup\.sh'$/m);
+    const plain = code.split('\n').filter((line) => /sudo bash setup\.sh/.test(line) && !/--reset-password/.test(line));
+    expect(plain).toEqual([]);
+  });
+});
+
+describe('the firewall step of setup.sh, with a ufw of the test', () => {
+  // The one step that is called here as it is — with nothing on the PATH but stand-ins, so that every program it
+  // starts is a recording of its name: no firewall, no system is touched.
+
+  /** Stand-ins, with a ufw that lists the given rules as added and fails when it is told to switch on (or does not). */
+  function withUfw(added: string, enableFails: boolean) {
+    const made = standIns({ sshd: 'port 22\n', ss: 'LISTEN 0 4096 [::]:2222 [::]:* users:(("sshd",pid=812,fd=3))\n' });
+    writeFileSync(
+      join(made.dir, 'ufw'),
+      `#!/bin/bash\nprintf '%s\\n' "ufw $*" >> "${forBash(made.record)}"\nif [[ $1 == show ]]; then printf '%b' "${added}"; fi\nif [[ $* == '--force enable' && ${enableFails} == true ]]; then printf 'ERROR: problem running ufw-init\\n' >&2; exit 1; fi\nexit 0\n`,
+    );
+    chmodSync(join(made.dir, 'ufw'), 0o755);
+    return made;
+  }
+  const step = 'source "$1"; dry_run=false; started=true; steps_done=(packages users folders code settings); firewall; printf "left=%s\\n" "$firewall_left"; printf "done=%s\\n" "${steps_done[*]}"';
+  const rules = 'ufw allow 22/tcp\\nufw allow 2222/tcp\\nufw allow 80/tcp\\nufw allow 443/tcp\\nufw allow 443/udp\\n';
+  const asked = ['sshd -T', 'systemctl show ssh.socket -p Listen', 'ss -Hltnp', 'ufw allow 22/tcp', 'ufw allow 2222/tcp', 'ufw allow 80/tcp', 'ufw allow 443/tcp', 'ufw allow 443/udp', 'ufw show added'];
+
+  it('turns the firewall on when ufw lists the rule for every port of SSH', () => {
+    const { dir, started } = withUfw(rules, false);
+    const run = runBash(['-c', step, 'x', forBash(scriptFile)], { path: dir });
+    expect(run.err).toBe('');
+    expect(run.status).toBe(0);
+    expect(started()).toEqual([...asked, 'ufw default deny incoming', 'ufw default allow outgoing', 'ufw --force enable', 'ufw status verbose']);
+    expect(run.out).toContain('    SSH stays open on: 22 2222\n');
+    expect(run.out).toContain('left=\n');
+    expect(run.out).toContain('done=packages users folders code settings firewall\n');
+  });
+
+  it('leaves it off when ufw does not list the rule for one of them — and goes on', () => {
+    // the rule for 2222, the port SSH really listens on, is not among what ufw says it has
+    const { dir, started } = withUfw('ufw allow 22/tcp\\nufw allow 80/tcp\\nufw allow 443/tcp\\n', false);
+    const run = runBash(['-c', step, 'x', forBash(scriptFile)], { path: dir });
+    expect(run.status).toBe(0);
+    expect(started()).toEqual(asked);
+    expect(run.out).toMatch(/left=the firewall is NOT turned on: ufw does not list a rule that lets SSH in on port 2222\./);
+    expect(run.out).toContain('done=packages users folders code settings\n');
+  });
+
+  it('goes on when ufw cannot be switched on at all (a server that may not set packet filters): takes back what it began, says so, and the firewall is not among what is done', () => {
+    const { dir, started } = withUfw(rules, true);
+    const run = runBash(['-c', step, 'x', forBash(scriptFile)], { path: dir });
+    // no stop: the service and Caddy are still to come
+    expect(run.status).toBe(0);
+    expect(run.err).toBe('ERROR: problem running ufw-init\n');
+    expect(started()).toEqual([...asked, 'ufw default deny incoming', 'ufw default allow outgoing', 'ufw --force enable', 'ufw disable']);
+    expect(run.out).toMatch(/ {4}the firewall is NOT turned on: ufw could not be switched on/);
+    expect(run.out).toMatch(/left=the firewall is NOT turned on: ufw could not be switched on[^\n]*the firewall in the panel of your hoster/);
+    expect(run.out).toContain('done=packages users folders code settings\n');
+    expect(run.out).not.toMatch(/STOPPED/);
   });
 });
 
 describe('the closing words of setup.sh', () => {
+  /** What the script says at its end, after a real run that left the firewall alone or did not. */
+  const closing = (left: string) => {
+    const { dir, started } = standIns();
+    const run = runBash(['-c', 'source "$1"; domain=site.example; firewall_left=$2; SUDO_USER=admin; closing_words', 'x', forBash(scriptFile), left], { path: dir });
+    expect(run.err).toBe('');
+    expect(started()).toEqual([]);
+    return run.out;
+  };
+
+  it('begin with what was left out, when something was: the firewall that is off is the first line, not the twelfth', () => {
+    const said = closing('the firewall is NOT touched: nothing on this system says which port SSH comes in through.');
+    const lines = said.split('\n').filter((line) => line !== '');
+    expect(lines[0]).toBe('NOT ALL DONE - the firewall is OFF. Everything else is set up.');
+    expect(lines[1]).toBe('    the firewall is NOT touched: nothing on this system says which port SSH comes in through.');
+    // nothing before it says that all is well
+    expect(said.indexOf('Done.')).toBe(-1);
+    expect(said).toMatch(/\nThe rest is done\. Check now/);
+    // said once, at the top
+    expect(said.match(/the firewall is NOT touched/g)).toHaveLength(1);
+  });
+
+  it('begin with "Done." when nothing was left out — and with the first thing to do while this window is still open', () => {
+    const said = closing('');
+    const lines = said.split('\n').filter((line) => line !== '');
+    expect(lines[0]).toMatch(/^Done\. Check now/);
+    expect(said).not.toMatch(/NOT ALL DONE|firewall is OFF/);
+    // the firewall is on now: the new window is tried first, and the way back is named
+    expect(lines[1]).toMatch(/^ {4}0\. before you close this window: log in from a NEW window/);
+    expect(said).toMatch(/If it does not let you in, turn the firewall off here:  sudo ufw disable/);
+  });
+
   it('tell the owner to test the login of the ADMINISTRATOR in a new window before he forbids passwords — a login as "deploy" does not count', () => {
     const words = body('closing_words');
     expect(words).toContain("'NOT done by this script: the settings of the SSH server are exactly as they were.'");
