@@ -367,7 +367,7 @@ describe('the guides for the user', () => {
     expect(honest).toMatch(/^### 4\.13\. Чего служба не обещает$/m);
     // the form: the limits of the hour, and the four places
     expect(honest).toMatch(/120 сообщений[\s\S]*200 МБ в час/);
-    expect(honest).toMatch(/до конца часа/);
+    expect(honest).toMatch(/считается последний час/);
     expect(honest).toMatch(/четырёх сообщений сразу[\s\S]*16 КБ в секунду/);
     // the login
     expect(honest).toContain('«Сервер занят»');
