@@ -63,7 +63,7 @@ const TEXTS = Object.freeze({
   wrong: 'Неверный пароль.',
   locked: 'Слишком много неверных паролей с этого адреса. Попробуй через 15 минут.',
   busy: 'Сервер занят. Попробуй ещё раз через минуту.',
-  twice: 'С этого адреса пароль уже проверяется. Подожди несколько секунд и попробуй ещё раз.',
+  twice: 'Вход уже проверяется. Подожди пару секунд и открой /admin/ заново.',
   forbidden: 'Действие отклонено: страница устарела или запрос пришёл не с неё. Вернись к списку, открой страницу заново и повтори.',
   unsure: 'Поставь галочку, которая подтверждает удаление, и нажми кнопку ещё раз.',
   nothing: 'Ничего не отмечено: поставь галочки у обращений, которые надо удалить.',
@@ -289,7 +289,10 @@ export function createAdmin({ settings, store, logins, now, log, sleep }) {
     const key = `login:${who}`;
     const refuse = (/** @type {'locked' | 'busy' | 'twice' | 'wrong'} */ why, /** @type {number} */ status) => {
       log(`admin login ${why} status=${status}`);
-      html(req, res, status, loginPage({ error: TEXTS[why] }));
+      // "twice" is what a person sees who pressed the button twice (the browser shows the answer to the second
+      // press): not the form again — it would only be sent too early once more — but what to do and a plain link
+      // there. By the time it is followed, the first login is through or has been answered.
+      html(req, res, status, why === 'twice' ? notePage({ title: 'Вход', text: TEXTS.twice }) : loginPage({ error: TEXTS[why] }));
     };
     // shut out: five wrong passwords from this very address within the window
     if (failures(key) >= limits.loginFailures) return refuse('locked', 429);

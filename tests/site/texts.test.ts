@@ -344,6 +344,14 @@ describe('the guides for the user', () => {
     // ufw cannot be switched on at all: the firewall of the hoster
     expect(setup).toContain('the firewall is NOT turned on: ufw could not be switched on');
     expect(entry('`the firewall is NOT turned on: ufw could not be switched on')).toMatch(/в панели хостера[\s\S]*порт SSH, 80 и 443/);
+    // ufw was on before the run and did not come on again: the script never switches it off — what to look at
+    expect(setup).toContain('ufw was already ON before this run, and it is NOT switched off');
+    const wasOn = entry('`ufw was already ON before this run');
+    expect(wasOn).toMatch(/не выключил/);
+    expect(wasOn).toContain('sudo ufw status verbose');
+    // and the end of the script names the state the firewall is really in
+    expect(setup).toContain('NOT ALL DONE - the firewall is $firewall_now. Everything else is set up.');
+    expect(trouble).toContain('`NOT ALL DONE - the firewall is ON as it was before this run`');
   });
 
   it('keep the copy of the messages closed to other users of the server, and say who else can keep the author out of his page', () => {

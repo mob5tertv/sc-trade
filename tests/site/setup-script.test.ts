@@ -819,26 +819,60 @@ describe('the firewall step of setup.sh, with a ufw of the test', () => {
   // The one step that is called here as it is — with nothing on the PATH but stand-ins, so that every program it
   // starts is a recording of its name: no firewall, no system is touched.
 
-  /** Stand-ins, with a ufw that lists the given rules as added and fails when it is told to switch on (or does not). */
-  function withUfw(added: string, enableFails: boolean) {
-    const made = standIns({ sshd: 'port 22\n', ss: 'LISTEN 0 4096 [::]:2222 [::]:* users:(("sshd",pid=812,fd=3))\n' });
+  /**
+   * Stand-ins, with a ufw that says the given thing of its state, lists the given rules as added, and fails when
+   * it is told to switch on (or does not).
+   */
+  function withUfw(options: { status: string; added: string; enableFails: boolean; evidence?: boolean }) {
+    const made = standIns(options.evidence === false ? {} : { sshd: 'port 22\n', ss: 'LISTEN 0 4096 [::]:2222 [::]:* users:(("sshd",pid=812,fd=3))\n' });
     writeFileSync(
       join(made.dir, 'ufw'),
-      `#!/bin/bash\nprintf '%s\\n' "ufw $*" >> "${forBash(made.record)}"\nif [[ $1 == show ]]; then printf '%b' "${added}"; fi\nif [[ $* == '--force enable' && ${enableFails} == true ]]; then printf 'ERROR: problem running ufw-init\\n' >&2; exit 1; fi\nexit 0\n`,
+      [
+        '#!/bin/bash',
+        `printf '%s\\n' "ufw $*" >> "${forBash(made.record)}"`,
+        `if [[ $* == status ]]; then printf '%b' "${options.status}"; fi`,
+        `if [[ $1 == show ]]; then printf '%b' "${options.added}"; fi`,
+        `if [[ $* == '--force enable' && ${options.enableFails} == true ]]; then printf 'ERROR: problem running ufw-init\\n' >&2; exit 1; fi`,
+        'exit 0',
+        '',
+      ].join('\n'),
     );
     chmodSync(join(made.dir, 'ufw'), 0o755);
     return made;
   }
-  const step = 'source "$1"; dry_run=false; started=true; steps_done=(packages users folders code settings); firewall; printf "left=%s\\n" "$firewall_left"; printf "done=%s\\n" "${steps_done[*]}"';
+  const step =
+    'source "$1"; dry_run=false; started=true; steps_done=(packages users folders code settings); firewall; printf "left=%s\\n" "$firewall_left"; printf "now=%s\\n" "$firewall_now"; printf "done=%s\\n" "${steps_done[*]}"';
   const rules = 'ufw allow 22/tcp\\nufw allow 2222/tcp\\nufw allow 80/tcp\\nufw allow 443/tcp\\nufw allow 443/udp\\n';
-  const asked = ['sshd -T', 'systemctl show ssh.socket -p Listen', 'ss -Hltnp', 'ufw allow 22/tcp', 'ufw allow 2222/tcp', 'ufw allow 80/tcp', 'ufw allow 443/tcp', 'ufw allow 443/udp', 'ufw show added'];
+  const OFF = 'Status: inactive\\n';
+  const ON = 'Status: active\\n\\nTo                         Action      From\\n--                         ------      ----\\n22/tcp                     ALLOW       Anywhere\\n';
+  // what it asks before it changes anything: whether ufw is on already, and which ports SSH comes in through
+  const questions = ['ufw status', 'sshd -T', 'systemctl show ssh.socket -p Listen', 'ss -Hltnp'];
+  const asked = [...questions, 'ufw allow 22/tcp', 'ufw allow 2222/tcp', 'ufw allow 80/tcp', 'ufw allow 443/tcp', 'ufw allow 443/udp', 'ufw show added'];
+  const tried = [...asked, 'ufw default deny incoming', 'ufw default allow outgoing', 'ufw --force enable'];
+
+  it('knows from what ufw says of itself whether it is on, off — or neither', () => {
+    expect(ask('ufw_state', 'Status: active\n\nTo  Action  From\n').out).toBe('on');
+    expect(ask('ufw_state', 'Status: active').out).toBe('on');
+    expect(ask('ufw_state', 'Status: inactive\n').out).toBe('off');
+    expect(ask('ufw_state', 'Status: inactive\r\n').out).toBe('off');
+    // anything else is not taken for "off": an error, an empty answer, words of another language, a rule that merely holds the word
+    for (const text of ['', 'ERROR: You need to be root to run this script\n', 'Состояние: неактивен\n', 'Status: inactive (maybe)\n', 'status: inactive\n', '\nStatus: inactive\n', 'Status: active and Status: inactive\n']) {
+      expect(ask('ufw_state', text).out, JSON.stringify(text)).toBe('unknown');
+    }
+    // it is asked in the language the script reads, and before anything of ufw is changed
+    const firewall = body('firewall');
+    const state = firewall.indexOf('before=$(ufw_state "$(LC_ALL=C ufw status 2> /dev/null || true)")');
+    expect(state).toBeGreaterThan(-1);
+    expect(state).toBeLessThan(firewall.indexOf('run ufw'));
+    expect(state).toBeLessThan(firewall.indexOf('mapfile -t ports'));
+  });
 
   it('turns the firewall on when ufw lists the rule for every port of SSH', () => {
-    const { dir, started } = withUfw(rules, false);
+    const { dir, started } = withUfw({ status: OFF, added: rules, enableFails: false });
     const run = runBash(['-c', step, 'x', forBash(scriptFile)], { path: dir });
     expect(run.err).toBe('');
     expect(run.status).toBe(0);
-    expect(started()).toEqual([...asked, 'ufw default deny incoming', 'ufw default allow outgoing', 'ufw --force enable', 'ufw status verbose']);
+    expect(started()).toEqual([...tried, 'ufw status verbose']);
     expect(run.out).toContain('    SSH stays open on: 22 2222\n');
     expect(run.out).toContain('left=\n');
     expect(run.out).toContain('done=packages users folders code settings firewall\n');
@@ -846,33 +880,90 @@ describe('the firewall step of setup.sh, with a ufw of the test', () => {
 
   it('leaves it off when ufw does not list the rule for one of them — and goes on', () => {
     // the rule for 2222, the port SSH really listens on, is not among what ufw says it has
-    const { dir, started } = withUfw('ufw allow 22/tcp\\nufw allow 80/tcp\\nufw allow 443/tcp\\n', false);
+    const { dir, started } = withUfw({ status: OFF, added: 'ufw allow 22/tcp\\nufw allow 80/tcp\\nufw allow 443/tcp\\n', enableFails: false });
     const run = runBash(['-c', step, 'x', forBash(scriptFile)], { path: dir });
     expect(run.status).toBe(0);
     expect(started()).toEqual(asked);
     expect(run.out).toMatch(/left=the firewall is NOT turned on: ufw does not list a rule that lets SSH in on port 2222\./);
+    expect(run.out).toContain('now=OFF\n');
     expect(run.out).toContain('done=packages users folders code settings\n');
   });
 
-  it('goes on when ufw cannot be switched on at all (a server that may not set packet filters): takes back what it began, says so, and the firewall is not among what is done', () => {
-    const { dir, started } = withUfw(rules, true);
+  it('ufw was OFF and cannot be switched on (a server that may not set packet filters): what it began is taken back, the script says so and goes on', () => {
+    const { dir, started } = withUfw({ status: OFF, added: rules, enableFails: true });
     const run = runBash(['-c', step, 'x', forBash(scriptFile)], { path: dir });
     // no stop: the service and Caddy are still to come
     expect(run.status).toBe(0);
     expect(run.err).toBe('ERROR: problem running ufw-init\n');
-    expect(started()).toEqual([...asked, 'ufw default deny incoming', 'ufw default allow outgoing', 'ufw --force enable', 'ufw disable']);
+    // nothing stays half shut — and it was off before, so "off" is the state the server was found in
+    expect(started()).toEqual([...tried, 'ufw disable']);
     expect(run.out).toMatch(/ {4}the firewall is NOT turned on: ufw could not be switched on/);
     expect(run.out).toMatch(/left=the firewall is NOT turned on: ufw could not be switched on[^\n]*the firewall in the panel of your hoster/);
+    expect(run.out).toContain('now=OFF\n');
     expect(run.out).toContain('done=packages users folders code settings\n');
     expect(run.out).not.toMatch(/STOPPED/);
+  });
+
+  it('ufw was ON before the script and fails to come on again: it is NEVER switched off — the server is not left less protected than it was found', () => {
+    const { dir, started } = withUfw({ status: ON, added: rules, enableFails: true });
+    const run = runBash(['-c', step, 'x', forBash(scriptFile)], { path: dir });
+    expect(run.status).toBe(0);
+    expect(run.err).toBe('ERROR: problem running ufw-init\n');
+    // the same commands up to the one that failed — and no "ufw disable" after it
+    expect(started()).toEqual(tried);
+    expect(started().filter((line) => /disable/.test(line))).toEqual([]);
+    // said in the step: it was on, the rules were added, turning it on again failed, and what to look at
+    const said = /^ {4}(ufw was already ON before this run[^\n]*)$/m.exec(run.out)?.[1] ?? '';
+    expect(said).toMatch(/it is NOT switched off/);
+    expect(said).toMatch(/The rules of this run were added, but turning the firewall on again failed/);
+    expect(said).toMatch(/sudo ufw status verbose/);
+    expect(said).not.toMatch(/Nothing is shut|is OFF|NOT turned on/);
+    expect(run.out).toContain(`left=${said}\n`);
+    expect(run.out).toContain('now=ON as it was before this run\n');
+    expect(run.out).toContain('done=packages users folders code settings\n');
+    expect(run.out).not.toMatch(/STOPPED/);
+  });
+
+  it('ufw would not say whether it was on: taken for "maybe on" — not switched off either', () => {
+    const { dir, started } = withUfw({ status: 'ERROR: problem running\\n', added: rules, enableFails: true });
+    const run = runBash(['-c', step, 'x', forBash(scriptFile)], { path: dir });
+    expect(run.status).toBe(0);
+    expect(started()).toEqual(tried);
+    expect(run.out).toMatch(/left=ufw did not say whether it was on before this run, so it is NOT switched off[^\n]*sudo ufw status verbose/);
+    expect(run.out).toContain('now=as it was before this run (ufw did not say whether it is on)\n');
+  });
+
+  it('a firewall that was on and is left alone is never called "OFF": the words of the step and of the end say that it stays on', () => {
+    // the rule is not listed, and ufw was on before: nothing is switched, and the end must not say "OFF"
+    const listed = withUfw({ status: ON, added: 'ufw allow 22/tcp\\n', enableFails: false });
+    const first = runBash(['-c', step, 'x', forBash(scriptFile)], { path: listed.dir });
+    expect(first.status).toBe(0);
+    expect(listed.started()).toEqual(asked);
+    expect(first.out).toMatch(/left=the firewall is NOT turned on: ufw does not list a rule[^\n]* ufw was already ON before this run: it stays on, with the rules it had and the ones this run added\.\n/);
+    expect(first.out).toContain('now=ON as it was before this run\n');
+    // nothing says which port SSH comes in through, and ufw was on before: not touched, and still on
+    const none = withUfw({ status: ON, added: rules, enableFails: false, evidence: false });
+    const second = runBash(['-c', step, 'x', forBash(scriptFile)], { path: none.dir });
+    expect(second.status).toBe(0);
+    expect(none.started()).toEqual(questions);
+    expect(second.out).toMatch(/left=the firewall is NOT touched: [^\n]* ufw was already ON before this run: it stays on, as it was\.\n/);
+    expect(second.out).toContain('now=ON as it was before this run\n');
+  });
+
+  it('a dry run does not ask ufw anything: it says that the real run would', () => {
+    const { dir, started } = standIns({ sshd: 'port 22\n' });
+    const run = runBash(['-c', 'source "$1"; dry_run=true; firewall', 'x', forBash(scriptFile)], { path: dir });
+    expect(run.status).toBe(0);
+    expect(started()).toEqual(QUESTIONS);
+    expect(run.out).toMatch(/would ask ufw whether it is on already/);
   });
 });
 
 describe('the closing words of setup.sh', () => {
   /** What the script says at its end, after a real run that left the firewall alone or did not. */
-  const closing = (left: string) => {
+  const closing = (left: string, now = 'OFF') => {
     const { dir, started } = standIns();
-    const run = runBash(['-c', 'source "$1"; domain=site.example; firewall_left=$2; SUDO_USER=admin; closing_words', 'x', forBash(scriptFile), left], { path: dir });
+    const run = runBash(['-c', 'source "$1"; domain=site.example; firewall_left=$2; firewall_now=$3; SUDO_USER=admin; closing_words', 'x', forBash(scriptFile), left, now], { path: dir });
     expect(run.err).toBe('');
     expect(started()).toEqual([]);
     return run.out;
@@ -888,6 +979,16 @@ describe('the closing words of setup.sh', () => {
     expect(said).toMatch(/\nThe rest is done\. Check now/);
     // said once, at the top
     expect(said.match(/the firewall is NOT touched/g)).toHaveLength(1);
+    // "OFF" is what the script says unless it has learnt otherwise
+    expect(code).toMatch(/^firewall_now='OFF'$/m);
+  });
+
+  it('begin with the truth about a firewall that was on before the run: it is not "OFF", it is on as it was', () => {
+    const said = closing('ufw was already ON before this run, and it is NOT switched off. The rules of this run were added, but turning the firewall on again failed.', 'ON as it was before this run');
+    const lines = said.split('\n').filter((line) => line !== '');
+    expect(lines[0]).toBe('NOT ALL DONE - the firewall is ON as it was before this run. Everything else is set up.');
+    expect(lines[1]).toMatch(/^ {4}ufw was already ON before this run, and it is NOT switched off\./);
+    expect(said).not.toMatch(/is OFF|Done\./);
   });
 
   it('begin with "Done." when nothing was left out — and with the first thing to do while this window is still open', () => {

@@ -185,7 +185,7 @@ describe('the login', () => {
     expect(looked).toBeGreaterThanOrEqual(1);
     expect(looked).toBeLessThanOrEqual(5);
     expect(statuses.filter((status) => status === 429)).toHaveLength(12 - looked);
-    expect(all.find((reply) => reply.status === 429)!.text).toContain('уже проверяется');
+    expect(all.find((reply) => reply.status === 429)!.text).toContain('Вход уже проверяется');
     expect(run.lines.filter((line) => / admin login wrong /.test(line))).toHaveLength(looked);
     expect(run.lines.filter((line) => / admin login twice status=429$/.test(line))).toHaveLength(12 - looked);
     // one after another, the rest of the five; then the address is shut out — the right password too
@@ -388,7 +388,11 @@ describe('the line to the check of the password', () => {
     for (const from of ['198.18.5.2', '198.18.5.3']) {
       const second = await line.post(from, PASSWORD);
       expect(second.status, from).toBe(429);
-      expect(second.text).toContain('С этого адреса пароль уже проверяется');
+      // the page says what to do — it is what a person sees who pressed the button twice — and gives the way there:
+      // a plain link, and no form that would only be sent too early again
+      expect(second.text).toContain('<p>Вход уже проверяется. Подожди пару секунд и открой /admin/ заново.</p>');
+      expect(second.text).toContain('<a href="/admin/">');
+      expect(second.text).not.toMatch(/<form|type="password"/);
       expect(second.headers['set-cookie']).toBeUndefined();
     }
     expect(line.run.service.loginsWaiting()).toBe(1);

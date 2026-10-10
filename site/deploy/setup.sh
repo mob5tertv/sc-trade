@@ -23,9 +23,9 @@
 #   4. puts the code of the service in place (it comes in this folder, with what it needs: nothing is downloaded);
 #   5. asks for the password of the admin page, twice, showing nothing, and writes its hash into the settings;
 #   6. turns the firewall on: SSH, 80 and 443 come in, nothing else. The ports of SSH are the ones this system
-#      itself names; the firewall is turned on only once ufw lists a rule for each of them. It is left off - and
-#      the script says so and goes on - when the system names no port, when ufw does not list a rule, or when ufw
-#      cannot be switched on at all;
+#      itself names; the firewall is turned on only once ufw lists a rule for each of them. It is left as it is -
+#      and the script says so and goes on - when the system names no port, when ufw does not list a rule, or when
+#      ufw cannot be switched on. A firewall that was on before the run is never switched off, whatever happens;
 #   7. starts the service and waits until it answers on this machine;
 #   8. asks Caddy whether the new Caddyfile is good, and only then puts it in place. This step is the last one
 #      because it is the one most likely to stop on a server nobody has tried it on: when it does, the firewall is
@@ -72,8 +72,11 @@ typed_password=''
 started=false
 # the steps this run has finished
 steps_done=()
-# why the firewall was left alone, when it was; said in its step and once more at the end
+# why the firewall was left alone, when it was; said in its step and first thing at the end
 firewall_left=''
+# the state the firewall is in when it was left alone: off - unless ufw was on before this run, which never
+# switches off a firewall it found on
+firewall_now='OFF'
 # --reset-password: is the hash of the new password in the settings already?
 password_written=false
 
@@ -281,6 +284,21 @@ ssh_ports() {
   done
 }
 
+# Is ufw on? $1: what "ufw status" printed (asked with LC_ALL=C, so that it answers in these words). Prints "on",
+# "off" - or "unknown" when the first line is neither: an answer that is not understood is never taken for "off".
+ufw_state() {
+  local line=''
+  IFS= read -r line <<< "$1" || true
+  line=${line%$'\r'}
+  if [[ $line == 'Status: active' ]]; then
+    printf 'on'
+  elif [[ $line == 'Status: inactive' ]]; then
+    printf 'off'
+  else
+    printf 'unknown'
+  fi
+}
+
 # Does what "ufw show added" printed ($1) hold a rule that lets a TCP port ($2) in?
 rule_is_added() {
   local line
@@ -483,18 +501,33 @@ settings() {
 
 firewall() {
   say '6/8 The firewall (ufw): SSH, 80 and 443 come in, nothing else does'
-  local port added=''
+  local port added='' before='unknown' stays=''
   local -a ports=()
   if $dry_run && ((EUID != 0)); then
     note 'this dry run is not root, and the system tells root more about the ports of SSH: to see the ports the real run'
     note "will open, start the dry run the very way you will start the real one:  $START --dry-run"
+  fi
+  # Before anything of it is changed: is ufw on already? This script never leaves a server less protected than it
+  # found it - a firewall that was on is not switched off, whatever goes wrong below. An answer that is not
+  # understood counts as "maybe on".
+  if $dry_run; then
+    note 'would ask ufw whether it is on already: a firewall that is on is never switched off by this script'
+  else
+    before=$(ufw_state "$(LC_ALL=C ufw status 2> /dev/null || true)")
+    if [[ $before == on ]]; then
+      firewall_now='ON as it was before this run'
+      stays=' ufw was already ON before this run: it stays on'
+    elif [[ $before == unknown ]]; then
+      firewall_now='as it was before this run (ufw did not say whether it is on)'
+      stays=' ufw did not say whether it was on before this run: it is left'
+    fi
   fi
   # every port SSH comes in through, from what this system itself says, asked four ways: the settings of the SSH
   # server, the session this script runs in, the socket of systemd, the sockets the SSH server listens on. No port
   # is assumed: a firewall that is turned on without the real port of SSH open shuts the owner out of his server.
   mapfile -t ports < <(ssh_ports "$(sshd -T 2> /dev/null || true)" "${SSH_CONNECTION:-}" "$(systemctl show ssh.socket -p Listen 2> /dev/null || true)" "$(ss -Hltnp 2> /dev/null || true)")
   if ((${#ports[@]} == 0)); then
-    firewall_left="the firewall is NOT touched: nothing on this system says which port SSH comes in through, and turned on without that port open it would shut you out. Nothing is shut. site/DEPLOY.md (section 4.3) says how to see the port; then start this script again so that it is told of it: $START"
+    firewall_left="the firewall is NOT touched: nothing on this system says which port SSH comes in through, and turned on without that port open it would shut you out. Nothing is shut. site/DEPLOY.md (section 4.3) says how to see the port; then start this script again so that it is told of it: $START${stays:+.$stays, as it was.}"
     note "$firewall_left"
     return 0
   fi
@@ -512,7 +545,7 @@ firewall() {
     added=$(ufw show added)
     for port in "${ports[@]}"; do
       if ! rule_is_added "$added" "$port"; then
-        firewall_left="the firewall is NOT turned on: ufw does not list a rule that lets SSH in on port $port. Nothing is shut. Look at what 'ufw show added' prints: once 'ufw allow $port/tcp' is among its lines, start this script again."
+        firewall_left="the firewall is NOT turned on: ufw does not list a rule that lets SSH in on port $port. Nothing is shut. Look at what 'ufw show added' prints: once 'ufw allow $port/tcp' is among its lines, start this script again.${stays:+$stays, with the rules it had and the ones this run added.}"
         note "$firewall_left"
         return 0
       fi
@@ -521,12 +554,20 @@ firewall() {
   run ufw default deny incoming
   run ufw default allow outgoing
   if ! run ufw --force enable; then
-    # On some servers ufw cannot work at all (a container that may not set the packet filters of its kernel). That
-    # is no reason to stop before the service and the web server are set up. Whatever ufw has begun is taken back,
-    # so that nothing is left half shut - a firewall that is off is said aloud, here and at the very end; one that
-    # is half on could cut the session this script runs in - and the script says what to use instead.
-    run ufw disable || true
-    firewall_left='the firewall is NOT turned on: ufw could not be switched on (what it said is above; on some kinds of server it cannot work at all). Nothing is shut. Use the firewall in the panel of your hoster instead: let in the port of SSH, 80 and 443, and nothing else.'
+    # ufw could not be turned on. That is no reason to stop before the service and the web server are set up - but
+    # what is done about it depends on what was found:
+    if [[ $before == off ]]; then
+      # It was off. On some servers ufw cannot work at all (a container that may not set the packet filters of its
+      # kernel). Whatever it has begun is taken back, so that nothing is left half shut - a firewall that is half
+      # on could cut the session this script runs in - and the script says what to use instead.
+      run ufw disable || true
+      firewall_left='the firewall is NOT turned on: ufw could not be switched on (what it said is above; on some kinds of server it cannot work at all). Nothing is shut. Use the firewall in the panel of your hoster instead: let in the port of SSH, 80 and 443, and nothing else.'
+    elif [[ $before == on ]]; then
+      # It was on: it is not switched off. The owner had a firewall before this run and has one after it.
+      firewall_left='ufw was already ON before this run, and it is NOT switched off. The rules of this run were added, but turning the firewall on again failed (what ufw said is above), so they may not be in force yet. Look at what is in force: sudo ufw status verbose'
+    else
+      firewall_left='ufw did not say whether it was on before this run, so it is NOT switched off. The rules of this run were added, but turning the firewall on failed (what ufw said is above). Look at the state it is in: sudo ufw status verbose'
+    fi
     note "$firewall_left"
     return 0
   fi
@@ -639,14 +680,15 @@ closing_words() {
   if $dry_run; then
     printf '\n%s\n' 'dry run: nothing is changed. Without --dry-run the same steps are done for real.'
     if [[ -n $firewall_left ]]; then
-      printf '%s\n' 'As things are, the real run would leave the firewall OFF:'
+      printf '%s\n' 'As things are, the real run would not turn the firewall on:'
       note "$firewall_left"
     fi
     return 0
   fi
-  # what was left out is said first: nobody reads "Done." and then looks twelve lines down for a warning
+  # what was left out is said first: nobody reads "Done." and then looks twelve lines down for a warning. And the
+  # state of the firewall is said as it is: "OFF" - or, when ufw was on before this run, on as it was
   if [[ -n $firewall_left ]]; then
-    printf '\n%s\n' 'NOT ALL DONE - the firewall is OFF. Everything else is set up.'
+    printf '\n%s\n' "NOT ALL DONE - the firewall is $firewall_now. Everything else is set up."
     note "$firewall_left"
     printf '\n%s\n' 'The rest is done. Check now - site/DEPLOY.md, section 4.6, is the whole list, with what you must see. In short:'
   else
