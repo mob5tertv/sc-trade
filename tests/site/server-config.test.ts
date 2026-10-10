@@ -117,7 +117,9 @@ describe('the Caddyfile the build writes', () => {
   });
 
   it('says that it must be checked by Caddy itself on the server before it is used', () => {
-    expect(caddyfile).toMatch(/^#.*`caddy validate --config \/etc\/caddy\/Caddyfile`/m);
+    // with "sudo": run by anybody else, Caddy cannot open its log and refuses a file that is good
+    expect(caddyfile).toMatch(/^#.*`sudo caddy validate --config \/etc\/caddy\/Caddyfile`/m);
+    expect(caddyfile.split('\n').filter((line) => /caddy validate/.test(line) && !/sudo caddy validate/.test(line))).toEqual([]);
   });
 
   it('hands the installer over as a download, never as a page', () => {

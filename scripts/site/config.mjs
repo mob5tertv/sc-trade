@@ -71,8 +71,10 @@ export function validateConfig(value) {
     throw fail('"feedback.endpoint" must be a path of the site, like /api/feedback');
   }
   const root = config.server?.root;
-  if (typeof root !== 'string' || !/^(\/[\w.-]+)+$/.test(root) || root.includes('..')) {
-    throw fail('"server.root" must be a full path on the server, like /var/www/sc-trade.space');
+  // a folder of its own, two levels deep at the least: the site is never put into one that holds half the system
+  // (setup.sh on the server asks the same of the path)
+  if (typeof root !== 'string' || !/^(\/[\w.-]+){2,}$/.test(root) || root.includes('..')) {
+    throw fail('"server.root" must be a full path of two levels or more on the server, like /var/www/sc-trade.space');
   }
   const service = config.server?.service;
   if (typeof service !== 'string' || !/^127\.0\.0\.1:\d{2,5}$/.test(service)) {

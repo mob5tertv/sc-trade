@@ -6,7 +6,8 @@
 # after Caddy itself has said that the file is good.
 #
 # Caddy gets the certificate for the domain and sends http:// to https:// by itself: nothing here asks for it.
-# Check a changed file on the server before using it: `caddy validate --config /etc/caddy/Caddyfile`.
+# Check a changed file on the server before using it: `sudo caddy validate --config /etc/caddy/Caddyfile` — with
+# "sudo": started by anybody else, Caddy cannot open its log and refuses a file that is good.
 
 # The log of the web server. Errors only, in a file of its own; there is no access log — nothing here writes down
 # who opened which page. When Caddy fails on a request, the entry holds the address the request came from, and not
