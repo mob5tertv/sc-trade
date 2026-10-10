@@ -50,9 +50,25 @@ describe('what a picture is: its first bytes, nothing else', () => {
 
 describe('what a log is: text in UTF-8 with no control characters but the tab and the ends of lines', () => {
   it('takes plain text in any language', () => {
-    for (const text of ['[info] started\n', 'Привет, мир\r\n', '日本語のログ', '\u{1F680} launch', 'tab\there', 'a', 'old\rmac\rlines', 'del \u007f and a no-break space   are not what is meant']) {
+    for (const text of ['[info] started\n', 'Привет, мир\r\n', '日本語のログ', '\u{1F680} launch', 'tab\there', 'a', 'old\rmac\rlines', 'a tilde ~ and a no-break space   are text', '«кавычки» ¡hola! ÿ']) {
       expect(isText(Buffer.from(text)), text).toBe(true);
     }
+  });
+
+  it('refuses the control characters above the letters as well: the "delete" and the 32 that follow it', () => {
+    for (let code = 0x7f; code <= 0x9f; code++) {
+      const char = String.fromCharCode(code);
+      expect(isText(Buffer.from(`a${char}b`)), `U+00${code.toString(16)}`).toBe(false);
+      expect(isText(Buffer.from(char)), `U+00${code.toString(16)} alone`).toBe(false);
+      // also when its two bytes arrive in two pieces
+      expect(isText(Buffer.from(`Журнал ${char} дальше`), 1), `U+00${code.toString(16)} byte by byte`).toBe(false);
+    }
+    // the neighbours on both sides are plain characters
+    for (const code of [0x7e, 0xa0, 0xa1, 0xff]) expect(isText(Buffer.from(`a${String.fromCharCode(code)}b`), 1), `U+00${code.toString(16)}`).toBe(true);
+    // what a terminal takes for the start of a command in eight bits, a "next line", a "delete"
+    for (const text of ['\u009b31mred', 'one\u0085two', 'gone\u007f']) expect(isText(Buffer.from(text)), JSON.stringify(text)).toBe(false);
+    // a longer character that merely ends in such a byte is not one of them (U+0440 is D1 80, U+2080 is E2 82 80)
+    for (const text of ['р', '₀', '\u{1F680}', 'Ā']) expect(isText(Buffer.from(text), 1), text).toBe(true);
   });
 
   it('refuses a zero byte, wherever it stands', () => {
@@ -109,7 +125,8 @@ describe('what a log is: text in UTF-8 with no control characters but the tab an
     const edges = [0x00, 0x01, 0x41, 0x7f, 0x80, 0x8f, 0x90, 0x9f, 0xa0, 0xbf, 0xc0, 0xc1, 0xc2, 0xdf, 0xe0, 0xe1, 0xec, 0xed, 0xee, 0xef, 0xf0, 0xf1, 0xf3, 0xf4, 0xf5, 0xff];
     const same = (bytes: number[]) => {
       const buffer = Buffer.from(bytes);
-      const expected = isUtf8(buffer) && !buffer.some((byte) => byte < 0x20 && byte !== 0x09 && byte !== 0x0a && byte !== 0x0d);
+      // well-formed, and with no control character but the tab and the two ends of a line
+      const expected = isUtf8(buffer) && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(buffer.toString('utf8'));
       if (isText(buffer) !== expected) throw new Error(`differs for ${bytes.map((byte) => byte.toString(16)).join(' ')}: Node says ${expected}`);
     };
     for (let a = 0; a < 256; a++) for (let b = 0; b < 256; b++) same([a, b]);

@@ -15,7 +15,8 @@ const MEGABYTE = 1024 * 1024;
  * @typedef {{
  *   bodyBytes: number,
  *   requestMs: number,
- *   idleMs: number,
+ *   rateWindowMs: number,
+ *   minBytesPerSecond: number,
  *   lingerMs: number,
  *   perAddressHour: number,
  *   perAddressDay: number,
@@ -31,6 +32,7 @@ const MEGABYTE = 1024 * 1024;
  *   loginWindowMs: number,
  *   loginSlowAfter: number,
  *   loginSlowMs: number,
+ *   loginQueue: number,
  *   sessionMs: number,
  * }} Limits
  *
@@ -43,8 +45,9 @@ const MEGABYTE = 1024 * 1024;
 const FIXED = Object.freeze({
   // three pictures of 5 MB, a log of 2 MB, the text and the envelope of the form
   bodyBytes: 18 * MEGABYTE,
-  // a body that brings nothing for this long is cut: a sender that is silent does not keep a place
-  idleMs: 15_000,
+  // the least rate of a body is looked at in stretches of this length: the first asks for nothing, every one after
+  // it must bring this many seconds' worth of `minBytesPerSecond`, or the body is cut (pace.mjs)
+  rateWindowMs: 5000,
   // how long the rest of a refused body is thrown away before the line is cut, so that the sender can read the answer
   lingerMs: 2000,
   // bodies one address may make the service read in an hour, whatever became of them
@@ -57,11 +60,17 @@ const FIXED = Object.freeze({
   loginFailures: 5,
   loginWindowMs: 15 * 60_000,
   // wrong passwords of everybody together within the window, after which one password is looked at in `loginSlowMs`:
-  // a delay for all, never a closed door — strangers cannot shut the author out
+  // a delay for all, not a closed door — wrong passwords of others alone never refuse the author
   loginSlowAfter: 30,
   loginSlowMs: 1000,
+  // how many logins may wait for their password to be looked at, one from an address (admin.mjs says who gets a
+  // place when the line is full)
+  loginQueue: 32,
   sessionMs: 12 * 3_600_000,
 });
+
+/** What the service itself may need for a body once all of it has come: the writing, the last look, the answer. */
+const OWN_WORK_MS = 60_000;
 
 /**
  * The limits the owner of the server may change, with what each may be. `retentionDays` has a ceiling of 180: the
@@ -69,7 +78,10 @@ const FIXED = Object.freeze({
  * @type {Record<string, { min: number, max: number, default: number }>}
  */
 const CHANGEABLE = Object.freeze({
-  requestSeconds: { min: 10, max: 600, default: 120 },
+  // the least rate of a body, in bytes a second: 16 KB a second is far below what any connection of today gives a
+  // sender, and at that rate four senders cannot keep the four places for long with a few bytes. How long a
+  // request may take is not a setting: it follows from this rate (see `requestMs` below), so the two cannot disagree
+  minBytesPerSecond: { min: 4096, max: MEGABYTE, default: 16 * 1024 },
   perAddressHour: { min: 1, max: 1000, default: 5 },
   perAddressDay: { min: 1, max: 10_000, default: 20 },
   globalHour: { min: 1, max: 100_000, default: 120 },
@@ -87,10 +99,17 @@ const KEYS = ['domain', 'port', 'dataDir', 'siteRoot', 'passwordHash', 'limits']
 /** How many folders deep a full path lies under the root of its disk. @param {string} path */
 const depthOf = (path) => relative(parse(resolve(path)).root, resolve(path)).split(sep).filter((part) => part !== '').length;
 
-/** Does a folder lie inside another, or is it that very folder? @param {string} inner @param {string} outer */
+/**
+ * Does a folder lie inside another, or is it that very folder? Both are compared as what they come to once every
+ * "." and ".." in them is followed. The way from the outer one to the inner one then leads out of it only when its
+ * first step is ".." itself: a folder whose name merely begins with two dots ("..data") is a folder like any other.
+ * @param {string} inner
+ * @param {string} outer
+ */
 function isWithin(inner, outer) {
   const way = relative(resolve(outer), resolve(inner));
-  return way === '' || (!way.startsWith('..') && !isAbsolute(way));
+  const leadsOut = way === '..' || way.startsWith(`..${sep}`);
+  return way === '' || (!leadsOut && !isAbsolute(way));
 }
 
 const isWhole = (/** @type {unknown} */ value, /** @type {number} */ min, /** @type {number} */ max) =>
@@ -165,8 +184,11 @@ export function readSettings(value) {
     passwordHash: /** @type {string} */ (passwordHash),
     limits: {
       bodyBytes: FIXED.bodyBytes,
-      requestMs: limit('requestSeconds') * 1000,
-      idleMs: FIXED.idleMs,
+      // the longest a request may take: the first stretch, a full body at the least rate, and the service's own
+      // work — 20 minutes and 17 seconds with the defaults. A sender that keeps to the rate is never cut by it
+      requestMs: FIXED.rateWindowMs + Math.ceil(FIXED.bodyBytes / limit('minBytesPerSecond')) * 1000 + OWN_WORK_MS,
+      rateWindowMs: FIXED.rateWindowMs,
+      minBytesPerSecond: limit('minBytesPerSecond'),
       lingerMs: FIXED.lingerMs,
       perAddressHour: limit('perAddressHour'),
       perAddressDay: limit('perAddressDay'),
@@ -182,6 +204,7 @@ export function readSettings(value) {
       loginWindowMs: FIXED.loginWindowMs,
       loginSlowAfter: FIXED.loginSlowAfter,
       loginSlowMs: FIXED.loginSlowMs,
+      loginQueue: FIXED.loginQueue,
       sessionMs: FIXED.sessionMs,
     },
   };

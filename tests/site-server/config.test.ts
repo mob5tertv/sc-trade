@@ -21,8 +21,10 @@ describe('the settings of the service', () => {
       passwordHash: PASSWORD_HASH,
       limits: {
         bodyBytes: 18 * 1024 * 1024,
-        requestMs: 120_000,
-        idleMs: 15_000,
+        // what a full body needs at the least rate: five seconds, 1152 seconds, and a minute for the service itself
+        requestMs: 1_217_000,
+        rateWindowMs: 5000,
+        minBytesPerSecond: 16 * 1024,
         lingerMs: 2000,
         perAddressHour: 5,
         perAddressDay: 20,
@@ -38,9 +40,28 @@ describe('the settings of the service', () => {
         loginWindowMs: 15 * 60_000,
         loginSlowAfter: 30,
         loginSlowMs: 1000,
+        loginQueue: 32,
         sessionMs: 12 * 3_600_000,
       },
     });
+  });
+
+  it('knows a folder inside another from one that only looks like it: a name that begins with two dots is a name', () => {
+    const inside = /"dataDir" must not lie inside the folder of the site, nor hold it/;
+    // "..data" is a folder of the site like any other: the messages would be served from it
+    expect(() => readSettings({ ...good(), dataDir: `/var/www/${DOMAIN}/..data` })).toThrow(inside);
+    expect(() => readSettings({ ...good(), dataDir: `/var/www/${DOMAIN}/..` + '.' })).toThrow(inside);
+    expect(() => readSettings({ ...good(), siteRoot: '/srv/..site', dataDir: '/srv/..site/messages' })).toThrow(inside);
+    expect(() => readSettings({ ...good(), siteRoot: '/srv/data/..site', dataDir: '/srv/data' })).toThrow(inside);
+    // ".." itself leads out of the site: what such a path comes to is what is compared
+    expect(readSettings({ ...good(), dataDir: `/var/www/${DOMAIN}/../messages` }).dataDir).toBe(`/var/www/${DOMAIN}/../messages`);
+    expect(readSettings({ ...good(), siteRoot: '/srv/site', dataDir: '/srv/site/../../var/lib/messages' }).siteRoot).toBe('/srv/site');
+    // and a path that leaves the site and comes back into it is inside
+    expect(() => readSettings({ ...good(), dataDir: `/var/www/${DOMAIN}/../${DOMAIN}/data` })).toThrow(inside);
+    expect(() => readSettings({ ...good(), dataDir: `/var/lib/../www/${DOMAIN}` })).toThrow(inside);
+    // next to the site, under a name that begins with dots, is not inside it
+    expect(readSettings({ ...good(), siteRoot: '/srv/site', dataDir: '/srv/..site-data' }).dataDir).toBe('/srv/..site-data');
+    expect(readSettings({ ...good(), siteRoot: '/srv/..site', dataDir: '/srv/site' }).dataDir).toBe('/srv/site');
   });
 
   it('never keeps the messages where the web server would hand them out: the folder of the data is not inside the site', () => {
@@ -76,8 +97,22 @@ describe('the settings of the service', () => {
 
   it('lets the owner of the server change the limits that are his to change', () => {
     const mb = 1024 * 1024;
-    const settings = readSettings({ ...good(), limits: { requestSeconds: 60, perAddressHour: 2, perAddressDay: 4, globalHour: 30, perAddressDayBytes: 20 * mb, globalHourBytes: 100 * mb, storageBytes: 64 * mb, retentionDays: 30 } });
-    expect(settings.limits).toMatchObject({ requestMs: 60_000, perAddressHour: 2, perAddressDay: 4, globalHour: 30, perAddressDayBytes: 20 * mb, globalHourBytes: 100 * mb, storageBytes: 64 * mb, retentionDays: 30 });
+    const settings = readSettings({ ...good(), limits: { minBytesPerSecond: 32 * 1024, perAddressHour: 2, perAddressDay: 4, globalHour: 30, perAddressDayBytes: 20 * mb, globalHourBytes: 100 * mb, storageBytes: 64 * mb, retentionDays: 30 } });
+    expect(settings.limits).toMatchObject({ minBytesPerSecond: 32 * 1024, perAddressHour: 2, perAddressDay: 4, globalHour: 30, perAddressDayBytes: 20 * mb, globalHourBytes: 100 * mb, storageBytes: 64 * mb, retentionDays: 30 });
+  });
+
+  it('gives a body as long as the least rate needs for a full message, and no setting of its own: the two cannot disagree', () => {
+    const full = 18 * 1024 * 1024;
+    const deadline = (rate: number) => readSettings({ ...good(), limits: { minBytesPerSecond: rate } }).limits.requestMs;
+    // the first five seconds, the full body at the rate, a minute for the service itself
+    expect(deadline(16 * 1024)).toBe(5000 + (full / (16 * 1024)) * 1000 + 60_000);
+    expect(deadline(32 * 1024)).toBe(5000 + 576_000 + 60_000);
+    expect(deadline(4096)).toBe(5000 + 4_608_000 + 60_000);
+    expect(deadline(1024 * 1024)).toBe(5000 + 18_000 + 60_000);
+    // the rate has its bounds: slower than 4 KB a second would let a body hold a place for hours
+    for (const rate of [0, 4095, 1024 * 1024 + 1, 16.5]) expect(() => readSettings({ ...good(), limits: { minBytesPerSecond: rate } }), String(rate)).toThrow(/"limits\.minBytesPerSecond" must be a whole number from 4096 to 1048576/);
+    // the time a request may take was a setting once; now it follows from the rate
+    expect(() => readSettings({ ...good(), limits: { requestSeconds: 120 } })).toThrow(/"limits\.requestSeconds" is not a setting/);
   });
 
   it('never sets a budget of bytes below one full message: such a form would refuse what the page allows', () => {
@@ -113,7 +148,7 @@ describe('the settings of the service', () => {
       [{ limits: [] }, /"limits" must be an object/],
       [{ limits: { perAddressHour: 0 } }, /"limits\.perAddressHour"/],
       [{ limits: { perAddressHour: 10, perAddressDay: 5 } }, /"limits\.perAddressDay" must not be less than "limits\.perAddressHour"/],
-      [{ limits: { requestSeconds: 1 } }, /"limits\.requestSeconds"/],
+      [{ limits: { minBytesPerSecond: 1 } }, /"limits\.minBytesPerSecond"/],
       [{ limits: { storageBytes: 10 } }, /"limits\.storageBytes"/],
       [{ limits: { speed: 3 } }, /"limits\.speed" is not a setting/],
       [{ colour: 'blue' }, /"colour" is not a setting/],
@@ -162,7 +197,7 @@ describe('the example of the settings (site/server/config.example.json)', () => 
       dataDir: '/var/lib/sc-trade-site',
       siteRoot: '/var/www/site.example',
       passwordHash: '',
-      limits: { requestSeconds: 120, perAddressHour: 5, perAddressDay: 20, globalHour: 120, perAddressDayBytes: 40 * 1024 * 1024, globalHourBytes: 200 * 1024 * 1024, storageBytes: 1024 * 1024 * 1024, retentionDays: 180 },
+      limits: { minBytesPerSecond: 16 * 1024, perAddressHour: 5, perAddressDay: 20, globalHour: 120, perAddressDayBytes: 40 * 1024 * 1024, globalHourBytes: 200 * 1024 * 1024, storageBytes: 1024 * 1024 * 1024, retentionDays: 180 },
     });
   });
 

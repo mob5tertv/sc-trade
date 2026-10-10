@@ -119,14 +119,18 @@ export function settingsFor(dir: string, limits: Partial<Settings['limits']> = {
  * Starts the service on 127.0.0.1, on a port the system picks, with its data in a temp folder. It is stopped when
  * the test is over.
  */
-export async function start(options: { limits?: Partial<Settings['limits']>; dir?: string; now?: number; onLine?: (line: string) => void } = {}): Promise<Running> {
+export async function start(
+  options: { limits?: Partial<Settings['limits']>; dir?: string; now?: number; onLine?: (line: string) => void; hold?: (ms: number) => Promise<void> } = {},
+): Promise<Running> {
   const dir = options.dir ?? tempDir();
   const clock = { now: options.now ?? START };
   const lines: string[] = [];
   const sleeps: number[] = [];
   const settings = settingsFor(dir, options.limits);
+  // a wait of the service is written down and moves the clock on; a test may make it last until it says so (`hold`)
   const sleep = async (ms: number) => {
     sleeps.push(ms);
+    await options.hold?.(ms);
     clock.now += ms;
   };
   const log = (line: string) => {

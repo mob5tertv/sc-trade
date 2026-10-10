@@ -35,10 +35,11 @@ export function imageType(head) {
 }
 
 /**
- * Judges a text as it arrives, piece by piece: well-formed UTF-8 with no control character below the space but the
- * tab and the two ends of a line (a log of the application has no other; a file that is not text has many, the zero
- * byte first of all). `push` says `false` at the first byte that cannot be text; `end` says whether the text
- * stopped at the end of a character.
+ * Judges a text as it arrives, piece by piece: well-formed UTF-8 with no control character but the tab and the two
+ * ends of a line — none of those below the space (a log of the application has no other; a file that is not text
+ * has many, the zero byte first of all), nor the "delete" and the 32 above it (U+007F–U+009F: what a terminal may
+ * take for a command when the author looks at the file). `push` says `false` at the first byte that cannot be
+ * text; `end` says whether the text stopped at the end of a character.
  * @returns {{ push: (chunk: Uint8Array) => boolean, end: () => boolean }}
  */
 export function createTextChecker() {
@@ -58,9 +59,11 @@ export function createTextChecker() {
           upper = 0xbf;
           need--;
         } else if (byte < 0x80) {
-          if (byte < 0x20 && byte !== 0x09 && byte !== 0x0a && byte !== 0x0d) return false;
+          if ((byte < 0x20 && byte !== 0x09 && byte !== 0x0a && byte !== 0x0d) || byte === 0x7f) return false;
         } else if (byte >= 0xc2 && byte <= 0xdf) {
           need = 1;
+          // C2 80 … C2 9F are the 32 control characters above the letters: after C2 only A0 and up is text
+          if (byte === 0xc2) lower = 0xa0;
         } else if (byte >= 0xe0 && byte <= 0xef) {
           need = 2;
           if (byte === 0xe0) lower = 0xa0;

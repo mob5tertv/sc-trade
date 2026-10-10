@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { contentSecurityPolicy } from '../../scripts/site/server-config.mjs';
-import { admin as rawAdmin, AUTHOR, COOKIE, cookieOf, csrfOf, DAY_MS, fields, listFiles, LOG_TEXT, logFile, login, ORIGIN, PASSWORD, PNG, send, shot, start, START, stored, type Part, type Reply, type Running } from './helpers';
+import { admin as rawAdmin, AUTHOR, COOKIE, cookieOf, csrfOf, DAY_MS, fields, listFiles, LOG_TEXT, logFile, login, ORIGIN, PASSWORD, PNG, send, shot, start, START, stored, until, type Part, type Reply, type Running } from './helpers';
 
 const HOUR_MS = 3_600_000;
 
@@ -175,15 +175,23 @@ describe('the login', () => {
     expect(run.lines.some((line) => / admin login locked status=429$/.test(line))).toBe(true);
   });
 
-  it('counts wrong passwords sent at the same moment one by one: the sixth is not even looked at', async () => {
+  it('looks at one password of an address at a time: of twelve sent at the same moment the others are turned away at once, and no sixth is ever looked at', async () => {
     const run = await start();
     const all = await Promise.all(Array.from({ length: 12 }, (_, n) => admin(run, '/admin/login', { form: { password: `wrong ${n}` } })));
     const statuses = all.map((reply) => reply.status);
-    // five are looked at and found wrong; the rest are turned away: the address is shut out, or too many wait already
-    expect(statuses.filter((status) => status === 401)).toHaveLength(5);
-    expect(statuses.every((status) => status === 401 || status === 429 || status === 503)).toBe(true);
-    expect(run.lines.filter((line) => / admin login wrong /.test(line))).toHaveLength(5);
+    // while one is being looked at, every other from the same address is told to wait its turn — none of them is
+    // kept waiting, none is counted as a wrong password
+    const looked = statuses.filter((status) => status === 401).length;
+    expect(looked).toBeGreaterThanOrEqual(1);
+    expect(looked).toBeLessThanOrEqual(5);
+    expect(statuses.filter((status) => status === 429)).toHaveLength(12 - looked);
+    expect(all.find((reply) => reply.status === 429)!.text).toContain('уже проверяется');
+    expect(run.lines.filter((line) => / admin login wrong /.test(line))).toHaveLength(looked);
+    expect(run.lines.filter((line) => / admin login twice status=429$/.test(line))).toHaveLength(12 - looked);
+    // one after another, the rest of the five; then the address is shut out — the right password too
+    for (let n = looked; n < 5; n++) expect((await admin(run, '/admin/login', { form: { password: 'wrong again' } })).status).toBe(401);
     expect((await admin(run, '/admin/login', { form: { password: PASSWORD } })).status).toBe(429);
+    expect(run.lines.filter((line) => / admin login wrong /.test(line))).toHaveLength(5);
   });
 
   it('remembers who tried for fifteen minutes and no longer, as an HMAC and never as the address', async () => {
@@ -200,7 +208,7 @@ describe('the login', () => {
     expect(limiter.size()).toBe(0);
   });
 
-  it('slows everybody down when wrong passwords come from many addresses — and never shuts the author out for what strangers do', async () => {
+  it('slows everybody down when wrong passwords come from many addresses: a wait of a second for each, and nobody is told "too many wrong passwords" for what others typed', async () => {
     const run = await start();
     expect(run.settings.limits.loginSlowAfter).toBe(30);
     expect(run.settings.limits.loginSlowMs).toBe(1000);
@@ -236,6 +244,21 @@ describe('the login', () => {
     await login(run);
     expect((await admin(run, '/admin/login', { form: { password: 'wrong, long after' }, headers: { 'X-Forwarded-For': '198.18.2.4' } })).status).toBe(401);
     expect(run.sleeps).toHaveLength(3);
+  });
+
+  it('never waits longer than that second, whatever the clock of the system does', async () => {
+    const run = await start({ limits: { loginSlowAfter: 1 } });
+    const wrong = (from: string) => admin(run, '/admin/login', { form: { password: 'a wrong password' }, headers: { 'X-Forwarded-For': from } });
+    expect((await wrong('198.18.4.1')).status).toBe(401);
+    expect((await wrong('198.18.4.2')).status).toBe(401);
+    expect(run.sleeps).toEqual([1000]);
+    // the clock of the system is set back by an hour (a correction of the time): the last look at a password now
+    // lies "in the future" — and the next login must not be made to wait for that hour to come round again
+    run.clock.now -= 3_600_000;
+    expect((await wrong('198.18.4.3')).status).toBe(401);
+    expect(run.sleeps).toEqual([1000, 1000]);
+    await login(run);
+    expect(run.sleeps).toEqual([1000, 1000, 1000]);
   });
 
   it('gives every login a session of its own, and closes the one the browser came with', async () => {
@@ -305,6 +328,147 @@ describe('the login', () => {
     const query = await admin(run, `/admin/login?password=${encodeURIComponent(PASSWORD)}`, { form: {} });
     expect(query.status).toBe(401);
     for (const method of ['PUT', 'DELETE', 'PATCH']) expect((await admin(run, '/admin/login', { method })).status).toBe(405);
+  });
+});
+
+describe('the line to the check of the password', () => {
+  // One password is looked at at a time; the others wait in a line of a set length. What these tests pin: who gets
+  // a place in that line, who loses it, and who is looked at first.
+  const login401 = 'admin login wrong status=401';
+  const loginLines = (run: Running) => run.lines.filter((line) => / admin login /.test(line)).map((line) => line.replace(/^\S+ /, ''));
+  /** A login that has been sent and is not answered yet. */
+  interface Pending {
+    reply: Promise<Reply>;
+  }
+
+  /**
+   * A service in its slow mode (one wrong password switches it on here) whose wait lasts until the test lets it go:
+   * the login that is being looked at stays where it is, and whatever comes after it stands in the line.
+   */
+  async function held(limits: Partial<Running['settings']['limits']> = {}) {
+    let holding = false;
+    let release: (() => void) | undefined;
+    const run = await start({
+      limits: { loginSlowAfter: 1, loginQueue: 3, ...limits },
+      hold: () => (holding ? new Promise<void>((done) => (release = done)) : Promise.resolve()),
+    });
+    const post = (from: string, password = 'a wrong password') => admin(run, '/admin/login', { form: { password }, headers: { 'X-Forwarded-For': from } });
+    return {
+      run,
+      post,
+      /** One wrong password from an address: the slow mode is on, and that address has failed once. */
+      fail: async (from: string) => expect((await post(from)).status).toBe(401),
+      /** A login goes into its check and stays there. */
+      block: async (from: string): Promise<Pending> => {
+        holding = true;
+        const before = run.sleeps.length;
+        const reply = post(from);
+        await until(() => run.sleeps.length === before + 1);
+        return { reply };
+      },
+      /** A login that takes a place in the line. */
+      queue: async (from: string, password?: string): Promise<Pending> => {
+        const before = run.service.loginsWaiting();
+        const reply = post(from, password);
+        await until(() => run.service.loginsWaiting() === before + 1);
+        return { reply };
+      },
+      letGo: () => {
+        holding = false;
+        release?.();
+      },
+    };
+  }
+
+  it('one login of an address at a time: a second one, sent while the first is looked at or waits, is answered at once and takes no place', async () => {
+    const line = await held();
+    await line.fail('198.18.5.1');
+    const looked = await line.block('198.18.5.2');
+    const waits = await line.queue('198.18.5.3', PASSWORD);
+    for (const from of ['198.18.5.2', '198.18.5.3']) {
+      const second = await line.post(from, PASSWORD);
+      expect(second.status, from).toBe(429);
+      expect(second.text).toContain('С этого адреса пароль уже проверяется');
+      expect(second.headers['set-cookie']).toBeUndefined();
+    }
+    expect(line.run.service.loginsWaiting()).toBe(1);
+    line.letGo();
+    expect((await looked.reply).status).toBe(401);
+    expect((await waits.reply).status).toBe(303);
+    // it was no wrong password, and is not counted as one
+    expect(loginLines(line.run)).toEqual([login401, 'admin login twice status=429', 'admin login twice status=429', login401, 'admin login ok status=303']);
+    // once its login is answered, the address may come again
+    expect((await line.post('198.18.5.3', PASSWORD)).status).toBe(303);
+  });
+
+  it('is no longer than it is set to be: when it is full, a newcomer who is no better than those who wait is told "busy" at once', async () => {
+    expect((await start()).settings.limits.loginQueue).toBe(32);
+    const line = await held();
+    await line.fail('198.18.6.1');
+    const looked = await line.block('198.18.6.2');
+    const waiting: Pending[] = [];
+    for (const from of ['198.18.6.3', '198.18.6.4', '198.18.6.5']) waiting.push(await line.queue(from));
+    expect(line.run.service.loginsWaiting()).toBe(3);
+    // an address that never failed, with the right password — and three that never failed either are before it
+    const late = await line.post(AUTHOR, PASSWORD);
+    expect(late.status).toBe(503);
+    expect(late.text).toContain('Сервер занят');
+    expect(late.headers['set-cookie']).toBeUndefined();
+    // an address that has failed gets no place from them either
+    expect((await line.post('198.18.6.1', PASSWORD)).status).toBe(503);
+    expect(line.run.service.loginsWaiting()).toBe(3);
+    line.letGo();
+    expect((await looked.reply).status).toBe(401);
+    for (const one of waiting) expect((await one.reply).status).toBe(401);
+    expect(loginLines(line.run).filter((text) => text === 'admin login busy status=503')).toHaveLength(2);
+    // the line is empty again: the author gets in
+    await login(line.run);
+  });
+
+  it('gives an address that has not failed a place ahead of one that has: the failed one loses its place to the newcomer', async () => {
+    const line = await held();
+    await line.fail('198.18.7.1');
+    const looked = await line.block('198.18.7.2');
+    // the line: an address with a wrong password behind it, and two without
+    const failed = await line.queue('198.18.7.1', PASSWORD);
+    const clean = [await line.queue('198.18.7.3'), await line.queue('198.18.7.4')];
+    expect(line.run.service.loginsWaiting()).toBe(3);
+    // the author comes, from an address that never failed: the line is full, and the one that failed makes room
+    const author = line.post(AUTHOR, PASSWORD);
+    const sentAway = await failed.reply;
+    expect(sentAway.status).toBe(503);
+    expect(sentAway.text).toContain('Сервер занят');
+    expect(sentAway.headers['set-cookie']).toBeUndefined();
+    expect(line.run.service.loginsWaiting()).toBe(3);
+    line.letGo();
+    expect((await looked.reply).status).toBe(401);
+    for (const one of clean) expect((await one.reply).status).toBe(401);
+    expect((await author).status).toBe(303);
+  });
+
+  it('looks first at those who have not failed, in the order they came; an address with wrong passwords behind it waits for them', async () => {
+    const line = await held({ loginQueue: 32 });
+    await line.fail('198.18.8.1');
+    const looked = await line.block('198.18.8.2');
+    // the one that failed came first, the author after it, another clean address last
+    const failed = await line.queue('198.18.8.1');
+    const author = await line.queue(AUTHOR, PASSWORD);
+    const third = await line.queue('198.18.8.3');
+    line.letGo();
+    expect((await looked.reply).status).toBe(401);
+    expect((await Promise.all([failed.reply, author.reply, third.reply])).map((reply) => reply.status)).toEqual([401, 303, 401]);
+    // the wrong password that switched the slow mode on; the one that was being looked at; then the author, the other
+    // clean address, and only then the one that had failed
+    expect(loginLines(line.run)).toEqual([login401, login401, 'admin login ok status=303', login401, login401]);
+  });
+
+  it('says what is true of it: strangers who only type wrong passwords slow the author down, they do not shut him out', async () => {
+    // the words of the code about it claim no more than that (a line full of addresses that never failed is another
+    // matter, and DEPLOY.md says so)
+    const source = readFileSync(join(__dirname, '..', '..', 'site', 'server', 'src', 'admin.mjs'), 'utf8');
+    expect(source).not.toMatch(/strangers cannot (shut|lock) (him|the author) out/);
+    expect(readFileSync(join(__dirname, '..', '..', 'site', 'server', 'src', 'config.mjs'), 'utf8')).not.toMatch(/strangers cannot (shut|lock) the author out/);
+    expect(source).toMatch(/a fresh address for every second/);
   });
 });
 
@@ -740,7 +904,9 @@ describe('deleting several messages at once', () => {
 
     const ask = await admin(run, '/admin/delete-found?q=odd', { cookie });
     expect(ask.status).toBe(200);
-    expect(ask.text).toContain('Найдено обращений: 3');
+    // how many were found, and of how many: a search that finds everything is seen to do so
+    expect(ask.text).toContain('Найдено обращений: 3 из 5.');
+    expect(ask.text).not.toContain('это все обращения');
     expect(ask.text).toContain('<form method="post" action="/admin/delete-found"');
     expect(ask.text).toContain('<input type="hidden" name="q" value="odd">');
     expect(ask.text).toContain('<input type="hidden" name="count" value="3">');
@@ -776,7 +942,7 @@ describe('deleting several messages at once', () => {
     await visitor(run, { message: 'One more odd message arrived.' });
     const changed = await post({ csrf, q: 'odd', count: '3', confirm: 'yes' });
     expect(changed.status).toBe(409);
-    expect(changed.text).toContain('Найдено обращений: 4');
+    expect(changed.text).toContain('Найдено обращений: 4 из 6.');
     expect(changed.text).toContain('<input type="hidden" name="count" value="4">');
     for (const count of ['', '0', '-4', '4 ', 'four', '04']) expect((await post({ csrf, q: 'odd', count, confirm: 'yes' })).status, count).toBe(409);
     // a search that finds nothing has nothing to delete
@@ -801,6 +967,21 @@ describe('deleting several messages at once', () => {
     expect(ask.text).toContain('&lt;b&gt;tags&lt;/b&gt;');
     expect(ask.text).not.toContain('<b>tags');
     expect(ask.text).toContain('<input type="hidden" name="q" value="&lt;b&gt;tags&lt;/b&gt;">');
+  });
+
+  it('says so in plain words when a search has found every message there is', async () => {
+    const run = await start();
+    await five(run);
+    const cookie = await login(run);
+    // a word every message holds: what looks like a search is "delete everything"
+    const all = await admin(run, '/admin/delete-found?q=five', { cookie });
+    expect(all.text).toContain('Найдено обращений: 5 из 5.');
+    expect(all.text).toMatch(/<p class="warning" role="alert">[^<]*это все обращения, какие есть/);
+    const some = await admin(run, '/admin/delete-found?q=even', { cookie });
+    expect(some.text).toContain('Найдено обращений: 2 из 5.');
+    expect(some.text).not.toContain('это все обращения');
+    // nothing found: the total is said all the same
+    expect((await admin(run, '/admin/delete-found?q=zzzz', { cookie })).text).toContain('Ничего не найдено: удалять нечего. Всего обращений: 5.');
   });
 });
 

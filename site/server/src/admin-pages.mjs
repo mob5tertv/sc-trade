@@ -143,23 +143,29 @@ ${rows.length === 0 ? `<p class="empty">${nothing}</p>` : ticked}${found}
 }
 
 /**
- * The page that stands before the deleting of everything a search found: how many there are, and one more question.
- * @param {{ csrf: string, q: string, count: number, changed: boolean }} ask `changed`: the number is not the one the
- *   author was shown a moment ago
+ * The page that stands before the deleting of everything a search found: how many there are — of how many in all,
+ * so that a search that finds every message is seen to do so — and one more question.
+ * @param {{ csrf: string, q: string, count: number, total: number, changed: boolean }} ask `total`: how many messages
+ *   there are; `changed`: the number is not the one the author was shown a moment ago
  */
-export function deleteFoundPage({ csrf, q, count, changed }) {
+export function deleteFoundPage({ csrf, q, count, total, changed }) {
   const back = `<p><a href="${esc(listUrl(q, 1))}">← К найденному</a></p>`;
   const words = `<p>Слова поиска: <bdi>${esc(q)}</bdi></p>`;
   if (count === 0) {
-    return layout({ title: 'Удаление найденного', csrf, body: `${back}\n<h1>Удаление найденного</h1>\n${words}\n<p class="empty">Ничего не найдено: удалять нечего.</p>` });
+    return layout({
+      title: 'Удаление найденного',
+      csrf,
+      body: `${back}\n<h1>Удаление найденного</h1>\n${words}\n<p class="empty">Ничего не найдено: удалять нечего. Всего обращений: ${total}.</p>`,
+    });
   }
+  const everything = count >= total ? '\n<p class="warning" role="alert">Поиск нашёл всё: это все обращения, какие есть. После удаления не останется ни одного.</p>' : '';
   return layout({
     title: 'Удаление найденного',
     csrf,
     body: `${back}
 <h1>Удаление найденного</h1>${changed ? '\n<p class="error" role="alert">Пока ты смотрел, найденное изменилось. Проверь число и подтверди ещё раз.</p>' : ''}
 ${words}
-<p>Найдено обращений: ${count}. Они будут удалены навсегда, вместе с файлами. Вернуть их будет нельзя.</p>
+<p>Найдено обращений: ${count} из ${total}. Они будут удалены навсегда, вместе с файлами. Вернуть их будет нельзя.</p>${everything}
 <form method="post" action="/admin/delete-found" class="delete">
 ${token(csrf)}
 <input type="hidden" name="q" value="${esc(q)}">

@@ -91,6 +91,8 @@ export function createService({ settings, now = Date.now, log = console.log, sle
     limiter,
     everybody,
     loginLimiter,
+    /** How many logins wait for their password to be looked at. */
+    loginsWaiting: admin.waiting,
     sweep,
 
     /**

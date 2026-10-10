@@ -40,8 +40,6 @@ const PAGE_SIZE = 20;
 /** A form of the author's page is a password, a token, the boxes of one page of the list: nothing bigger is read. */
 const FORM_BYTES = 8 * 1024;
 const FORM_MS = 10_000;
-/** How many logins may wait for their password to be checked (one is checked at a time). */
-const LOGIN_QUEUE = 32;
 /** The list says so when the storage is fuller than this. */
 const STORAGE_WARNING = 0.8;
 
@@ -65,6 +63,7 @@ const TEXTS = Object.freeze({
   wrong: 'Неверный пароль.',
   locked: 'Слишком много неверных паролей с этого адреса. Попробуй через 15 минут.',
   busy: 'Сервер занят. Попробуй ещё раз через минуту.',
+  twice: 'С этого адреса пароль уже проверяется. Подожди несколько секунд и попробуй ещё раз.',
   forbidden: 'Действие отклонено: страница устарела или запрос пришёл не с неё. Вернись к списку, открой страницу заново и повтори.',
   unsure: 'Поставь галочку, которая подтверждает удаление, и нажми кнопку ещё раз.',
   nothing: 'Ничего не отмечено: поставь галочки у обращений, которые надо удалить.',
@@ -133,17 +132,116 @@ const listAddress = (/** @type {string} */ q) => (q === '' ? '/admin/' : `/admin
  *   log: (text: string) => void,
  *   sleep: (ms: number) => Promise<unknown>,
  * }} parts `logins` counts wrong passwords and nothing else: nothing the form of the site does reaches that table
- * @returns {(req: Request, res: Response, path: string, query: string) => Promise<void>}
+ * @returns {((req: Request, res: Response, path: string, query: string) => Promise<void>) & { waiting: () => number }}
  */
 export function createAdmin({ settings, store, logins, now, log, sleep }) {
   const { limits } = settings;
   const sessions = createSessions({ now, lifeMs: limits.sessionMs });
-  /** The logins whose password is being checked or waits to be: one after another. */
-  let waiting = 0;
-  /** @type {Promise<unknown>} */
-  let turn = Promise.resolve();
+
+  // ---- the line to the check of the password
+  //
+  // One password is looked at at a time (the check is made to cost memory and time). The logins that wait for it
+  // stand in a line of a set length, and three rules say who stands there:
+  //
+  //   1. One login of an address at a time. A second one, while the first is looked at or waits, is answered at
+  //      once and takes no place. So a line of N places cannot be filled from fewer than N addresses.
+  //   2. Who has not failed goes first. The next password looked at is that of the address with the fewest wrong
+  //      passwords in the window; among equals, of the one that came first.
+  //   3. Nobody loses a place to one who is no better. When the line is full, a newcomer gets a place only if
+  //      somebody in the line comes from an address with MORE wrong passwords than his own; the worst of the line
+  //      (the most wrong passwords; of several such, the one that came last) is then sent away with "busy".
+  //      Otherwise it is the newcomer who is told "busy".
+  //
+  // What follows from them, and what does not. An address that has never failed (the author's, as a rule) always
+  // gets a place while anybody in the line has failed, is never sent away once it stands there, and is looked at
+  // before everybody who has failed and after those who never failed and came before it — at most as many
+  // checks as the line is long. What the rules cannot do: tell the author from a stranger who has not failed
+  // yet. Somebody who keeps the whole line filled with addresses that never failed keeps everybody else out
+  // ("busy") for as long as he does — and that costs him a fresh address for every second it lasts, because the
+  // one look at its password leaves an address with a wrong password behind it. Wrong passwords alone, however
+  // many and from however many addresses, only add the wait of the slow mode: they shut nobody out but the
+  // address that typed five of them.
+
+  /**
+   * @typedef {{ who: string, key: string, password: string, settle: (result: 'ok' | 'wrong' | 'locked' | 'busy') => void, fail: (err: unknown) => void }} Waiting
+   */
+  /** The logins that wait for their password to be looked at, in the order they came. @type {Waiting[]} */
+  const line = [];
+  /** The addresses a login of which waits or is being looked at. @type {Set<string>} */
+  const present = new Set();
+  /** Is a password being looked at right now? */
+  let looking = false;
   /** When a password was last looked at. */
   let lastCheck = -Infinity;
+
+  /** How many wrong passwords an address has behind it within the window. @param {string} key */
+  const failures = (key) => logins.count(key, limits.loginWindowMs);
+
+  /** Looks at one password. @param {Waiting} entry */
+  const check = async (entry) => {
+    // shut out: five wrong passwords from this very address within the window — looked at again now that its turn
+    // has come, so that of many sent one after another no more are checked than the limit allows
+    if (failures(entry.key) >= limits.loginFailures) return 'locked';
+    // Wrong passwords from many addresses are braked for everybody, not answered with a closed door: after so
+    // many of them within the window, one password is looked at in `loginSlowMs`, whoever sends it. The wait is
+    // never longer than that, whatever the clock says: a clock of the system that is set back must not make
+    // every login wait until the time it showed before has come again.
+    if (logins.count('wrong:all', limits.loginWindowMs) >= limits.loginSlowAfter) {
+      const pause = Math.min(limits.loginSlowMs, lastCheck + limits.loginSlowMs - now());
+      if (pause > 0) await sleep(pause);
+    }
+    lastCheck = now();
+    if (await verifyPassword(entry.password, settings.passwordHash)) return 'ok';
+    logins.mark(entry.key, limits.loginWindowMs);
+    logins.mark('wrong:all', limits.loginWindowMs);
+    return 'wrong';
+  };
+
+  /** Looks at the passwords of the line, one after another, until nobody waits. */
+  const serve = async () => {
+    if (looking) return;
+    looking = true;
+    try {
+      while (line.length > 0) {
+        // rule 2: the fewest wrong passwords first; among equals, the one that came first
+        let next = 0;
+        for (let at = 1; at < line.length; at++) if (failures(line[at].key) < failures(line[next].key)) next = at;
+        const [entry] = line.splice(next, 1);
+        try {
+          const result = await check(entry);
+          present.delete(entry.who);
+          entry.settle(result);
+        } catch (err) {
+          present.delete(entry.who);
+          entry.fail(err);
+        }
+      }
+    } finally {
+      looking = false;
+    }
+  };
+
+  /**
+   * Puts a login into the line and gives what became of it; 'busy': there was no place for it, or it lost its place.
+   * @param {string} who @param {string} key @param {string} password
+   * @returns {Promise<'ok' | 'wrong' | 'locked' | 'busy'>}
+   */
+  const queue = (who, key, password) => {
+    if (line.length >= limits.loginQueue) {
+      // rule 3: the worst of the line — the last of those with the most wrong passwords — and only if he is worse
+      let worst = 0;
+      for (let at = 1; at < line.length; at++) if (failures(line[at].key) >= failures(line[worst].key)) worst = at;
+      if (failures(line[worst].key) <= failures(key)) return Promise.resolve('busy');
+      const [gone] = line.splice(worst, 1);
+      present.delete(gone.who);
+      gone.settle('busy');
+    }
+    return new Promise((settle, fail) => {
+      line.push({ who, key, password, settle, fail });
+      present.add(who);
+      void serve();
+    });
+  };
 
   /** @param {Request} req @param {Response} res @param {number} status @param {string} body @param {Record<string, string>} [headers] */
   const html = (req, res, status, body, headers = {}) =>
@@ -187,43 +285,22 @@ export function createAdmin({ settings, store, logins, now, log, sleep }) {
       log('admin refused status=403 why=origin');
       return html(req, res, 403, notePage({ title: 'Отклонено', text: TEXTS.forbidden }));
     }
-    const key = `login:${logins.addressKey(clientAddress(req.headers['x-forwarded-for']))}`;
-    // shut out: five wrong passwords from this very address within the window
-    const shutOut = () => logins.count(key, limits.loginWindowMs) >= limits.loginFailures;
-    const refuse = (/** @type {'locked' | 'busy' | 'wrong'} */ why, /** @type {number} */ status) => {
+    const who = logins.addressKey(clientAddress(req.headers['x-forwarded-for']));
+    const key = `login:${who}`;
+    const refuse = (/** @type {'locked' | 'busy' | 'twice' | 'wrong'} */ why, /** @type {number} */ status) => {
       log(`admin login ${why} status=${status}`);
       html(req, res, status, loginPage({ error: TEXTS[why] }));
     };
-    if (shutOut()) return refuse('locked', 429);
+    // shut out: five wrong passwords from this very address within the window
+    if (failures(key) >= limits.loginFailures) return refuse('locked', 429);
+    // rule 1 of the line: one login of an address at a time — said before the form is read, and looked at again
+    // after it (another login of the address may have got in while this one was being read)
+    if (present.has(who)) return refuse('twice', 429);
     const password = (await readForm(req)).get('password') ?? '';
-    if (waiting >= LOGIN_QUEUE) return refuse('busy', 503);
+    if (present.has(who)) return refuse('twice', 429);
 
-    // one password is checked at a time, and the count of wrong ones is looked at again when its turn comes: of
-    // many sent at the same moment no more are checked than the limit allows
-    waiting++;
-    const mine = turn.then(async () => {
-      if (shutOut()) return 'locked';
-      // Wrong passwords from many addresses are braked for everybody, not answered with a closed door: after so
-      // many of them within the window, one password is looked at in a second, whoever sends it. The author waits
-      // that second like everybody else and gets in; strangers cannot shut him out, and cannot guess fast.
-      if (logins.count('wrong:all', limits.loginWindowMs) >= limits.loginSlowAfter) {
-        const pause = lastCheck + limits.loginSlowMs - now();
-        if (pause > 0) await sleep(pause);
-      }
-      lastCheck = now();
-      if (await verifyPassword(password, settings.passwordHash)) return 'ok';
-      logins.mark(key, limits.loginWindowMs);
-      logins.mark('wrong:all', limits.loginWindowMs);
-      return 'wrong';
-    });
-    turn = mine.catch(() => {});
-    /** @type {string} */
-    let result;
-    try {
-      result = await mine;
-    } finally {
-      waiting--;
-    }
+    const result = await queue(who, key, password);
+    if (result === 'busy') return refuse('busy', 503);
     if (result === 'locked') return refuse('locked', 429);
     if (result !== 'ok') return refuse('wrong', 401);
 
@@ -345,9 +422,11 @@ export function createAdmin({ settings, store, logins, now, log, sleep }) {
       if (q === '') return note(400, 'Не удалено', TEXTS.noWords, csrf);
       if (!reading && form.get('confirm') !== 'yes') return note(400, 'Не удалено', TEXTS.unsure, csrf);
       const ids = await find(q);
-      // done only for the very number the page showed: what came or went since is shown first
+      // done only for the very number the page showed: what came or went since is shown first. The page also says
+      // how many messages there are in all, so that a search that finds every one of them is seen to do so
       if (reading || ids.length === 0 || form.get('count') !== String(ids.length)) {
-        return html(req, res, reading ? 200 : 409, deleteFoundPage({ csrf, q, count: ids.length, changed: !reading }));
+        const total = (await store.ids()).length;
+        return html(req, res, reading ? 200 : 409, deleteFoundPage({ csrf, q, count: ids.length, total, changed: !reading }));
       }
       await removeAll(ids);
       return redirect(req, res, 303, '/admin/');
@@ -381,7 +460,8 @@ export function createAdmin({ settings, store, logins, now, log, sleep }) {
     return note(404, 'Не найдено', TEXTS.missing, csrf);
   };
 
-  return async function admin(req, res, path, query) {
+  /** @param {Request} req @param {Response} res @param {string} path @param {string} query */
+  const admin = async (req, res, path, query) => {
     try {
       await handle(req, res, path, query);
     } catch (err) {
@@ -395,4 +475,6 @@ export function createAdmin({ settings, store, logins, now, log, sleep }) {
       }
     }
   };
+  // how many logins stand in the line right now (the tests look at it)
+  return Object.assign(admin, { waiting: () => line.length });
 }

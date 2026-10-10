@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { siteDir } from '../../scripts/site/config.mjs';
+import { npmCli } from '../../scripts/site/install-server.mjs';
 import { projectRoot, tempDir } from './helpers';
 
 // The root `npm ci` installs the two packages of the feedback service as well (the "postinstall" of package.json).
@@ -69,6 +70,39 @@ describe('npm ci of the project also installs the feedback service (scripts/site
     const said = `${result.out}${result.err}`.trim().split('\n').filter((line) => line.includes('site:server:install'));
     expect(said).toHaveLength(1);
     expect(said[0]).toMatch(/^the feedback service of the site was NOT installed \(npm ended with 1\)\. The project itself is installed\. The tests of the service and "npm run site:build" need it: run  npm run site:server:install  when the registry can be reached\.$/);
+  });
+
+  it('starts npm without a shell: a folder with a space and an "&" in its name is one argument, never a command', () => {
+    // (a shell would take what follows the "&" for a second command and print the word)
+    const dir = join(tempDir(), 'my project & echo PWNED');
+    mkdirSync(dir);
+    const npm = fakeNpm(dir, 0);
+    const server = bareServer(dir);
+    const result = run(server, npm.file);
+    expect(result.status).toBe(0);
+    expect(readFileSync(npm.record, 'utf8')).toBe(`ci --prefix ${server} --omit=dev --ignore-scripts --no-audit --no-fund\n`);
+    expect(`${result.out}${result.err}`).not.toContain('PWNED');
+    // nothing in the script hands a line of text to a shell: it starts Node itself with a list of arguments
+    const source = readFileSync(script, 'utf8');
+    expect(source).not.toMatch(/shell\s*:|\bexec(Sync)?\(/);
+    expect(source).toMatch(/spawnSync\(process\.execPath, \[cli, \.\.\.args\], \{ stdio: 'inherit' \}\)/);
+  });
+
+  it('started by hand, takes the npm that came with this very Node — and knows when there is none', () => {
+    const windows = join('C:', 'Program Files', 'nodejs');
+    const unix = join('/', 'usr', 'local');
+    const inWindows = join(windows, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    const inUnix = join(unix, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    // under npm (the "postinstall"): the npm that is running
+    expect(npmCli({ npmExecPath: join(unix, 'somewhere', 'npm-cli.js'), node: join(unix, 'bin', 'node'), exists: () => false })).toBe(join(unix, 'somewhere', 'npm-cli.js'));
+    // by hand: next to Node, where each system puts it
+    expect(npmCli({ npmExecPath: undefined, node: join(windows, 'node.exe'), exists: (path) => path === inWindows })).toBe(inWindows);
+    expect(npmCli({ npmExecPath: undefined, node: join(unix, 'bin', 'node'), exists: (path) => path === inUnix })).toBe(inUnix);
+    // what is not a script of Node is not handed to Node (another package manager may name a program there)
+    expect(npmCli({ npmExecPath: join(windows, 'npm.cmd'), node: join(windows, 'node.exe'), exists: (path) => path === inWindows })).toBe(inWindows);
+    expect(npmCli({ npmExecPath: undefined, node: join(unix, 'bin', 'node'), exists: () => false })).toBeNull();
+    // the npm of this very run is found by it
+    expect(npmCli({ npmExecPath: undefined, node: process.execPath })).toMatch(/npm-cli\.js$/);
   });
 
   it('installs again when what is there is not what the lock file names', () => {

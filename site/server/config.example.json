@@ -5,7 +5,7 @@
   "siteRoot": "/var/www/site.example",
   "passwordHash": "",
   "limits": {
-    "requestSeconds": 120,
+    "minBytesPerSecond": 16384,
     "perAddressHour": 5,
     "perAddressDay": 20,
     "globalHour": 120,

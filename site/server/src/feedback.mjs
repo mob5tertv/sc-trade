@@ -16,6 +16,7 @@ import { pipeline } from 'node:stream/promises';
 import { clientAddress } from './address.mjs';
 import { answer, errorWord, JSON_HEADERS } from './http.mjs';
 import { DAY, HOUR } from './limiter.mjs';
+import { createPace } from './pace.mjs';
 import { checkContact, checkMessage, cleanContact, cleanFileName, cleanLang, cleanMessage, isTooFast, LIMITS, Refusal } from './rules.mjs';
 import { createTextChecker, IMAGE_HEAD_BYTES, imageType, MIME } from './sniff.mjs';
 import { recordBytes, StartProblem, StorageFull } from './store.mjs';
@@ -187,7 +188,7 @@ export function createFeedback({ settings, store, limiter, everybody, now, log }
       if (over) return;
       over = true;
       clearTimeout(deadline);
-      clearTimeout(silence);
+      pace.stop();
       uploads--;
       reading.delete(who);
       if (outcome === 'aborted') say('aborted', 0);
@@ -211,16 +212,16 @@ export function createFeedback({ settings, store, limiter, everybody, now, log }
 
     const deadline = setTimeout(() => fail(new Refusal('server', { status: 408, why: 'deadline' })), limits.requestMs);
 
-    // A sender that falls silent does not keep its place until the deadline: a body that brings nothing for
-    // `idleMs` is cut. The clock runs only while the service is waiting for the sender — not while it has itself
-    // asked the sender to wait, and not once the body is all here.
-    /** @type {NodeJS.Timeout | undefined} */
-    let silence;
-    const listen = () => {
-      clearTimeout(silence);
-      silence = setTimeout(() => fail(new Refusal('server', { status: 408, why: 'idle' })), limits.idleMs);
-    };
-    listen();
+    // A sender does not keep its place by sending a byte now and then: after the first stretch every stretch of
+    // listening must bring its share of the least rate, or the body is ended and the place is free (pace.mjs). The
+    // clock runs only while the service is waiting for the sender — not while it has itself asked the sender to
+    // wait, and not once the body is all here.
+    const pace = createPace({
+      windowMs: limits.rateWindowMs,
+      minBytes: Math.ceil((limits.minBytesPerSecond * limits.rateWindowMs) / 1000),
+      onSlow: () => fail(new Refusal('server', { status: 408, why: 'slow' })),
+    });
+    pace.start();
 
     /**
      * Writes one file of the form into the work folder, judging it on the way: its size, and whether it is what
@@ -354,19 +355,19 @@ export function createFeedback({ settings, store, limiter, everybody, now, log }
     req.on('data', (chunk) => {
       received += chunk.length;
       if (over) return;
-      listen();
+      pace.took(chunk.length);
       // the limit of the whole body, counted as it is read: what the head of the request said about it is not believed
       if (received > limits.bodyBytes) return fail(new Refusal('file_too_big'));
       // whatever a body is made of, the worst it can do is not be the form: an error the parser throws at it is a
       // refusal of this one request, never the end of the service
       try {
         if (!parser.write(chunk)) {
-          // the service is behind, not the sender: the sender is asked to wait, and its silence is not counted
+          // the service is behind, not the sender: the sender is asked to wait, and that time is not counted
           req.pause();
-          clearTimeout(silence);
+          pace.pause();
           parser.once('drain', () => {
             if (over) return;
-            listen();
+            pace.resume();
             req.resume();
           });
         }
@@ -375,7 +376,7 @@ export function createFeedback({ settings, store, limiter, everybody, now, log }
       }
     });
     req.on('end', () => {
-      clearTimeout(silence);
+      pace.stop();
       if (over) return;
       try {
         parser.end();

@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import net from 'node:net';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { LIMITS } from '../../site/server/src/rules.mjs';
@@ -584,48 +585,121 @@ describe('the sizes are cut while the body is read', () => {
     expect((await send(run, fields(run.clock))).json).toEqual(OK);
   });
 
-  it('a sender that falls silent loses its place: a body that brings nothing for the time allowed is cut', async () => {
-    const run = await start({ limits: { idleMs: 250, uploadsAtOnce: 1, lingerMs: 100 } });
+  /**
+   * A sender that writes a body piece by piece, a piece every `everyMs`, until the pieces or the line end. Gives what
+   * the service wrote back, and whether the line was closed on it while it still had something to send.
+   */
+  function drip(port: number, headText: string, pieces: Iterable<Buffer>, everyMs: number): Promise<{ response: string; cutByService: boolean }> {
+    return new Promise((done) => {
+      const socket = net.connect({ host: '127.0.0.1', port });
+      const chunks: Buffer[] = [];
+      const left = pieces[Symbol.iterator]();
+      let timer: NodeJS.Timeout | undefined;
+      let finished = false;
+      socket.on('connect', () => {
+        socket.write(headText);
+        const next = () => {
+          const piece = left.next();
+          if (piece.done === true) return void (finished = true);
+          if (!socket.destroyed) socket.write(piece.value);
+          timer = setTimeout(next, everyMs);
+        };
+        next();
+      });
+      socket.on('data', (data: Buffer) => chunks.push(data));
+      socket.on('error', () => {});
+      socket.on('end', () => socket.end());
+      socket.on('close', () => {
+        clearTimeout(timer);
+        done({ response: Buffer.concat(chunks).toString('latin1'), cutByService: !finished });
+      });
+    });
+  }
+  /** A byte now and then, for ever: a body that looks alive and brings nothing. */
+  function* trickle(first: Buffer): Generator<Buffer> {
+    yield first;
+    for (;;) yield Buffer.from(' ');
+  }
+
+  it('a sender that falls silent loses its place: the first window that brings nothing ends the body', async () => {
+    const run = await start({ limits: { rateWindowMs: 150, uploadsAtOnce: 1, lingerMs: 100 } });
     const began = Date.now();
     const silent = rawSend(run.port, head('Content-Length: 5000000\r\n'), { first: pictureStart, then: 'wait' });
     await until(() => tmpOf(run.dir).length === 1);
-    // while it holds the only place, nobody else is read
-    expect((await send(run, fields(run.clock), { 'X-Forwarded-For': '198.51.100.20' })).status).toBe(503);
     const result = await silent.done;
     expect(Date.now() - began).toBeLessThan(5000);
     expect(result.response).toMatch(/^HTTP\/1\.1 408 /);
     expect(result.response).toContain('{"ok":false,"error":"server"}');
     expect(result.cutByService).toBe(true);
-    expect(run.lines.some((line) => / feedback server status=408 .* why=idle$/.test(line))).toBe(true);
+    expect(run.lines.some((line) => / feedback server status=408 .* why=slow$/.test(line))).toBe(true);
     await until(() => tmpOf(run.dir).length === 0);
     // the place is free again
     expect((await send(run, fields(run.clock), { 'X-Forwarded-For': '198.51.100.20' })).json).toEqual(OK);
     expect(stored(run.dir)).toHaveLength(1);
   });
 
-  it('a sender that goes on sending, however slowly, is not taken for a silent one', async () => {
-    const run = await start({ limits: { idleMs: 400 } });
-    // a whole message in pieces, a piece every 150 ms: longer in all than the time a silence may last
-    const { body, type } = multipart([...fields(run.clock), shot()]);
-    const { default: net } = await import('node:net');
-    const reply = await new Promise<string>((done, fail) => {
-      const socket = net.connect({ host: '127.0.0.1', port: run.port });
-      const chunks: Buffer[] = [];
-      socket.on('error', fail);
-      socket.on('data', (data: Buffer) => chunks.push(data));
-      socket.on('close', () => done(Buffer.concat(chunks).toString('latin1')));
-      socket.on('connect', async () => {
-        socket.write(`POST /api/feedback HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\nOrigin: ${ORIGIN}\r\nX-Forwarded-For: ${SENDER}\r\nContent-Type: ${type}\r\nContent-Length: ${body.length}\r\n\r\n`);
-        const step = Math.ceil(body.length / 6);
-        for (let at = 0; at < body.length; at += step) {
-          socket.write(body.subarray(at, at + step));
-          await new Promise((wait) => setTimeout(wait, 150));
-        }
-      });
-    });
-    expect(reply).toMatch(/^HTTP\/1\.1 200 /);
-    expect(reply).toContain('{"ok":true}');
+  it('a trickle keeps no place: four addresses that send a byte now and then are cut, and the form is open again', async () => {
+    // (the time is made short for the test: half a second to begin with, then every half second must bring 2.5 KB)
+    const run = await start({ limits: { rateWindowMs: 500, minBytesPerSecond: 5120, lingerMs: 100 } });
+    expect(run.settings.limits.uploadsAtOnce).toBe(4);
+    const began = Date.now();
+    // never silent — a byte every 40 ms — and never anywhere near the rate
+    const drips = [1, 2, 3, 4].map((n) => drip(run.port, head('Content-Length: 5000000\r\n', `198.51.100.${n}`), trickle(pictureStart), 40));
+    await until(() => tmpOf(run.dir).length === 4);
+    // while they hold every place there is, nobody else is read
+    expect((await send(run, fields(run.clock), { 'X-Forwarded-For': '198.51.100.20' })).status).toBe(503);
+    const results = await Promise.all(drips);
+    // each was cut when its first window after the beginning ended: about a second, not the time a request may take
+    expect(Date.now() - began).toBeLessThan(6000);
+    for (const result of results) {
+      expect(result.response).toMatch(/^HTTP\/1\.1 408 /);
+      expect(result.response).toContain('{"ok":false,"error":"server"}');
+      expect(result.cutByService).toBe(true);
+    }
+    expect(run.lines.filter((line) => / feedback server status=408 .* why=slow$/.test(line))).toHaveLength(4);
+    await until(() => tmpOf(run.dir).length === 0);
+    expectNothingKept(run.dir);
+    expect((await send(run, fields(run.clock), { 'X-Forwarded-For': '198.51.100.20' })).json).toEqual(OK);
+  });
+
+  it('a sender above the least rate is read to the end, however many windows it takes', async () => {
+    // every 400 ms must bring 2 KB; the sender brings 4 KB every 40 ms, for a second and a half
+    const run = await start({ limits: { rateWindowMs: 400, minBytesPerSecond: 5120 } });
+    const { body, type } = multipart([...fields(run.clock), logFile('[2026-10-10 12:00:00][INFO][app] a line of the log\n'.repeat(3200))]);
+    expect(body.length).toBeGreaterThan(150 * 1024);
+    const pieces = Array.from({ length: Math.ceil(body.length / 4096) }, (_, at) => body.subarray(at * 4096, (at + 1) * 4096));
+    const began = Date.now();
+    const result = await drip(run.port, `POST /api/feedback HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\nOrigin: ${ORIGIN}\r\nX-Forwarded-For: ${SENDER}\r\nContent-Type: ${type}\r\nContent-Length: ${body.length}\r\n\r\n`, pieces, 40);
+    // longer than the first stretch and three windows after it
+    expect(Date.now() - began).toBeGreaterThan(1500);
+    expect(result.response).toMatch(/^HTTP\/1\.1 200 /);
+    expect(result.response).toContain('{"ok":true}');
     expect(stored(run.dir)).toHaveLength(1);
+    expect(run.lines.filter((line) => /why=slow/.test(line))).toEqual([]);
+  });
+
+  it('the least rate is 16 KB a second, looked at every five seconds after the first five — and a body may take as long as that rate needs', async () => {
+    const run = await start();
+    const { limits } = run.settings;
+    expect(limits.minBytesPerSecond).toBe(16 * 1024);
+    expect(limits.rateWindowMs).toBe(5000);
+    // a full body at the least rate: 18 MB / 16 KB a second = 1152 seconds; with the first five and a minute for the
+    // service itself that is 20 minutes and 17 seconds — the old two minutes would cut an honest slow sender
+    expect(limits.requestMs).toBe(5000 + 1_152_000 + 60_000);
+    expect(limits).not.toHaveProperty('idleMs');
+  });
+
+  it('the service stops the clock of the rate for as long as it makes the sender wait itself', () => {
+    const source = readFileSync(join(__dirname, '..', '..', 'site', 'server', 'src', 'feedback.mjs'), 'utf8').replaceAll('\r\n', '\n');
+    // the disk is behind: the sender is asked to wait, and the clock waits with it
+    expect(source).toMatch(/if \(!parser\.write\(chunk\)\) \{[^}]*req\.pause\(\);\n\s+pace\.pause\(\);/);
+    expect(source).toMatch(/parser\.once\('drain', \(\) => \{\n\s+if \(over\) return;\n\s+pace\.resume\(\);\n\s+req\.resume\(\);/);
+    // every byte of the body is counted, and the clock ends with the body or with the request
+    expect(source).toMatch(/pace\.took\(chunk\.length\);/);
+    expect(source).toMatch(/req\.on\('end', \(\) => \{\n\s+pace\.stop\(\);/);
+    expect(source).toMatch(/const finish = [\s\S]{0,400}pace\.stop\(\);/);
+    // the clock that only looked for silence is gone: a byte now and then no longer counts as a sign of life
+    expect(source).not.toMatch(/idleMs|silence/);
   });
 });
 
@@ -927,6 +1001,17 @@ describe('a log file is text', () => {
     expect((await send(run, [...fields(run.clock), logFile('[INFO]\tstarted\r\n[INFO]\tready\n')])).json).toEqual(OK);
     await until(() => tmpOf(run.dir).length === 0);
     expect(stored(run.dir)).toHaveLength(1);
+  });
+
+  it('bad_file_type: nor may it hold the control characters above the letters — the "delete" and the 32 after it', async () => {
+    const run = await start({ limits: { perAddressHour: 100, perAddressDay: 100 } });
+    for (const content of ['gone\u007f\n', 'a line\u0085the next\n', 'an escape of eight bits \u009b31m\n', '\u0080', 'Журнал\u009f\n']) {
+      const reply = await send(run, [...fields(run.clock), logFile(content)]);
+      expect(reply.status, JSON.stringify(content)).toBe(415);
+      expect(reply.json).toEqual(refused('bad_file_type'));
+    }
+    // the letters and signs right above them are text like any other
+    expect((await send(run, [...fields(run.clock), logFile('no-break space, «кавычки», ¡hola!, ~tilde~\n')])).json).toEqual(OK);
   });
 });
 
