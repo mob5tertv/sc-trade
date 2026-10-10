@@ -18,7 +18,7 @@ import { answer, errorWord, JSON_HEADERS } from './http.mjs';
 import { DAY, HOUR } from './limiter.mjs';
 import { checkContact, checkMessage, cleanContact, cleanFileName, cleanLang, cleanMessage, isTooFast, LIMITS, Refusal } from './rules.mjs';
 import { createTextChecker, IMAGE_HEAD_BYTES, imageType, MIME } from './sniff.mjs';
-import { recordBytes, StorageFull } from './store.mjs';
+import { recordBytes, StartProblem, StorageFull } from './store.mjs';
 
 /**
  * @typedef {import('./http.mjs').Request} Request
@@ -40,8 +40,20 @@ import { recordBytes, StorageFull } from './store.mjs';
  * }} Parser
  */
 
-/** @type {(options: { headers: { 'content-type': string }, defParamCharset: string, limits: Record<string, number> }) => Parser} */
-const busboy = createRequire(import.meta.url)('busboy');
+/**
+ * The parser, loaded when the service is made — not when this file is read, so that a folder that came without its
+ * packages gets a sentence that says what to do, not an error of the code.
+ * @returns {(options: { headers: { 'content-type': string }, defParamCharset: string, limits: Record<string, number> }) => Parser}
+ */
+function loadParser() {
+  try {
+    return createRequire(import.meta.url)('busboy');
+  } catch {
+    throw new StartProblem(
+      'the package "busboy" is not next to the service (node_modules/busboy). On the server it comes in the folder site/dist-deploy: copy that folder whole and run setup.sh again. On the computer of the project: npm run site:server:install',
+    );
+  }
+}
 
 /** The text fields of the form. Any other field, or one of these twice, is not the form of the page. */
 const FIELDS = ['message', 'contact', 'lang', 'website', 'started'];
@@ -69,6 +81,7 @@ const notTheForm = () => new Refusal('server', { status: 400, why: 'form' });
  */
 export function createFeedback({ settings, store, limiter, everybody, now, log }) {
   const { limits } = settings;
+  const busboy = loadParser();
   /** How many messages are being read right now. */
   let uploads = 0;
   /** The senders a body of which is being read right now: one body at a time for each. */
@@ -282,7 +295,25 @@ export function createFeedback({ settings, store, limiter, everybody, now, log }
       finish(await store.save(record));
     };
 
-    parser.on('field', (name, value, info) => {
+    /**
+     * A listener of the parser that keeps to itself what is thrown inside it: whatever goes wrong while a part of
+     * the form is judged ends this one request as "not the form" — wherever the parser calls its listeners from —
+     * and never the service.
+     * @template {unknown[]} A
+     * @param {(...args: A) => void} listener
+     * @returns {(...args: A) => void}
+     */
+    const guarded =
+      (listener) =>
+      (...args) => {
+        try {
+          listener(...args);
+        } catch {
+          fail(notTheForm());
+        }
+      };
+
+    parser.on('field', guarded((name, value, info) => {
       if (over) return;
       if (name === undefined || !FIELDS.includes(name) || texts.has(name)) return fail(notTheForm());
       texts.set(name, value);
@@ -293,9 +324,9 @@ export function createFeedback({ settings, store, limiter, everybody, now, log }
       // the texts come before the files: a message that is refused for its text is refused before its files are read
       const problem = name === 'message' ? checkMessage(cleanMessage(value)) : name === 'contact' ? checkContact(cleanContact(value)) : null;
       if (problem !== null) fail(new Refusal(problem));
-    });
+    }));
 
-    parser.on('file', (name, stream, info) => {
+    parser.on('file', guarded((name, stream, info) => {
       // an error of the stream is handled where the file is written; without a listener of its own it would stop the service
       stream.on('error', () => {});
       const kind = name === 'shots[]' ? 'shot' : name === 'log' ? 'log' : null;
@@ -310,7 +341,7 @@ export function createFeedback({ settings, store, limiter, everybody, now, log }
       const job = receive(kind, stream, info.filename);
       job.catch(fail);
       jobs.push(job);
-    });
+    }));
 
     parser.on('filesLimit', () => fail(new Refusal('too_many_files')));
     parser.on('partsLimit', () => fail(new Refusal('too_many_files')));

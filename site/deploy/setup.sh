@@ -319,7 +319,7 @@ settings() {
     if [[ -f $CONFIG_FILE ]]; then
       printf '%s' "$typed_password" | node "$CODE_DIR/src/configure.mjs" --config "$CONFIG_FILE" --reset-password
     else
-      printf '%s' "$typed_password" | node "$CODE_DIR/src/configure.mjs" --config "$CONFIG_FILE" --domain "$domain" --port "$port" --data "$DATA_DIR"
+      printf '%s' "$typed_password" | node "$CODE_DIR/src/configure.mjs" --config "$CONFIG_FILE" --domain "$domain" --port "$port" --data "$DATA_DIR" --root "$root"
     fi
     unset typed_password
     note "the hash of the password is in $CONFIG_FILE"

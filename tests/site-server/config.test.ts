@@ -17,6 +17,7 @@ describe('the settings of the service', () => {
       origin: `https://${DOMAIN}`,
       port: 8787,
       dataDir: dir,
+      siteRoot: `/var/www/${DOMAIN}`,
       passwordHash: PASSWORD_HASH,
       limits: {
         bodyBytes: 18 * 1024 * 1024,
@@ -40,6 +41,28 @@ describe('the settings of the service', () => {
         sessionMs: 12 * 3_600_000,
       },
     });
+  });
+
+  it('never keeps the messages where the web server would hand them out: the folder of the data is not inside the site', () => {
+    const inside = /"dataDir" must not lie inside the folder of the site, nor hold it: what lies in the site is served to anybody/;
+    // the site lives in /var/www/<domain> unless the settings name another folder
+    expect(readSettings(good()).siteRoot).toBe(`/var/www/${DOMAIN}`);
+    for (const dataDir of [`/var/www/${DOMAIN}`, `/var/www/${DOMAIN}/data`, `/var/www/${DOMAIN}/assets/../messages`, `/var/www/${DOMAIN}/`, '/var/www']) {
+      expect(() => readSettings({ ...good(), dataDir }), dataDir).toThrow(inside);
+    }
+    expect(() => readSettings({ ...good(), siteRoot: '/srv/site', dataDir: '/srv/site/messages' })).toThrow(inside);
+    expect(() => readSettings({ ...good(), siteRoot: '/srv/data/site', dataDir: '/srv/data' })).toThrow(inside);
+    // next to the site is not inside it
+    expect(readSettings({ ...good(), siteRoot: '/srv/site', dataDir: '/srv/site-data' })).toMatchObject({ siteRoot: '/srv/site', dataDir: '/srv/site-data' });
+    expect(readSettings({ ...good(), dataDir: '/var/lib/sc-trade-site' }).dataDir).toBe('/var/lib/sc-trade-site');
+    for (const siteRoot of ['www', 7, '', '/']) expect(() => readSettings({ ...good(), siteRoot }), String(siteRoot)).toThrow(/"siteRoot" must be the full path of the folder of the site/);
+  });
+
+  it('wants a folder of its own for the data, two levels deep at the least: not a folder that holds half the system', () => {
+    for (const dataDir of ['/data', '/var', '/srv/', '/home']) {
+      expect(() => readSettings({ ...good(), dataDir }), dataDir).toThrow(/"dataDir" must be the full path of a folder of its own, two levels deep at the least, like \/var\/lib\/sc-trade-site/);
+    }
+    expect(readSettings({ ...good(), dataDir: '/srv/messages' }).dataDir).toBe('/srv/messages');
   });
 
   it('lives in /etc on the server unless the service is told another file', () => {
@@ -137,6 +160,7 @@ describe('the example of the settings (site/server/config.example.json)', () => 
       domain: 'site.example',
       port: 8787,
       dataDir: '/var/lib/sc-trade-site',
+      siteRoot: '/var/www/site.example',
       passwordHash: '',
       limits: { requestSeconds: 120, perAddressHour: 5, perAddressDay: 20, globalHour: 120, perAddressDayBytes: 40 * 1024 * 1024, globalHourBytes: 200 * 1024 * 1024, storageBytes: 1024 * 1024 * 1024, retentionDays: 180 },
     });

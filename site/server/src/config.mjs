@@ -4,7 +4,7 @@
 //
 // The file never holds the password of the author's page: only its hash (password.mjs).
 import { readFileSync } from 'node:fs';
-import { isAbsolute, parse, resolve } from 'node:path';
+import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import { parseHash } from './password.mjs';
 
 export const DEFAULT_CONFIG_PATH = '/etc/sc-trade-site/config.json';
@@ -34,8 +34,9 @@ const MEGABYTE = 1024 * 1024;
  *   sessionMs: number,
  * }} Limits
  *
- * @typedef {{ domain: string, origin: string, port: number, dataDir: string, passwordHash: string, limits: Limits }} Settings
- *   `origin` is the site as a browser names it in the Origin header.
+ * @typedef {{ domain: string, origin: string, port: number, dataDir: string, siteRoot: string, passwordHash: string, limits: Limits }} Settings
+ *   `origin` is the site as a browser names it in the Origin header. `siteRoot` is the folder the web server hands
+ *   out (/var/www/<domain> unless the file names another): the service only needs it to refuse a `dataDir` inside it.
  */
 
 /** The limits nobody sets in the file: they follow from the form of the page and from the size of the server. */
@@ -81,7 +82,16 @@ const CHANGEABLE = Object.freeze({
 });
 
 const DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
-const KEYS = ['domain', 'port', 'dataDir', 'passwordHash', 'limits'];
+const KEYS = ['domain', 'port', 'dataDir', 'siteRoot', 'passwordHash', 'limits'];
+
+/** How many folders deep a full path lies under the root of its disk. @param {string} path */
+const depthOf = (path) => relative(parse(resolve(path)).root, resolve(path)).split(sep).filter((part) => part !== '').length;
+
+/** Does a folder lie inside another, or is it that very folder? @param {string} inner @param {string} outer */
+function isWithin(inner, outer) {
+  const way = relative(resolve(outer), resolve(inner));
+  return way === '' || (!way.startsWith('..') && !isAbsolute(way));
+}
 
 const isWhole = (/** @type {unknown} */ value, /** @type {number} */ min, /** @type {number} */ max) =>
   typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
@@ -108,9 +118,16 @@ export function readSettings(value) {
 
   if (!isWhole(port, 1024, 65535)) problems.push('"port" must be a whole number from 1024 to 65535 (8787 unless the web server is told another)');
 
+  // the folder of the site: what lies in it is served to anybody, so the messages must never lie there
+  const siteRoot = file.siteRoot ?? (typeof domain === 'string' && DOMAIN.test(domain) ? `/var/www/${domain}` : undefined);
+  const siteRootIsPath = typeof siteRoot === 'string' && isAbsolute(siteRoot) && depthOf(siteRoot) >= 1;
+  if (siteRoot !== undefined && !siteRootIsPath) problems.push('"siteRoot" must be the full path of the folder of the site, like /var/www/site.example');
+
   if (dataDir === undefined) problems.push('"dataDir" is missing: the folder the messages are kept in, like /var/lib/sc-trade-site');
-  else if (typeof dataDir !== 'string' || !isAbsolute(dataDir) || resolve(dataDir) === parse(resolve(dataDir)).root) {
-    problems.push('"dataDir" must be the full path of a folder of its own, like /var/lib/sc-trade-site');
+  else if (typeof dataDir !== 'string' || !isAbsolute(dataDir) || depthOf(dataDir) < 2) {
+    problems.push('"dataDir" must be the full path of a folder of its own, two levels deep at the least, like /var/lib/sc-trade-site');
+  } else if (siteRootIsPath && (isWithin(dataDir, siteRoot) || isWithin(siteRoot, dataDir))) {
+    problems.push('"dataDir" must not lie inside the folder of the site, nor hold it: what lies in the site is served to anybody');
   }
 
   if (passwordHash === undefined) problems.push('"passwordHash" is missing: the hash of the password of the author\'s page (setup.sh makes it)');
@@ -144,6 +161,7 @@ export function readSettings(value) {
     origin: `https://${domain}`,
     port: /** @type {number} */ (port),
     dataDir: /** @type {string} */ (dataDir),
+    siteRoot: /** @type {string} */ (siteRoot),
     passwordHash: /** @type {string} */ (passwordHash),
     limits: {
       bodyBytes: FIXED.bodyBytes,

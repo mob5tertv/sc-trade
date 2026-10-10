@@ -2,6 +2,7 @@
   "domain": "site.example",
   "port": 8787,
   "dataDir": "/var/lib/sc-trade-site",
+  "siteRoot": "/var/www/site.example",
   "passwordHash": "",
   "limits": {
     "requestSeconds": 120,

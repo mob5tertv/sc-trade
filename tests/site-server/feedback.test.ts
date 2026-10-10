@@ -896,11 +896,55 @@ describe('the service looks after its storage', () => {
   });
 
   it('clears the work folder of a run that was killed, when it starts', async () => {
-    const dir = tempDir();
-    mkdirSync(join(dir, 'tmp', 'a'.repeat(32)), { recursive: true });
-    writeFileSync(join(dir, 'tmp', 'a'.repeat(32), 'half.part'), 'x');
-    const run = await start({ dir });
+    const first = await start();
+    await first.stop();
+    mkdirSync(join(first.dir, 'tmp', 'a'.repeat(32)), { recursive: true });
+    writeFileSync(join(first.dir, 'tmp', 'a'.repeat(32), 'half.part'), 'x');
+    const run = await start({ dir: first.dir });
     expect(tmpOf(run.dir)).toEqual([]);
-    expect(existsSync(join(dir, 'messages'))).toBe(true);
+    expect(existsSync(join(run.dir, 'messages'))).toBe(true);
+  });
+
+  it('does not start in a folder that holds something and is not its own — and removes nothing there', async () => {
+    const dir = tempDir();
+    mkdirSync(join(dir, 'tmp'));
+    writeFileSync(join(dir, 'tmp', 'somebody-elses-work.txt'), 'not to be lost');
+    await expect(start({ dir })).rejects.toThrow(/is not empty and was not made by this service/);
+    expect(readFileSync(join(dir, 'tmp', 'somebody-elses-work.txt'), 'utf8')).toBe('not to be lost');
+    expect(readdirSync(dir)).toEqual(['tmp']);
+  });
+});
+
+describe('a log file is text', () => {
+  it('bad_file_type: a log with control characters in it — the colours of a terminal, a bell — is not a log of the application', async () => {
+    const run = await start();
+    for (const content of ['\u001b[31m[ERROR]\u001b[0m something\n', 'line one\u0007\nline two\n', 'a\u0001b', 'page\u000cbreak\n']) {
+      const reply = await send(run, [...fields(run.clock), logFile(content)]);
+      expect(reply.status, JSON.stringify(content)).toBe(415);
+      expect(reply.json).toEqual(refused('bad_file_type'));
+    }
+    // tabs and both kinds of line ends are what a log has
+    expect((await send(run, [...fields(run.clock), logFile('[INFO]\tstarted\r\n[INFO]\tready\n')])).json).toEqual(OK);
+    await until(() => tmpOf(run.dir).length === 0);
+    expect(stored(run.dir)).toHaveLength(1);
+  });
+});
+
+describe('an error inside the reading of a form', () => {
+  it('ends that one request: the listeners of the parser catch what is thrown inside them', async () => {
+    // a log that throws when it is told of a refused robot: the throw happens inside the listener that judges a field
+    const run = await start({ onLine: (line) => {
+      if (line.includes(' feedback spam ')) throw new Error('thrown inside a listener');
+    } });
+    const reply = await send(run, fields(run.clock, { website: 'filled in' }));
+    expect(reply.status).toBe(403);
+    expect(reply.json).toEqual(refused('spam'));
+    // the service is still there
+    expect((await request(run.port, { path: '/api/' })).json).toEqual({ ok: true });
+    expect((await send(run, fields(run.clock))).json).toEqual(OK);
+    // and it does not rely on where the parser happens to call its listeners from: each catches for itself
+    const source = readFileSync(join(__dirname, '..', '..', 'site', 'server', 'src', 'feedback.mjs'), 'utf8');
+    for (const event of ['field', 'file']) expect(source, event).toContain(`parser.on('${event}', guarded(`);
+    expect(source).toMatch(/const guarded =[\s\S]{0,400}catch \{\n\s+fail\(notTheForm\(\)\);/);
   });
 });

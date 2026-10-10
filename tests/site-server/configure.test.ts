@@ -52,6 +52,21 @@ describe('the settings are written by a tool that gets the password on its stand
     expect(await verifyPassword(`${PASSWORD}\n`, written.passwordHash)).toBe(false);
   });
 
+  it('writes down where the site lies, so that the service can refuse to keep its data there', () => {
+    const dir = tempDir();
+    const file = join(dir, 'config.json');
+    expect(configure(['--config', file, '--domain', DOMAIN, '--data', '/var/lib/sc-trade-site', '--root', '/var/www/sc-trade.example'], PASSWORD).status).toBe(0);
+    const written = JSON.parse(readFileSync(file, 'utf8'));
+    expect(Object.keys(written)).toEqual(['domain', 'port', 'dataDir', 'siteRoot', 'passwordHash']);
+    expect(written.siteRoot).toBe('/var/www/sc-trade.example');
+    // the folder of the data inside the site: no settings are written at all
+    const other = join(dir, 'other.json');
+    const inside = configure(['--config', other, '--domain', DOMAIN, '--data', '/srv/site/data', '--root', '/srv/site'], PASSWORD);
+    expect(inside.status).toBe(1);
+    expect(inside.err).toMatch(/"dataDir" must not lie inside the folder of the site/);
+    expect(existsSync(other)).toBe(false);
+  });
+
   it('has no way to be given the password as an argument, and does not repeat an argument it does not know', () => {
     const dir = tempDir();
     const file = join(dir, 'config.json');

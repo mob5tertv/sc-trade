@@ -4,6 +4,7 @@
 import { DEFAULT_CONFIG_PATH, loadSettings } from './config.mjs';
 import { errorWord } from './http.mjs';
 import { createService } from './service.mjs';
+import { StartProblem } from './store.mjs';
 
 const EXIT_CONFIG = 78;
 
@@ -25,11 +26,18 @@ try {
   process.exit(EXIT_CONFIG);
 }
 
-const service = createService({ settings });
+/** @type {ReturnType<typeof createService>} */
+let service;
 try {
+  service = createService({ settings });
   const port = await service.listen();
   console.log(`${new Date().toISOString()} started address=127.0.0.1 port=${port}`);
 } catch (err) {
+  if (err instanceof StartProblem) {
+    // something its owner must put right: starting again would not help
+    console.error(`sc-trade-site does not start: ${err.message}`);
+    process.exit(EXIT_CONFIG);
+  }
   console.error(`sc-trade-site does not start: ${errorWord(err)} (the folder of the data ${settings.dataDir} must be writable by the service, and the port ${settings.port} must be free)`);
   process.exit(1);
 }

@@ -9,7 +9,7 @@
 // `tmp` and moved. No name here ever comes from a sender: an id and a file name are made by the service and are
 // checked against their shape again every time one is turned into a path.
 import { randomBytes } from 'node:crypto';
-import { mkdir, open, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MIME } from './sniff.mjs';
 
@@ -29,6 +29,26 @@ const DAY = 24 * HOUR;
 
 /** The check for messages past their term runs once a day (service.mjs); see `isDue`. */
 export const SWEEP_EVERY_MS = DAY;
+
+/**
+ * The mark of the storage: a file it puts into a folder it makes, or finds empty. A folder that holds something
+ * and has no such file was not made by this service — it is somebody's, named in the settings by mistake — and the
+ * storage does not open it: opening would empty its `tmp` and, with the daily check, remove what it takes for
+ * strays.
+ */
+export const MARKER = 'sc-trade-site.marker';
+const MARKER_TEXT = `The messages of the SC Trade site are kept in this folder by the service sc-trade-site.
+Do not remove this file: the service does not start in a folder that holds something and has no such file.
+`;
+
+/** A reason for the service not to start that its owner must put right: said to him in full, as it is. */
+export class StartProblem extends Error {
+  /** @param {string} message */
+  constructor(message) {
+    super(message);
+    this.name = 'StartProblem';
+  }
+}
 
 /** The bytes a message takes on the disk: its JSON and its files. @param {MessageRecord} record */
 export function recordBytes(record) {
@@ -126,9 +146,19 @@ export function createStore({ dir, now, storageBytes, retentionMs }) {
   const names = (folder) => readdir(folder).catch(() => []);
 
   return {
-    /** Makes the folders, throws away the work of a run that was killed, counts what is kept. */
+    /**
+     * Makes the folders, throws away the work of a run that was killed, counts what is kept — in a folder that is
+     * the storage's own. In any other it stops before it has made or removed a thing.
+     */
     async open() {
+      const there = await readdir(dir).catch((err) => (err.code === 'ENOENT' ? null : Promise.reject(err)));
+      if (there !== null && there.length > 0 && !there.includes(MARKER)) {
+        throw new StartProblem(
+          `the folder of the data ${dir} is not empty and was not made by this service (the file ${MARKER} is missing): nothing in it was touched. Name an empty folder, or one that does not exist yet, as "dataDir" in the settings. If these are the messages of this service, brought back from a copy that was made without that file, put an empty file of that name there.`,
+        );
+      }
       for (const folder of [dir, messagesDir, filesDir]) await mkdir(folder, { recursive: true, mode: 0o700 });
+      if (there === null || !there.includes(MARKER)) await writeFile(join(dir, MARKER), MARKER_TEXT, { flag: 'wx', mode: 0o600 });
       await rm(tmpDir, { recursive: true, force: true });
       await mkdir(tmpDir, { mode: 0o700 });
       await measure();

@@ -1,12 +1,19 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { afterAll, afterEach, expect } from 'vitest';
 import { readSettings, type Settings } from '../../site/server/src/config.mjs';
 import { hashPassword } from '../../site/server/src/password.mjs';
 import { createService } from '../../site/server/src/service.mjs';
+import { MARKER } from '../../site/server/src/store.mjs';
+
+// The service has two packages of its own (site/server/node_modules). Without them nothing here can run: said in
+// plain words, with the command that installs them.
+if (!existsSync(resolve(__dirname, '..', '..', 'site', 'server', 'node_modules', 'busboy', 'package.json'))) {
+  throw new Error('the service of the site is not installed (site/server/node_modules is missing): run  npm run site:server:install  and start the tests again');
+}
 
 /** The site the service of the tests believes it belongs to. Nothing here is a real name or a real address. */
 export const DOMAIN = 'site.example.test';
@@ -48,13 +55,21 @@ export function tempDir(): string {
 }
 
 /** Every file under a folder, as paths with forward slashes, sorted. */
-export function listFiles(dir: string): string[] {
+export function rawListFiles(dir: string): string[] {
   const walk = (folder: string): string[] =>
     readdirSync(folder).flatMap((name) => {
       const path = join(folder, name);
       return statSync(path).isDirectory() ? walk(path) : [relative(dir, path).replaceAll('\\', '/')];
     });
   return walk(dir).sort();
+}
+
+/**
+ * What a folder of the data holds: every file under it but the mark the storage puts into a folder it makes
+ * (store.test.ts is where that mark is looked at).
+ */
+export function listFiles(dir: string): string[] {
+  return rawListFiles(dir).filter((file) => file.split('/').at(-1) !== MARKER);
 }
 
 /** Every folder under a folder, sorted. */
@@ -104,7 +119,7 @@ export function settingsFor(dir: string, limits: Partial<Settings['limits']> = {
  * Starts the service on 127.0.0.1, on a port the system picks, with its data in a temp folder. It is stopped when
  * the test is over.
  */
-export async function start(options: { limits?: Partial<Settings['limits']>; dir?: string; now?: number } = {}): Promise<Running> {
+export async function start(options: { limits?: Partial<Settings['limits']>; dir?: string; now?: number; onLine?: (line: string) => void } = {}): Promise<Running> {
   const dir = options.dir ?? tempDir();
   const clock = { now: options.now ?? START };
   const lines: string[] = [];
@@ -114,7 +129,11 @@ export async function start(options: { limits?: Partial<Settings['limits']>; dir
     sleeps.push(ms);
     clock.now += ms;
   };
-  const service = createService({ settings, now: () => clock.now, log: (line) => lines.push(line), sleep });
+  const log = (line: string) => {
+    lines.push(line);
+    options.onLine?.(line);
+  };
+  const service = createService({ settings, now: () => clock.now, log, sleep });
   const port = await service.listen(0);
   let stopped = false;
   const one: Running = {

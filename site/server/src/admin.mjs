@@ -51,7 +51,9 @@ const COMMON = Object.freeze({
   'X-Robots-Tag': 'noindex, nofollow',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
-  'Referrer-Policy': 'no-referrer',
+  // "same-origin", not "no-referrer": a page that forbids every referrer makes a browser send "Origin: null" with
+  // its own forms, and a form with that origin is refused here. The address of a page still never leaves the site.
+  'Referrer-Policy': 'same-origin',
   'Cross-Origin-Resource-Policy': 'same-origin',
 });
 // The web server in front puts the policy of the site on every answer; these are for the day the service is

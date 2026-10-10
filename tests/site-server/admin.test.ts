@@ -284,6 +284,16 @@ describe('the login', () => {
     }
     expect(run.service.loginLimiter.size()).toBe(0);
     expect(run.lines.filter((line) => / admin login /.test(line))).toEqual([]);
+    // "null" is what a browser sends with a form of a page that forbids every referrer: so the pages of the author
+    // must not forbid it, or their own forms would be refused here. Not one answer of the author's page says so.
+    for (const path of ['/admin/login', '/admin/', '/admin/assets/admin.css', '/admin']) {
+      expect((await admin(run, path)).headers['referrer-policy'], path).toBe('same-origin');
+    }
+    const cookie = await login(run);
+    const record = await visitor(run, {}, [shot()]);
+    for (const path of ['/admin/', `/admin/m/${record.id}`, `/admin/m/${record.id}/file/1`, '/admin/nothing']) {
+      expect((await admin(run, path, { cookie })).headers['referrer-policy'], path).toBe('same-origin');
+    }
   });
 
   it('takes the password from a small form only', async () => {
@@ -858,7 +868,9 @@ describe('the pages of the author', () => {
       expect(reply.headers['content-type']).toBe('text/html; charset=utf-8');
       // the service says the same itself, for a day it is reached without the web server in front
       expect(reply.headers['content-security-policy']).toBe("default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
-      expect(reply.headers['referrer-policy']).toBe('no-referrer');
+      // "same-origin", not "no-referrer": told to send no referrer at all, a browser also sends "Origin: null" with
+      // the forms of the page — and a form of the author's page with that origin is refused (the login test above)
+      expect(reply.headers['referrer-policy']).toBe('same-origin');
     }
   });
 

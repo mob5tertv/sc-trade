@@ -48,9 +48,9 @@ describe('what a picture is: its first bytes, nothing else', () => {
   });
 });
 
-describe('what a log is: text in UTF-8 with no zero byte', () => {
+describe('what a log is: text in UTF-8 with no control characters but the tab and the ends of lines', () => {
   it('takes plain text in any language', () => {
-    for (const text of ['[info] started\n', 'Привет, мир\r\n', '日本語のログ', '\u{1F680} launch', 'tab\there', 'a']) {
+    for (const text of ['[info] started\n', 'Привет, мир\r\n', '日本語のログ', '\u{1F680} launch', 'tab\there', 'a', 'old\rmac\rlines', 'del \u007f and a no-break space   are not what is meant']) {
       expect(isText(Buffer.from(text)), text).toBe(true);
     }
   });
@@ -59,6 +59,19 @@ describe('what a log is: text in UTF-8 with no zero byte', () => {
     expect(isText(Buffer.from('abc\u0000def'))).toBe(false);
     expect(isText(Buffer.from([0]))).toBe(false);
     expect(isText(Buffer.concat([Buffer.from('x'.repeat(5000)), Buffer.from([0])]))).toBe(false);
+  });
+
+  it('refuses every other control character below the space: a log of the application has none, a file that is not text has many', () => {
+    for (let byte = 0; byte < 0x20; byte++) {
+      const allowed = byte === 0x09 || byte === 0x0a || byte === 0x0d;
+      expect(isText(Buffer.from([0x61, byte, 0x62])), `byte ${byte}`).toBe(allowed);
+      expect(isText(Buffer.from([byte])), `byte ${byte} alone`).toBe(allowed);
+      expect(isText(Buffer.concat([Buffer.from('Журнал '), Buffer.from([byte])]), 1), `byte ${byte} after a letter of two bytes`).toBe(allowed);
+    }
+    // the escape that colours a terminal, a bell, a form feed
+    for (const text of ['\u001b[31mred\u001b[0m', 'ding\u0007', 'page\u000cbreak', 'back\u0008space']) expect(isText(Buffer.from(text)), JSON.stringify(text)).toBe(false);
+    // Cyrillic in UTF-16 without its mark has no zero byte, but every letter of it carries a byte 04
+    expect(isText(Buffer.from('Журнал', 'utf16le'))).toBe(false);
   });
 
   it('refuses bytes that are not UTF-8', () => {
@@ -96,7 +109,7 @@ describe('what a log is: text in UTF-8 with no zero byte', () => {
     const edges = [0x00, 0x01, 0x41, 0x7f, 0x80, 0x8f, 0x90, 0x9f, 0xa0, 0xbf, 0xc0, 0xc1, 0xc2, 0xdf, 0xe0, 0xe1, 0xec, 0xed, 0xee, 0xef, 0xf0, 0xf1, 0xf3, 0xf4, 0xf5, 0xff];
     const same = (bytes: number[]) => {
       const buffer = Buffer.from(bytes);
-      const expected = isUtf8(buffer) && !buffer.includes(0);
+      const expected = isUtf8(buffer) && !buffer.some((byte) => byte < 0x20 && byte !== 0x09 && byte !== 0x0a && byte !== 0x0d);
       if (isText(buffer) !== expected) throw new Error(`differs for ${bytes.map((byte) => byte.toString(16)).join(' ')}: Node says ${expected}`);
     };
     for (let a = 0; a < 256; a++) for (let b = 0; b < 256; b++) same([a, b]);

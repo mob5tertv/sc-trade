@@ -57,6 +57,11 @@ describe('the hash of the password', () => {
       [`scrypt$N=1000,r=8,p=1$${salt}$${key}`, /power of two/],
       [`scrypt$N=1024,r=8,p=1$${salt}$${key}`, /N must be/],
       [`scrypt$N=${2 ** 22},r=8,p=1$${salt}$${key}`, /N must be/],
+      // a hash that would take more memory to check than the service has: every login would end the service
+      [`scrypt$N=${2 ** 20},r=8,p=1$${salt}$${key}`, /takes 1024 MB to check, and the service has 128 MB for it/],
+      [`scrypt$N=${2 ** 18},r=8,p=1$${salt}$${key}`, /takes 256 MB to check/],
+      [`scrypt$N=65536,r=32,p=1$${salt}$${key}`, /takes 256 MB to check/],
+      [`scrypt$N=16384,r=8,p=9$${salt}$${key}`, /p must be from 1 to 8/],
       [`scrypt$N=16384,r=1,p=1$${salt}$${key}`, /r must be/],
       [`scrypt$N=16384,r=8,p=0$${salt}$${key}`, /p must be/],
       [`scrypt$N=16384,r=8,p=99$${salt}$${key}`, /p must be/],
@@ -65,6 +70,17 @@ describe('the hash of the password', () => {
       [`scrypt$N=16384,r=8,p=1$${salt}$${key}$more`, /scrypt\$N=/],
     ];
     for (const [hash, why] of bad) expect(() => parseHash(hash), hash.slice(0, 40)).toThrow(why);
+  });
+
+  it('takes a hash made with more work than its own, up to the memory the service has', () => {
+    const [, , salt, key] = hashPassword('correct horse battery staple', CHEAP).split('$');
+    // 128·N·r: 64 MB and 128 MB are within the 512 MB the unit gives the service; more is not
+    expect(parseHash(`scrypt$N=65536,r=8,p=3$${salt}$${key}`)).toMatchObject({ N: 65536, r: 8, p: 3 });
+    expect(parseHash(`scrypt$N=131072,r=8,p=1$${salt}$${key}`)).toMatchObject({ N: 131072 });
+    expect(parseHash(`scrypt$N=32768,r=32,p=8$${salt}$${key}`)).toMatchObject({ r: 32, p: 8 });
+    const unit = readFileSync(join(__dirname, '..', '..', 'site', 'deploy', 'sc-trade-site.service'), 'utf8');
+    const memory = Number(/^MemoryMax=(\d+)M$/m.exec(unit)?.[1]);
+    expect(memory).toBeGreaterThanOrEqual(4 * 128);
   });
 
   it('opens nothing with a hash that is not one', async () => {

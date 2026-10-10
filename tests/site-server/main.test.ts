@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { readdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -47,6 +47,36 @@ describe('node src/main.mjs <the file of the settings>', () => {
     expect(readdirSync(dir)).toEqual(['config.json']);
   });
 
+  it('does not start in a folder of data that holds something and is not its own: says so, removes nothing, and is not started again', () => {
+    const dir = tempDir();
+    const data = join(dir, 'data');
+    mkdirSync(join(data, 'tmp'), { recursive: true });
+    writeFileSync(join(data, 'tmp', 'somebody-elses-work.txt'), 'not to be lost');
+    const file = join(dir, 'config.json');
+    writeFileSync(file, JSON.stringify({ domain: DOMAIN, port: 8787, dataDir: data, passwordHash: PASSWORD_HASH }));
+    const run = spawnSync(process.execPath, [main, file], { encoding: 'utf8', timeout: 20_000 });
+    expect(run.status).toBe(78);
+    expect(run.stderr).toMatch(/sc-trade-site does not start: the folder of the data .* is not empty and was not made by this service \(the file sc-trade-site\.marker is missing\): nothing in it was touched/);
+    expect(readdirSync(data)).toEqual(['tmp']);
+    expect(readFileSync(join(data, 'tmp', 'somebody-elses-work.txt'), 'utf8')).toBe('not to be lost');
+  });
+
+  it('says what to do when the one package it needs is not next to it, instead of an error of the code', () => {
+    // the code of the service alone, as a folder that was copied without its packages
+    const dir = tempDir();
+    cpSync(resolve(main, '..'), join(dir, 'server', 'src'), { recursive: true });
+    writeFileSync(join(dir, 'server', 'package.json'), '{"type":"module"}');
+    const file = join(dir, 'config.json');
+    writeFileSync(file, JSON.stringify({ domain: DOMAIN, port: 8787, dataDir: join(dir, 'data'), passwordHash: PASSWORD_HASH }));
+    const run = spawnSync(process.execPath, [join(dir, 'server', 'src', 'main.mjs'), file], { encoding: 'utf8', timeout: 20_000 });
+    expect(run.status).toBe(78);
+    expect(run.stderr).toMatch(/sc-trade-site does not start: the package "busboy" is not next to the service/);
+    expect(run.stderr).toMatch(/npm run site:server:install/);
+    expect(run.stderr).not.toMatch(/ at .*\.mjs|node:internal/);
+    // nothing was made
+    expect(existsSync(join(dir, 'data'))).toBe(false);
+  });
+
   it('starts with settings that are whole: listens on 127.0.0.1, answers, and stops when told', async () => {
     const dir = tempDir();
     const port = await freePort();
@@ -68,7 +98,7 @@ describe('node src/main.mjs <the file of the settings>', () => {
     const reply = await request(port, { path: '/api/' });
     expect(reply.status).toBe(200);
     expect(reply.json).toEqual({ ok: true });
-    expect(readdirSync(join(dir, 'data')).sort()).toEqual(['files', 'messages', 'tmp']);
+    expect(readdirSync(join(dir, 'data')).sort()).toEqual(['files', 'messages', 'sc-trade-site.marker', 'tmp']);
 
     child.kill();
     await ended;

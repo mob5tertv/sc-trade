@@ -3,7 +3,7 @@
 // password is never in a command line, in the history of a shell or in a list of processes. What is written is its
 // hash; the password itself is printed nowhere.
 //
-//   printf '%s' "$password" | node src/configure.mjs --config FILE --domain HOST [--port N] --data DIR
+//   printf '%s' "$password" | node src/configure.mjs --config FILE --domain HOST [--port N] --data DIR [--root DIR]
 //       a new settings file; refuses to replace one that is there
 //   printf '%s' "$password" | node src/configure.mjs --config FILE --reset-password
 //       a new password for settings that are there; nothing else in them changes
@@ -13,7 +13,7 @@ import { closeSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, write
 import { loadSettings, readSettings } from './config.mjs';
 import { hashPassword } from './password.mjs';
 
-const VALUES = ['--config', '--domain', '--port', '--data'];
+const VALUES = ['--config', '--domain', '--port', '--data', '--root'];
 const FLAGS = ['--reset-password', '--verify'];
 
 class Problem extends Error {}
@@ -108,7 +108,8 @@ async function main() {
   } else {
     if (existing !== null) throw new Problem(`${file} is already there and is left as it is. A new password for it: --reset-password`);
     const port = options['--port'] === undefined ? 8787 : /^\d{1,5}$/.test(String(options['--port'])) ? Number(options['--port']) : options['--port'];
-    next = { domain: options['--domain'], port, dataDir: options['--data'] };
+    // --root: the folder of the site, which the service only needs to refuse a folder of data inside it
+    next = { domain: options['--domain'], port, dataDir: options['--data'], ...(options['--root'] === undefined ? {} : { siteRoot: options['--root'] }) };
   }
 
   // everything else is checked before the password is even read: with a hash that only stands in for the real one

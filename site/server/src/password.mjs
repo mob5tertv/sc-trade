@@ -12,6 +12,12 @@ const DEFAULT_WORK = Object.freeze({ N: 32768, r: 8, p: 3 });
 /** The least and the most work the service accepts in a hash it is given. */
 const N_MIN = 16384;
 const N_MAX = 1048576;
+/**
+ * Checking a password takes 128·N·r bytes of memory. The service runs under a limit (MemoryMax=512M in its unit):
+ * a hash that asks for more than this — written into the settings by hand, say — would end the service at every
+ * login, so it is refused when the settings are read.
+ */
+const MEMORY_MAX = 128 * 1024 * 1024;
 
 const SALT_BYTES = 16;
 const KEY_BYTES = 32;
@@ -36,7 +42,10 @@ export function parseHash(hash) {
   if ((N & (N - 1)) !== 0) throw new Error('not a hash the service takes: N must be a power of two');
   if (N < N_MIN || N > N_MAX) throw new Error(`not a hash the service takes: N must be from ${N_MIN} to ${N_MAX}`);
   if (r < 8 || r > 32) throw new Error('not a hash the service takes: r must be from 8 to 32');
-  if (p < 1 || p > 16) throw new Error('not a hash the service takes: p must be from 1 to 16');
+  if (p < 1 || p > 8) throw new Error('not a hash the service takes: p must be from 1 to 8');
+  if (128 * N * r > MEMORY_MAX) {
+    throw new Error(`not a hash the service takes: it takes ${(128 * N * r) / 1024 / 1024} MB to check, and the service has ${MEMORY_MAX / 1024 / 1024} MB for it (128·N·r)`);
+  }
   const salt = Buffer.from(match[4], 'base64');
   const key = Buffer.from(match[5], 'base64');
   if (salt.length < SALT_BYTES) throw new Error(`not a hash the service takes: the salt must be at least ${SALT_BYTES} bytes`);

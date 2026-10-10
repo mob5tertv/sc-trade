@@ -50,8 +50,39 @@ describe('the folder for the server (site/dist-deploy)', () => {
     for (const file of files.filter((name) => name.startsWith('server/node_modules/'))) {
       expect(readFileSync(join(site.deploy, file)).equals(readFileSync(join(siteDir, file))), file).toBe(true);
     }
-    // nothing of npm's own bookkeeping, nothing that only a developer needs
+    // nothing of npm's own bookkeeping, nothing that only a developer of a package needs: its tests, its benchmarks
     expect(files.filter((file) => /\.package-lock\.json$|\/\.bin\/|\/\.github\/|\.eslintrc/.test(file))).toEqual([]);
+    expect(files.filter((file) => /^server\/node_modules\/[^/]+\/(test|tests|bench|benchmark|example|examples)\//.test(file))).toEqual([]);
+    // what is left is what the packages run on, and what says whose they are
+    expect(files.filter((file) => file.startsWith('server/node_modules/'))).toEqual([
+      'server/node_modules/busboy/LICENSE',
+      'server/node_modules/busboy/README.md',
+      'server/node_modules/busboy/lib/index.js',
+      'server/node_modules/busboy/lib/types/multipart.js',
+      'server/node_modules/busboy/lib/types/urlencoded.js',
+      'server/node_modules/busboy/lib/utils.js',
+      'server/node_modules/busboy/package.json',
+      'server/node_modules/streamsearch/LICENSE',
+      'server/node_modules/streamsearch/README.md',
+      'server/node_modules/streamsearch/lib/sbmh.js',
+      'server/node_modules/streamsearch/package.json',
+    ]);
+  });
+
+  it('copies every file as the bytes it is: a text gets Unix line ends, anything else is not touched', () => {
+    const dir = tempDir();
+    const copy = join(dir, 'server');
+    cpSync(serverDir, copy, { recursive: true });
+    // a file that is not text, with bytes that are no UTF-8 and with the two bytes of a Windows line end in it
+    const binary = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe, 0x00, 0xc3, 0x28, 0x0d, 0x0a, 0x80]);
+    writeFileSync(join(copy, 'src', 'assets', 'pixel.png'), binary);
+    // and a text of the code that was checked out on Windows
+    writeFileSync(join(copy, 'src', 'windows.mjs'), '// one\r\n// two\r\n');
+    const out = join(dir, 'dist-deploy');
+    buildSite({ version, outDir: join(dir, 'dist'), deployDir: out, installer: null, serverDir: copy });
+    expect(readFileSync(join(out, 'server', 'src', 'assets', 'pixel.png')).equals(binary)).toBe(true);
+    expect(readFileSync(join(out, 'server', 'src', 'windows.mjs'), 'utf8')).toBe('// one\n// two\n');
+    expect(readFileSync(join(out, 'server', 'src', 'assets', 'admin.css')).includes(13)).toBe(false);
   });
 
   it('holds no settings of a real server and no secret: the example only, and the hash is made on the server', () => {

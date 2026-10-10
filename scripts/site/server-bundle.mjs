@@ -6,10 +6,10 @@
 //
 // The folder holds no secret: the settings of the service and the hash of the password are made on the server.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, extname, join } from 'node:path';
 
 /**
- * @typedef {{ path: string, content: string | Buffer }} BundleFile `path`: inside dist-deploy, with forward slashes
+ * @typedef {{ path: string, content: Buffer }} BundleFile `path`: inside dist-deploy, with forward slashes
  */
 
 /** The files of site/deploy that go to the server as they are. */
@@ -17,6 +17,12 @@ const DEPLOY_FILES = ['setup.sh', 'sc-trade-site.service', 'logrotate.conf'];
 
 /** The files of the service besides its code. */
 const SERVICE_FILES = ['package.json', 'package-lock.json', 'config.example.json'];
+
+/** The kinds of file that are text: these get the line ends of Unix. Anything else is copied as the bytes it is. */
+const TEXT = ['.sh', '.service', '.conf', '.mjs', '.js', '.json', '.css', '.txt', '.md'];
+
+/** What a package carries for its own developers and never runs on: left out of the folder for the server. */
+const NOT_FOR_THE_SERVER = ['test', 'tests', 'bench', 'benchmark', 'example', 'examples'];
 
 const INSTALL = 'npm run site:server:install';
 
@@ -28,8 +34,24 @@ function listFiles(dir) {
   return walk(dir, '').sort();
 }
 
-/** A text as it must lie on the server: with the line ends of Unix, whatever the computer it is built on. */
-const text = (/** @type {string} */ file) => readFileSync(file, 'utf8').replaceAll('\r\n', '\n');
+/**
+ * A file of the project as it must lie on the server. It is read as bytes, never as text: a text file loses the
+ * carriage return of every Windows line end (the two bytes 0D 0A become 0A), whatever the computer it is built on;
+ * a file of any other kind is not touched.
+ * @param {string} file
+ * @returns {Buffer}
+ */
+function forServer(file) {
+  const bytes = readFileSync(file);
+  if (!TEXT.includes(extname(file).toLowerCase())) return bytes;
+  const out = Buffer.alloc(bytes.length);
+  let length = 0;
+  for (let at = 0; at < bytes.length; at++) {
+    if (bytes[at] === 0x0d && bytes[at + 1] === 0x0a) continue;
+    out[length++] = bytes[at];
+  }
+  return out.subarray(0, length);
+}
 
 /**
  * Reads everything the folder is made of, and checks it: the build stops here, before a single file is written,
@@ -40,14 +62,14 @@ const text = (/** @type {string} */ file) => readFileSync(file, 'utf8').replaceA
  */
 export function readServerBundle({ siteDir, serverDir, domain, root, service }) {
   /** @type {BundleFile[]} */
-  const files = DEPLOY_FILES.map((name) => ({ path: name, content: text(join(siteDir, 'deploy', name)) }));
+  const files = DEPLOY_FILES.map((name) => ({ path: name, content: forServer(join(siteDir, 'deploy', name)) }));
   files.push({
     path: 'site.conf',
-    content: `# The site this folder was built for (site/site.config.json). setup.sh reads it.\ndomain=${domain}\nroot=${root}\nport=${service.split(':')[1]}\n`,
+    content: Buffer.from(`# The site this folder was built for (site/site.config.json). setup.sh reads it.\ndomain=${domain}\nroot=${root}\nport=${service.split(':')[1]}\n`),
   });
 
-  for (const name of SERVICE_FILES) files.push({ path: `server/${name}`, content: text(join(serverDir, name)) });
-  for (const name of listFiles(join(serverDir, 'src'))) files.push({ path: `server/src/${name}`, content: text(join(serverDir, 'src', name)) });
+  for (const name of SERVICE_FILES) files.push({ path: `server/${name}`, content: forServer(join(serverDir, name)) });
+  for (const name of listFiles(join(serverDir, 'src'))) files.push({ path: `server/src/${name}`, content: forServer(join(serverDir, 'src', name)) });
 
   // the packages the service runs on: the ones the lock file names, at the versions it names
   const lock = /** @type {{ packages: Record<string, { version?: string, dev?: boolean }> }} */ (JSON.parse(readFileSync(join(serverDir, 'package-lock.json'), 'utf8')));
@@ -62,9 +84,11 @@ export function readServerBundle({ siteDir, serverDir, domain, root, service }) 
     if (installed !== entry.version) {
       throw new Error(`the service of the site: ${name} ${installed} is installed, and package-lock.json names ${entry.version}: run ${INSTALL}`);
     }
-    // as npm put them there, byte for byte — without what only a developer of the package needs (names that begin with a dot)
+    // as npm put them there, byte for byte — without what only a developer of the package needs: the files whose
+    // names begin with a dot, the tests, the benchmarks
     for (const file of listFiles(folder)) {
-      if (file.split('/').some((part) => part.startsWith('.'))) continue;
+      const parts = file.split('/');
+      if (parts.some((part) => part.startsWith('.')) || NOT_FOR_THE_SERVER.includes(parts[0])) continue;
       files.push({ path: `server/${key}/${file}`, content: readFileSync(join(folder, file)) });
     }
   }

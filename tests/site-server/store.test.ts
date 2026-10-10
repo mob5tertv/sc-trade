@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createStore, StorageFull, type MessageRecord } from '../../site/server/src/store.mjs';
-import { DAY_MS, listFiles, listFolders, PNG, START, tempDir } from './helpers';
+import { createStore, MARKER, StartProblem, StorageFull, type MessageRecord } from '../../site/server/src/store.mjs';
+import { DAY_MS, listFiles, listFolders, PNG, rawListFiles, START, tempDir } from './helpers';
 
 const STORED_PNG = `${'ab'.repeat(16)}.png`;
 const STORED_TXT = `${'cd'.repeat(16)}.txt`;
@@ -185,12 +185,60 @@ describe('the storage of messages', () => {
 
   it('clears what a crash left in the work folder when it is opened', async () => {
     const { dir, store } = open();
+    await store.open();
+    // a run that was killed in the middle of two messages
     mkdirSync(join(dir, 'tmp', 'a'.repeat(32)), { recursive: true });
     writeFileSync(join(dir, 'tmp', 'a'.repeat(32), 'half.part'), 'x');
     writeFileSync(join(dir, 'tmp', `${'b'.repeat(32)}.json`), '{');
-    await store.open();
+    const again = open({ dir }).store;
+    await again.open();
     expect(readdirSync(join(dir, 'tmp'))).toEqual([]);
+    expect(again.usedBytes()).toBe(0);
+  });
+});
+
+describe('the folder of the storage is the service’s own', () => {
+  it('is marked when the storage makes it or finds it empty', async () => {
+    const { dir, store } = open();
+    await store.open();
+    expect(MARKER).toBe('sc-trade-site.marker');
+    expect(readFileSync(join(dir, MARKER), 'utf8')).toMatch(/^The messages of the SC Trade site are kept in this folder by the service sc-trade-site\.\n/);
+    // an empty folder that was there before is taken the same way
+    const empty = tempDir();
+    const second = open({ dir: empty }).store;
+    await second.open();
+    expect(existsSync(join(empty, MARKER))).toBe(true);
+    // the mark is not a message and takes none of the room
     expect(store.usedBytes()).toBe(0);
+    expect(await store.ids()).toEqual([]);
+  });
+
+  it('is not taken over when it holds something and has no mark: the storage does not start, and removes nothing', async () => {
+    const dir = tempDir();
+    // somebody's folder: with a "tmp" of its own, with files, with folders named like the storage's
+    mkdirSync(join(dir, 'tmp', 'work'), { recursive: true });
+    writeFileSync(join(dir, 'tmp', 'work', 'draft.txt'), 'not to be lost');
+    mkdirSync(join(dir, 'files', 'x'), { recursive: true });
+    writeFileSync(join(dir, 'files', 'x', 'photo.jpg'), 'a photo');
+    writeFileSync(join(dir, 'notes.txt'), 'notes');
+    const before = rawListFiles(dir);
+    const { store } = open({ dir });
+    await expect(store.open()).rejects.toThrow(/is not empty and was not made by this service \(the file sc-trade-site\.marker is missing\): nothing in it was touched/);
+    await expect(store.open()).rejects.toBeInstanceOf(StartProblem);
+    expect(rawListFiles(dir)).toEqual(before);
+    expect(readFileSync(join(dir, 'tmp', 'work', 'draft.txt'), 'utf8')).toBe('not to be lost');
+    expect(existsSync(join(dir, MARKER))).toBe(false);
+    expect(existsSync(join(dir, 'messages'))).toBe(false);
+  });
+
+  it('is opened again and again once it has the mark, whatever it holds', async () => {
+    const { dir, store } = open();
+    await store.open();
+    const record = await keep(store);
+    const again = open({ dir }).store;
+    await again.open();
+    expect(await again.read(record.id)).toEqual(record);
+    expect(readFileSync(join(dir, MARKER), 'utf8')).toContain('sc-trade-site');
   });
 });
 
