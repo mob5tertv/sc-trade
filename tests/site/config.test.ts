@@ -60,6 +60,14 @@ describe('the settings of the site (site/site.config.json)', () => {
     expect(() => validateConfig({ ...good(), year: 26 })).toThrow(/year/);
     expect(() => validateConfig({ ...good(), feedback: { endpoint: 'https://elsewhere.test/api' } })).toThrow(/feedback\.endpoint/);
     expect(() => validateConfig({ ...good(), server: { root: 'www', service: '127.0.0.1:8787' } })).toThrow(/server\.root/);
+    // a folder of its own, two levels deep at the least: the site is never put into a folder that holds half the system
+    // …and with no step that is "." or "..": what such a path names is not what it says
+    for (const root of ['/', '/var', '/srv', '/var/', '/var/www/../etc', '/var/www/my site', '/var/./www', '/./var/www', '/var/www/.', '/var/www/..', '/../var/www']) {
+      expect(() => validateConfig({ ...good(), server: { root, service: '127.0.0.1:8787' } }), root).toThrow(/"server\.root" must be a full path of two levels or more/);
+    }
+    expect(() => validateConfig({ ...good(), server: { root: '/srv/site', service: '127.0.0.1:8787' } })).not.toThrow();
+    // a name that merely begins with a dot is a name
+    expect(() => validateConfig({ ...good(), server: { root: '/srv/.site', service: '127.0.0.1:8787' } })).not.toThrow();
     expect(() => validateConfig({ ...good(), server: { root: '/var/www/sc-trade.space', service: 'example.test:80' } })).toThrow(/server\.service/);
   });
 });

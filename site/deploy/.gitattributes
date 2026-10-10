@@ -1,0 +1,4 @@
+# What goes to the server keeps Unix line ends on every computer: bash does not read a script with CR in it.
+setup.sh text eol=lf
+sc-trade-site.service text eol=lf
+logrotate.conf text eol=lf

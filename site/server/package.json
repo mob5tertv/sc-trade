@@ -1,0 +1,17 @@
+{
+  "name": "sc-trade-site-service",
+  "private": true,
+  "version": "1.0.0",
+  "description": "The feedback service of the SC Trade site: takes the messages of the form and shows them to the author.",
+  "type": "module",
+  "main": "src/main.mjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/main.mjs"
+  },
+  "dependencies": {
+    "busboy": "1.6.0"
+  }
+}

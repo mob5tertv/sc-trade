@@ -1,0 +1,65 @@
+# SC Trade - the feedback service of the site: takes the messages of the form, shows them to the author.
+# setup.sh puts this file at /etc/systemd/system/sc-trade-site.service.
+#
+#   systemctl status sc-trade-site      does it run
+#   journalctl -u sc-trade-site -n 50   what it said
+#   systemd-analyze verify /etc/systemd/system/sc-trade-site.service    is this file well written
+#
+# Nobody has started this unit before you: it was written and read, not tried on a server.
+
+[Unit]
+Description=SC Trade - the feedback service of the site
+After=network.target
+# five starts that fail within five minutes: it stops trying, "systemctl status" says why
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# a user of its own that cannot log in and owns nothing but the folder of the messages
+User=sc-trade-site
+Group=sc-trade-site
+WorkingDirectory=/opt/sc-trade-site
+ExecStart=/usr/bin/node /opt/sc-trade-site/src/main.mjs /etc/sc-trade-site/config.json
+Environment=NODE_ENV=production
+Restart=on-failure
+RestartSec=5
+# 78: the settings are missing or wrong - starting again would not help
+RestartPreventExitStatus=78
+SyslogIdentifier=sc-trade-site
+UMask=0077
+LimitCORE=0
+MemoryMax=512M
+TasksMax=64
+
+# It may read the system and write the folder of the messages; nothing else.
+NoNewPrivileges=yes
+ProtectSystem=strict
+StateDirectory=sc-trade-site
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/sc-trade-site
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+# (MemoryDenyWriteExecute is left out on purpose: Node makes machine code as it runs and would not start with it.)
+
+# No network but this very machine: the service listens on 127.0.0.1 for the web server and calls nobody.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

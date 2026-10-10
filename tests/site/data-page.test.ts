@@ -72,6 +72,17 @@ describe('the page about data', () => {
     }
   });
 
+  it.each(PAGES)('says in %s what the limiter that remembers an address is for: messages, and wrong passwords of the author’s own page', (lang) => {
+    const server = texts(lang).server.join(' ');
+    expect(server).toMatch(
+      lang === 'ru'
+        ? /в двух местах: в журнале ошибок сервера — до 30 дней, и в ограничителе частоты — до суток\./
+        : /in two places: in the server's error log, for up to 30 days, and in the rate limiter, for up to a day\./,
+    );
+    // the service counts wrong passwords of /admin/ by address as well (for fifteen minutes): the page names it
+    expect(server).toMatch(lang === 'ru' ? /слишком часто писать и подбирать пароль к служебной странице автора/ : /writing too often and from guessing the password of the author's service page/);
+  });
+
   it.each(PAGES)('says in %s who holds the data and how to reach him today: Twitch, and no e-mail address yet', (lang, page) => {
     const text = main(site.read(page));
     const part = /<section[^>]*aria-labelledby="data-contact"[\s\S]*?<\/section>/.exec(text)?.[0] ?? '';

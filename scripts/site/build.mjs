@@ -1,6 +1,7 @@
 // `npm run site:build`: makes the site (site/dist) from the templates, the two dictionaries and the settings of
-// site/, with nothing but Node. The config of the web server is written beside it (site/dist-deploy/Caddyfile), never
-// inside: dist is what goes to the folder of the site on the server.
+// site/, with nothing but Node. What the server needs besides the site is written beside it (site/dist-deploy: the
+// config of the web server, the script that sets the server up, the feedback service — see server-bundle.mjs),
+// never inside: dist is what goes to the folder of the site on the server.
 //
 //   npm run site:build -- --installer <path to the installer>     the site as it is published
 //   npm run site:build -- --no-installer                          a page to look at: the download button is off
@@ -16,6 +17,7 @@ import { parseArgs } from 'node:util';
 import { bundleScripts } from './bundle.mjs';
 import { assertSameKeys, LANGUAGES, loadDictionaries, projectRoot, readJson, siteDir as defaultSiteDir, validateConfig } from './config.mjs';
 import { formatSize, readInstaller } from './installer.mjs';
+import { readServerBundle, writeServerBundle } from './server-bundle.mjs';
 import { contentSecurityPolicy, styleHash } from './server-config.mjs';
 import { fillPlaceholders, render } from './template.mjs';
 
@@ -33,14 +35,17 @@ import { fillPlaceholders, render } from './template.mjs';
  *   installer: string | null,
  *   siteDir?: string,
  *   videoDir?: string,
+ *   serverDir?: string,
  *   now?: Date,
  *   patchConfig?: (config: SiteConfig) => void,
  *   patchDictionaries?: (dictionaries: Dictionaries) => void,
  * }} BuildOptions
  *   `installer: null` is the build without the installer. `videoDir` is where hero.webm, hero.mp4 and hero.jpg are
- *   looked for (site/assets/video). The two `patch…` are for the tests: they change what was read before it is checked.
+ *   looked for (site/assets/video). `serverDir` is the feedback service with its installed packages (site/server).
+ *   The two `patch…` are for the tests: they change what was read before it is checked.
  *
- * @typedef {{ files: string[], installer: InstallerInfo | null, video: boolean, analytics: boolean, pictures: number }} BuildResult
+ * @typedef {{ files: string[], deploy: string[], installer: InstallerInfo | null, video: boolean, analytics: boolean, pictures: number }} BuildResult
+ *   `files`: what is in dist; `deploy`: what is in dist-deploy
  */
 
 /** The pages every language has: the template and the file it becomes (in the folder of the language). */
@@ -135,6 +140,10 @@ export function buildSite(options) {
     throw new Error(`the background video is not whole: ${videoDir} has only ${videoFound.join(', ')} (npm run site:video makes all three files)`);
   }
   const hasVideo = videoFound.length > 0;
+
+  // what goes to the server besides the site: read and checked here, so that a service that is not installed stops
+  // the build before anything is written
+  const serverBundle = readServerBundle({ siteDir, serverDir: options.serverDir ?? join(siteDir, 'server'), domain: config.domain, root: config.server.root, service: config.server.service });
 
   const templates = readTemplates(join(siteDir, 'templates'));
   const partials = Object.fromEntries(Object.entries(templates).filter(([name]) => name.startsWith('partials/')).map(([name, source]) => [name.slice('partials/'.length), source]));
@@ -278,12 +287,13 @@ export function buildSite(options) {
     rmSync(deployDir, { recursive: true, force: true });
     mkdirSync(deployDir, { recursive: true });
     writeFileSync(join(deployDir, 'Caddyfile'), caddyfile);
+    writeServerBundle(deployDir, serverBundle);
   } catch (err) {
     rmSync(work, { recursive: true, force: true });
     throw err;
   }
 
-  return { files: listFiles(outDir), installer, video: hasVideo, analytics, pictures: [...hashes.keys()].filter((file) => file.startsWith('assets/shots/')).length };
+  return { files: listFiles(outDir), deploy: listFiles(deployDir), installer, video: hasVideo, analytics, pictures: [...hashes.keys()].filter((file) => file.startsWith('assets/shots/')).length };
 }
 
 const USAGE = `usage: npm run site:build -- --installer <path to the installer>
@@ -307,7 +317,7 @@ function main() {
   console.log(`background video: ${result.video ? 'assets/video/hero.webm, hero.mp4, hero.jpg' : 'none — the first screen uses its still background (npm run site:video makes the video)'}`);
   console.log(`pictures of the application: ${result.pictures}`);
   console.log(`analytics: ${result.analytics ? 'Google Analytics 4, after consent only' : 'off (ga4Id is empty): no banner, nothing of Google'}`);
-  console.log(`web server config: ${shown(join(deployDir, 'Caddyfile'))}`);
+  console.log(`for the server: ${shown(deployDir)} (${result.deploy.length} files) — the Caddyfile, setup.sh and the feedback service; site/DEPLOY.md, section 4, says what to do with the folder`);
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

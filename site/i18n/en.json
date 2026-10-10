@@ -274,7 +274,7 @@
     "server": [
       "As on any site, your IP address and the headers your browser sends reach the server with every request.",
       "They are not stored with a message.",
-      "The address stays for a short time in two places: in the server's error log, for up to 30 days, and in the limiter that keeps one sender from writing too often, for up to a day."
+      "The address stays for a short time in two places: in the server's error log, for up to 30 days, and in the rate limiter, for up to a day. The limiter keeps one address from writing too often and from guessing the password of the author's service page."
     ],
     "app_title": "The app itself",
     "app": [

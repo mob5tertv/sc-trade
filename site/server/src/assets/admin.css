@@ -1,0 +1,316 @@
+/*
+ * The look of the author's page: the colours of the site (site/css/base.css), nothing else. The pages carry no
+ * style of their own and no script: this file is all there is, and it loads nothing from anywhere.
+ */
+:root {
+  color-scheme: dark;
+
+  --bg: #050c12;
+  --surface: #0b1c27;
+  --surface-2: #0f2733;
+  --line: #1d4654;
+  --frame: #2b8fa8;
+  --text: #d6eef5;
+  --label: #8fb7c4;
+  --accent: #3fd0f0;
+  --ink: #03131b;
+  --warn: #ffb347;
+  --bad: #ff6b6b;
+
+  --font: 'Bahnschrift SemiCondensed', Bahnschrift, 'Segoe UI', system-ui, sans-serif;
+  --mono: Consolas, 'Cascadia Mono', 'Lucida Console', ui-monospace, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.5 var(--font);
+  overflow-wrap: anywhere;
+}
+
+a {
+  color: var(--accent);
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+h1 {
+  margin: 0 0 16px;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+h2 {
+  margin: 28px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+p {
+  margin: 0 0 12px;
+}
+
+/* a text of a visitor never turns the text around it */
+bdi {
+  unicode-bidi: isolate;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.brand {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+button,
+input[type='search'],
+input[type='password'] {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--frame);
+  padding: 8px 14px;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--frame);
+  color: var(--ink);
+}
+
+.danger {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.danger:hover {
+  background: var(--bad);
+  color: var(--ink);
+}
+
+label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--label);
+  font-size: 15px;
+}
+
+.login,
+.search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+  margin-bottom: 16px;
+}
+
+.search label,
+.login label {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.search input,
+.login input {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.error {
+  padding: 10px 14px;
+  border-left: 3px solid var(--bad);
+  background: var(--surface);
+  color: var(--bad);
+}
+
+.muted,
+.count,
+.empty {
+  color: var(--label);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+/* a message of the list: a box to tick, and the message itself, which is a link */
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.item input {
+  margin: 17px 4px 0;
+}
+
+.item a {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 170px 1fr auto;
+  gap: 4px 16px;
+  padding: 12px 8px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.item a:hover {
+  background: var(--surface);
+}
+
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin: 16px 0 0;
+}
+
+.bulk-actions label {
+  margin: 0;
+  color: var(--text);
+}
+
+.bulk-found {
+  margin: 12px 0 0;
+}
+
+.warning {
+  padding: 10px 14px;
+  border-left: 3px solid var(--warn);
+  background: var(--surface);
+  color: var(--warn);
+}
+
+.when,
+.amount {
+  color: var(--label);
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.who {
+  font-weight: 600;
+}
+
+.excerpt {
+  grid-column: 2 / -1;
+  color: var(--label);
+}
+
+.pages {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-top: 16px;
+  color: var(--label);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--label);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.message {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font: 15px/1.5 var(--mono);
+  white-space: pre-wrap;
+}
+
+.files {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.files li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px;
+  border: 1px solid var(--line);
+}
+
+.thumb {
+  display: block;
+  max-width: 220px;
+  max-height: 140px;
+  background: var(--surface-2);
+}
+
+.delete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+
+.delete label {
+  margin: 0;
+  color: var(--text);
+}
+
+@media (max-width: 640px) {
+  .item a,
+  .facts {
+    grid-template-columns: 1fr;
+  }
+
+  .excerpt {
+    grid-column: 1;
+  }
+}
