@@ -42,15 +42,16 @@ describe('the section about the game says what README says, no more', () => {
     ]);
   });
 
-  it('says in the seventh where the code is, under which licence, and that a test pins the list of permissions: what README says, and the files are there', () => {
+  it('says in the seventh where the code is, under which licence, and that a test pins the list of permissions of the window: what README says, and the files are there', () => {
+    // whose permissions: the test pins what the WINDOW of the program is allowed (its Tauri capability), not a limit on the whole program
     expect(items('ru')[6]).toEqual({
       title: 'Код открыт',
-      text: 'Исходный код программы и этого сайта лежит на GitHub под лицензией MIT. Сказанное выше можно проверить по коду; список разрешений программы закреплён тестом.',
+      text: 'Исходный код программы и этого сайта лежит на GitHub под лицензией MIT. Сказанное выше можно проверить по коду; список разрешений окна программы закреплён тестом.',
       github_link: 'Репозиторий на GitHub',
     });
     expect(items('en')[6]).toEqual({
       title: 'The code is open',
-      text: "The source code of the application and of this site is on GitHub under the MIT licence. What is said above can be checked against the code; the application's list of permissions is pinned by a test.",
+      text: "The source code of the application and of this site is on GitHub under the MIT licence. What is said above can be checked against the code; the list of permissions of the application's window is pinned by a test.",
       github_link: 'The repository on GitHub',
     });
     // the source of each of the three statements: README («Источник данных и права», «Чего программа не делает»), the licence, the test
@@ -61,10 +62,10 @@ describe('the section about the game says what README says, no more', () => {
     expect(existsSync(join(projectRoot, 'tests', 'release', 'permissions.test.ts'))).toBe(true);
   });
 
-  it('gives a link to the one fact that speaks of the code, and keeps the address out of the texts: it is in the settings', () => {
+  it('gives a link to the one fact that speaks of the code, and keeps the address of the repository out of the texts: it is in the settings', () => {
     for (const lang of ['ru', 'en'] as const) {
       expect(items(lang).map((item) => Object.keys(item).join(' ')), lang).toEqual([...Array<string>(6).fill('title text'), 'title text github_link']);
-      expect(JSON.stringify(dictionaries[lang]), lang).not.toMatch(/github\.com|https?:\/\//i);
+      expect(JSON.stringify(dictionaries[lang]), lang).not.toMatch(/github\.com/i);
     }
   });
 

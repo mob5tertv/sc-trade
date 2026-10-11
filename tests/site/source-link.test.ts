@@ -26,7 +26,9 @@ const HOME = { ru: 'index.html', en: 'en/index.html' } as const;
 const WITH_FOOTER = [['ru', 'index.html'], ['ru', 'data.html'], ['en', 'en/index.html'], ['en', 'en/data.html']] as const;
 const footer = (html: string) => /<footer[\s\S]*<\/footer>/.exec(html)?.[0] ?? '';
 const safety = (html: string) => /<section[^>]*\sid="safety"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
-const factBlocks = (html: string) => [...safety(html).matchAll(/<div class="fact">[\s\S]*?<\/div>/g)].map((match) => match[0]);
+/** A piece of a page without the white space between its tags: how a template is indented and where its lines break is not what these tests guard. */
+const tight = (html: string) => html.replace(/>\s+</g, '><').trim();
+const factBlocks = (html: string) => [...safety(html).matchAll(/<div class="fact">[\s\S]*?<\/div>/g)].map((match) => tight(match[0]));
 
 /** A link that leaves the site, as the pages write one: a new tab, no word to the other site, and the hidden words that say so. */
 const outside = (href: string, text: string, lang: Lang) =>
@@ -48,21 +50,21 @@ describe('the link to the source code', () => {
   });
 
   it.each(WITH_FOOTER)('stands in the footer of the %s page %s, right after the Twitch link, and opens as every link that leaves the site', (lang, page) => {
-    const foot = footer(site.read(page));
+    const foot = tight(footer(site.read(page)));
     const link = outside(REPOSITORY, footerText(lang, 'github'), lang);
-    expect(foot).toContain(`<p>${outside(config.links.twitch, footerText(lang, 'twitch'), lang)}</p>\n          <p>${link}</p>`);
+    expect(foot).toContain(`<p>${outside(config.links.twitch, footerText(lang, 'twitch'), lang)}</p><p>${link}</p>`);
     expect(foot.split(`href="${REPOSITORY}"`)).toHaveLength(2);
   });
 
-  it.each(['ru', 'en'] as const)('stands under the seventh fact of the section about the game on the %s page, and the six before it are written as they were', (lang) => {
+  it.each(['ru', 'en'] as const)('stands under the seventh fact of the section about the game on the %s page, and the six before it have what they had and no more', (lang) => {
     const blocks = factBlocks(site.read(HOME[lang]));
     const items = facts(dictionaries, lang);
     expect(blocks).toHaveLength(7);
     expect(items).toHaveLength(7);
     const head = (index: number) =>
-      `<div class="fact">\n              <dt><span class="fact__index" aria-hidden="true">0${index + 1}</span>${escapeHtml(items[index].title)}</dt>\n              <dd>${escapeHtml(items[index].text)}</dd>\n`;
-    for (let index = 0; index < 6; index++) expect(blocks[index], `fact ${index + 1}`).toBe(`${head(index)}            </div>`);
-    expect(blocks[6]).toBe(`${head(6)}              <dd>${outside(REPOSITORY, items[6].github_link ?? '', lang)}</dd>\n            </div>`);
+      `<div class="fact"><dt><span class="fact__index" aria-hidden="true">0${index + 1}</span>${escapeHtml(items[index].title)}</dt><dd>${escapeHtml(items[index].text)}</dd>`;
+    for (let index = 0; index < 6; index++) expect(blocks[index], `fact ${index + 1}`).toBe(`${head(index)}</div>`);
+    expect(blocks[6]).toBe(`${head(6)}<dd>${outside(REPOSITORY, items[6].github_link ?? '', lang)}</dd></div>`);
     // the one link of the section
     expect(safety(site.read(HOME[lang])).match(/<a\s/g)).toHaveLength(1);
   });
