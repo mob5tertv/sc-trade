@@ -1,7 +1,5 @@
 # SC Trade Overlay Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Оверлей для Star Citizen: дневник своих цен, подсказки маршрутов с ROI и UEC/час, таймер рейсов и статистика.
 
 **Architecture:** Tauri 2. Rust — тонкая оболочка (окно, трей, фокус, логи, резервная копия). Вся логика на TypeScript: `core` — чистые функции, `data` — SQLite и UEX, `platform` — обёртки Tauri, `ui` — Svelte 5. Свои наблюдения дописываются в дневник и имеют приоритет над кэшем UEX, пока не остыли.

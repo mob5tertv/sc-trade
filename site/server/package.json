@@ -2,6 +2,7 @@
   "name": "sc-trade-site-service",
   "private": true,
   "version": "1.0.0",
+  "license": "MIT",
   "description": "The feedback service of the SC Trade site: takes the messages of the form and shows them to the author.",
   "type": "module",
   "main": "src/main.mjs",

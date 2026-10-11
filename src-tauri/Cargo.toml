@@ -3,7 +3,8 @@ name = "sc-trade"
 version = "1.1.1"
 description = "Price diary and trade-route helper overlay for Star Citizen, with UEX data"
 authors = ["mob5terdisk"]
-repository = ""
+license = "MIT"
+repository = "https://github.com/mob5tertv/sc-trade"
 edition = "2024"
 rust-version = "1.90"
 
