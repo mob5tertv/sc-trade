@@ -10,6 +10,7 @@ const good = () => ({
     boosty: 'https://boosty.to/mob5ter',
     donationalerts: 'https://www.donationalerts.com/r/mob5tertv',
     uex: 'https://uexcorp.space/',
+    github: 'https://github.com/mob5tertv/sc-trade',
   },
   analytics: { ga4Id: '' },
   feedback: { endpoint: '/api/feedback' },
@@ -47,6 +48,17 @@ describe('the settings of the site (site/site.config.json)', () => {
     const config = good();
     config.links.boosty = 'http://boosty.to/mob5ter';
     expect(() => validateConfig(config)).toThrow(/links\.boosty.*https/);
+  });
+
+  it('ask for the link to the source code as for every other link: it is there, and it is an https address', () => {
+    const without = good() as { links: Record<string, string> };
+    delete without.links.github;
+    expect(() => validateConfig(without)).toThrow('site.config.json: "links.github" must be an https:// address');
+    for (const link of ['', ' ', 'http://github.com/mob5tertv/sc-trade', 'github.com/mob5tertv/sc-trade', 'https://github.com/mob5tertv/sc-trade"><script>']) {
+      const config = good();
+      config.links.github = link;
+      expect(() => validateConfig(config), `"${link}"`).toThrow('site.config.json: "links.github" must be an https:// address');
+    }
   });
 
   it('take an empty GA4 id or one that looks like G-XXXXXXX, nothing else', () => {

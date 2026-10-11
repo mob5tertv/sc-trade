@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadDictionaries, siteDir } from '../../scripts/site/config.mjs';
+import { loadConfig, loadDictionaries, projectRoot, siteDir } from '../../scripts/site/config.mjs';
 import { readSettings } from '../../site/server/src/config.mjs';
 import { hashPassword } from '../../site/server/src/password.mjs';
 
@@ -13,13 +13,15 @@ type Lang = 'ru' | 'en';
 interface Item {
   title: string;
   text: string;
+  /** The words of a link to the repository under the text; the address itself is `links.github` of the settings. */
+  github_link?: string;
 }
 const items = (lang: Lang) => (dictionaries[lang].safety as unknown as { items: Item[] }).items;
 const group = (lang: Lang, name: string) => dictionaries[lang][name] as Record<string, string>;
 const guide = (name: string) => readFileSync(join(siteDir, name), 'utf8');
 
 describe('the section about the game says what README says, no more', () => {
-  it('names its six facts by what the source states', () => {
+  it('names its seven facts by what the source states', () => {
     expect(items('ru').map((item) => item.title)).toEqual([
       'Окно поверх игры',
       'Не забирает клавиатуру само',
@@ -27,6 +29,7 @@ describe('the section about the game says what README says, no more', () => {
       'Не нажимает за тебя',
       'В сеть — только за данными UEX',
       'Данные — на твоём диске',
+      'Код открыт',
     ]);
     expect(items('en').map((item) => item.title)).toEqual([
       'A window over the game',
@@ -35,7 +38,34 @@ describe('the section about the game says what README says, no more', () => {
       'Presses nothing for you',
       'Online only for UEX data',
       'Your data stays on your disk',
+      'The code is open',
     ]);
+  });
+
+  it('says in the seventh where the code is, under which licence, and that a test pins the list of permissions: what README says, and the files are there', () => {
+    expect(items('ru')[6]).toEqual({
+      title: 'Код открыт',
+      text: 'Исходный код программы и этого сайта лежит на GitHub под лицензией MIT. Сказанное выше можно проверить по коду; список разрешений программы закреплён тестом.',
+      github_link: 'Репозиторий на GitHub',
+    });
+    expect(items('en')[6]).toEqual({
+      title: 'The code is open',
+      text: "The source code of the application and of this site is on GitHub under the MIT licence. What is said above can be checked against the code; the application's list of permissions is pinned by a test.",
+      github_link: 'The repository on GitHub',
+    });
+    // the source of each of the three statements: README («Источник данных и права», «Чего программа не делает»), the licence, the test
+    const readme = readFileSync(join(projectRoot, 'README.md'), 'utf8');
+    expect(readme).toContain(`Исходный код программы и сайта открыт: ${loadConfig(siteDir).links.github}. Лицензия — MIT (файл \`LICENSE\`).`);
+    expect(readme).toContain('Список разрешений закреплён тестом (`tests/release/permissions.test.ts`).');
+    expect(readFileSync(join(projectRoot, 'LICENSE'), 'utf8')).toMatch(/^MIT License\r?\n/);
+    expect(existsSync(join(projectRoot, 'tests', 'release', 'permissions.test.ts'))).toBe(true);
+  });
+
+  it('gives a link to the one fact that speaks of the code, and keeps the address out of the texts: it is in the settings', () => {
+    for (const lang of ['ru', 'en'] as const) {
+      expect(items(lang).map((item) => Object.keys(item).join(' ')), lang).toEqual([...Array<string>(6).fill('title text'), 'title text github_link']);
+      expect(JSON.stringify(dictionaries[lang]), lang).not.toMatch(/github\.com|https?:\/\//i);
+    }
   });
 
   it('claims nothing about reading in general or about the files of the game: README speaks of the memory only', () => {

@@ -65,7 +65,7 @@
   text-wrap: pretty;
 }
 
-/* ---- beside the game: six facts in two columns, a hairline over each -------------------------------------- */
+/* ---- beside the game: facts in two columns, a hairline over each ------------------------------------------ */
 
 .facts {
   display: grid;
@@ -76,6 +76,16 @@
 .fact {
   padding: 24px 0 28px;
   border-top: 1px solid var(--line);
+}
+
+/* an odd fact at the end (the seventh: the code is open) takes the whole row, so that its hairline closes the list
+   and does not hang over one half of it; its text keeps the measure of the head of a section */
+.fact:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.fact:last-child:nth-child(odd) dd {
+  max-width: 760px;
 }
 
 .fact dt {

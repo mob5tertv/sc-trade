@@ -9,7 +9,8 @@
 {{#each t.safety.items}}            <div class="fact">
               <dt><span class="fact__index" aria-hidden="true">{{@nn}}</span>{{title}}</dt>
               <dd>{{text}}</dd>
-            </div>
+{{#if github_link}}              <dd><a href="{{site.links.github}}" target="_blank" rel="noopener noreferrer">{{github_link}}<span class="visually-hidden"> ({{t.footer.external}})</span></a></dd>
+{{/if}}            </div>
 {{/each}}          </dl>
           <aside class="note note--warn" aria-labelledby="unsigned-title">
             <h3 class="note__title" id="unsigned-title">{{t.safety.unsigned_title}}</h3>

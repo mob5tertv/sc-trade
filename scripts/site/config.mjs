@@ -20,7 +20,7 @@ export const LANGUAGES = /** @type {const} */ (['ru', 'en']);
  *   author: string,
  *   year: number,
  *   domain: string,
- *   links: { twitch: string, boosty: string, donationalerts: string, uex: string },
+ *   links: { twitch: string, boosty: string, donationalerts: string, uex: string, github: string },
  *   analytics: { ga4Id: string },
  *   feedback: { endpoint: string },
  *   server: { root: string, service: string },
@@ -55,7 +55,7 @@ export function validateConfig(value) {
 
   const links = /** @type {Partial<SiteConfig['links']>} */ (config.links ?? {});
   if (!isText(links.twitch)) throw fail('the Twitch link is empty');
-  for (const name of /** @type {const} */ (['twitch', 'boosty', 'donationalerts', 'uex'])) {
+  for (const name of /** @type {const} */ (['twitch', 'boosty', 'donationalerts', 'uex', 'github'])) {
     const link = links[name];
     if (typeof link !== 'string' || !/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}(\/[\w\-./~%]*)?$/i.test(link)) {
       throw fail(`"links.${name}" must be an https:// address`);

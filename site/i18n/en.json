@@ -150,6 +150,11 @@
       {
         "title": "Your data stays on your disk",
         "text": "The settings, your prices and your trips live in one database in your Windows user folder; the five latest backups are kept next to it."
+      },
+      {
+        "title": "The code is open",
+        "text": "The source code of the application and of this site is on GitHub under the MIT licence. What is said above can be checked against the code; the application's list of permissions is pinned by a test.",
+        "github_link": "The repository on GitHub"
       }
     ],
     "unsigned_title": "The installer is not signed",
@@ -234,6 +239,7 @@
   },
   "footer": {
     "twitch": "The author's Twitch",
+    "github": "Source code on GitHub",
     "disclaimer": "SC Trade is an unofficial tool made by a player. Star Citizen®, Roberts Space Industries® and Cloud Imperium® are trademarks of Cloud Imperium Rights LLC. The project is not affiliated with them and not endorsed by them.",
     "uex": "Reference prices and the lists of terminals, commodities and ships come from UEX (UEX Corp). Thank you!",
     "uex_link": "The UEX site",
