@@ -1,12 +1,12 @@
 # SC Trade
 
-![The unfolded SC Trade window on demo data: a table of the terminal's commodities with prices and ROI, and under it the «Варианты» (options) section — five destinations with price, ROI and UEC per hour. The interface is in Russian.](site/assets/shots/terminal-options.png)
+<img src="site/assets/shots/terminal-options.png" width="440" alt="The unfolded SC Trade window on demo data: a table of the terminal's commodities with prices and ROI, and under it the «Варианты» (options) section — five destinations with price, ROI and UEC per hour. The interface is in Russian.">
 
 **A personal price diary and trade-route helper for Star Citizen — a small window that stays on top of the game.**
 You type in the prices you see at the in-game terminals; SC Trade keeps them, shows how fresh they are and works out which run pays best. [UEX](https://uexcorp.space/) is the reference where you have no prices of your own yet.
 
-- **Download:** [sc-trade.space](https://sc-trade.space) or the [latest release](https://github.com/mob5tertv/sc-trade/releases/latest). Windows 10 / 11, 64-bit. The interface is in Russian for now.
-- **Next to the game, not inside it:** nothing is injected, the game's memory and files are not read, no key presses or clicks are sent. The only network address is `api.uexcorp.uk`, for the reference data. Hotkeys are optional and none is assigned by default; while one is assigned, Windows calls the program on every key press, and every press is passed on to the game. The list of permissions is pinned by a test: [`tests/release/permissions.test.ts`](tests/release/permissions.test.ts). The details, in Russian: [«Чего программа не делает»](#чего-программа-не-делает).
+- **Download:** [sc-trade.space](https://sc-trade.space) or the [latest release](https://github.com/mob5tertv/sc-trade/releases/latest). Windows 10 / 11, 64-bit. The interface is in Russian.
+- **Next to the game, not inside it:** nothing is injected, the game's memory and files are not read, no key presses or clicks are sent. The only network address is `api.uexcorp.uk`, for the reference data. Hotkeys are optional and none is assigned by default; while one is assigned, Windows calls the program on every key press, and every press is passed on to the game. The window's list of permissions is pinned by a test: [`tests/release/permissions.test.ts`](tests/release/permissions.test.ts). The details, in Russian: [«Чего программа не делает»](#чего-программа-не-делает).
 - **Built with** Tauri 2, Svelte 5, TypeScript and SQLite. How to build it: [«Сборка из исходников»](#сборка-из-исходников).
 - **Licence:** [MIT](LICENSE). Author: mob5ter — [Twitch](https://www.twitch.tv/mob5tertv).
 
@@ -43,7 +43,7 @@ The guide below is in Russian.
 
 ## Установка и первый запуск
 
-1. Запусти установщик `SC Trade_1.1.1_x64-setup.exe`. Он ставит программу для текущего пользователя и не требует прав администратора. Папка по умолчанию — `%LOCALAPPDATA%\SC Trade`: на странице выбора папки её можно сменить, а если программа уже стояла, установщик предлагает прежнюю. Ярлык в меню «Пуск» создаётся. Ярлык на рабочий стол («Добавить ярлык на рабочий стол», в английской версии «Create desktop shortcut») и запуск программы предлагаются на последней странице установщика.
+1. Запусти установщик `SC-Trade-1.1.1-setup.exe` (так файл называется на сайте и в релизе на GitHub). Он ставит программу для текущего пользователя и не требует прав администратора. Папка по умолчанию — `%LOCALAPPDATA%\SC Trade`: на странице выбора папки её можно сменить, а если программа уже стояла, установщик предлагает прежнюю. Ярлык в меню «Пуск» создаётся. Ярлык на рабочий стол («Добавить ярлык на рабочий стол», в английской версии «Create desktop shortcut») и запуск программы предлагаются на последней странице установщика.
 2. Файл не подписан, поэтому Windows может показать предупреждение SmartScreen. Решение о запуске за тобой.
 3. После запуска появляется мини-строка в углу экрана и значок SC Trade в трее; меню значка: «Показать панель» и «Выход». На панели задач у окна кнопки нет. В Windows 11 значок может оказаться в области скрытых значков за стрелкой «^».
 4. При первом запуске программа загружает справочники и цены UEX: в окне написано «Загрузка справочника UEX…». Цены грузятся дольше справочника; ход виден в шапке («UEX 23/57»), а таблица терминала заполняется по ходу загрузки. Если загрузка не удалась, окно показывает ошибку и кнопку «Повторить»; оно разворачивается само, даже если мини-строка выключена. Позже при запуске справочник обновляется, если ему больше суток, а цены — если им больше часа; пока программа запущена, цены обновляются раз в час.

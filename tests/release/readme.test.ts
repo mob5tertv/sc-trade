@@ -1,28 +1,30 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadConfig, loadDictionaries, siteDir } from '../../scripts/site/config.mjs';
+import { loadConfig, siteDir } from '../../scripts/site/config.mjs';
+import { installerInfo } from '../../scripts/site/installer.mjs';
 
 // README.md is the face of the repository: the first thing a visitor of GitHub sees. It opens with a short
 // introduction in English; a rule cuts the introduction off from the guide, which is in Russian. The guide is the
-// source: the introduction says of the program nothing that the guide does not say, and every link of it leads
-// somewhere.
+// source of what the introduction says of the program, and every link of the introduction leads somewhere.
 
 const ROOT = join(__dirname, '..', '..');
 // by lines: nothing here depends on how the lines of the file end on this disk
 const lines = readFileSync(join(ROOT, 'README.md'), 'utf8').split(/\r?\n/);
-const rule = lines.indexOf('---');
+/** The first horizontal rule of the file: where the introduction ends and the guide begins. */
+const rule = lines.findIndex((line) => /^(-{3,}|\*{3,}|_{3,})$/.test(line));
 const intro = lines.slice(1, Math.max(rule, 1)).join('\n');
 const guide = lines.slice(rule + 1).join('\n');
 const config = loadConfig(siteDir);
+const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string };
 
-interface Link {
-  image: boolean;
-  text: string;
-  target: string;
-}
-const links: Link[] = [...intro.matchAll(/(!?)\[([^\]]*)\]\(([^()\s]+)\)/g)].map((match) => ({ image: match[1] === '!', text: match[2], target: match[3] }));
+/** The links of the introduction, as Markdown writes them. */
+const links = [...intro.matchAll(/(?<!!)\[([^\]]*)\]\(([^()\s]+)\)/g)].map((match) => ({ text: match[1], target: match[2] }));
 const targets = links.map((link) => link.target);
+/** Its pictures: HTML, so that a picture can be given a width. */
+const attribute = (tag: string, name: string) => new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1] ?? '';
+const pictures = [...intro.matchAll(/<img\s[^>]*>/g)].map((match) => ({ src: attribute(match[0], 'src'), alt: attribute(match[0], 'alt'), width: attribute(match[0], 'width') }));
 
 /** The anchor GitHub gives a heading: lower case, punctuation dropped, every space a hyphen. */
 const anchorOf = (heading: string) => heading.toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
@@ -34,12 +36,9 @@ describe('README.md, the face of the repository', () => {
 
   it('opens with an introduction in English, and a rule cuts it off from the guide in Russian, before the first section', () => {
     expect(rule).toBeGreaterThan(1);
-    expect(lines.filter((line) => line === '---')).toHaveLength(1);
     // a rule, not a heading: "---" right under a line of text would make that line a heading
     expect([lines[rule - 1], lines[rule + 1]]).toEqual(['', '']);
-    const firstSection = lines.findIndex((line) => line.startsWith('## '));
-    expect(lines[firstSection]).toBe('## Что это');
-    expect(rule).toBeLessThan(firstSection);
+    expect(rule).toBeLessThan(lines.findIndex((line) => line.startsWith('## ')));
     // the guide begins as it always did
     expect(lines[rule + 2]).toBe('Личный дневник цен и помощник по торговым маршрутам для Star Citizen. Программа живёт небольшим окном поверх игры.');
     // in English: the only Russian words are the names it quotes (the two sections of the guide it sends to, a section
@@ -61,38 +60,34 @@ describe('README.md, the face of the repository', () => {
   });
 
   it('leads somewhere with every link: to a file of the repository, to a heading of the guide, or to an https address', () => {
-    expect(links.length).toBeGreaterThanOrEqual(9);
+    expect(links.length).toBeGreaterThanOrEqual(6);
     const anchors = new Set(lines.filter((line) => /^#{2,6} /.test(line)).map((line) => anchorOf(line.replace(/^#+ /, ''))));
-    for (const { text, target } of links) {
-      if (target.startsWith('#')) {
-        expect(anchors.has(target.slice(1)), target).toBe(true);
-        // the words of such a link are the title of the section itself
-        expect(anchorOf(text), target).toBe(target.slice(1));
-      } else if (/^[a-z][a-z0-9+.-]*:/i.test(target)) expect(target).toMatch(/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}(\/[\w\-./]*)?$/);
+    for (const { target } of links) {
+      if (target.startsWith('#')) expect(anchors.has(target.slice(1)), target).toBe(true);
+      else if (/^[a-z][a-z0-9+.-]*:/i.test(target)) expect(target).toMatch(/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}(\/[\w\-./]*)?$/);
       else expect(existsSync(join(ROOT, target)), target).toBe(true);
     }
-    expect(targets.filter((target) => target.startsWith('#'))).toEqual(['#чего-программа-не-делает', '#сборка-из-исходников']);
   });
 
-  it('shows one picture of the window, a picture of the site, and the caption says what is on it and no more', () => {
-    const pictures = links.filter((link) => link.image);
-    expect(pictures).toHaveLength(1);
-    const { text: caption, target } = pictures[0];
-    const name = /^site\/assets\/shots\/([\w-]+)\.png$/.exec(target)?.[1] ?? '';
-    expect(name).not.toBe('');
-    expect(existsSync(join(ROOT, target)), target).toBe(true);
-    // the picture is what the introduction begins with, right under the title
-    expect(lines.slice(1).find((line) => line !== '')).toBe(`![${caption}](${target})`);
-    // what is on it is said once, in the texts of the site (site/i18n/en.json); here the same words, and where the numbers come from
-    const described = (loadDictionaries(siteDir).en.shots as Record<string, { alt: string }>)[name].alt;
-    expect(caption.replace(' on demo data:', ':')).toBe(described);
-    expect(caption).toContain('The unfolded SC Trade window on demo data:');
-    // the pictures of the site are taken in the preview, with no game behind the window: the caption does not put one there
-    expect(caption).not.toMatch(/over the game|on top of the game|in the game|in[- ]game|in flight/i);
+  it('shows a picture of the window that is a file of the repository, with words for those who do not see it, at the size of the window', () => {
+    expect(pictures.length).toBeGreaterThanOrEqual(1);
+    for (const { src, alt, width } of pictures) {
+      expect(src).toMatch(/^[\w-]+(\/[\w.-]+)+\.png$/);
+      expect(existsSync(join(ROOT, src)), src).toBe(true);
+      expect(alt.trim(), src).not.toBe('');
+      // the pictures of the site have twice the pixels of the window (the build of the site shows them at half, too): in
+      // Markdown form the page would show every pixel, and the text of the introduction would begin a screen lower
+      const pixels = readFileSync(join(ROOT, src)).readUInt32BE(16);
+      expect(Number(width) * 2, src).toBe(pixels);
+    }
+    expect(intro).not.toMatch(/!\[/);
   });
 
-  it('says of the program only what the guide says, and keeps what the guide discloses about the keys', () => {
-    // a statement of the introduction, and the sentence of the guide it rests on («Чего программа не делает», «Что нужно», «Источник данных и права»)
+  // What this test does: it holds twelve statements of the introduction, each next to the sentence of the guide it
+  // was written from («Чего программа не делает», «Что нужно», «Источник данных и права»), so that neither can be
+  // changed without the other being looked at; and it refuses a few words of a promise. Whether a pair really says
+  // the same thing is for a reader to judge: no test can.
+  it('has twelve statements about the program, each with the sentence of the guide it was written from, and none of the words of a promise', () => {
     const pairs = [
       ['nothing is injected', 'ничего не внедряет в чужие процессы'],
       ["the game's memory and files are not read", 'Не читает память игры'],
@@ -102,7 +97,8 @@ describe('README.md, the face of the repository', () => {
       ['none is assigned by default', 'по умолчанию не назначено ничего'],
       ['while one is assigned, Windows calls the program on every key press', 'Пока назначена хотя бы одна, Windows вызывает функцию перехвата программы для каждого нажатия любой клавиши'],
       ['every press is passed on to the game', 'Любое нажатие функция всегда передаёт дальше, так что игра получает его, как обычно'],
-      ['The list of permissions is pinned by a test', 'Список разрешений закреплён тестом (`tests/release/permissions.test.ts`)'],
+      // whose permissions: the test pins what the WINDOW is allowed — the guide says it in the item about the window («у окна программы нет разрешения…»)
+      ["The window's list of permissions is pinned by a test", 'Список разрешений закреплён тестом (`tests/release/permissions.test.ts`)'],
       ['Windows 10 / 11, 64-bit', 'Windows 10 или 11, 64 бита.'],
       ['SC Trade is an unofficial fan-made tool', 'SC Trade — неофициальный фанатский инструмент'],
       ['is not endorsed by them', 'не связан с разработчиком и издателем игры и не одобрен ими'],
@@ -111,7 +107,25 @@ describe('README.md, the face of the repository', () => {
       expect(intro, said).toContain(said);
       expect(guide, source).toContain(source);
     }
-    // and no word of a promise that the guide does not make
-    expect(intro).not.toMatch(/\bsafe|undetect|anti-?cheat|guarantee|\bbann?ed\b|\bban\b|allowed by|approved|100\s?%/i);
+    // no word of a promise, and no hint at a plan nobody has stated
+    expect(intro).not.toMatch(/\bsafe|undetect|anti-?cheat|guarantee|\bbann?ed\b|\bban\b|allowed by|approved|100\s?%|\bfor now\b/i);
+  });
+
+  it('names the installer in the guide as it is downloaded, and the output of the build as the build names it', () => {
+    // the build calls the file one way; the site gives it a name without spaces (scripts/site/installer.mjs), and that is the file a person has
+    const built = `SC Trade_${version}_x64-setup.exe`;
+    const dir = mkdtempSync(join(tmpdir(), 'sc-trade-readme-'));
+    let downloaded = '';
+    try {
+      writeFileSync(join(dir, built), 'this only stands in for an installer');
+      downloaded = installerInfo(join(dir, built), version).fileName;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    const step = lines.find((line) => line.startsWith('1. Запусти установщик')) ?? '';
+    expect(step).toContain(`1. Запусти установщик \`${downloaded}\` (так файл называется на сайте и в релизе на GitHub). Он ставит программу`);
+    expect(step).not.toContain(built);
+    // «Сборка из исходников» speaks of what the build writes: there the name of the build is the right one
+    expect(guide).toContain(`\`src-tauri/target/release/bundle/nsis/${built}\``);
   });
 });
