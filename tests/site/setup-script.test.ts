@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileS
 import http from 'node:http';
 import net from 'node:net';
 import { dirname, join, resolve } from 'node:path';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { siteDir } from '../../scripts/site/config.mjs';
 import { build, tempDir, type Built } from './helpers';
 
@@ -12,6 +12,10 @@ import { build, tempDir, type Built } from './helpers';
 // three programs that ask the system a question (the test proves that, with stand-ins for every program); its small
 // questions about a text — "is this a plain key", "which ports does SSH come in through", "is the rule for SSH
 // there" — are asked directly; and the rest is read, line by line, for what it must and must not do.
+
+// Every question is a bash of its own, and one test asks several dozen of them. On Windows a start of bash costs
+// about 100 ms, so that test takes close to 5 s alone and twice that while the whole suite runs beside it.
+vi.setConfig({ testTimeout: 60_000 });
 
 const scriptFile = join(siteDir, 'deploy', 'setup.sh');
 const script = readFileSync(scriptFile, 'utf8').replaceAll('\r\n', '\n');
