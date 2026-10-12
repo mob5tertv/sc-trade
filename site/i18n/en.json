@@ -196,6 +196,29 @@
     "latest_only": "This page offers only the latest version.",
     "update": "Updating: close the app («Выход» in the tray icon's menu) and run the new installer. Your data stays."
   },
+  "roadmap": {
+    "label": "Plans",
+    "title": "What comes next",
+    "intro": "These are plans, not promises: the order and the contents of the versions may change.",
+    "items": [
+      {
+        "title": "1.2 — More exact, more convenient",
+        "text": "An honest “sell here or fly on” calculation. A commodity reference: where to buy cheaper and sell dearer. Editing of trades. Favourite routes with a notification. A new run line in the mini strip."
+      },
+      {
+        "title": "1.3 — English",
+        "text": "The interface in English."
+      },
+      {
+        "title": "1.4 — Prices at one key press",
+        "text": "Reading prices from the terminal on your key: one screenshot, recognised on your own computer. Sending your prices to UEX. All of it optional and off by default."
+      },
+      {
+        "title": "2.0 — Trade Fleet",
+        "text": "Shared prices and stock readings for a group of up to 10 players on one server. Optional and off by default."
+      }
+    ]
+  },
   "feedback": {
     "label": "Feedback",
     "title": "Write to the author",
