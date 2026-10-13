@@ -13,4 +13,5 @@ export const stat: RouteStat = {
   totalProfit: 545_000,
   avgRoi: 0.1207,
   uecPerHour: 467_143,
+  lostRuns: 0, lostProfit: 0, uecPerHourWithLosses: 467_143,
 };

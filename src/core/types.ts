@@ -79,7 +79,11 @@ export interface Estimate {
 }
 
 export type RunEventType = 'buy' | 'sell' | 'depart' | 'arrive';
-export interface Run { id: number; vehicleId: number | null; scuCapacity: number; startedAt: number; endedAt: number | null; status: 'active' | 'done' | 'lost' }
+export interface Run {
+  id: number; vehicleId: number | null; scuCapacity: number; startedAt: number; endedAt: number | null; status: 'active' | 'done' | 'lost';
+  /** Цель, которая стояла у рейса, когда груз списали как потерянный (таблица `run_target`); у остальных рейсов её нет. */
+  targetId?: number | null;
+}
 export interface RunEvent { id: number; runId: number; ts: number; type: RunEventType; terminalId: number | null; commodityId: number | null; scu: number | null; price: number | null }
 export interface RunWithEvents { run: Run; events: RunEvent[] }
 export interface CargoLine { commodityId: number; scu: number; avgBuyPrice: number }

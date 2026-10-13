@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ownMedianIndex, ownRunCounts, routeStats, sessions } from '../../src/core/stats';
+import { ownLegIndex, ownMedianIndex, ownRunCounts, routeStats, sessions, usualPace, withLosses } from '../../src/core/stats';
 import { pairKey } from '../../src/core/types';
 import type { RunWithEvents } from '../../src/core/types';
 import { incomeRun } from '../helpers/income-fixtures';
@@ -233,5 +233,87 @@ describe('a run of several commodities between two terminals (task 51)', () => {
 
   it('is in the profit of its session, as it was before the rating took it', () => {
     expect(sessions([1000, 3000], [MIX1])[0]).toMatchObject({ runIds: [11], runCount: 1, profit: 100_000 });
+  });
+});
+
+describe('the lost runs of a route (spec 14.19)', () => {
+  // R4 bought 20 SCU of Gold at terminal 1 for 100 000 and lost it after 500 s; here it was flying to terminal 2
+  const lostTo2: RunWithEvents = { run: { ...R4.run, targetId: 2 }, events: R4.events };
+
+  it('counts a lost run that had the route as its target as an attempt, beside the numbers of the finished runs', () => {
+    const [s] = routeStats([R1, R2, lostTo2]);
+    expect(s).toMatchObject({ originId: 1, destId: 2, runs: 2, totalProfit: 545_000, lostRuns: 1, lostProfit: -100_000 });
+    expect(s.uecPerHour).toBeCloseTo((545_000 * 3600) / 4200, 6);            // the finished runs alone, as ever
+    expect(s.uecPerHourWithLosses).toBeCloseTo((445_000 * 3600) / 4700, 6);  // with the loss and the 500 s it took
+  });
+
+  it('changes nothing of a route that lost nothing', () => {
+    const [s] = routeStats([R1, R2]);
+    expect(s).toMatchObject({ lostRuns: 0, lostProfit: 0 });
+    expect(s.uecPerHourWithLosses).toBe(s.uecPerHour);
+  });
+
+  it('leaves a lost run without a target, or whose target is the purchase terminal, out of every route', () => {
+    const noTarget: RunWithEvents = { run: { ...R4.run, targetId: null }, events: R4.events };
+    const sameEnd: RunWithEvents = { run: { ...R4.run, targetId: 1 }, events: R4.events };
+    for (const lost of [R4, noTarget, sameEnd]) expect(routeStats([R1, R2, lost])[0]).toMatchObject({ lostRuns: 0, lostProfit: 0 });
+  });
+
+  it('takes the route of a lost run that sold a part from its trades, whatever target is recorded', () => {
+    const partly: RunWithEvents = {
+      run: { ...R4.run, targetId: 3 },
+      events: [...R4.events, { ...R1.events[1], id: 42, runId: 4, ts: 12_400, scu: 5, price: 6000 }],   // 5 SCU sold at terminal 2
+    };
+    const [s] = routeStats([R1, R2, partly]);
+    expect(s).toMatchObject({ destId: 2, lostRuns: 1, lostProfit: 5 * 6000 - 100_000 });
+  });
+
+  it('does not list a route that was only ever lost, and counts a lost run of other goods as another route', () => {
+    expect(routeStats([lostTo2])).toEqual([]);
+    const tita: RunWithEvents = { run: { ...R4.run, targetId: 2 }, events: R4.events.map(e => ({ ...e, commodityId: TITA })) };
+    expect(routeStats([R1, R2, tita])[0]).toMatchObject({ lostRuns: 0 });
+  });
+
+  it('withLosses puts the losses into the profit and the rate, and returns a route without losses as it is', () => {
+    const [lossy] = routeStats([R1, R2, lostTo2]);
+    expect(withLosses(lossy)).toEqual({ ...lossy, totalProfit: 445_000, uecPerHour: lossy.uecPerHourWithLosses });
+    const [clean] = routeStats([R1, R2]);
+    expect(withLosses(clean)).toBe(clean);
+  });
+});
+
+describe('ownLegIndex', () => {
+  it('is the median of flight plus unloading of the runs that have both marks: the loading is not in it', () => {
+    const a = withMarks(R1, 300, 1600, 500);   // R1 lasts 2400 s
+    const b = withMarks(R2, 200, 1200, 400);   // R2 lasts 1800 s
+    expect(ownLegIndex([a, b]).get(pairKey(1, 2))).toBe((2100 + 1600) / 2);
+    expect(ownLegIndex([a, R2]).get(pairKey(1, 2))).toBe(2100);                // a run without marks is no sample
+    expect(ownMedianIndex([a, b]).get(pairKey(1, 2))).toBe(2100);             // the median of whole runs holds the loading
+  });
+
+  it('has nothing for a pair whose runs have no marks, nor for the other direction', () => {
+    expect(ownLegIndex([R1, R2, R3]).size).toBe(0);
+    expect(ownLegIndex([withMarks(R1, 300, 1600, 500)]).has(pairKey(2, 1))).toBe(false);
+  });
+});
+
+describe('usualPace', () => {
+  const income = incomeRun(7, 2000, 120, 3700);
+
+  it('is the profit of the finished and the lost flights over their time; a run that goes on and an income are not in it', () => {
+    // R1 345 000 in 2400 s, R2 200 000 in 1800 s, R3 50 000 in 1000 s, R4 −100 000 in 500 s, R5 60 000 in 1000 s
+    const pace = usualPace([R1, R2, R3, R4, R5, R6, income])!;
+    expect(pace.runs).toBe(5);
+    expect(pace.uecPerHour).toBeCloseTo((555_000 * 3600) / 6700, 6);
+  });
+
+  it('takes only the latest flights when there are more than the limit', () => {
+    expect(usualPace([R1, R2, R3], 1)).toEqual({ runs: 1, uecPerHour: (50_000 * 3600) / 1000 });   // R3 is the latest
+  });
+
+  it('is nothing until a flight is over', () => {
+    expect(usualPace([])).toBeNull();
+    expect(usualPace([R6])).toBeNull();
+    expect(usualPace([income])).toBeNull();
   });
 });

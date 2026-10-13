@@ -475,6 +475,7 @@ class AppState {
       terminals: this.reference.terminals,
       distances: this.distances,
       ownMedian: stats.ownMedian,
+      ownLeg: stats.ownLeg,
     };
   }
 

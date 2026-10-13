@@ -4,6 +4,7 @@
   import SellDecisionView from '../components/SellDecisionView.svelte';
   import Section from '../components/Section.svelte';
   import { app } from '../state.svelte';
+  import { stats } from '../stats.svelte';
   import { runOutlook } from '../vm/run-outlook';
   import { cardMarks, phaseLine, runPhases } from '../vm/run-phase';
   import {
@@ -39,7 +40,7 @@
   // "Sell here or fly on": for the commodities of the hold that have a price of my own at the viewed terminal. The
   // alternatives (every terminal that buys the commodity) are counted when their inputs change (the market, the viewed
   // terminal, the cargo, the price, the settings), and again every 15 seconds on the slow clock of the table, which moves
-  // the temperatures of the prices; they do not depend on the one-second clock. Only the rates follow it (`decisionAtClock`).
+  // the temperatures of the prices; they do not depend on the one-second clock. Only the rate of selling here follows it (`decisionAtClock`).
   // Counted only while the section is open.
   const counted = $derived(
     open && active !== null
@@ -100,7 +101,14 @@
     {:else if active !== null && phases !== null && outlook !== null}
       <RunCard {cargo} {phases} {outlook} {marks} onMark={(type) => void app.mark(type)} onLost={askLost} />
       {#each decisions as d (d.commodityId)}
-        <SellDecisionView commodityCode={d.code} here={d.here} alternatives={d.alternatives} reference={app.reference} />
+        <SellDecisionView
+          commodityCode={d.code}
+          here={d.here}
+          alternatives={d.alternatives}
+          reference={app.reference}
+          detailed={app.settings.detailedCalc}
+          pace={stats.pace}
+        />
       {/each}
     {/if}
   </Section>

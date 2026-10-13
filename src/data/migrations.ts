@@ -9,7 +9,7 @@ export interface Migration {
 // Migrations run without a transaction (tauri-plugin-sql uses a connection pool), so a run
 // interrupted half-way leaves some objects behind while `user_version` is still old. Every
 // statement of a migration must therefore be safe to run again: the version 1 statements
-// use IF NOT EXISTS for that reason, version 2 rebuilds a cache table with DROP / CREATE IF [NOT] EXISTS.
+// use IF NOT EXISTS for that reason, version 2 rebuilds a cache table with DROP / CREATE IF [NOT] EXISTS, version 3 adds a table.
 export const MIGRATIONS: Migration[] = [
   {
     version: 1,
@@ -98,6 +98,15 @@ export const MIGRATIONS: Migration[] = [
         PRIMARY KEY (terminal_id, commodity_id))`,
 
       `DELETE FROM uex_meta WHERE key = 'prices_synced_at'`,
+    ],
+  },
+  {
+    // Version 1.2 (spec 14.19): the target a run had when its cargo was written off, so that a lost run can be counted as an
+    // attempt at its route. A table of its own and not a column of `run`: ADD COLUMN cannot be run twice, CREATE IF NOT EXISTS
+    // can. No foreign key: a row whose run is gone means nothing (run ids are never used again) and is swept with the history.
+    version: 3,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS run_target (run_id INTEGER PRIMARY KEY, terminal_id INTEGER NOT NULL)`,
     ],
   },
 ];

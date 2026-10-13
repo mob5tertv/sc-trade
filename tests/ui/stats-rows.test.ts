@@ -15,8 +15,30 @@ describe('routeRows', () => {
   it('formats a route row', () => {
     const stats = routeStats([R1, withMarks(R2, 300, 1000, 500)]);
     expect(routeRows(stats, ref)[0]).toEqual({
-      key: '1>2:10', route: 'ARC-L1 → TDD Area 18', commodity: 'GOLD', commodityHint: null, runs: 2, time: '35:00',
+      key: '1>2:10', route: 'ARC-L1 → TDD Area 18', commodity: 'GOLD', commodityHint: null, runs: 2, runsText: '2', time: '35:00',
+      runsTitle: 'Число завершённых рейсов', profitTitle: 'Суммарная прибыль', rateTitle: 'UEC в час',
       phases: '5:00 · 16:40 · 8:20', profit: nb('545 000'), roi: '12%', rate: '467k', stat: stats[0],
+    });
+  });
+
+  describe('with «Подробные расчёты» (spec 14.19)', () => {
+    // one lost run of 100 000 that took 500 s was an attempt at this route
+    const lossy = { ...stat, lostRuns: 1, lostProfit: -100_000, uecPerHourWithLosses: 340_851 };
+
+    it('counts the lost runs into the row: finished of attempted, the profit and the rate with the losses', () => {
+      const [row] = routeRows([lossy], ref, true);
+      expect(row).toMatchObject({ runs: 2, runsText: '2/3', profit: nb('445 000'), rate: '341k', roi: '12%' });
+      expect(row.runsTitle).toBe('Удачных рейсов 2 из 3 (67 %): потерянных 1');
+      expect(row.profitTitle).toBe(`Прибыль с потерями: потерянный груз ${nb('-100 000')}`);
+      expect(row.rateTitle).toContain('с потерями');
+      // the table sorts by the numbers of the statistic, so they are the ones with the losses too
+      expect(row.stat).toMatchObject({ totalProfit: 445_000, uecPerHour: 340_851, runs: 2 });
+    });
+
+    it('leaves the row as ever without the setting, and for a route that lost nothing', () => {
+      expect(routeRows([lossy], ref)[0]).toMatchObject({ runs: 2, runsText: '2', profit: nb('545 000'), rate: '467k', runsTitle: 'Число завершённых рейсов' });
+      expect(routeRows([lossy], ref)[0].stat).toBe(lossy);
+      expect(routeRows([stat], ref, true)[0]).toEqual(routeRows([stat], ref)[0]);
     });
   });
 

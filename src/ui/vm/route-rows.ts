@@ -19,6 +19,9 @@ import type { RangeView, UexRange } from './terminal-rows';
 /** Shown instead of a value that does not exist. */
 const NONE = '—';
 
+/** Whether a price has a low and a high end at all: a price of my own, or a single report of UEX, is one number. */
+const hasRange = (e: Estimate): boolean => e.low < e.high;
+
 /**
  * What an option whose volume rests on an unknown stock says. The stock at the purchase terminal is a limit of the volume
  * (`quantity` of the core); where nobody knows it (`scu` is `null`: neither a measure of mine nor a quantity of UEX) the
@@ -164,7 +167,7 @@ export interface RouteOptionRow {
   priceIsOwn: boolean;
   /** `roi` in whole percents (`formatRoi`); `rate` without its unit, the caption of the column says "UEC/ч". */
   roi: string; rate: string;
-  /** The profit at the unfavourable end of both price ranges, and whether it is a loss. */
+  /** The profit at the unfavourable end of both price ranges, and whether it is a loss; the dash when neither price has a range (both are mine). */
   worst: string; worstLoss: boolean;
   qty: string;
   /** Set when the volume was counted with no stock at the purchase terminal to limit it (`UNKNOWN_STOCK_NOTE`): the mark «?» and the line of the expanded row say it; `null` when the stock is known (zero is known). */
@@ -215,7 +218,8 @@ export function routeOptionRow(
     trend: from ? priceTrend(o.sell, 'sell') : priceTrend(o.buy, 'buy'),
     priceIsOwn: isOwnPrice(from ? o.sell : o.buy),
     roi: formatRoi(o.roi), rate: perHourNarrow(o.uecPerHour),
-    worst: formatUec(o.worstProfit), worstLoss: o.worstProfit < 0,
+    worst: hasRange(o.buy) || hasRange(o.sell) ? formatUec(o.worstProfit) : NONE,
+    worstLoss: o.worstProfit < 0,
     qty: `${o.qty} SCU`,
     stockNote: stockKnown(o) ? null : UNKNOWN_STOCK_NOTE,
     invested: formatUec(o.qty * o.buy.price), profit: formatUec(o.profit), profitLoss: o.profit < 0,
@@ -230,21 +234,49 @@ export function sellHereRow(h: SellHere): SellHereRow {
   return { qty: `${h.qty} SCU`, profit: formatUec(h.profit), loss: h.profit < 0, roi: formatRoi(h.roi), rate: perHour(h.uecPerHour) };
 }
 
+/** '+136 000' for a gain, '-34 000' for a loss, '0' for neither: a difference says which way it goes. */
+const signedUec = (n: number): string => (Math.round(n) > 0 ? `+${formatUec(n)}` : formatUec(n));
+
+/** Where the time of «Лететь» comes from, for its tooltip. */
+const LEG_SOURCE: Record<'own' | 'estimate', string> = {
+  own: 'По твоим рейсам: перелёт и выгрузка',
+  estimate: 'Оценка по расстоянию',
+};
+
 export interface SellAlternativeRow {
   key: string; terminal: string; price: PriceView;
-  profit: string; loss: boolean;
-  expectedRate: string; worstRate: string;
-  /** The extra flight; the dash when it is unknown. */
-  extra: string;
+  /** What flying there adds to selling here ('+136 000'), and whether it adds nothing or takes away. */
+  extra: string; loss: boolean;
+  /** The same at the low end of the price range there; the dash when the price there has no range (a price of my own). */
+  extraLow: string; extraLowLoss: boolean;
+  /** What the further leg earns per hour ('518k/ч'); the dash without a time. */
+  rate: string;
+  /** How that rate stands to the player's usual pace; `null` when either is unknown. */
+  rateTone: 'above' | 'below' | null;
+  /** The way there: '12:50' by my own runs, '≈ 12:50' by the distance; the dash when it is unknown. */
+  time: string;
+  timeTitle: string | null;
 }
 
-export function sellAlternativeRow(a: SellAlternative, ref: Reference): SellAlternativeRow {
+/** `paceUecPerHour` is the player's usual pace (`usualPace` of the core), `null` while there is none. */
+export function sellAlternativeRow(a: SellAlternative, ref: Reference, paceUecPerHour: number | null = null): SellAlternativeRow {
+  const time = a.extraSec === null ? NONE : formatDuration(a.extraSec);
   return {
     key: String(a.destId),
     terminal: terminalLabel(ref, a.destId),
     price: priceView(a.sell),
-    profit: formatUec(a.expectedProfit), loss: a.expectedProfit < 0,
-    expectedRate: perHour(a.expectedUecPerHour), worstRate: perHour(a.worstUecPerHour),
-    extra: a.extraSec === null ? NONE : formatDuration(a.extraSec),
+    extra: signedUec(a.extraProfit), loss: Math.round(a.extraProfit) <= 0,
+    extraLow: a.extraProfitLow === null ? NONE : signedUec(a.extraProfitLow),
+    extraLowLoss: a.extraProfitLow !== null && Math.round(a.extraProfitLow) <= 0,
+    rate: perHour(a.extraUecPerHour),
+    rateTone: a.extraUecPerHour === null || paceUecPerHour === null ? null : a.extraUecPerHour > paceUecPerHour ? 'above' : 'below',
+    time: a.extraSource === 'estimate' ? `≈ ${time}` : time,
+    timeTitle: a.extraSource === null ? null : LEG_SOURCE[a.extraSource],
   };
+}
+
+/** 'Обычный темп 85k/ч · по 12 рейсам'; without a pace it says why there is none. */
+export function paceLine(pace: { uecPerHour: number; runs: number } | null): string {
+  if (pace === null) return 'Обычного темпа пока нет: он считается по законченным рейсам';
+  return `Твой обычный темп ${perHour(pace.uecPerHour)} · рейсов в расчёте: ${pace.runs}`;
 }

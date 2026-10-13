@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatCompact } from '../../src/core/format';
 import {
-  UNKNOWN_STOCK_NOTE, formatDistance, formatRoi, perHourBare, perHourNarrow, routeOptionRow, sellAlternativeRow, sellHereRow,
+  UNKNOWN_STOCK_NOTE, formatDistance, formatRoi, paceLine, perHourBare, perHourNarrow, routeOptionRow, sellAlternativeRow, sellHereRow,
 } from '../../src/ui/vm/route-rows';
 import type { RouteOption } from '../../src/core/routes';
 import type { SellAlternative, SellHere } from '../../src/core/sell';
@@ -450,7 +450,8 @@ const here: SellHere = { qty: 96, profit: 74_880, roi: 0.1275, uecPerHour: 310_0
 
 const alternative = (partial: Partial<SellAlternative> = {}): SellAlternative => ({
   destId: 2, sell: estimate(), qty: 96, expectedProfit: 69_120,
-  extraSec: 1055, expectedUecPerHour: 264_000, worstUecPerHour: 120_000, ...partial,
+  // the price here is 6 840: 96 SCU at 6 900 add 5 760, at the low end of the range (6 400) they take 42 240 away
+  extraProfit: 5760, extraProfitLow: -42_240, extraSec: 1055, extraSource: 'estimate', extraUecPerHour: 19_655, ...partial,
 });
 
 describe('sellHereRow', () => {
@@ -475,25 +476,52 @@ describe('sellHereRow', () => {
   });
 });
 
+describe('paceLine', () => {
+  it('says the pace and how many runs it is made of, or why there is none', () => {
+    expect(paceLine({ uecPerHour: 85_000, runs: 12 })).toBe(`Твой обычный темп ${perHourNarrow(85_000)}/ч · рейсов в расчёте: 12`);
+    expect(paceLine(null)).toBe('Обычного темпа пока нет: он считается по законченным рейсам');
+  });
+});
+
+describe('routeOptionRow: the worst case of a route whose prices have no range', () => {
+  const one = (price: number) => estimate({ price, low: price, high: price });
+  it('is a dash when both prices are one number, and a number as soon as one of them has a range', () => {
+    expect(routeOptionRow(option({ buy: one(6120), sell: one(6900) }), ref, 'from', new Map()).worst).toBe('—');
+    expect(routeOptionRow(option({ buy: one(6120) }), ref, 'from', new Map()).worst).not.toBe('—');
+  });
+});
+
 describe('sellAlternativeRow', () => {
-  it('formats an alternative with its price, rates and extra flight', () => {
+  it('formats an alternative with its price, what it adds and the way there', () => {
     expect(sellAlternativeRow(alternative(), ref)).toEqual({
       key: '2', terminal: 'TDD Area 18',
       price: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
-      profit: nb('69 120'), loss: false, expectedRate: '264k/ч', worstRate: '120k/ч', extra: '17:35',
+      extra: nb('+5 760'), loss: false, extraLow: nb('-42 240'), extraLowLoss: true,
+      rate: `${perHourNarrow(19_655)}/ч`, rateTone: null, time: '≈ 17:35', timeTitle: 'Оценка по расстоянию',
     });
   });
   it('labels an alternative priced by UEX at an unknown age with a plain UEX badge', () => {
     const row = sellAlternativeRow(alternative({ sell: estimate({ ageKnown: false, ageSec: 1_760_000_000 }) }), ref);
     expect(row.price.badge).toEqual({ text: 'UEX', kind: 'uex' });
   });
-  it('shows dashes when no flight time is known, and marks a loss', () => {
-    const row = sellAlternativeRow(alternative({ extraSec: null, expectedUecPerHour: null, worstUecPerHour: null, expectedProfit: -300 }), ref);
-    expect(row).toMatchObject({ extra: '—', expectedRate: '—', worstRate: '—', loss: true });
+  it('shows dashes when no time is known, and marks a place that adds nothing', () => {
+    const row = sellAlternativeRow(alternative({ extraSec: null, extraSource: null, extraUecPerHour: null, extraProfit: -300 }), ref);
+    expect(row).toMatchObject({ time: '—', timeTitle: null, rate: '—', extra: nb('-300'), loss: true });
+    expect(sellAlternativeRow(alternative({ extraProfit: 0 }), ref)).toMatchObject({ extra: '0', loss: true });
   });
-  it('writes both rates with the number of the list of options', () => {
-    const row = sellAlternativeRow(alternative({ expectedUecPerHour: 12_534_000, worstUecPerHour: 123_400_000 }), ref);
-    expect(row).toMatchObject({ expectedRate: '12,5M/ч', worstRate: '123M/ч' });
+  it('writes my own time without the mark of an estimate', () => {
+    expect(sellAlternativeRow(alternative({ extraSource: 'own' }), ref)).toMatchObject({ time: '17:35', timeTitle: 'По твоим рейсам: перелёт и выгрузка' });
+  });
+  it('has no low end for a price that is one number (a price of my own)', () => {
+    expect(sellAlternativeRow(alternative({ extraProfitLow: null }), ref)).toMatchObject({ extraLow: '—', extraLowLoss: false });
+  });
+  it('says how the rate of the further leg stands to the usual pace, when both are known', () => {
+    expect(sellAlternativeRow(alternative(), ref, 10_000).rateTone).toBe('above');
+    expect(sellAlternativeRow(alternative(), ref, 50_000).rateTone).toBe('below');
+    expect(sellAlternativeRow(alternative({ extraUecPerHour: null }), ref, 10_000).rateTone).toBeNull();
+  });
+  it('writes the rate with the number of the list of options', () => {
+    expect(sellAlternativeRow(alternative({ extraUecPerHour: 12_534_000 }), ref).rate).toBe('12,5M/ч');
   });
   it('falls back to the id for an unknown terminal', () => {
     expect(sellAlternativeRow(alternative({ destId: 777 }), ref).terminal).toBe('#777');

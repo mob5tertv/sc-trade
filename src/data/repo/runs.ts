@@ -9,6 +9,7 @@ import type { Db } from '../db';
 
 interface RunRow {
   id: number; vehicle_id: number | null; scu_capacity: number; started_at: number; ended_at: number | null; status: Run['status'];
+  target_id: number | null;
 }
 
 interface EventRow {
@@ -16,7 +17,9 @@ interface EventRow {
   terminal_id: number | null; commodity_id: number | null; scu: number | null; price: number | null;
 }
 
-const RUN_COLUMNS = 'id, vehicle_id, scu_capacity, started_at, ended_at, status';
+// `target_id` is the target recorded for the run in `run_target` (written when a cargo is written off), NULL for a run without one.
+const RUN_COLUMNS = 'id, vehicle_id, scu_capacity, started_at, ended_at, status, '
+  + '(SELECT terminal_id FROM run_target WHERE run_target.run_id = run.id) AS target_id';
 const EVENT_COLUMNS = 'id, run_id, ts, type, terminal_id, commodity_id, scu, price';
 
 const orNull = (v: number | null): number | null => (v === null ? null : Number(v));
@@ -29,6 +32,7 @@ function toRun(r: RunRow): Run {
     startedAt: Number(r.started_at),
     endedAt: orNull(r.ended_at),
     status: r.status,
+    targetId: orNull(r.target_id),
   };
 }
 
@@ -192,6 +196,19 @@ export async function addRunEvent(db: Db, e: Omit<RunEvent, 'id'>): Promise<numb
     [e.runId, e.ts, e.type, e.terminalId, e.commodityId, e.scu, e.price],
   );
   return result.lastInsertId;
+}
+
+/** Records the target the run `id` had; a second record for the same run replaces the first. */
+export async function setRunTarget(db: Db, id: number, terminalId: number): Promise<void> {
+  await db.execute(
+    'INSERT INTO run_target (run_id, terminal_id) VALUES (?, ?) ON CONFLICT(run_id) DO UPDATE SET terminal_id = excluded.terminal_id',
+    [id, terminalId],
+  );
+}
+
+/** Removes the recorded targets whose run is gone (a cleared history leaves them); returns how many there were. */
+export async function removeOrphanRunTargets(db: Db): Promise<number> {
+  return (await db.execute('DELETE FROM run_target WHERE run_id NOT IN (SELECT id FROM run)')).rowsAffected;
 }
 
 /** Ends the active run `id` as done or lost. Only an active run can be closed; closing any other one changes nothing. */

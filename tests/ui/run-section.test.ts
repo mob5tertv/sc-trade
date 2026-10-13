@@ -172,26 +172,23 @@ describe('decisionAtClock', () => {
     expect(same.here).toEqual(d.here);
     expect(same.alternatives).toEqual(d.alternatives);
   });
-  it('moves the rates with the time since the run began and nothing else', () => {
+  it('moves the rate of selling here with the time since the run began and nothing else', () => {
     const later = decisionAtClock(d, d.elapsedSec + 600);
     expect(later.elapsedSec).toBe(d.elapsedSec + 600);
     expect(later.here.uecPerHour).toBeCloseTo((d.here.profit * 3600) / (d.elapsedSec + 600), 6);
     expect(later.here.profit).toBe(d.here.profit);
-    const [a, b] = [d.alternatives[0], later.alternatives[0]];
-    expect(b.expectedUecPerHour).toBeCloseTo((a.expectedProfit * 3600) / (d.elapsedSec + 600 + (a.extraSec ?? 0)), 6);
-    expect(b.worstUecPerHour).toBeCloseTo((d.line.scu * (a.sell.low - d.line.avgBuyPrice) * 3600) / (d.elapsedSec + 600 + (a.extraSec ?? 0)), 6);
-    expect([b.destId, b.expectedProfit, b.extraSec, b.sell]).toEqual([a.destId, a.expectedProfit, a.extraSec, a.sell]);
+    // what flying on adds, and over what time, does not depend on the time already spent (spec 14.19)
+    expect(later.alternatives).toBe(d.alternatives);
   });
-  it('agrees with a calculation made at that moment (the same rates the core gives)', () => {
+  it('agrees with a calculation made at that moment (the same numbers the core gives)', () => {
     const [recounted] = sellDecisions(active, withOwnSell(market, 3, GOLD, 6840, NOW - 60), ref, 3, { ...here, now: ctx.now + 600 });
     const moved = decisionAtClock(d, recounted.elapsedSec);
     expect(moved.here.uecPerHour).toBeCloseTo(recounted.here.uecPerHour ?? NaN, 6);
-    expect(moved.alternatives[0].expectedUecPerHour).toBeCloseTo(recounted.alternatives[0].expectedUecPerHour ?? NaN, 6);
+    expect(moved.alternatives[0].extraUecPerHour).toBeCloseTo(recounted.alternatives[0].extraUecPerHour ?? NaN, 6);
   });
   it('keeps an unknown flight time unknown and a moment without time without a rate', () => {
     const lonely = sellDecisions(active, withOwnSell(market, 3, GOLD, 6840, NOW - 60), ref, 3, { ...here, distances: new Map() })[0];
-    expect(lonely.alternatives[0].extraSec).toBeNull();
-    expect(decisionAtClock(lonely, 500).alternatives[0].expectedUecPerHour).toBeNull();
+    expect(lonely.alternatives[0]).toMatchObject({ extraSec: null, extraSource: null, extraUecPerHour: null });
     expect(decisionAtClock(d, 0).here.uecPerHour).toBeNull();
   });
 });
@@ -226,8 +223,8 @@ describe('sellLogContext and sellDecisionKey', () => {
     expect(log).toMatchObject({ terminalId: 3, commodityId: GOLD, scu: 96, avgBuyPrice: 6120, price: 6840, elapsedSec: 872 });
     expect(log.here).toMatchObject({ profit: 69_120, roi: 720 / 6120 });
     expect(log.alternatives).toEqual([{
-      terminalId: 2, price: 6900, low: 6400, high: 7100, source: 'uex', extraSec: 770,
-      profit: 74_880, uecPerHour: d.alternatives[0].expectedUecPerHour, worstUecPerHour: d.alternatives[0].worstUecPerHour,
+      terminalId: 2, price: 6900, low: 6400, high: 7100, source: 'uex', extraSec: 770, extraSource: 'estimate',
+      profit: 74_880, extraProfit: 5760, extraProfitLow: -42_240, extraUecPerHour: (5760 * 3600) / 770,
     }]);
   });
   it('is the same key while the same thing is decided, and another one when the price or the cargo changes', () => {

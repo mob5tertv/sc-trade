@@ -220,7 +220,7 @@ describe('recordIncome', () => {
   it('records a sale that no purchase stands behind as a finished run of one sale, with no run going', async () => {
     clock.advance(30);
     const r = await recordIncome(deps, incomeIn(120, 3700));
-    expect(r.run).toEqual({ id: 1, vehicleId: 7, scuCapacity: 696, startedAt: NOW + 30, endedAt: NOW + 30, status: 'done' });
+    expect(r.run).toEqual({ id: 1, vehicleId: 7, scuCapacity: 696, startedAt: NOW + 30, endedAt: NOW + 30, status: 'done', targetId: null });
     expect(r.events).toEqual([{ id: 1, runId: 1, ts: NOW + 30, type: 'sell', terminalId: 2, commodityId: TITA, scu: 120, price: 3700 }]);
     expect(await getActiveRun(db)).toBeNull();
     expect(await listRuns(db)).toEqual([r]);
@@ -343,7 +343,7 @@ describe('addFinishedRun and removeEmptyRun', () => {
 
   it('writes a run that is done, with the end it was given, and never an active one', async () => {
     const id = await finishedRun(NOW + 5);
-    expect((await getRun(db, id))!.run).toEqual({ id, vehicleId: 7, scuCapacity: 696, startedAt: NOW + 5, endedAt: NOW + 5, status: 'done' });
+    expect((await getRun(db, id))!.run).toEqual({ id, vehicleId: 7, scuCapacity: 696, startedAt: NOW + 5, endedAt: NOW + 5, status: 'done', targetId: null });
     expect(await getActiveRun(db)).toBeNull();
   });
 
@@ -486,6 +486,15 @@ describe('loseCargo', () => {
     expect((await recordBuy(deps, buyIn(10))).run.status).toBe('active');
   });
 
+  it('records the target the player had with the lost run, and none when there was none (spec 14.19)', async () => {
+    await recordBuy(deps, buyIn(300)); clock.advance(500);
+    const lost = await loseCargo({ ...deps, settings: { ...deps.settings, targetTerminalId: 2 } });
+    expect(lost.run).toMatchObject({ status: 'lost', targetId: 2 });
+    await recordBuy(deps, buyIn(10));
+    expect((await loseCargo(deps)).run.targetId).toBeNull();
+    expect((await listRuns(db)).map(r => r.run.targetId)).toEqual([null, 2]);
+  });
+
   it('keeps the events of the lost run', async () => {
     await recordBuy(deps, buyIn(300)); clock.advance(500);
     const lost = await loseCargo(deps);
@@ -621,7 +630,7 @@ describe('listRuns', () => {
   it('returns whole runs with numeric fields', async () => {
     await recordBuy(deps, buyIn(300, 6000.5));
     const [r] = await listRuns(db);
-    expect(r.run).toEqual({ id: 1, vehicleId: 7, scuCapacity: 696, startedAt: NOW, endedAt: null, status: 'active' });
+    expect(r.run).toEqual({ id: 1, vehicleId: 7, scuCapacity: 696, startedAt: NOW, endedAt: null, status: 'active', targetId: null });
     expect(r.events).toEqual([{ id: 1, runId: 1, ts: NOW, type: 'buy', terminalId: 1, commodityId: 10, scu: 300, price: 6000.5 }]);
   });
 

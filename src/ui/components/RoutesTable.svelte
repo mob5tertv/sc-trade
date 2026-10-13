@@ -47,10 +47,10 @@
         <!-- both ends of the route give way equally, each with its own ellipsis, and the arrow stays: 'Port Tre… → TDD Are…' (the full name is the tooltip) -->
         <span class="route" title={row.route}><PieceLine pieces={routePieces(row.route)} /></span>
         <span class="code" title={row.commodityHint ?? undefined}>{row.commodity}</span>
-        <span class="sc-num strong" title="UEC в час">{row.rate}</span>
-        <span class="sc-num" title="Число завершённых рейсов">{row.runs}</span>
+        <span class="sc-num strong" title={row.rateTitle}>{row.rate}</span>
+        <span class="sc-num" title={row.runsTitle}>{row.runsText}</span>
         <span class="sc-num" title={row.phases ? `Медианное время: погрузка · полёт · разгрузка ${row.phases}` : 'Медианное время рейса'}>{row.time}</span>
-        <span class="sc-num" class:loss={isLoss(row.profit)} title="Суммарная прибыль">{row.profit}</span>
+        <span class="sc-num" class:loss={isLoss(row.profit)} title={row.profitTitle}>{row.profit}</span>
         <span class="sc-num" title="Средний ROI">{row.roi}</span>
       </div>
     {/each}

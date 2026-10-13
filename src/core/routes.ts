@@ -36,6 +36,8 @@ export interface RouteCtx extends EstimateCtx {
   terminals: Map<number, Terminal>;
   distances: Map<string, number | null>;   // distKey
   ownMedian: Map<string, number>;          // pairKey → seconds
+  /** pairKey → seconds of flight and unloading there, by my runs of the pair that have both marks (`ownLegIndex`); absent: only the distance tells. */
+  ownLeg?: Map<string, number>;
 }
 
 export interface RouteOption {

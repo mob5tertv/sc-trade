@@ -91,7 +91,7 @@ export interface SellDecision {
   /** Seconds since the run began, the time "here" is counted over. */
   elapsedSec: number;
   here: SellHere;
-  /** At most three other buyers, the best expected UEC per hour of the whole run first. */
+  /** At most three other buyers, the one whose further leg earns the most per hour first. */
   alternatives: SellAlternative[];
 }
 
@@ -117,23 +117,14 @@ export function sellDecisions(active: RunWithEvents | null, m: Market, ref: Refe
 }
 
 /**
- * The decision as it stands `elapsedSec` after the run began. The alternatives, their prices and flights depend on the market,
- * the viewed terminal, the cargo and the price, and are counted when those change (`sellDecisions`); only the rates depend on
- * the clock: the time already spent stands under every one of them. This is the cheap part that follows the clock, with
- * the very formula of the core (`perHour` in core/sell.ts: profit over the time of the whole run).
+ * The decision as it stands `elapsedSec` after the run began. The alternatives depend on the market, the viewed terminal, the
+ * cargo and the price, and are counted when those change (`sellDecisions`): what flying on adds, and over what time, is the same
+ * whatever the clock says (spec 14.19). Only the rate of selling HERE follows the clock: the profit over the time already
+ * spent, with the very formula of the core (`perHour` in core/sell.ts).
  */
 export function decisionAtClock(d: SellDecision, elapsedSec: number): SellDecision {
   const elapsed = Math.max(0, elapsedSec);
-  return {
-    ...d,
-    elapsedSec: elapsed,
-    here: { ...d.here, uecPerHour: ratePerHour(d.here.profit, elapsed) },
-    alternatives: d.alternatives.map((a) => ({
-      ...a,
-      expectedUecPerHour: a.extraSec === null ? null : ratePerHour(a.expectedProfit, elapsed + a.extraSec),
-      worstUecPerHour: a.extraSec === null ? null : ratePerHour(a.qty * (a.sell.low - d.line.avgBuyPrice), elapsed + a.extraSec),
-    })),
-  };
+  return { ...d, elapsedSec: elapsed, here: { ...d.here, uecPerHour: ratePerHour(d.here.profit, elapsed) } };
 }
 
 /** What is written to the log (`sell`, debug) for one calculation: the sale on the spot and every option it was compared with. */
@@ -144,7 +135,8 @@ export function sellLogContext(d: SellDecision): Record<string, unknown> {
     here: { profit: d.here.profit, roi: d.here.roi, uecPerHour: d.here.uecPerHour },
     alternatives: d.alternatives.map((a) => ({
       terminalId: a.destId, price: a.sell.price, low: a.sell.low, high: a.sell.high, source: a.sell.source,
-      extraSec: a.extraSec, profit: a.expectedProfit, uecPerHour: a.expectedUecPerHour, worstUecPerHour: a.worstUecPerHour,
+      extraSec: a.extraSec, extraSource: a.extraSource, profit: a.expectedProfit,
+      extraProfit: a.extraProfit, extraProfitLow: a.extraProfitLow, extraUecPerHour: a.extraUecPerHour,
     })),
   };
 }

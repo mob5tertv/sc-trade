@@ -243,8 +243,10 @@ describe('the SQL of the deletion repeats its conditions in every statement', ()
     await flight(NOW, NOW + 600);
     const s = await spied();
     await clearHistory(s.deps, null);
-    const [events, runs, ...rest] = s.deletes();
+    const [events, runs, targets, ...rest] = s.deletes();
     expect(rest).toEqual([]);
+    // then the targets whose run is gone (spec 14.19): its own table only, by what is left in `run`, no list of numbers either
+    expect(targets).toEqual({ sql: 'DELETE FROM run_target WHERE run_id NOT IN (SELECT id FROM run)', params: [] });
     expect(events.sql).toBe("DELETE FROM run_event WHERE run_id IN (SELECT id FROM run WHERE status IN ('done', 'lost'))");
     expect(runs.sql).toBe("DELETE FROM run WHERE status IN ('done', 'lost') AND NOT EXISTS (SELECT 1 FROM run_event WHERE run_event.run_id = run.id)");
     expect(events.params).toEqual([]);
@@ -255,8 +257,10 @@ describe('the SQL of the deletion repeats its conditions in every statement', ()
     await flight(NOW, NOW + 600);
     const s = await spied();
     await clearHistory(s.deps, OLD_BEFORE);
-    const [events, runs, ...rest] = s.deletes();
+    const [events, runs, targets, ...rest] = s.deletes();
     expect(rest).toEqual([]);
+    // then the targets whose run is gone (spec 14.19): its own table only, by what is left in `run`, no list of numbers either
+    expect(targets).toEqual({ sql: 'DELETE FROM run_target WHERE run_id NOT IN (SELECT id FROM run)', params: [] });
     expect(events.sql).toBe("DELETE FROM run_event WHERE run_id IN (SELECT id FROM run WHERE status IN ('done', 'lost') AND ended_at < ?)");
     expect(runs.sql).toBe("DELETE FROM run WHERE status IN ('done', 'lost') AND ended_at < ? AND NOT EXISTS (SELECT 1 FROM run_event WHERE run_event.run_id = run.id)");
     expect(events.params).toEqual([OLD_BEFORE]);
@@ -488,8 +492,8 @@ describe('the clearing goes through the queue of the trade service', () => {
     const s = await slowLog();
     await Promise.all([clearHistory(s.deps, null), recordBuy(s.deps, buyIn(10))]);
     const deletes = s.log.map((l, i) => (l.startsWith('DELETE') ? i : -1)).filter(i => i >= 0);
-    expect(deletes).toHaveLength(2);
-    expect(s.log.slice(deletes[0] + 1, deletes[1]).filter(l => l.startsWith('INSERT'))).toEqual([]);
+    expect(deletes).toHaveLength(3);                                    // the events, the runs, the sweep of the targets
+    expect(s.log.slice(deletes[0] + 1, deletes[2]).filter(l => l.startsWith('INSERT'))).toEqual([]);
   });
 
   it('repairs a half-written run before it clears, never while: a run whose close failed is closed as done first, and is then history', async () => {
@@ -531,5 +535,24 @@ describe('the line of the service', () => {
     await clearHistory(deps, null);
     expect(sink.lines.filter(l => l.line.startsWith('[run] history cleared')).map(l => l.line))
       .toEqual(['[run] history cleared {"endedBefore":null,"runs":1,"events":2}']);
+  });
+});
+
+describe('the targets of lost runs', () => {
+  it('are swept with the runs they belonged to, and kept for the runs that stay', async () => {
+    const aimed = { ...deps, settings: { ...deps.settings, targetTerminalId: 2 } };
+    await recordBuy(deps, buyIn(300)); await loseCargo(aimed);          // an old lost run
+    clock.advance(90 * DAY);
+    await recordBuy(deps, buyIn(300)); await loseCargo(aimed);          // a recent one
+    const targets = async () => (await db.select<{ run_id: number }>('SELECT run_id FROM run_target ORDER BY run_id')).length;
+    expect(await targets()).toBe(2);
+
+    clock.advance(10 * DAY);
+    await clearHistory(deps, OLD_BEFORE);
+    expect(await targets()).toBe(1);
+    expect((await listRuns(db)).map(r => r.run.targetId)).toEqual([2]);
+
+    await clearHistory(deps, null);
+    expect(await targets()).toBe(0);
   });
 });

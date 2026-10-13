@@ -29,6 +29,12 @@
 <Frame name="sell-decision" caption="sell here or fly on: the sale on the spot and up to three other buyers">
   <SellDecisionView commodityCode={sell.commodityCode} here={sell.here} alternatives={sell.alternatives} {reference} />
 </Frame>
+<Frame name="sell-decision-detailed" caption="«Подробные расчёты»: also the low end of the range, what the further leg earns per hour against the usual pace, and the rate of selling here">
+  <SellDecisionView commodityCode={sell.commodityCode} here={sell.here} alternatives={sell.alternatives} {reference} detailed pace={{ uecPerHour: 85_000, runs: 12 }} />
+</Frame>
+<Frame name="sell-decision-no-pace" caption="«Подробные расчёты» before the first finished run: the line says why there is no pace">
+  <SellDecisionView commodityCode={sell.commodityCode} here={sell.here} alternatives={sell.alternatives} {reference} detailed pace={null} />
+</Frame>
 <Frame name="sell-decision-alone" caption="no other buyer">
   <SellDecisionView commodityCode={sell.commodityCode} here={sell.here} alternatives={[]} {reference} />
 </Frame>

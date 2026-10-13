@@ -166,7 +166,7 @@
   const summaries = $derived({
     ship: headerModel(app.reference, s, app.pricesSyncedAt, app.uexOk, app.now).ship,
     fresh: `${s.hotMin} / ${s.warmMin} / ${s.coolingMin} мин`,
-    routes: `вариантов: ${s.topN} · ROI от ${s.roiHighlightPct}%`,
+    routes: `вариантов: ${s.topN} · ROI от ${s.roiHighlightPct}%${s.detailedCalc ? ' · подробно' : ''}`,
     keys: [s.hotkeyPanel, s.hotkeyDepart, s.hotkeyArrive].filter((key) => key !== '').join(', ') || 'не назначены',
     window: `${uiScaleLabel(s.uiScale, app.scaleMonitor)} · ${s.panelWidth} px · ${Math.round(s.opacity * 100)}%`,
     data: `журнал: ${s.logLevel}`,
@@ -248,6 +248,19 @@
   {@render numberField('roiHighlightPct', 'Выделять ROI от, %', {
     title: 'Строка таблицы с таким ROI и выше выделяется цветной полосой. 0 — выделять всё, что в плюсе.',
   })}
+  <div
+    class="row"
+    title="«Лететь дальше» покажет ещё добавку по нижней цене и заработок перелёта в час против твоего обычного темпа; «Мои маршруты» посчитают потерянные рейсы."
+  >
+    <label for="set-detailed-calc">Подробные расчёты</label>
+    <input
+      id="set-detailed-calc"
+      class="check"
+      type="checkbox"
+      checked={app.settings.detailedCalc}
+      onchange={(event) => settle('detailedCalc', () => app.updateSetting('detailedCalc', event.currentTarget.checked))}
+    />
+  </div>
 {/snippet}
 
 {#snippet keys()}

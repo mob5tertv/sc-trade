@@ -6,7 +6,7 @@ import type { Logger } from './logger';
 import { addObservation } from './repo/diary';
 import {
   addFinishedRun, addRunEvent, closeRun, emptyActiveRuns, getActiveRun, getRun, removeEmptyActiveRun, removeEmptyFinishedRuns, removeEmptyRun,
-  removeFinishedRunEvents, removeFinishedRuns, startRun,
+  removeFinishedRunEvents, removeFinishedRuns, removeOrphanRunTargets, setRunTarget, startRun,
 } from './repo/runs';
 
 // The trade service: records a purchase, a sale, a sale of goods that were never bought here (income), a depart or arrive
@@ -288,14 +288,22 @@ export function recordMark(d: TradeDeps, type: 'depart' | 'arrive'): Promise<voi
   });
 }
 
-/** Closes the active run as lost, ending now, whatever is still in the hold; the slot is free for the next run. */
+/**
+ * Closes the active run as lost, ending now, whatever is still in the hold; the slot is free for the next run. The target the
+ * player had is recorded with the run first (spec 14.19): it says which route the lost run was an attempt at. A target that
+ * cannot be written is only logged: the cargo is lost all the same, and the run then belongs to no route.
+ */
 export function loseCargo(d: TradeDeps): Promise<RunWithEvents> {
   return serialized(d, async () => {
     const active = await requireActiveRun(d.db);
     const runId = active.run.id;
     const ts = d.now();
+    const targetId = d.settings.targetTerminalId;
+    if (targetId !== null) {
+      await setRunTarget(d.db, runId, targetId).catch((err: unknown) => d.log.warn(LOG, 'cannot record the target of the lost run', { runId, targetId, err }));
+    }
     await closeRun(d.db, runId, 'lost', ts);
-    d.log.info(LOG, 'lost', { runId, endedAt: ts, cargo: cargoOf(active.events) });
+    d.log.info(LOG, 'lost', { runId, endedAt: ts, targetId, cargo: cargoOf(active.events) });
     return reload(d.db, runId);
   });
 }
@@ -353,6 +361,8 @@ export function clearHistory(d: RepairDeps, endedBefore: number | null): Promise
         throw new ClearHistoryError(true, events);
       }
     }
+    // the targets recorded for the runs that are gone mean nothing now; a failure leaves rows nobody reads, for the next clearing
+    await removeOrphanRunTargets(d.db).catch((err: unknown) => d.log.warn(LOG, 'cannot sweep the targets of the cleared runs', { err }));
     d.log.info(LOG, 'history cleared', { endedBefore, runs, events });
     return { runs, events };
   });

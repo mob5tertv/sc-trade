@@ -74,7 +74,7 @@ describe('plugin:sql', () => {
     start({ dataset: 'default' });
     const raw = await Database.load('sqlite:sctrade.db');
     const rows = await raw.select<Array<{ user_version: number }>>('PRAGMA user_version');
-    expect(rows).toEqual([{ user_version: 2 }]);
+    expect(rows).toEqual([{ user_version: 3 }]);
     const systems = await raw.select<Array<{ name: string }>>('SELECT name FROM uex_star_system ORDER BY id');
     expect(systems.map((s) => s.name).sort()).toEqual(['Nyx', 'Pyro', 'Stanton']);
   });

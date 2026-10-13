@@ -12,6 +12,12 @@ export interface Settings {
    */
   roiHighlightPct: number;
   sort: 'uecPerHour' | 'roi'; nearby: boolean;
+  /**
+   * «Подробные расчёты» (spec 14.19): the extra numbers of the calculations. Off, «лететь дальше» says what it adds and how long it
+   * takes; on, it also says the low end of the range and the rate of the further leg against the player's usual pace, and «Мои
+   * маршруты» count the lost runs of a route (attempts, the profit and the rate with the losses).
+   */
+  detailedCalc: boolean;
   /** Optional trigger keys, e.g. 'F8' or 'Ctrl+Alt+T'; '' means not assigned. */
   hotkeyPanel: string; hotkeyDepart: string; hotkeyArrive: string;
   /** Width of the expanded window in px; its height follows its content. */
@@ -51,7 +57,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hotMin: 60, warmMin: 180, coolingMin: 240,
   refillFullMin: DEFAULT_REFILL_FULL_MIN,
   quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, topN: 5, roiHighlightPct: 50,
-  sort: 'uecPerHour', nearby: false,
+  sort: 'uecPerHour', nearby: false, detailedCalc: false,
   hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '',
   panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
   uiScale: 0,

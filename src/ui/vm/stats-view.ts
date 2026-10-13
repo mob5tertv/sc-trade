@@ -1,6 +1,6 @@
 import { formatCompact, formatUec } from '../../core/format';
-import { DEFAULT_SESSION_GAP_SEC, ownMedianIndex, ownRunCounts, routeStats, sessions } from '../../core/stats';
-import type { RouteStat, Session } from '../../core/stats';
+import { DEFAULT_SESSION_GAP_SEC, ownLegIndex, ownMedianIndex, ownRunCounts, routeStats, sessions, usualPace } from '../../core/stats';
+import type { Pace, RouteStat, Session } from '../../core/stats';
 import type { RunWithEvents } from '../../core/types';
 import { NONE } from './stats-rows';
 import type { RouteRow } from './stats-rows';
@@ -99,19 +99,25 @@ export interface StatsFigures {
   stats: RouteStat[];
   /** Direction (`pairKey`) → my median time there, a run of mixed cargo among the samples: the estimates take it instead of the one from the distance. */
   ownMedian: Map<string, number>;
+  /** Direction (`pairKey`) → my median of flight plus unloading there, by the runs that have both marks: the time of «лететь дальше». */
+  ownLeg: Map<string, number>;
   /** Direction (`pairKey`) → how many finished runs I have there (the same runs `ownMedian` is made of). */
   runCounts: Map<string, number>;
   sessions: Session[];
+  /** What I usually earn per hour of a run, by my latest flights; `null` while there is none. */
+  pace: Pace | null;
 }
 
-export const EMPTY_FIGURES: StatsFigures = { stats: [], ownMedian: new Map(), runCounts: new Map(), sessions: [] };
+export const EMPTY_FIGURES: StatsFigures = { stats: [], ownMedian: new Map(), ownLeg: new Map(), runCounts: new Map(), sessions: [], pace: null };
 
 export function figuresOf(history: History): StatsFigures {
   const { runs, recordTs } = history;
   return {
     stats: routeStats(runs),
     ownMedian: ownMedianIndex(runs),
+    ownLeg: ownLegIndex(runs),
     runCounts: ownRunCounts(runs),
     sessions: sessions(recordTs, runs),
+    pace: usualPace(runs),
   };
 }

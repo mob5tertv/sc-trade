@@ -1,5 +1,6 @@
 import { formatDuration, formatUec } from '../../core/format';
 import { isIncomeRun, runTotals, simpleRoute } from '../../core/run';
+import { withLosses } from '../../core/stats';
 import type { RouteStat, Session } from '../../core/stats';
 import { pairKey } from '../../core/types';
 import type { Reference, Run, RunEvent, RunWithEvents } from '../../core/types';
@@ -38,6 +39,10 @@ export interface RouteRow {
   /** The goods of a route of mixed cargo, for the tooltip of the cell: 'Смешанный груз: GOLD, TITA'; `null` for a simple route. */
   commodityHint: string | null;
   runs: number; time: string;
+  /** The finished runs as the cell writes them: '5', or with «Подробные расчёты» and lost runs '5/6' (finished of attempted). */
+  runsText: string;
+  /** What the three numbers of the row are, for their tooltips: with lost runs counted in, they say so. */
+  runsTitle: string; profitTitle: string; rateTitle: string;
   /** Loading · flight · unloading, or `null` when no run of the route has both marks. */
   phases: string | null;
   profit: string; roi: string; rate: string;
@@ -45,20 +50,41 @@ export interface RouteRow {
   stat: RouteStat;
 }
 
+const RUNS_TITLE = 'Число завершённых рейсов';
+const PROFIT_TITLE = 'Суммарная прибыль';
+const RATE_TITLE = 'UEC в час';
+
+/** The tooltips of a route that has lost runs counted into its numbers. */
+function lossTitles(s: RouteStat): Pick<RouteRow, 'runsTitle' | 'profitTitle' | 'rateTitle'> {
+  const attempts = s.runs + s.lostRuns;
+  const lost = formatUec(s.lostProfit);
+  return {
+    runsTitle: `Удачных рейсов ${s.runs} из ${attempts} (${Math.round((s.runs / attempts) * 100)} %): потерянных ${s.lostRuns}`,
+    profitTitle: `Прибыль с потерями: потерянный груз ${lost}`,
+    rateTitle: `UEC в час с потерями: потерянный груз ${lost}, время потерянных рейсов входит`,
+  };
+}
+
 /** The goods of a route of mixed cargo by their codes, in the order of the codes (a set has no order of its own). */
 function mixedGoods(ref: Reference, commodityIds: number[]): string {
   return `Смешанный груз: ${commodityIds.map(id => commodityName(ref, id)).sort().join(', ')}`;
 }
 
-/** One row per route statistic, in the given order (`routeStats` sorts them, best rate first). A route of mixed cargo (task 51) says "смеш." for its goods. */
-export function routeRows(stats: RouteStat[], ref: Reference): RouteRow[] {
-  return stats.map(s => ({
+/**
+ * One row per route statistic, in the given order (`routeStats` sorts them, best rate first). A route of mixed cargo (task 51) says "смеш." for its goods.
+ * `detailed` («Подробные расчёты», spec 14.19) counts the lost runs of a route into its row: the profit and the rate are the ones with the losses
+ * (`withLosses`: the table then sorts by them too) and the runs read 'finished/attempted'. Without it, and for a route that lost nothing, the row is as ever.
+ */
+export function routeRows(stats: RouteStat[], ref: Reference, detailed = false): RouteRow[] {
+  return stats.map(base => (detailed && base.lostRuns > 0 ? { s: withLosses(base), lossy: true } : { s: base, lossy: false })).map(({ s, lossy }) => ({
     stat: s,
     key: `${pairKey(s.originId, s.destId)}:${s.commodityIds.join(',')}`,
     route: routeName(ref, s.originId, s.destId),
     commodity: s.commodityIds.length === 1 ? commodityName(ref, s.commodityIds[0]) : SEVERAL_COMMODITIES,
     commodityHint: s.commodityIds.length === 1 ? null : mixedGoods(ref, s.commodityIds),
     runs: s.runs,
+    runsText: lossy ? `${s.runs}/${s.runs + s.lostRuns}` : String(s.runs),
+    ...(lossy ? lossTitles(s) : { runsTitle: RUNS_TITLE, profitTitle: PROFIT_TITLE, rateTitle: RATE_TITLE }),
     time: formatDuration(s.medianDurationSec),
     phases: s.medianPhases && [s.medianPhases.loadingSec, s.medianPhases.flightSec, s.medianPhases.unloadingSec].map(formatDuration).join(' · '),
     profit: formatUec(s.totalProfit),

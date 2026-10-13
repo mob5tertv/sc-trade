@@ -41,6 +41,16 @@ class StatsState {
     return this.#figures.ownMedian;
   }
 
+  /** Direction (`pairKey`) → my median of flight plus unloading there: the time «лететь дальше» takes with the cargo aboard. */
+  get ownLeg(): Map<string, number> {
+    return this.#figures.ownLeg;
+  }
+
+  /** What I usually earn per hour of a run; `null` while no flight is finished. */
+  get pace(): StatsFigures['pace'] {
+    return this.#figures.pace;
+  }
+
   /** Direction (`pairKey`) → how many finished runs I have there (the details of an option say it). */
   get runCounts(): Map<string, number> {
     return this.#figures.runCounts;
@@ -48,10 +58,10 @@ class StatsState {
 
   // ---- what the section shows ---------------------------------------------------------------------
 
-  /** My routes, the best rate first. */
+  /** My routes, the best rate first; with «Подробные расчёты» each one is counted with its lost runs. */
   routes = $derived.by((): RouteRow[] => {
     try {
-      return routeRows(this.#figures.stats, app.reference);
+      return routeRows(this.#figures.stats, app.reference, app.settings.detailedCalc);
     } catch (err) {
       app.log.error('ui', 'cannot build the route rows', { err });
       return [];

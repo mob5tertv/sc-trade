@@ -99,6 +99,24 @@ export function routeOf(events: RunEvent[]): RunRoute | null {
 }
 
 /**
+ * Where a run was meant to go: its route when it has one (`routeOf`); else, for a run that sold nothing, the terminal of its
+ * purchases and the target recorded for it (`Run.targetId`, written when the cargo is written off). `null` when neither tells:
+ * purchases at several terminals, no target, or a target that is the purchase terminal itself.
+ */
+export function intendedRoute(run: Run, events: RunEvent[]): RunRoute | null {
+  const route = routeOf(events);
+  if (route !== null) return route;
+  const trades = tradesOf(events);
+  const destId = run.targetId ?? null;
+  if (destId === null || trades.length === 0 || trades.some(t => t.type === 'sell')) return null;
+  const originIds = new Set(trades.map(t => t.terminalId));
+  if (originIds.size !== 1) return null;
+  const [originId] = originIds;
+  if (originId === null || originId === destId) return null;
+  return { originId, destId, commodityIds: [...new Set(trades.map(t => t.commodityId))].sort((a, b) => a - b) };
+}
+
+/**
  * The route of a simple run: one commodity bought at one terminal and sold at another one. `routeOf` of a run of one commodity;
  * `null` for a run of several commodities and for everything that has no route.
  */
