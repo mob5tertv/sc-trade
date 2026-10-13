@@ -1,4 +1,5 @@
 import type { Settings } from '../../core/settings';
+import { WORSE_PRICE_RANGE } from './worse-price';
 import { UI_SCALES } from './ui-scale';
 
 // Checks a setting before it is saved. The answer is a short Russian sentence for the field, or null
@@ -75,6 +76,10 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
       return isNumber(v) && Number.isInteger(v) && v >= ROI_HIGHLIGHT_RANGE.min && v <= ROI_HIGHLIGHT_RANGE.max
         ? null
         : `Целое число от ${ROI_HIGHLIGHT_RANGE.min} до ${ROI_HIGHLIGHT_RANGE.max}`;
+    case 'worsePricePct':
+      return isNumber(v) && Number.isInteger(v) && v >= WORSE_PRICE_RANGE.min && v <= WORSE_PRICE_RANGE.max
+        ? null
+        : `Целое число от ${WORSE_PRICE_RANGE.min} до ${WORSE_PRICE_RANGE.max}`;
     case 'quantumSpeedKkms':
       return isNumber(v) && v > 0 ? null : 'Число больше нуля';
     case 'overheadMin':
@@ -123,6 +128,8 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
     case 'nearby':
     case 'detailedCalc':
     case 'optionsToTarget':
+    case 'guideMySystem':
+    case 'guideOnlyStock':
     case 'stripRangeTurns':
     case 'showStrip':
     case 'windowLocked':

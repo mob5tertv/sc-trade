@@ -39,6 +39,8 @@
     /** A cell was left with a number that cannot be saved (nothing was written): which of its two fields was marked. */
     onReject?: (e: { commodityId: number; side: Side; price: boolean; scu: boolean }) => void;
     onLookup: (e: { commodityId: number; side: Side }) => void;
+    /** Set: the expanded row has a button «места» that opens the commodity reference on this commodity and this side. */
+    onGuide?: (e: { commodityId: number; side: Side }) => void;
     onTrade: (e: { commodityId: number; side: Side }) => void;
     /**
      * The commodity whose trade form is open, and the form: it is drawn right under the expanded row of that commodity,
@@ -70,7 +72,7 @@
     onSort?: (key: TerminalSortKey) => void;
   }
   let {
-    rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onReject, onLookup, onTrade, tradeFor = null, tradeForm,
+    rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onReject, onLookup, onGuide, onTrade, tradeFor = null, tradeForm,
     roi = NO_ROI, pulse = NO_PULSE, noCapacity = false, cargo = NO_CARGO, sort = DEFAULT_TERMINAL_SORT, onSort,
   }: Props = $props();
 
@@ -303,6 +305,15 @@
       <!-- `data-opens-entry`: the button opens the form of a trade, and the cursor goes into the field of the form with that name
            (ui/keyboard.ts), the one the player types into first (`tradeEntryField`): the quantity of a purchase, the price of a sale
            of the cargo, the quantity of a sale of goods that are not in the hold. The row itself and the lookups are plain buttons. -->
+      {#if onGuide}
+        <button
+          type="button"
+          class="sc-btn sc-btn--act"
+          aria-label="Справочная: {row.code}"
+          title="Справочная: десять лучших мест {side === 'buy' ? 'купить' : 'продать'} этот товар"
+          onclick={() => onGuide?.({ commodityId: row.commodityId, side })}
+        >места</button>
+      {/if}
       {#if side === 'buy'}
         <button type="button" class="sc-btn sc-btn--act" aria-label="Где продать {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где продать</button>
         <button type="button" class="sc-btn sc-btn--act" aria-label="Купил {row.code}" data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>Купил</button>

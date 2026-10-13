@@ -6,6 +6,11 @@ export interface Settings {
   /** Minutes a stock needs to refill from empty to its maximum while no rate is learned for it yet. */
   refillFullMin: number;
   quantumSpeedKkms: number; overheadMin: number; overheadEmptyMin: number; topN: number;
+  /**
+   * «Цена на месте хуже — куда лететь» (spec 14.19, item 8): by how many whole percents a sale price typed in must be below the
+   * expected one for the window to say so and name a better place. 0 switches the notice off.
+   */
+  worsePricePct: number;
   /** «Выгоднее» (spec 14.19, item 7): the longest EMPTY flight to a purchase at another terminal, in minutes; a purchase farther away is not offered. */
   nearbyMaxMin: number;
   /**
@@ -26,6 +31,8 @@ export interface Settings {
    * terminal than the one the options are of.
    */
   optionsToTarget: boolean;
+  /** The commodity reference (spec 14.19, item 9): only the terminals of the star system of the settings; and, where to buy, only the places with a known stock that is not empty. */
+  guideMySystem: boolean; guideOnlyStock: boolean;
   /**
    * «Обнулить маршруты» (spec 14.19): the moment (unix seconds) from which the player's routes are counted, `null` for "from the first run".
    * The runs that ended before it stay in the history and in the sessions; the rating of the routes, the player's own times of the pairs and
@@ -80,8 +87,8 @@ export const DEFAULT_SETTINGS: Settings = {
   vehicleId: null, scuCapacity: 0, starSystemId: null, budget: null,
   hotMin: 60, warmMin: 180, coolingMin: 240,
   refillFullMin: DEFAULT_REFILL_FULL_MIN,
-  quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, nearbyMaxMin: 10, topN: 5, roiHighlightPct: 50,
-  sort: 'uecPerHour', nearby: false, detailedCalc: false, optionsToTarget: false, routesSince: null,
+  quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, nearbyMaxMin: 10, worsePricePct: 15, topN: 5, roiHighlightPct: 50,
+  sort: 'uecPerHour', nearby: false, detailedCalc: false, optionsToTarget: false, guideMySystem: true, guideOnlyStock: false, routesSince: null,
   hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '',
   panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
   uiScale: 0,

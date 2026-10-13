@@ -1,6 +1,7 @@
 <script lang="ts">
   import { boot } from './boot';
   import Icon from './components/Icon.svelte';
+  import GuideView from './GuideView.svelte';
   import Header from './Header.svelte';
   import MessageLines from './MessageLines.svelte';
   import OptionsSection from './sections/OptionsSection.svelte';
@@ -41,6 +42,8 @@
   {/if}
 {:else if app.view === 'settings'}
   <SettingsView />
+{:else if app.view === 'guide'}
+  <GuideView />
 {:else}
   <Header />
   <MessageLines />

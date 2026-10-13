@@ -85,6 +85,15 @@
     Маршрут
   </button>
   <div class="icons">
+    <button
+      class="sc-btn sc-btn--ghost sc-btn--icon"
+      type="button"
+      aria-label="Справочная по товарам"
+      title="Справочная: десять лучших мест купить или продать товар"
+      onclick={() => app.openGuide()}
+    >
+      <Icon name="book" />
+    </button>
     <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Сменил сервер" title="Сменил сервер: свои цены до этого момента считаются холодными" onclick={askServerChanged}>
       <Icon name="swap" />
     </button>

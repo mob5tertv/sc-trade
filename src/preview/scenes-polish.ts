@@ -384,4 +384,27 @@ export const POLISH_SCENES: readonly Scene[] = [
       await pause(300);
     },
   },
+  {
+    // The commodity reference (spec 14.19, item 9): the ten best places to sell the Stims, opened from the header button and a pick in its search
+    name: 'guide-sell',
+    title: 'Справочная: десять лучших мест продать товар',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      const stims = [...app.reference.commodities.values()].find((c) => c.code === 'STIM');
+      app.openGuide(stims?.id ?? null, 'sell');
+      await pause(200);
+    },
+  },
+  {
+    name: 'guide-buy',
+    title: 'Справочная: где дешевле купить, с фильтром «есть запас»',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      const meds = [...app.reference.commodities.values()].find((c) => c.code === 'MEDS');
+      app.openGuide(meds?.id ?? null, 'buy');
+      await pause(200);
+    },
+  },
 ];

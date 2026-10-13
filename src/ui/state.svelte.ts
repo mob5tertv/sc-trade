@@ -5,7 +5,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { anchorFromRect, WINDOW_MARGIN, type Corner, type Rect, type Size } from '../core/layout';
 import type { RouteCtx, RouteOption } from '../core/routes';
+import { estimate } from '../core/estimate';
 import { cargoOf } from '../core/run';
+import { sellOrContinue } from '../core/sell';
 import { DEFAULT_SETTINGS, type Settings } from '../core/settings';
 import type { Market, Reference, RunWithEvents, Side } from '../core/types';
 import type { Db } from '../data/db';
@@ -47,6 +49,7 @@ import { stats } from './stats.svelte';
 import { arrivalView, landingView, type ArrivalView } from './vm/arrival-view';
 import { clearedText, clearQuestion, countFor, oldRunsBefore, type ClearScope } from './vm/history-clearing';
 import { shouldCollapse } from './vm/idle';
+import type { GuideState } from './vm/guide';
 import { createKeyboardHolds, type KeyboardHolds } from './vm/keyboard-holds';
 import { createLatestRequest } from './vm/latest-request';
 import { affectsLookup, lookupTitle, sameRequest, type LookupRequest } from './vm/lookup';
@@ -59,6 +62,7 @@ import { markRefusal } from './vm/run-phase';
 import { sameRun } from './vm/same-run';
 import { parseOpenSections, serializeOpenSections, toggledSection } from './vm/sections';
 import { validateSetting } from './vm/settings-validation';
+import { WORSE_PRICE_ACTION, worsePrice, worsePriceText } from './vm/worse-price';
 import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, refreshPlan, reloadsMidSync, syncPlan } from './vm/sync-plan';
 import { stripModel, type StripModel } from './vm/strip';
 import { rowRoiMap, type RowRoi } from './vm/row-roi';
@@ -122,7 +126,7 @@ import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 //    ever awaits the mode queue. A drag (`dragBegin` .. `dragEnd`) is the one thing that stops `#refit`.
 
 /** What the expanded window shows: the main screen or the settings, which take the whole window. */
-export type View = 'main' | 'settings';
+export type View = 'main' | 'settings' | 'guide';
 export type Phase = 'booting' | 'ready' | 'failed';
 /** A button of the notice line next to its cross: what it says and what a click does. */
 export interface NoticeAction { label: string; run: () => void }
@@ -283,6 +287,10 @@ class AppState {
   uiScalePct = $derived(effectiveScalePct(this.settings.uiScale, this.scaleMonitor));
   /** The main screen or the settings (the settings keep the window open: they count as busy). */
   view = $state<View>('main');
+  /** What the commodity reference is opened on (spec 14.19, item 9): kept while the application runs, so that it opens where it was left. */
+  guide = $state.raw<GuideState>({ commodityId: null, side: 'sell' });
+  /** The target that stood before the last «цель» of the reference, to take that click back (spec 14.19, item 8); `null` when there is nothing to take back. */
+  targetUndo = $state.raw<{ targetId: number | null; thenId: number | null } | null>(null);
   /**
    * The side of the viewed terminal that the table draws: what can be bought here or what can be sold here. It starts
    * as "buy"; the player switches it, and a terminal that has no rows on it brings the other side (`#settleSide`).
@@ -868,6 +876,54 @@ class AppState {
     this.#touch();
   }
 
+  /**
+   * Opens the commodity reference (spec 14.19, item 9), on `commodityId` and `side` when they are given, else where it was left.
+   * A question that is still up is answered "no", as when the settings are opened.
+   */
+  openGuide(commodityId: number | null = this.guide.commodityId, side: Side = this.guide.side): void {
+    this.#log.info('ui', 'open reference', { commodityId, side });
+    if (this.confirm !== null) this.answer(false, 'reference');
+    this.guide = { commodityId, side };
+    this.view = 'guide';
+    this.#touch();
+  }
+
+  closeGuide(): void {
+    if (this.view !== 'guide') return;
+    this.#log.info('ui', 'close reference');
+    this.targetUndo = null;
+    this.view = 'main';
+    this.#touch();
+  }
+
+  /** A place of the reference was clicked: its table is shown in the main window. */
+  showFromGuide(terminalId: number): void {
+    this.#log.info('ui', 'reference: show terminal', { terminalId });
+    this.setViewTerminal(terminalId);
+    this.closeGuide();
+  }
+
+  /**
+   * «цель» of a place of the reference (spec 14.19, item 8): one deliberate click makes it the target of the run. The run, its
+   * phases and its timer go on untouched; only where the cargo is expected to be sold changes. The target that stood before is
+   * remembered, so that the click can be taken back (`undoRetarget`) while the reference is open.
+   */
+  async retarget(terminalId: number): Promise<void> {
+    const before = { targetId: this.settings.targetTerminalId, thenId: this.settings.targetThenId };
+    this.#log.info('ui', 'reference: target', { terminalId, before });
+    await this.setTarget(terminalId);
+    this.targetUndo = before;
+  }
+
+  /** Takes the last «цель» of the reference back: the target is what it was before that click. */
+  async undoRetarget(): Promise<void> {
+    const before = this.targetUndo;
+    if (before === null) return;
+    this.#log.info('ui', 'reference: target taken back', { ...before });
+    this.targetUndo = null;
+    await this.setTarget(before.targetId, before.thenId);
+  }
+
   closeSettings(): void {
     if (this.view === 'main') return;
     this.#log.info('ui', 'close settings');
@@ -1375,6 +1431,10 @@ class AppState {
    */
   async recordPrice(input: PriceInput): Promise<string | null> {
     this.#log.info('ui', 'record price', input);
+    // what this place was expected to pay, before the price the player has just seen is written over it (spec 14.19, item 8)
+    const expected = input.side === 'sell'
+      ? estimate(this.market, input.terminalId, input.commodityId, 'sell', this.routeCtx())?.price ?? null
+      : null;
     let failure: string | null = null;
     try {
       const { db, log, now } = this.#syncDeps();
@@ -1391,7 +1451,39 @@ class AppState {
     // (one read of the statistics per price; it never throws and the entry does not wait for it)
     void stats.reload('price recorded');
     this.#showTerminal(input.terminalId);
+    this.#warnWorsePrice(input, expected);
     return null;
+  }
+
+  /** How long the notice of a price that is worse than expected stays: the player has to read a place and two numbers, and decide. */
+  static readonly #WORSE_PRICE_STAY = { flashMs: 8000, noticeMs: 30_000 };
+
+  /**
+   * «Цена на месте хуже — куда лететь» (spec 14.19, item 8). The player typed in what a terminal pays for a commodity that is in
+   * his hold, and it is below what was expected there by the threshold of the settings: when some other place would pay more for
+   * this cargo, the window names the best one (what it adds, how long the way is) and offers the reference for the rest. It says
+   * nothing in any other case: he "often sells cheaper and never minds". Never throws: it is a hint, not a part of the entry.
+   */
+  #warnWorsePrice(input: PriceInput, expected: number | null): void {
+    try {
+      if (input.side !== 'sell' || this.activeRun === null) return;
+      const line = cargoOf(this.activeRun.events).find((l) => l.commodityId === input.commodityId);
+      if (line === undefined) return;
+      const elapsedSec = Math.max(0, this.now - this.activeRun.run.startedAt);
+      const { alternatives } = sellOrContinue(this.market, line, input.terminalId, input.price, elapsedSec, this.routeCtx());
+      const worse = worsePrice(expected, input.price, this.settings.worsePricePct, alternatives);
+      if (worse === null) return;
+      const text = worsePriceText(worse, this.reference);
+      this.#log.info('ui', 'the price here is worse than expected', {
+        terminalId: input.terminalId, commodityId: input.commodityId, expected, price: input.price, pct: worse.pct,
+        better: { terminalId: worse.best.destId, extraProfit: worse.best.extraProfit, extraSec: worse.best.extraSec },
+      });
+      this.#say(text, 'info', AppState.#WORSE_PRICE_STAY);
+      // the notice line has the button whether or not the window is expanded now: it is there when the player opens it
+      this.notify(text, 'info', AppState.#WORSE_PRICE_STAY.noticeMs, { label: WORSE_PRICE_ACTION, run: () => this.openGuide(input.commodityId, 'sell') });
+    } catch (err) {
+      this.#log.warn('ui', 'cannot judge the price typed in against the expected one', { err });
+    }
   }
 
   /**

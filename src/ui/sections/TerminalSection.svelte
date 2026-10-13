@@ -340,6 +340,7 @@
         terminalId: viewedId, commodityId, side: cellSide, fields: rejectedFields(flags),
       })}
       onLookup={lookupRow}
+      onGuide={(e) => app.openGuide(e.commodityId, e.side)}
       onTrade={openTrade}
       {tradeFor}
       {tradeForm}

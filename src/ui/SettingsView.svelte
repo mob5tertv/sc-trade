@@ -19,7 +19,7 @@
 
   type NumberKey =
     | 'scuCapacity' | 'budget' | 'hotMin' | 'warmMin' | 'coolingMin' | 'quantumSpeedKkms'
-    | 'overheadMin' | 'overheadEmptyMin' | 'nearbyMaxMin' | 'topN' | 'refillFullMin' | 'roiHighlightPct' | 'panelWidth' | 'idleCollapseSec';
+    | 'overheadMin' | 'overheadEmptyMin' | 'nearbyMaxMin' | 'worsePricePct' | 'topN' | 'refillFullMin' | 'roiHighlightPct' | 'panelWidth' | 'idleCollapseSec';
   type TriggerKey = 'hotkeyPanel' | 'hotkeyDepart' | 'hotkeyArrive';
 
   // What the field says in its tooltip: how it is filled, what the key does, and that the press still reaches the game (the hook that
@@ -244,6 +244,9 @@
   {@render numberField('overheadMin', 'Накладные на рейс, мин', { title: SETTING_HINTS.overheadMin })}
   {@render numberField('overheadEmptyMin', 'Накладные на пустой перелёт, мин', { title: SETTING_HINTS.overheadEmptyMin })}
   {@render numberField('nearbyMaxMin', 'Закупка рядом: пустой перелёт до, мин', { title: SETTING_HINTS.nearbyMaxMin })}
+  {@render numberField('worsePricePct', 'Сказать, если цена хуже на, %', {
+    title: 'Ты прилетел, ввёл цену продажи, а она ниже ожидаемой на столько процентов или больше: окно скажет об этом и назовёт место, где твой груз купят дороже. 0 — не говорить.',
+  })}
   {@render numberField('topN', 'Число вариантов', { title: SETTING_HINTS.topN })}
   {@render numberField('refillFullMin', 'Полное пополнение склада, мин', { title: SETTING_HINTS.refillFullMin })}
   {@render numberField('roiHighlightPct', 'Выделять ROI от, %', {
