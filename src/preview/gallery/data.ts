@@ -85,7 +85,7 @@ export interface GalleryData {
     ladder: RouteOption[];
   };
   runCounts: Map<string, number>;
-  titles: { from: string; nearby: string; to: string; long: string };
+  titles: { from: string; to: string; long: string };
   strip: {
     idle: StripModel; run: StripModel; long: StripModel;
     /** The run of the dataset without a target: no price there, no rate, and no expectation in the tooltip of the cargo. */
@@ -421,10 +421,9 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
     routes: { from, nearby, to, ladder },
     runCounts: ownRunCounts(runs),
     titles: {
-      from: lookupTitle(request, reference, false),
-      nearby: lookupTitle(request, reference, true),
-      to: lookupTitle({ ...request, kind: 'to' }, reference, false),
-      long: lookupTitle({ ...request, commodityId: meds, price: 2115 }, reference, true),
+      from: lookupTitle(request, reference),
+      to: lookupTitle({ ...request, kind: 'to' }, reference),
+      long: lookupTitle({ ...request, commodityId: meds, price: 2115 }, reference),
     },
     strip: {
       idle, run, long: longRun, noTarget,

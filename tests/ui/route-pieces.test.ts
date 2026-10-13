@@ -54,8 +54,8 @@ describe('titlePieces: a title of the "Варианты" with the terminal it is
   });
 
   it('keeps the mark of a preliminary answer in the front, and the count of the distances with the terminal', () => {
-    expect(titlePieces('≈ Куда везти с HUR-L1 и рядом · расстояния 7/15', 'HUR-L1')).toEqual([
-      { text: '≈ Куда везти с' }, { text: 'HUR-L1 и рядом · расстояния 7/15' },
+    expect(titlePieces('≈ Куда везти с HUR-L1 · расстояния 7/15', 'HUR-L1')).toEqual([
+      { text: '≈ Куда везти с' }, { text: 'HUR-L1 · расстояния 7/15' },
     ]);
   });
 
@@ -71,7 +71,7 @@ describe('titlePieces: a title of the "Варианты" with the terminal it is
   });
 
   it('gives back the very same title when the pieces are put together again with a space between them', () => {
-    const title = 'Куда везти Gold с TDD Area 18 и рядом · покупка 5 088';
+    const title = 'Куда везти Gold с TDD Area 18 · покупка 5 088';
     expect(titlePieces(title, 'TDD Area 18').map((piece) => piece.text).join(' ')).toBe(title);
   });
 });

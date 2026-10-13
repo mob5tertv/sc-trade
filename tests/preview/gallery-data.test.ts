@@ -235,7 +235,6 @@ describe('the gallery route lists', () => {
 
   it('has titles for the section header, one of them long', () => {
     expect(data.titles.from).toBe('Куда везти с HUR-L1');
-    expect(data.titles.nearby).toBe('Куда везти с HUR-L1 и рядом');
     expect(data.titles.to).toBe('Где купить для HUR-L1');
     expect(data.titles.long.length).toBeGreaterThan(50);
   });

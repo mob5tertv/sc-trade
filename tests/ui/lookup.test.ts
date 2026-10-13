@@ -36,46 +36,31 @@ describe('sameRequest', () => {
 
 describe('lookupTitle', () => {
   it('names the commodity, the terminal and the sell price that started a "where to buy"', () => {
-    const title = lookupTitle(request({ kind: 'to', terminalId: 2, commodityId: 10, price: 5088 }), ref, false);
+    const title = lookupTitle(request({ kind: 'to', terminalId: 2, commodityId: 10, price: 5088 }), ref);
     expect(title).toBe(`Где купить Gold для TDD Area 18 · продажа ${formatUec(5088)}`);
     expect(title).toBe('Где купить Gold для TDD Area 18 · продажа 5 088');
   });
 
   it('names the commodity and the terminal of a "where to sell", with the buy price when there is one', () => {
-    expect(lookupTitle(request({ kind: 'from', terminalId: 1, commodityId: 10 }), ref, false)).toBe('Куда везти Gold с ARC-L1');
-    expect(lookupTitle(request({ kind: 'from', terminalId: 1, commodityId: 10, price: 6120 }), ref, false))
+    expect(lookupTitle(request({ kind: 'from', terminalId: 1, commodityId: 10 }), ref)).toBe('Куда везти Gold с ARC-L1');
+    expect(lookupTitle(request({ kind: 'from', terminalId: 1, commodityId: 10, price: 6120 }), ref))
       .toBe('Куда везти Gold с ARC-L1 · покупка 6 120');
   });
 
   it('is about the whole terminal when no commodity is chosen', () => {
-    expect(lookupTitle(request({ kind: 'from', terminalId: 1 }), ref, false)).toBe('Куда везти с ARC-L1');
-    expect(lookupTitle(request({ kind: 'to', terminalId: 3 }), ref, false)).toBe('Где купить для CRU-L1');
+    expect(lookupTitle(request({ kind: 'from', terminalId: 1 }), ref)).toBe('Куда везти с ARC-L1');
+    expect(lookupTitle(request({ kind: 'to', terminalId: 3 }), ref)).toBe('Где купить для CRU-L1');
   });
 
   it('survives a terminal and a commodity that left the reference', () => {
-    expect(lookupTitle(request({ kind: 'to', terminalId: 777, commodityId: 999, price: 10 }), ref, false))
+    expect(lookupTitle(request({ kind: 'to', terminalId: 777, commodityId: 999, price: 10 }), ref))
       .toBe('Где купить #999 для #777 · продажа 10');
   });
 
-  describe('with "искать и рядом"', () => {
-    const noPlanet: Reference = { ...ref, terminals: new Map([...ref.terminals, [7, term(7, { nickname: 'Deep Space', planetId: 0 })]]) };
-
-    it('says the trips may also start at the other terminals of the planet, so the player is not told to load at the wrong place', () => {
-      expect(lookupTitle(request({ kind: 'from', terminalId: 1, commodityId: 10 }), ref, true)).toBe('Куда везти Gold с ARC-L1 и рядом');
-      expect(lookupTitle(request({ kind: 'from', terminalId: 1 }), ref, true)).toBe('Куда везти с ARC-L1 и рядом');
-      expect(lookupTitle(request({ kind: 'from', terminalId: 1, commodityId: 10, price: 6120 }), ref, true))
-        .toBe('Куда везти Gold с ARC-L1 и рядом · покупка 6 120');
-    });
-
-    it('says nothing for "where to buy": every terminal is searched there anyway', () => {
-      expect(lookupTitle(request({ kind: 'to', terminalId: 2, commodityId: 10, price: 5088 }), ref, true))
-        .toBe('Где купить Gold для TDD Area 18 · продажа 5 088');
-    });
-
-    it('says nothing where the setting does nothing: a terminal with no planet, or one that left the reference', () => {
-      expect(lookupTitle(request({ kind: 'from', terminalId: 7 }), noPlanet, true)).toBe('Куда везти с Deep Space');
-      expect(lookupTitle(request({ kind: 'from', terminalId: 777 }), ref, true)).toBe('Куда везти с #777');
-    });
+  it('names only the terminal that was asked about: the trips bought nearby are set apart in the list, not in the title', () => {
+    // the title ended with 'и рядом' while «выгоднее» was on; the list has its own line for those trips (the author, 14.10.2026)
+    expect(lookupTitle(request({ kind: 'from', terminalId: 1, commodityId: 10 }), ref)).not.toContain('рядом');
+    expect(lookupTitle(request({ kind: 'from', terminalId: 1 }), ref)).toBe('Куда везти с ARC-L1');
   });
 });
 

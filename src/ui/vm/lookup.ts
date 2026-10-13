@@ -34,25 +34,17 @@ export function kindForSide(side: Side): LookupKind {
 const commodityLabel = (ref: Reference, id: number): string => ref.commodities.get(id)?.name || `#${id}`;
 
 /**
- * With `settings.nearby` on, trips from a terminal may start at any other terminal of its planet (never planet 0,
- * and never for a terminal that left the reference): the list is then not about this terminal alone. `to` ignores it.
+ * 'Где купить Medical Supplies для HUR-L1 · продажа 5 088', 'Куда везти Gold с ARC-L1'. The title names the terminal that was
+ * asked about and nothing else. With «выгоднее» on, some trips are bought at another terminal nearby; the title used to end with
+ * 'и рядом' for that, and the author took it out (14.10.2026): the list itself sets those trips apart, under its line
+ * «Выгоднее: закупка рядом», and each of them names both of its ends.
  */
-function searchesNearby(request: LookupRequest, ref: Reference, nearby: boolean): boolean {
-  if (!nearby || request.kind !== 'from') return false;
-  return (ref.terminals.get(request.terminalId)?.planetId ?? 0) !== 0;
-}
-
-/**
- * 'Где купить Medical Supplies для HUR-L1 · продажа 5 088', 'Куда везти Gold с ARC-L1'. `nearby` is the setting:
- * when it applies, trips from a terminal read 'Куда везти Gold с ARC-L1 и рядом', so the player does not take the
- * list for trips that all start at that one terminal.
- */
-export function lookupTitle(request: LookupRequest, ref: Reference, nearby: boolean): string {
+export function lookupTitle(request: LookupRequest, ref: Reference): string {
   const terminal = terminalLabel(ref, request.terminalId);
   const commodity = request.commodityId === null ? null : commodityLabel(ref, request.commodityId);
   const what = request.kind === 'to'
     ? `Где купить${commodity === null ? '' : ` ${commodity}`} для ${terminal}`
-    : `Куда везти${commodity === null ? '' : ` ${commodity}`} с ${terminal}${searchesNearby(request, ref, nearby) ? ' и рядом' : ''}`;
+    : `Куда везти${commodity === null ? '' : ` ${commodity}`} с ${terminal}`;
   if (request.price === null) return what;
   return `${what} · ${request.kind === 'to' ? 'продажа' : 'покупка'} ${formatUec(request.price)}`;
 }

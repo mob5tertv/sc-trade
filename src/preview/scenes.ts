@@ -130,7 +130,7 @@ export const SCENES: readonly Scene[] = [
   {
     // trips from HUR-L1 and from the other terminals of Hurston: a row that starts elsewhere names both ends
     name: 'expanded-options-nearby',
-    title: 'Поиск «Отсюда» с «и рядом»: у вариантов с другого терминала Хёрстона названы оба конца',
+    title: 'Поиск «Отсюда» с «выгоднее»: у вариантов с другого терминала Хёрстона названы оба конца',
     dataset: 'window',
     act: async (app) => {
       await app.expand('preview');

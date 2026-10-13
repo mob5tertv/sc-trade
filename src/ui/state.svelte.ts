@@ -1585,7 +1585,7 @@ class AppState {
    */
   async runLookup(request: LookupRequest, reason = 'player'): Promise<void> {
     const isNewest = this.#latestLookup.begin();
-    const title = lookupTitle(request, this.reference, this.settings.nearby);
+    const title = lookupTitle(request, this.reference);
     this.#log.info('ui', 'lookup', { ...request, reason });
     if (reason !== LOOKUP_REPEAT) void this.openSection(OPTIONS_SECTION);
 
