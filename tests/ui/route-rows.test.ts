@@ -151,7 +151,7 @@ describe('routeOptionRow', () => {
       invested: nb('587 520'), profit: nb('74 880'), profitLoss: false, trend: null, priceIsOwn: false,
       buy: { price: nb('6 120'), range: NO_PRICE, badge: { text: 'моя · 40 мин', kind: 'hot' } },
       sell: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
-      stockNote: UNKNOWN_STOCK_NOTE,
+      stockNote: UNKNOWN_STOCK_NOTE, stockLimit: null,
     });
   });
 
@@ -161,12 +161,20 @@ describe('routeOptionRow', () => {
     it('says so when the stock at the purchase terminal is unknown: nothing but the hold and the budget limited the volume', () => {
       expect(routeOptionRow(option({ buy: known(null) }), ref, 'from', new Map()).stockNote).toBe(UNKNOWN_STOCK_NOTE);
       expect(routeOptionRow(option({ buy: known(null) }), ref, 'to', new Map()).stockNote).toBe(UNKNOWN_STOCK_NOTE);
-      expect(UNKNOWN_STOCK_NOTE).toBe('Запас в точке закупки неизвестен: объём принят по трюму и бюджету');
+      expect(UNKNOWN_STOCK_NOTE).toBe('Запас в точке закупки неизвестен: количество посчитано по трюму и бюджету');
     });
 
     it('says nothing when the stock is known, a known zero included (zero is a known empty stock)', () => {
       expect(routeOptionRow(option({ buy: known(340) }), ref, 'from', new Map()).stockNote).toBeNull();
       expect(routeOptionRow(option({ buy: known(0) }), ref, 'from', new Map()).stockNote).toBeNull();
+    });
+
+    it('says that the station has no more when the stock is what limits the trip, and nothing when the hold does', () => {
+      // 96 SCU are taken (the option of the fixture): a stock of 96 is all of it, a stock of 340 leaves the hold as the limit
+      expect(routeOptionRow(option({ buy: known(96) }), ref, 'from', new Map()).stockLimit).toBe('На станции всего 96 SCU: больше взять нечего');
+      expect(routeOptionRow(option({ buy: known(96.7) }), ref, 'from', new Map()).stockLimit).toBe('На станции всего 96 SCU: больше взять нечего');
+      expect(routeOptionRow(option({ buy: known(340) }), ref, 'from', new Map()).stockLimit).toBeNull();
+      expect(routeOptionRow(option({ buy: known(null) }), ref, 'from', new Map()).stockLimit).toBeNull();
     });
 
     it('does not look at the buyer: what the buyer holds limits nothing (spec 14.5), known or not', () => {

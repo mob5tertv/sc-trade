@@ -29,7 +29,14 @@ const hasRange = (e: Estimate): boolean => e.low < e.high;
  * limit is absent and the volume is the hold or what the budget buys. The buyer is not asked: what it holds limits nothing
  * (spec 14.5), so its unknown stock is no reason for the mark.
  */
-export const UNKNOWN_STOCK_NOTE = 'Запас в точке закупки неизвестен: объём принят по трюму и бюджету';
+export const UNKNOWN_STOCK_NOTE = 'Запас в точке закупки неизвестен: количество посчитано по трюму и бюджету';
+
+/**
+ * What an option says when the stock at the purchase terminal is what limits it: «Взять» is then not the hold of the ship but
+ * everything the station has. (The author read the old caption «Объём 180 SCU» as the volume of his ship, 14.10.2026: the hold
+ * was 512, and UEX knew of 180 SCU of copper at the station.)
+ */
+export const stockLimitNote = (scu: number): string => `На станции всего ${scu} SCU: больше взять нечего`;
 
 /** Which end of a suggested trip is named: the destination for trips that start here, the origin for trips that end here. */
 export type RouteMode = 'from' | 'to';
@@ -184,6 +191,8 @@ export interface RouteOptionRow {
   qty: string;
   /** Set when the volume was counted with no stock at the purchase terminal to limit it (`UNKNOWN_STOCK_NOTE`): the mark «?» and the line of the expanded row say it; `null` when the stock is known (zero is known). */
   stockNote: string | null;
+  /** Set when what is taken is everything the purchase terminal has (`stockLimitNote`): the line of the expanded row says why it is less than the hold; `null` otherwise. */
+  stockLimit: string | null;
   /** For the expanded row: the money put in, the profit expected, and the prices at both ends. */
   invested: string; profit: string; profitLoss: boolean;
   buy: PriceView; sell: PriceView;
@@ -248,6 +257,7 @@ export function routeOptionRow(
     worstLoss: o.worstProfit < 0,
     qty: `${o.qty} SCU`,
     stockNote: stockKnown(o) ? null : UNKNOWN_STOCK_NOTE,
+    stockLimit: o.buy.scu !== null && o.qty >= Math.floor(o.buy.scu) ? stockLimitNote(o.qty) : null,
     invested: formatUec(o.qty * o.buy.price), profit: formatUec(o.profit), profitLoss: o.profit < 0,
     buy: buyView, sell: sellView,
   };

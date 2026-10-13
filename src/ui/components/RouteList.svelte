@@ -120,12 +120,15 @@
         {#if expanded}
           <div class="detail sc-reveal">
             <div class="facts">
-              <div class="fact"><span class="sc-label">Объём</span><span class="sc-num">{row.qty}</span></div>
+              <div class="fact" title="Сколько взять: меньшее из свободного места в трюме, запаса на станции и бюджета">
+                <span class="sc-label">Взять</span><span class="sc-num">{row.qty}</span>
+              </div>
               <div class="fact"><span class="sc-label">Вложение</span><span class="sc-num">{row.invested}</span></div>
               <div class="fact"><span class="sc-label">Прибыль</span><span class="sc-num" class:loss={row.profitLoss}>{row.profit}</span></div>
               <div class="fact" title={LEGEND.worst}><span class="sc-label">Худший</span><span class="sc-num" class:loss={row.worstLoss}>{row.worst}</span></div>
             </div>
             {#if row.stockNote}<p class="stock-note"><span class="unsure" aria-hidden="true">?</span> {row.stockNote}</p>{/if}
+            {#if row.stockLimit}<p class="stock-note">{row.stockLimit}</p>{/if}
             {#if row.loadBar}<p class="stock-note bar-note">Твой корабль в точке закупки не загрузится: {row.loadBar}</p>{/if}
             {#if row.boxes}<p class="stock-note" title="По размерам ящиков, которые продаёт терминал закупки и которые берёт твой корабль">{row.boxes}</p>{/if}
             <div class="prices">
