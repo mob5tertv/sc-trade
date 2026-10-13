@@ -289,6 +289,10 @@ class AppState {
   uiScalePct = $derived(effectiveScalePct(this.settings.uiScale, this.scaleMonitor));
   /** The main screen or the settings (the settings keep the window open: they count as busy). */
   view = $state<View>('main');
+  /** «Маршрут»: the line under the header where the two ends of a route of the player's own are typed in is on screen. Kept while the application runs. */
+  routeBar = $state(false);
+  /** "Where from" of that line when the player picked it by hand; `null`: the place he stands at (else the terminal that is viewed). */
+  routeFromId = $state<number | null>(null);
   /** What the commodity reference is opened on (spec 14.19, item 9): kept while the application runs, so that it opens where it was left. */
   guide = $state.raw<GuideState>({ commodityId: null, side: 'sell' });
   /** The target that stood before the last «цель» of the reference, to take that click back (spec 14.19, item 8); `null` when there is nothing to take back. */
@@ -1677,6 +1681,35 @@ class AppState {
     this.#log.info('ui', 'target moves to its second step', { boughtAt: terminalId, targetId: targetThenId });
     await this.setTarget(targetThenId);
     if (this.reference.terminals.has(targetThenId)) this.notify(`Цель рейса: ${terminalLabel(this.reference, targetThenId)}.`, 'info');
+  }
+
+  /** The button «Маршрут» of the header: shows or hides the line of the two ends. A hidden line forgets a "where from" picked by hand. */
+  toggleRouteBar(): void {
+    this.routeBar = !this.routeBar;
+    this.#log.info('ui', 'route line', { open: this.routeBar });
+    if (!this.routeBar) this.routeFromId = null;
+    this.#touch();
+  }
+
+  /**
+   * A route of the player's own, by its two ends (the line «Маршрут»): `toId` becomes the target, the window shows `fromId`, and the
+   * options are the goods of that pair with the set that fills the hold (spec 14.19, item 16). Without a "where from" (nothing is
+   * known of where the player is) only the target is set, and he is told what is missing.
+   */
+  async planRoute(fromId: number | null, toId: number): Promise<void> {
+    this.#log.info('ui', 'plan route', { fromId, toId });
+    if (fromId === toId) {
+      this.#say('Откуда и куда — одна и та же станция.', 'info');
+      return;
+    }
+    await this.setTarget(toId);
+    await this.updateSetting('optionsToTarget', true);
+    if (fromId === null) {
+      this.#say('Цель задана. Выбери, откуда везти.', 'info');
+      return;
+    }
+    this.#showTerminal(fromId);
+    await this.runLookup({ kind: 'from', terminalId: fromId, commodityId: null, price: null }, 'plan route');
   }
 
   /**

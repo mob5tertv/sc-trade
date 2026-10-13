@@ -7,6 +7,7 @@
 </script>
 
 <script lang="ts">
+  import ConfirmButton from '../components/ConfirmButton.svelte';
   import HistoryList from '../components/HistoryList.svelte';
   import RoutesTable from '../components/RoutesTable.svelte';
   import Section from '../components/Section.svelte';
@@ -14,8 +15,7 @@
   import { app } from '../state.svelte';
   import { stats } from '../stats.svelte';
   import { clickedSort, sortRoutes, type RouteSortKey } from '../vm/route-sort';
-  import { REMOVE_RUN_QUESTION } from '../vm/run-trades';
-  import { LIST_MAX_HEIGHT, ROUTES_RESET_QUESTION, STATS_VIEWS, routesSinceLine } from '../vm/stats-view';
+  import { LIST_MAX_HEIGHT, STATS_VIEWS, routesSinceLine } from '../vm/stats-view';
 
   const SECTION = 'routes';
   // When the window has no height to spare, this section gives way before the terminal table does: the table is what
@@ -36,10 +36,6 @@
   }
 
   const since = $derived(app.settings.routesSince);
-
-  function askReset(): void {
-    app.ask(ROUTES_RESET_QUESTION, () => stats.resetRoutes());
-  }
 
   function sortBy(key: RouteSortKey): void {
     const next = clickedSort(routeSort, key);
@@ -92,12 +88,12 @@
       </p>
     {:else if routes.length > 0}
       <p class="reset">
-        <button
-          type="button"
-          class="sc-btn"
-          title="Начать рейтинг маршрутов заново. История рейсов и сессии останутся; обнуление можно вернуть"
-          onclick={askReset}
-        >Обнулить маршруты</button>
+        <ConfirmButton
+          label="Обнулить маршруты"
+          sureLabel="Точно обнулить?"
+          title="Начать рейтинг маршрутов, твои времена по парам и обычный темп заново. История рейсов и сессии останутся; обнуление можно вернуть"
+          onConfirm={() => void stats.resetRoutes()}
+        />
       </p>
     {/if}
   {:else if view === 'history'}
@@ -105,7 +101,7 @@
       rows={stats.historyList}
       tradesOf={(runId) => stats.tradesOf(runId)}
       onEditTrade={(edit) => app.editTrade(edit)}
-      onRemoveRun={(runId) => app.ask(REMOVE_RUN_QUESTION, async () => { await app.removeRun(runId); })}
+      onRemoveRun={(runId) => void app.removeRun(runId)}
     />
   {:else}
     <SessionsList rows={stats.sessionList} />

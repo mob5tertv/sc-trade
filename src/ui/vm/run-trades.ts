@@ -37,9 +37,3 @@ export function tradeLines(run: RunWithEvents, ref: Reference): TradeLine[] {
   }
   return lines;
 }
-
-/** The question before one run is taken out of the history. */
-export const REMOVE_RUN_QUESTION = {
-  text: 'Рейс исчезнет из истории, маршрутов и заработка сессии. Цены в дневнике останутся. Удалить?',
-  yes: 'Да, удалить рейс',
-};

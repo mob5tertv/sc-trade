@@ -5,6 +5,7 @@
   import Header from './Header.svelte';
   import MessageLines from './MessageLines.svelte';
   import OptionsSection from './sections/OptionsSection.svelte';
+  import RouteBar from './RouteBar.svelte';
   import RoutesSection from './sections/RoutesSection.svelte';
   import RunSection from './sections/RunSection.svelte';
   import TerminalSection from './sections/TerminalSection.svelte';
@@ -46,6 +47,7 @@
   <GuideView />
 {:else}
   <Header />
+  {#if app.routeBar}<RouteBar />{/if}
   <MessageLines />
   <div class="sections">
     {#if showRun}<RunSection />{/if}

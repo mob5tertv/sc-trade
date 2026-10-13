@@ -137,9 +137,3 @@ export function figuresOf(history: History, routesSince: number | null = null): 
 
 /** 'Маршруты считаются с 13.10 20:55': the line under the table of routes after a reset. */
 export const routesSinceLine = (since: number): string => `Маршруты считаются с ${formatStamp(since)}`;
-
-/** The question before «Обнулить маршруты»: what starts again and what stays. */
-export const ROUTES_RESET_QUESTION = {
-  text: 'Рейтинг маршрутов, твои времена по парам и обычный темп начнут считаться заново. История рейсов и сессии останутся. Обнулить?',
-  yes: 'Да, обнулить',
-};

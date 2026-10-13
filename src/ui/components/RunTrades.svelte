@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolveTrade } from '../vm/inputs';
+  import ConfirmButton from './ConfirmButton.svelte';
   import type { TradeLine } from '../vm/run-trades';
 
   interface Props {
@@ -83,7 +84,12 @@
   {#if lines.length === 0}<p class="none">В этом рейсе нет сделок</p>{/if}
   {#if onRemove}
     <p class="foot">
-      <button type="button" class="sc-btn" title="Убрать этот рейс из истории. Цены в дневнике останутся" onclick={() => onRemove?.()}>Удалить рейс</button>
+      <ConfirmButton
+        label="Удалить рейс"
+        sureLabel="Точно удалить?"
+        title="Убрать этот рейс из истории, маршрутов и заработка сессии. Цены в дневнике останутся"
+        onConfirm={() => onRemove?.()}
+      />
     </p>
   {/if}
 </div>
