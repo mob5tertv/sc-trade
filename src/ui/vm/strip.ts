@@ -9,6 +9,23 @@ import { expectedRun, priceAtTarget, type PricedLine } from './run-rate';
 import type { SessionFigure } from './stats-view';
 import { terminalName } from './terminal-name';
 
+/**
+ * The one commodity of the hold as the line of the strip draws it (spec 14.19, the run line): what it is, how much, what it was bought
+ * for, and after an arrow the SALE side at the target. The sale side is told by who says it: a price a person typed in stands still in
+ * a frame with his name and its age; the low and the high end of the range of the target take turns in one place; a price that is one
+ * number stands alone.
+ */
+export interface StripLot {
+  /** 'MEDS', '120 SCU', '2 115'. */
+  code: string; qty: string; buy: string;
+  /** A price a person typed in at the target (mine: «моя»; later the nick of a member of the fleet), and how old it is. */
+  person: { who: string; price: string; age: string } | null;
+  /** The two ends of the range of the target, the very numbers of the column «Мин–макс» of its table; `null` when the price has no range. */
+  range: { low: string; high: string } | null;
+  /** The expected price when neither a person nor a range says it; `null` when one of them does, or nothing is known at the target. */
+  single: string | null;
+}
+
 export type StripModel =
   | {
     kind: 'idle'; location: string;
@@ -35,6 +52,8 @@ export type StripModel =
     cargoLine: string;
     /** The cargo for a tooltip, a line for every commodity: 'MEDS 120 SCU · куплено по 2 115 · ждём 2 351'; empty for an empty hold. */
     cargoTitle: string;
+    /** The one commodity of the hold in parts, for the line to draw (`StripLot`); absent or `null` with several commodities or an empty hold: the line then writes `cargoLine`. */
+    lot?: StripLot | null;
     target: string | null;
     /**
      * The profit the whole run is expected to bring at the target, the number of the card of the run (`expectedRun`), with the sign of a gain: '≈ +66 720'.

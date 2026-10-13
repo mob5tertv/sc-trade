@@ -12,8 +12,12 @@
     /** The two marks of a run; the buttons are drawn only while a run is on and the callback is given. */
     onDepart?: () => void;
     onArrive?: () => void;
+    /** The two ends of the range take turns (the default), or stand side by side as 'мин–макс' (the setting; also what a system that asks for less motion gets). */
+    rangeStill?: boolean;
   }
-  let { model, flash, flashKind = 'info', onOpen, onDepart, onArrive }: Props = $props();
+  let { model, flash, flashKind = 'info', onOpen, onDepart, onArrive, rangeStill = false }: Props = $props();
+
+  const lot = $derived(model.kind === 'run' ? model.lot ?? null : null);
 
   const showMarks = $derived(flash === null && model.kind === 'run' && (onDepart !== undefined || onArrive !== undefined));
 
@@ -35,7 +39,32 @@
       {/if}
     {:else}
       <span class="part timer" title="Всего: {model.timer}"><span class="phase">{model.phaseLabel}</span>{model.phaseTimer}</span>
-      <span class="part cargo" title={model.cargoTitle || undefined}>{model.cargoLine}</span>
+      {#if lot !== null}
+        <span class="part lot" title={model.cargoTitle || undefined}>
+          <span class="code">{lot.code}</span><span class="qty">{lot.qty}</span><span class="buy">{lot.buy}</span>
+          {#if lot.person !== null || lot.range !== null || lot.single !== null}<span class="arrow" aria-hidden="true">→</span>{/if}
+          {#if lot.person !== null}
+            <span class="person" title="Цена, которую ввёл человек, и её возраст">
+              <svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><circle cx="5" cy="3" r="2.2" /><path d="M1 10c0-2.6 1.8-4 4-4s4 1.4 4 4z" /></svg>
+              <span class="who">{lot.person.who}</span>{lot.person.price}<span class="age">{lot.person.age}</span>
+            </span>
+          {/if}
+          {#if lot.range !== null}
+            {#if rangeStill}
+              <span class="range still"><span class="low">{lot.range.low}</span>–<span class="high">{lot.range.high}</span></span>
+            {:else}
+              <span class="range turn" title="Минимум и максимум цены продажи в точке цели, по очереди">
+                <span class="low"><span class="cap">мин</span>{lot.range.low}</span>
+                <span class="high"><span class="cap">макс</span>{lot.range.high}</span>
+              </span>
+            {/if}
+          {:else if lot.single !== null}
+            <span class="single">{lot.single}</span>
+          {/if}
+        </span>
+      {:else}
+        <span class="part cargo" title={model.cargoTitle || undefined}>{model.cargoLine}</span>
+      {/if}
       <span class="part" class:muted={model.target === null}>{model.target === null ? 'цель не выбрана' : `→ ${model.target}`}</span>
       {#if outlook}<span class="part rate" class:loss={model.profitLoss} title={LEGEND.approxStrip}>{outlook}</span>{/if}
     {/if}
@@ -108,6 +137,91 @@
     display: block;
     line-height: var(--sc-mini-h);
     text-overflow: ellipsis;
+  }
+
+  /* the one commodity of the hold in parts: what, how much, bought for → the sale side */
+  .lot {
+    gap: 6px;
+  }
+
+  .lot .code {
+    color: var(--sc-accent);
+    font-weight: 600;
+  }
+
+  .lot .qty,
+  .lot .arrow,
+  .lot .age,
+  .lot .cap {
+    color: var(--sc-muted);
+  }
+
+  /* a price a person typed in: a frame of the accent, his name, the price, its age; it never moves */
+  .person {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 18px;
+    padding: 0 5px;
+    border: 1px solid var(--sc-accent);
+    color: var(--sc-text);
+  }
+
+  .person svg {
+    fill: var(--sc-accent);
+  }
+
+  .person .who {
+    color: var(--sc-accent);
+  }
+
+  .person .age {
+    font-size: var(--sc-font-sm);
+  }
+
+  .range .low {
+    color: var(--sc-warn);
+  }
+
+  .range .high {
+    color: var(--sc-good);
+  }
+
+  .range .cap {
+    margin-right: 4px;
+    font-size: var(--sc-font-sm);
+  }
+
+  /* the two ends take turns in ONE place: both lie in the same cell (it is as wide as the wider one), and each is seen for three seconds */
+  .range.turn {
+    display: inline-grid;
+  }
+
+  .range.turn > * {
+    grid-area: 1 / 1;
+    animation: sc-turn 6s ease-in-out infinite;
+  }
+
+  .range.turn > .high {
+    animation-delay: -3s;
+  }
+
+  @keyframes sc-turn {
+    0%, 42% { opacity: 1; }
+    50%, 92% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+
+  /* a system that asks for less motion gets the two ends side by side, the low one first */
+  @media (prefers-reduced-motion: reduce) {
+    .range.turn {
+      display: inline-flex;
+      gap: 6px;
+    }
+
+    .range.turn > * {
+      animation: none;
+    }
   }
 
   .timer {

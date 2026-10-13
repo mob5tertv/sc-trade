@@ -14,6 +14,16 @@
     : data.strip.run);
   const flying = inPhase('flight');
   const unloading = inPhase('unloading');
+
+  // the run line of version 1.2 (spec 14.19): one commodity in parts, the sale side by who says it
+  const base = data.strip.cargo.single;
+  const lotOf = (lot: import('../../../ui/vm/strip').StripLot): StripModel => (base.kind === 'run' ? { ...base, lot } : base);
+  const own = lotOf({ code: 'MEDS', qty: '120 SCU', buy: '2 115', person: { who: 'моя', price: '2 351', age: '12 мин' }, range: { low: '2 190', high: '2 420' }, single: null });
+  const fleet = lotOf({ code: 'MEDS', qty: '120 SCU', buy: '2 115', person: { who: 'Вася', price: '2 351', age: '4 мин' }, range: { low: '2 190', high: '2 420' }, single: null });
+  const uex = lotOf({ code: 'MEDS', qty: '120 SCU', buy: '2 115', person: null, range: { low: '2 190', high: '2 420' }, single: null });
+  const ownOnly = lotOf({ code: 'MEDS', qty: '120 SCU', buy: '2 115', person: { who: 'моя', price: '2 351', age: '12 мин' }, range: null, single: null });
+  const one = lotOf({ code: 'MEDS', qty: '120 SCU', buy: '2 115', person: null, range: null, single: '2 351' });
+  const bare = lotOf({ code: 'MEDS', qty: '120 SCU', buy: '2 115', person: null, range: null, single: null });
 </script>
 
 <Frame name="idle" caption="no run, a target is set: the location → the target" width="content">
@@ -48,6 +58,30 @@
 </Frame>
 <Frame name="cargo-single" caption="one commodity at an ordinary price: what it was bought for, then what it is expected to sell for, then the profit expected and the rate" width="content">
   <StripView model={data.strip.cargo.single} flash={null} onOpen={open} onDepart={open} />
+</Frame>
+<Frame name="lot-own" caption="1.2 · my own price at the target stands still in a frame with its age; after it the low and the high end of the range take turns (3 s each)" width="content">
+  <StripView model={own} flash={null} onOpen={open} onDepart={open} />
+</Frame>
+<Frame name="lot-own-still" caption="1.2 · the same with the turns switched off (the setting, or a system that asks for less motion): the range stands as low–high" width="content">
+  <StripView model={own} flash={null} onOpen={open} onDepart={open} rangeStill />
+</Frame>
+<Frame name="lot-uex" caption="1.2 · only UEX knows the target: the two ends of its range take turns, nothing in a frame" width="content">
+  <StripView model={uex} flash={null} onOpen={open} onDepart={open} />
+</Frame>
+<Frame name="lot-uex-still" caption="1.2 · only UEX, turns off" width="content">
+  <StripView model={uex} flash={null} onOpen={open} onDepart={open} rangeStill />
+</Frame>
+<Frame name="lot-own-only" caption="1.2 · my own price and no range of UEX: the frame alone" width="content">
+  <StripView model={ownOnly} flash={null} onOpen={open} onDepart={open} />
+</Frame>
+<Frame name="lot-one" caption="1.2 · a price that is one number (a single report of UEX): the number alone, no marks" width="content">
+  <StripView model={one} flash={null} onOpen={open} onDepart={open} />
+</Frame>
+<Frame name="lot-bare" caption="1.2 · nothing known at the target (or no target): what is aboard and what it was bought for" width="content">
+  <StripView model={bare} flash={null} onOpen={open} onDepart={open} />
+</Frame>
+<Frame name="lot-fleet" caption="2.0, for the look ahead · a price a member of the fleet typed in: his nick in the same frame" width="content">
+  <StripView model={fleet} flash={null} onOpen={open} onDepart={open} />
 </Frame>
 <Frame name="cargo-one" caption="one commodity: its quantity with SCU, what it was bought for (seven digits) and what it is expected to sell for, the profit and the rate (nine digits: a loss, the widest numbers)" width="content">
   <StripView model={data.strip.cargo.one} flash={null} onOpen={open} onDepart={open} />
