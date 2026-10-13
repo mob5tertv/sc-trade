@@ -2,7 +2,7 @@
   import { formatUec } from '../../core/format';
   import type { Searchable } from '../../core/search';
   import type { Side } from '../../core/types';
-  import { rejectionText, resolveQuickEntry } from '../vm/quick-entry';
+  import { rejectionText, resolveQuickEntry, allowedSide, type EntrySides } from '../vm/quick-entry';
   import type { Rejection } from '../vm/quick-entry';
   import SearchBox from './SearchBox.svelte';
 
@@ -11,6 +11,8 @@
   interface Props {
     /** The viewed terminal: the price is written for it. The location is picked in the header of the window, not here. */
     terminalId: number | null;
+    /** The name of that terminal, for the line that says where a price of a commodity it does not trade would go. */
+    place?: string;
     commodityItems: Searchable[];
     /** What the viewed terminal trades: those commodities come first in the search. */
     boostIds: Set<number>;
@@ -19,6 +21,8 @@
      * is chosen yet (the owner answers with the side of the table the player is looking at, `defaultSide`).
      */
     sideFor: (commodityId: number | null) => Side;
+    /** The sides the terminal trades a commodity on: the price can be written to those only; `null` (and no function): not limited. */
+    sidesFor?: (commodityId: number | null) => EntrySides | null;
     /** Writes the price; answers the sentence to show when it was not saved, `null` when it was. */
     onSave: (entry: PriceEntry) => Promise<string | null>;
     /** Enter was pressed with something missing or unreadable (nothing was saved): which of the parts it was, never what was typed. */
@@ -26,7 +30,7 @@
     /** `onSave` threw instead of answering: the player sees a short sentence, the details belong in the log. */
     onFailure?: (err: unknown, entry: PriceEntry) => void;
   }
-  let { terminalId, commodityItems, boostIds, sideFor, onSave, onReject, onFailure }: Props = $props();
+  let { terminalId, place = '', commodityItems, boostIds, sideFor, sidesFor, onSave, onReject, onFailure }: Props = $props();
 
   const uid = $props.id();
   const groupName = `side-${uid}`;
@@ -57,9 +61,13 @@
   let scuInput = $state<HTMLInputElement | null>();
 
   const chosen = $derived(commodityId === null ? undefined : commodityItems.find((c) => c.id === commodityId));
+  // The commodity is none of those this terminal is known to trade (by UEX or by my own records): the price is still written, the
+  // player may see what UEX does not, but the line says where it goes, so that a price meant for another station is not left here.
+  const foreign = $derived(commodityId !== null && !boostIds.has(commodityId));
   // The one side of the line: the switch shows it and the price is written to it. With no commodity chosen it is not "buy" but what
   // the owner says for the empty line (the tab), so the switch never shows a side the price would not go to.
-  const side = $derived<Side>(pickedSide ?? sideFor(commodityId));
+  const sides = $derived(sidesFor?.(commodityId) ?? null);
+  const side = $derived<Side>(allowedSide(pickedSide ?? sideFor(commodityId), sides));
 
   // Enter in the commodity field takes the first match, and the player goes on with the price.
   function pickCommodity(id: number): void {
@@ -180,12 +188,12 @@
          window like a field, the press on a side takes the keyboard (or keeps it), and the cursor goes into the price (`data-entry-field`
          with the same name), its number selected: picking a side never leaves the line without a cursor, with its keys going to the game. -->
     <div class="sc-seg" role="radiogroup" aria-label="Сторона" data-opens-entry="quick-price">
-      <label class="side" class:is-on={side === 'buy'} title="Цена, по которой здесь можно купить">
-        <input type="radio" name={groupName} checked={side === 'buy'} onchange={() => (pickedSide = 'buy')} />
+      <label class="side" class:is-on={side === 'buy'} class:off={sides !== null && !sides.buy} title={sides !== null && !sides.buy ? 'Этот товар здесь не продают' : 'Цена, по которой здесь можно купить'}>
+        <input type="radio" name={groupName} checked={side === 'buy'} disabled={sides !== null && !sides.buy} onchange={() => (pickedSide = 'buy')} />
         <span>Куп.</span>
       </label>
-      <label class="side" class:is-on={side === 'sell'} title="Цена, по которой здесь можно продать">
-        <input type="radio" name={groupName} checked={side === 'sell'} onchange={() => (pickedSide = 'sell')} />
+      <label class="side" class:is-on={side === 'sell'} class:off={sides !== null && !sides.sell} title={sides !== null && !sides.sell ? 'Этот товар здесь не покупают' : 'Цена, по которой здесь можно продать'}>
+        <input type="radio" name={groupName} checked={side === 'sell'} disabled={sides !== null && !sides.sell} onchange={() => (pickedSide = 'sell')} />
         <span>Прод.</span>
       </label>
     </div>
@@ -231,6 +239,9 @@
       aria-describedby={badSave && reasonShown ? reasonId : undefined}
     >Записать</button>
   </div>
+  {#if foreign && !reasonShown}
+    <p class="foreign">{chosen?.code ?? 'Товар'} здесь по данным UEX не торгуется. Запишется как твоя цена{place ? ` на ${place}` : ' на этом терминале'}.</p>
+  {/if}
   <!-- the words of a refusal: only while a field is marked; the screen reader gets the same sentence from the status below -->
   {#if reasonShown}<p class="reason" id={reasonId} aria-hidden="true">{problem}</p>{/if}
 
@@ -250,6 +261,22 @@
     align-items: center;
     gap: 4px;
     height: var(--sc-ctl-h);
+  }
+
+  /* a side the terminal does not trade the commodity on: it cannot be picked */
+  .side.off {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  /* the commodity is none of this terminal's: one line that says where the price would be written */
+  .foreign {
+    margin: 3px 0 0;
+    overflow: hidden;
+    color: var(--sc-warn);
+    font-size: var(--sc-font-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .line > :global(.box) {

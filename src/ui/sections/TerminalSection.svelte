@@ -10,6 +10,7 @@
   import { untrack } from 'svelte';
   import { boxAdvice, boxLine, loadingBar } from '../../core/cargo-fit';
   import { cargoOf } from '../../core/run';
+  import { obsKey } from '../../core/types';
   import type { Side } from '../../core/types';
   import Icon from '../components/Icon.svelte';
   import QuickEntry from '../components/QuickEntry.svelte';
@@ -21,7 +22,7 @@
   import { rejectedFields } from '../vm/inputs';
   import { locationModel } from '../vm/location';
   import { kindForSide, lookupPrice } from '../vm/lookup';
-  import { defaultSide } from '../vm/quick-entry';
+  import { defaultSide, entryCommodities, entrySides } from '../vm/quick-entry';
   import { crossedRows, roiCells, type RoiSnapshot } from '../vm/row-roi';
   import { sideCounts, type TerminalRow } from '../vm/terminal-rows';
   import { terminalFullName } from '../vm/terminal-name';
@@ -89,6 +90,9 @@
   const boostIds = $derived(viewedId === null ? new Set<number>() : new Set(app.market.byTerminal.get(viewedId)));
   // the side the quick entry shows: by what the terminal trades the commodity on, and by the tab where that does not say (`null`: no commodity yet)
   const sideFor = (commodityId: number | null): Side => defaultSide(commodityId === null ? undefined : rows.find((row) => row.commodityId === commodityId), side);
+  // the quick entry writes only what this terminal trades, and only on the side it trades it on (`entryCommodities`)
+  const entryItems = $derived(entryCommodities(commodityItems, rows));
+  const sidesFor = (commodityId: number | null) => entrySides(commodityId === null ? undefined : rows.find((row) => row.commodityId === commodityId));
 
   function select(commodityId: number | null): void {
     if (commodityId === null) {
@@ -292,9 +296,11 @@
 {#snippet entry()}
   <QuickEntry
     terminalId={viewedId}
-    {commodityItems}
+    place={name}
+    commodityItems={entryItems}
     {boostIds}
     {sideFor}
+    {sidesFor}
     onSave={(input) => enteringPrice(() => app.recordPrice(input))}
     onReject={(e) => app.log.info('ui', 'quick entry rejected', { terminalId: viewedId, ...e })}
     onFailure={(err, input) => app.log.error('ui', 'quick entry save failed', { ...input, err })}
@@ -351,6 +357,15 @@
       })}
       onLookup={lookupRow}
       onGuide={(e) => app.openGuide(e.commodityId, e.side)}
+      hasOwnRecord={(commodityId, s) => viewedId !== null && app.market.own.has(obsKey(viewedId, commodityId, s))}
+      onRemovePrice={(e) => {
+        const terminalId = viewedId;
+        if (terminalId === null) return;
+        app.ask(
+          { text: `Убрать твою последнюю запись цены ${e.code} на ${name}? Если других записей и данных UEX нет, товар исчезнет из таблицы.`, yes: 'Да, убрать' },
+          async () => { await app.removePrice({ terminalId, commodityId: e.commodityId, side: e.side }); },
+        );
+      }}
       onTrade={openTrade}
       {tradeFor}
       {tradeForm}

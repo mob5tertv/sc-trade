@@ -50,3 +50,34 @@ export function resolveQuickEntry(priceText: string, scuText: string): QuickEntr
   if (price === null || badScu) return { ok: false, price: price === null, scu: badScu };
   return { ok: true, price, scu };
 }
+
+/** Which sides of a commodity the viewed terminal trades: the sides the quick entry may write a price to. */
+export interface EntrySides { buy: boolean; sell: boolean }
+
+/**
+ * The commodities the quick entry offers (the author's decision of 13.10.2026: "do not let any commodity be written to a station
+ * that does not trade it"): those that stand in the table of the viewed terminal, on either side. A price typed in while another
+ * station was meant used to land at the viewed one as its own commodity, and stayed there.
+ *
+ * The one exception is a terminal whose table is EMPTY (nothing of UEX and no record of the player's): there every commodity is
+ * offered, or a station UEX does not know yet could never be given its first price.
+ */
+export function entryCommodities<T extends { id: number }>(all: T[], rows: ReadonlyArray<Pick<TerminalRow, 'commodityId'>>): T[] {
+  if (rows.length === 0) return all;
+  const traded = new Set(rows.map((row) => row.commodityId));
+  return all.filter((c) => traded.has(c.id));
+}
+
+/**
+ * The sides the quick entry may write for a commodity: the ones its row has a cell on. `null` means "not limited": no commodity
+ * is chosen yet, or the terminal has no row for it (the empty table of `entryCommodities`).
+ */
+export function entrySides(row: Pick<TerminalRow, 'buy' | 'sell'> | undefined): EntrySides | null {
+  return row === undefined ? null : { buy: row.buy !== null, sell: row.sell !== null };
+}
+
+/** The side a price goes to: the wanted one when the terminal trades the commodity on it, else the side it does trade it on. */
+export function allowedSide(wanted: Side, sides: EntrySides | null): Side {
+  if (sides === null || sides[wanted]) return wanted;
+  return wanted === 'buy' ? 'sell' : 'buy';
+}

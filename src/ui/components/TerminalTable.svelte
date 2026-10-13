@@ -41,6 +41,12 @@
     onLookup: (e: { commodityId: number; side: Side }) => void;
     /** Set: the expanded row has a button «места» that opens the commodity reference on this commodity and this side. */
     onGuide?: (e: { commodityId: number; side: Side }) => void;
+    /**
+     * Set: the expanded row of a cell that holds a record of MINE (`hasOwnRecord`) has a button that takes my latest record of that
+     * price away (a price typed in at the wrong terminal).
+     */
+    onRemovePrice?: (e: { commodityId: number; side: Side; code: string }) => void;
+    hasOwnRecord?: (commodityId: number, side: Side) => boolean;
     onTrade: (e: { commodityId: number; side: Side }) => void;
     /**
      * The commodity whose trade form is open, and the form: it is drawn right under the expanded row of that commodity,
@@ -72,7 +78,7 @@
     onSort?: (key: TerminalSortKey) => void;
   }
   let {
-    rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onReject, onLookup, onGuide, onTrade, tradeFor = null, tradeForm,
+    rows, side, selectedCommodityId, scope = '', onSelect, onSavePrice, onReject, onLookup, onGuide, onRemovePrice, hasOwnRecord, onTrade, tradeFor = null, tradeForm,
     roi = NO_ROI, pulse = NO_PULSE, noCapacity = false, cargo = NO_CARGO, sort = DEFAULT_TERMINAL_SORT, onSort,
   }: Props = $props();
 
@@ -324,7 +330,7 @@
     </div>
     <!-- One line, never wrapped. The warning, the plaque and the rate mark keep their size; the texts between them give way
          with an ellipsis (the whole text is in their `title`), so the warning is never the part that is cut. -->
-    {#if cell.badge || cell.warn || cell.ownLast || (estimated && cell.ownScuBase)}
+    {#if cell.badge || cell.warn || cell.ownLast || (estimated && cell.ownScuBase) || (onRemovePrice !== undefined && (hasOwnRecord?.(row.commodityId, side) ?? false))}
       <div class="meta">
         {#if cell.warn}<span class="warn fixed">проверь цифру</span>{/if}
         {#if cell.badge}<span class="fixed"><TempBadge text={cell.badge.text} kind={cell.badge.kind} /></span>{/if}
@@ -343,6 +349,16 @@
         {#if cell.ownLast}
           {@const last = `моя была ${formatUec(cell.ownLast.price)} · ${cell.ownLast.age}`}
           <span class="text muted" title={last}>{last}</span>
+        {/if}
+        {#if (onRemovePrice !== undefined && (hasOwnRecord?.(row.commodityId, side) ?? false))}
+          <span class="spacer"></span>
+          <button
+            type="button"
+            class="sc-btn fixed"
+            aria-label="Убрать мою запись цены {row.code}"
+            title="Убрать твою последнюю запись этой цены на этом терминале: если она попала сюда по ошибке. Останется прежняя твоя запись или данные UEX; если нет ни того, ни другого, товар исчезнет из таблицы"
+            onclick={() => onRemovePrice?.({ commodityId: row.commodityId, side, code: row.code })}
+          >убрать запись</button>
         {/if}
       </div>
     {/if}

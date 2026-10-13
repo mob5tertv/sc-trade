@@ -23,6 +23,21 @@ export async function addObservation(db: Db, log: Logger, o: Omit<Observation, '
   return result.lastInsertId;
 }
 
+/**
+ * Removes the LATEST observation of one cell of the diary (a terminal, a commodity, a side): a price that was typed in at the
+ * wrong terminal or for the wrong commodity (spec 14.19). The reading before it, when there is one, is the player's price there
+ * again; with none left the cell falls back to UEX, or goes when UEX has nothing either. Returns how many rows went (0 or 1).
+ */
+export async function removeLatestObservation(db: Db, log: Logger, cell: Pick<Observation, 'terminalId' | 'commodityId' | 'side'>): Promise<number> {
+  const result = await db.execute(
+    `DELETE FROM observation
+      WHERE id = (SELECT id FROM observation WHERE terminal_id = ? AND commodity_id = ? AND side = ? ORDER BY ts DESC, id DESC LIMIT 1)`,
+    [cell.terminalId, cell.commodityId, cell.side],
+  );
+  log.info('diary', 'observation removed', { ...cell, rows: result.rowsAffected });
+  return result.rowsAffected;
+}
+
 /** The observation a trade wrote: the moment, the place, the commodity, the side and the price of that trade. */
 export type TradeObservation = Pick<Observation, 'ts' | 'terminalId' | 'commodityId' | 'side' | 'price'>;
 

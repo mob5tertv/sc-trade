@@ -12,7 +12,7 @@ import { DEFAULT_SETTINGS, type Settings } from '../core/settings';
 import type { Market, Reference, RunWithEvents, Side } from '../core/types';
 import type { Db } from '../data/db';
 import { createLogger, type Logger } from '../data/logger';
-import { addObservation } from '../data/repo/diary';
+import { addObservation, removeLatestObservation } from '../data/repo/diary';
 import { getActiveRun } from '../data/repo/runs';
 import { saveSetting } from '../data/repo/settings';
 import { getMeta, loadDistances, loadReference } from '../data/repo/uex-cache';
@@ -1502,6 +1502,29 @@ class AppState {
     this.#showTerminal(input.terminalId);
     this.#warnWorsePrice(input, expected);
     return null;
+  }
+
+  /**
+   * The player takes his latest record of a price out of the diary (spec 14.19): it was typed in at the wrong terminal, or for a
+   * commodity that is not traded there. The market is read again (the reading before it, or UEX, stands in; with neither the row
+   * goes) and so are the statistics (a price is a record of the session). Returns the sentence to show when it failed, `null` when
+   * the record is gone.
+   */
+  async removePrice(cell: { terminalId: number; commodityId: number; side: Side }): Promise<string | null> {
+    this.#log.info('ui', 'remove price', cell);
+    let failure: string | null = null;
+    try {
+      const { db, log } = this.#syncDeps();
+      await removeLatestObservation(db, log, cell);
+    } catch (err) {
+      this.#log.error('ui', 'cannot remove the price', { ...cell, err });
+      failure = 'Не удалось убрать запись. Подробности в логе.';
+      this.notify(failure, 'error');
+    }
+    await this.reloadMarket();
+    this.rowsNow = nowSec();
+    void stats.reload('price removed');
+    return failure;
   }
 
   /** How long the notice of a price that is worse than expected stays: the player has to read a place and two numbers, and decide. */
