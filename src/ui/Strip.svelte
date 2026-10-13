@@ -25,6 +25,7 @@
     onOpen={() => app.expandByHand('mini click')}
     onDepart={next === 'depart' ? () => void app.mark('depart') : undefined}
     onArrive={next === 'arrive' ? () => void app.mark('arrive') : undefined}
+    rangeStill={!app.settings.stripRangeTurns}
   />
 </div>
 

@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { runOutlook } from '../../src/ui/vm/run-outlook';
 import { cargoText, cargoTitle, outlookText, stripModel, stripTitle } from '../../src/ui/vm/strip';
 import { currentSession, sessionFigure } from '../../src/ui/vm/stats-view';
+import { uexRangeOf } from '../../src/ui/vm/terminal-rows';
+import { buildMarket } from '../../src/core/market';
 import { distKey, pairKey } from '../../src/core/types';
+import type { Settings } from '../../src/core/settings';
 import type { CargoLine, RunEvent, RunWithEvents } from '../../src/core/types';
 import { ev, ref } from '../helpers/factories';
 import { CLOCK, MINUTE, sessionEndedAgo } from '../helpers/indicator-fixtures';
@@ -64,6 +67,8 @@ describe('stripModel', () => {
       kind: 'run', timer: '14:32', phase: 'loading', phaseLabel: 'ПОГРУЗКА', phaseTimer: '14:32', next: 'depart',
       cargo: `GOLD 96 SCU по 6${NBSP}120`, cargoLine: `GOLD 96 SCU по 6${NBSP}120, ждём 6${NBSP}900`,
       cargoTitle: `GOLD 96 SCU · куплено по 6${NBSP}120 · ждём 6${NBSP}900`, target: 'TDD Area 18',
+      // the one commodity in parts (spec 14.19): only UEX knows the target, so the two ends of its range and nothing in a frame
+      lot: { code: 'GOLD', qty: '96 SCU', buy: `6${NBSP}120`, person: null, range: { low: `6${NBSP}400`, high: `7${NBSP}100` }, single: null },
       profit: `≈ +74${NBSP}880`, profitLoss: false, rate: '266k/ч',     // 96×780 = 74 880 per max(872, 1015) s
     });
   });
@@ -382,5 +387,55 @@ describe('stripModel', () => {
       expect(stripTitle(stripModel(null, market, ref, { ...s, currentTerminalId: 1, targetTerminalId: 2 }, ctx, gain)))
         .toBe(`ARC-L1 → TDD Area 18 · сессия +1${NBSP}240${NBSP}000 · 413k/ч`);
     });
+  });
+});
+
+describe('the run line of version 1.2: the one commodity of the hold in parts (spec 14.19)', () => {
+  const toTarget: Settings = { ...s, currentTerminalId: 1, targetTerminalId: 2 };
+  const lotOf = (m: typeof market, settings = toTarget, run = active) => {
+    const model = stripModel(run, m, ref, settings, ctx);
+    return model.kind === 'run' ? model.lot : undefined;
+  };
+
+  it('puts a price of my own at the target into the frame with its age, and the range of UEX after it', () => {
+    const mine = withOwnSell(market, 2, GOLD, 6840, NOW - 12 * 60);
+    expect(lotOf(mine)).toEqual({
+      code: 'GOLD', qty: '96 SCU', buy: `6${NBSP}120`,
+      person: { who: 'моя', price: `6${NBSP}840`, age: '12 мин' },
+      range: { low: `6${NBSP}400`, high: `7${NBSP}100` }, single: null,
+    });
+  });
+
+  it('shows the frame alone when UEX has no range for the target, and the range alone when only UEX knows it', () => {
+    const mineOnly = withOwnSell(buildMarket([], []), 2, GOLD, 6840, NOW - 60);
+    expect(lotOf(mineOnly)).toMatchObject({ person: { who: 'моя', price: `6${NBSP}840` }, range: null, single: null });
+    expect(lotOf(market)).toMatchObject({ person: null, range: { low: `6${NBSP}400`, high: `7${NBSP}100` }, single: null });
+  });
+
+  it('says one number alone when the price has no range: a single price of UEX, or a range of one price', () => {
+    const flat = withUexSell(buildMarket([], []), 2, GOLD, 6900);
+    expect(lotOf(flat)).toMatchObject({ person: null, range: null, single: `6${NBSP}900` });
+  });
+
+  it('does not take a cold price of mine for a person\'s price: the range of UEX stands in', () => {
+    const cold = withOwnSell(market, 2, GOLD, 6840, NOW - 10 * 3600);
+    expect(lotOf(cold)).toMatchObject({ person: null, range: { low: `6${NBSP}400`, high: `7${NBSP}100` } });
+  });
+
+  it('has only what is aboard without a target, or when nothing is known at it', () => {
+    const bare = { code: 'GOLD', qty: '96 SCU', buy: `6${NBSP}120`, person: null, range: null, single: null };
+    expect(lotOf(market, { ...s, currentTerminalId: 1 })).toEqual(bare);
+    expect(lotOf(buildMarket([], []))).toEqual(bare);
+  });
+
+  it('is absent with several commodities: the line writes them as before', () => {
+    expect(lotOf(market, toTarget, mixedRun)).toBeNull();
+  });
+
+  it('takes its range from the very numbers of «Мин–макс» of the target\'s table', () => {
+    const mine = withOwnSell(market, 2, GOLD, 6840, NOW - 60);
+    const table = uexRangeOf(mine, 2, GOLD, 'sell', ctx);
+    expect(table).toEqual({ kind: 'spread', low: 6400, high: 7100 });
+    expect(lotOf(mine)!.range).toEqual({ low: `6${NBSP}400`, high: `7${NBSP}100` });
   });
 });

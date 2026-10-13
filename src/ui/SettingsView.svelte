@@ -349,6 +349,16 @@
       onchange={(event) => settle('showStrip', () => app.updateSetting('showStrip', event.currentTarget.checked))}
     />
   </div>
+  <div class="row" title="В мини-строке рейса минимум и максимум цены продажи в точке цели сменяют друг друга. Выключи — будут стоять рядом: «мин–макс».">
+    <label for="set-strip-turns">Сменять мин и макс в мини-строке</label>
+    <input
+      id="set-strip-turns"
+      class="check"
+      type="checkbox"
+      checked={app.settings.stripRangeTurns}
+      onchange={(event) => settle('stripRangeTurns', () => app.updateSetting('stripRangeTurns', event.currentTarget.checked))}
+    />
+  </div>
 {/snippet}
 
 {#snippet data()}

@@ -51,6 +51,11 @@ export interface Settings {
   opacity: number;
   /** "Show the mini bar": off, the collapsed window is hidden and the tray or a key opens it. */
   showStrip: boolean;
+  /**
+   * The run line of the mini bar (spec 14.19): on, the low and the high end of the sale range of the target take turns in one place;
+   * off, they stand side by side as 'мин–макс'. A system that asks for less motion gets them side by side whatever this says.
+   */
+  stripRangeTurns: boolean;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   serverChangedAt: number | null; currentTerminalId: number | null; targetTerminalId: number | null;
   /** The one-time hint about the keys of "Взлетел" and "Прилетел" was shown, or such a key was assigned: it is never shown (again). */
@@ -68,7 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
   panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
   uiScale: 0,
   idleCollapseSec: 40, openSections: 'terminal,options,settings:ship',
-  opacity: 0.92, showStrip: true, logLevel: 'debug',
+  opacity: 0.92, showStrip: true, stripRangeTurns: true, logLevel: 'debug',
   serverChangedAt: null, currentTerminalId: null, targetTerminalId: null,
   keysHintShown: false, scaleNoticeShown: false,
 };

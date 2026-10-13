@@ -141,7 +141,14 @@
 
   /* the one commodity of the hold in parts: what, how much, bought for → the sale side */
   .lot {
+    flex: 0 1 auto;
     gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .lot > * {
+    flex: none;
   }
 
   .lot .code {

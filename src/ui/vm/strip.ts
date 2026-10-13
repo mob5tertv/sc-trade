@@ -1,4 +1,4 @@
-import { formatCompact, formatDuration, formatUec } from '../../core/format';
+import { formatAge, formatCompact, formatDuration, formatUec } from '../../core/format';
 import type { RouteCtx } from '../../core/routes';
 import { cargoOf } from '../../core/run';
 import type { Settings } from '../../core/settings';
@@ -8,6 +8,7 @@ import { nextMarkOf, phaseCaps, runPhases, type RunPhase } from './run-phase';
 import { expectedRun, priceAtTarget, type PricedLine } from './run-rate';
 import type { SessionFigure } from './stats-view';
 import { terminalName } from './terminal-name';
+import { isOwnPrice, uexRangeOf } from './terminal-rows';
 
 /**
  * The one commodity of the hold as the line of the strip draws it (spec 14.19, the run line): what it is, how much, what it was bought
@@ -102,6 +103,34 @@ export function cargoTitle(ref: Reference, priced: PricedLine[]): string {
   ].filter(Boolean).join(' · ')).join('\n');
 }
 
+/** The word that stands for the player in the frame of a price he typed in himself. */
+export const OWN_PRICE_NAME = 'моя';
+
+/**
+ * The one commodity of the hold in parts (`StripLot`); `null` for an empty hold and for several commodities (the line then
+ * writes them as before, and the sale side of each is in the tooltip). `sale` is where the cargo is going: the target and what is
+ * known there, or `null` without a target. The sale side:
+ *  - a price of my own at the target that is not cold stands in the frame, with its age;
+ *  - the range is the one UEX knows for the target, whatever my diary says there: the very numbers of «Мин–макс» in its table
+ *    (`uexRangeOf`), so the strip and the table cannot disagree; a range of one price is no range;
+ *  - with neither, the expected price stands alone (a single report of UEX, a range of one price, a cold price of mine that
+ *    UEX has nothing for).
+ */
+export function stripLot(
+  ref: Reference, cargo: CargoLine[], sale: { priced: PricedLine[]; m: Market; targetId: number; ctx: RouteCtx } | null,
+): StripLot | null {
+  if (cargo.length !== 1) return null;
+  const [{ commodityId, scu, avgBuyPrice }] = cargo;
+  const base = { code: commodityCode(ref, commodityId), qty: `${scu} SCU`, buy: formatUec(avgBuyPrice) };
+  const sell = sale?.priced[0]?.sell ?? null;
+  if (sale === null || sell === null) return { ...base, person: null, range: null, single: null };
+
+  const person = isOwnPrice(sell) ? { who: OWN_PRICE_NAME, price: formatUec(sell.price), age: formatAge(sell.ageSec) } : null;
+  const uex = uexRangeOf(sale.m, sale.targetId, commodityId, 'sell', sale.ctx);
+  const range = uex.kind === 'spread' ? { low: formatUec(uex.low), high: formatUec(uex.high) } : null;
+  return { ...base, person, range, single: person === null && range === null ? formatUec(sell.price) : null };
+}
+
 /**
  * What the small strip shows: the current location (and the target, when one is set) and what the session that is going
  * has earned (`session`) without a run; during a run the phase with its own timer, the cargo with what it was bought for (and,
@@ -134,7 +163,10 @@ export function stripModel(
 
   if (!target) {
     const unpriced = cargo.map((line): PricedLine => ({ line, sell: null }));
-    return { ...head, cargoLine: head.cargo, cargoTitle: cargoTitle(ref, unpriced), target: null, profit: null, profitLoss: false, rate: null };
+    return {
+      ...head, cargoLine: head.cargo, cargoTitle: cargoTitle(ref, unpriced), lot: stripLot(ref, cargo, null),
+      target: null, profit: null, profitLoss: false, rate: null,
+    };
   }
 
   const priced = priceAtTarget(cargo, m, target.id, ctx);
@@ -143,6 +175,7 @@ export function stripModel(
     ...head,
     cargoLine: cargoText(ref, cargo, priced.map(({ sell }) => sell?.price ?? null)),
     cargoTitle: cargoTitle(ref, priced),
+    lot: stripLot(ref, cargo, { priced, m, targetId: target.id, ctx }),
     target: terminalName(target),
     profit: expected === null ? null : expectedProfitText(expected.profit, true),
     profitLoss: expected !== null && expected.profit < 0,

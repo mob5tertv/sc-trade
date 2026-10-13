@@ -90,7 +90,7 @@ const AFFECTS_LOOKUP: Record<keyof Settings, 'always' | 'from' | 'never'> = {
   quantumSpeedKkms: 'always', overheadMin: 'always', overheadEmptyMin: 'always', topN: 'always', sort: 'always',
   nearby: 'from', detailedCalc: 'never', routesSince: 'always',
   hotkeyPanel: 'never', hotkeyDepart: 'never', hotkeyArrive: 'never',
-  panelWidth: 'never', stripCorner: 'never', opacity: 'never', showStrip: 'never', logLevel: 'never',
+  panelWidth: 'never', stripCorner: 'never', opacity: 'never', showStrip: 'never', stripRangeTurns: 'never', logLevel: 'never',
   idleCollapseSec: 'never', openSections: 'never', windowDx: 'never', windowDy: 'never', windowLocked: 'never',
   uiScale: 'never',
   roiHighlightPct: 'never',

@@ -121,6 +121,7 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
       return SORTS.includes(v as Settings['sort']) ? null : 'Неизвестная сортировка';
     case 'nearby':
     case 'detailedCalc':
+    case 'stripRangeTurns':
     case 'showStrip':
     case 'windowLocked':
     case 'keysHintShown':
