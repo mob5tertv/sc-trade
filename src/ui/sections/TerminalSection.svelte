@@ -255,6 +255,15 @@
 
 {#snippet actions()}
   {#if open}
+    {#if app.viewTerminalId !== null && app.viewTerminalId !== app.settings.targetTerminalId && app.viewTerminalId !== app.settings.currentTerminalId}
+      {@const viewed = app.viewTerminalId}
+      <button
+        type="button"
+        class="sc-btn sc-btn--act"
+        title="Сделать этот терминал целью и подобрать товары, которые стоит везти сюда с твоей станции"
+        onclick={() => void app.aimAt(viewed)}
+      >цель</button>
+    {/if}
     <div class="sc-seg" role="group" aria-label="Какую сторону терминала показать">
       <button type="button" aria-pressed={side === 'buy'} title="Что можно купить здесь" onclick={() => app.setTerminalSide('buy')}>Купить · {counts.buy}</button>
       <button type="button" aria-pressed={side === 'sell'} title="Что можно продать здесь" onclick={() => app.setTerminalSide('sell')}>Продать · {counts.sell}</button>

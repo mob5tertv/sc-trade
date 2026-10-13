@@ -19,6 +19,12 @@ export interface Settings {
    */
   detailedCalc: boolean;
   /**
+   * «К цели» (spec 14.19, item 16): the list of options of a terminal shows the goods of ONE pair, that terminal and the target,
+   * with the set that fills the hold, instead of the best trips to anywhere. It applies only while a target is set and is another
+   * terminal than the one the options are of.
+   */
+  optionsToTarget: boolean;
+  /**
    * «Обнулить маршруты» (spec 14.19): the moment (unix seconds) from which the player's routes are counted, `null` for "from the first run".
    * The runs that ended before it stay in the history and in the sessions; the rating of the routes, the player's own times of the pairs and
    * his usual pace do not see them. Nothing is deleted, so the reset can be taken back.
@@ -68,7 +74,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hotMin: 60, warmMin: 180, coolingMin: 240,
   refillFullMin: DEFAULT_REFILL_FULL_MIN,
   quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, topN: 5, roiHighlightPct: 50,
-  sort: 'uecPerHour', nearby: false, detailedCalc: false, routesSince: null,
+  sort: 'uecPerHour', nearby: false, detailedCalc: false, optionsToTarget: false, routesSince: null,
   hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '',
   panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
   uiScale: 0,

@@ -1,14 +1,18 @@
 <script lang="ts">
+  import { fillHold, pairGoods } from '../../core/pair';
   import type { RouteOption } from '../../core/routes';
+  import { cargoOf } from '../../core/run';
   import type { Settings } from '../../core/settings';
   import RouteList from '../components/RouteList.svelte';
   import Section from '../components/Section.svelte';
+  import TargetGoodsView from '../components/TargetGoodsView.svelte';
   import { app } from '../state.svelte';
   import { stats } from '../stats.svelte';
   import { LEGEND, legendTitle } from '../vm/legend';
   import { lookupEmptyText, lookupTarget } from '../vm/lookup';
   import { optionsSummary } from '../vm/options-summary';
   import { titlePieces } from '../vm/route-pieces';
+  import { noGoodsText, targetGoods } from '../vm/target-goods';
   import { terminalLabel } from '../vm/terminal-name';
   import { uexRangeOf } from '../vm/terminal-rows';
 
@@ -30,6 +34,29 @@
     summary === '' || request === null ? undefined : titlePieces(summary, terminalLabel(app.reference, request.terminalId)),
   );
 
+  // «К цели» (spec 14.19, item 16): while a target is set and the options are those of ANOTHER terminal, the header offers the goods of
+  // that one pair instead of the best trips to anywhere. The pair is counted from what is already loaded (prices and stocks), it asks
+  // UEX for nothing, and again every 15 seconds on the slow clock of the table, which moves the stocks and the temperatures.
+  const targetId = $derived(app.settings.targetTerminalId);
+  const pairOffered = $derived(
+    request !== null && request.kind === 'from' && targetId !== null && targetId !== request.terminalId && app.reference.terminals.has(targetId),
+  );
+  const toTarget = $derived(pairOffered && app.settings.optionsToTarget);
+  const pair = $derived.by(() => {
+    if (!toTarget || request === null || targetId === null) return null;
+    const aboard = app.activeRun === null ? 0 : cargoOf(app.activeRun.events).reduce((sum, line) => sum + line.scu, 0);
+    const freeScu = Math.max(0, app.settings.scuCapacity - aboard);
+    const goods = pairGoods(app.market, request.terminalId, targetId, app.routeCtx(freeScu, app.rowsNow));
+    const view = targetGoods(goods, fillHold(goods, freeScu, app.settings.budget), app.reference, { freeScu, aboard: aboard > 0 });
+    const origin = terminalLabel(app.reference, request.terminalId);
+    const dest = terminalLabel(app.reference, targetId);
+    return { ...view, title: `${origin} → ${dest}`, emptyText: noGoodsText(origin, dest) };
+  });
+  const setToTarget = (on: boolean): void => {
+    app.log.info('ui', 'options to the target', { on });
+    void app.updateSetting('optionsToTarget', on);
+  };
+
   // which option a click opened, for the log: the ids of the trip, no prices
   const rowContext = (option: RouteOption) => ({ commodityId: option.commodityId, originId: option.originId, destId: option.destId });
 
@@ -44,6 +71,14 @@
 
 {#snippet actions()}
   {#if open && request !== null}
+    {#if pairOffered}
+      <div class="sc-seg" role="group" aria-label="Куда везти">
+        <button type="button" aria-pressed={!toTarget} title="Лучшие рейсы отсюда в любую точку" onclick={() => setToTarget(false)}>Куда угодно</button>
+        <button type="button" aria-pressed={toTarget} title="Товары, которые стоит везти отсюда в точку цели, и набор на трюм" onclick={() => setToTarget(true)}>К цели</button>
+      </div>
+    {/if}
+  {/if}
+  {#if open && request !== null && !toTarget}
     {#if request.commodityId !== null}
       <button type="button" class="sc-btn sc-btn--act" title="Искать по всем товарам точки" onclick={showAllCommodities}>все товары</button>
     {/if}
@@ -63,9 +98,9 @@
   {@const asked = request}
   <Section
     title="Варианты"
-    {summary}
-    {summaryPieces}
-    summaryTitle={lookup.preliminary ? legendTitle(`Варианты: ${summary}`, LEGEND.approxOptions) : undefined}
+    summary={pair === null ? summary : pair.title}
+    summaryPieces={pair === null ? summaryPieces : undefined}
+    summaryTitle={pair === null && lookup.preliminary ? legendTitle(`Варианты: ${summary}`, LEGEND.approxOptions) : undefined}
     {open}
     onToggle={() => void app.toggleSection(SECTION)}
     onClose={() => app.closeLookup()}
@@ -78,6 +113,8 @@
         <span>Укажи корабль в настройках</span>
         <button type="button" class="sc-btn sc-btn--act" onclick={() => app.openSettings()}>Открыть настройки</button>
       </div>
+    {:else if pair !== null}
+      <TargetGoodsView rows={pair.rows} set={pair.set} emptyText={pair.emptyText} />
     {:else if lookup.error !== null}
       <p class="line failure" role="alert">{lookup.error}</p>
     {:else if lookup.loading && lookup.options.length === 0}

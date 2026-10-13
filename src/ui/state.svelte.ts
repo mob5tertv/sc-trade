@@ -1497,6 +1497,19 @@ class AppState {
     if ((await this.updateSetting('targetTerminalId', terminalId)) === null) void this.openSection(RUN_SECTION);
   }
 
+  /**
+   * «Цель» of the terminal that is viewed (spec 14.19, item 16): "my friends are at that station — what do I bring them". The terminal
+   * becomes the target, the options turn to «К цели», and when the player's own location is known and is another place, the options
+   * of THAT place are asked for (`newRoute`): the list is then the goods of the pair, his location → the target.
+   */
+  async aimAt(terminalId: number): Promise<void> {
+    this.#log.info('ui', 'aim at the viewed terminal', { terminalId, currentTerminalId: this.settings.currentTerminalId });
+    await this.setTarget(terminalId);
+    await this.updateSetting('optionsToTarget', true);
+    const here = this.settings.currentTerminalId;
+    if (here !== null && here !== terminalId) await this.newRoute();
+  }
+
   // ---- trades and the run ----------------------------------------------------------------------------------
 
   /** What the trade service takes: the database and the clock of the application, and the settings as they are now. */

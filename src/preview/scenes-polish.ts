@@ -371,4 +371,17 @@ export const POLISH_SCENES: readonly Scene[] = [
       await click('.expand button', 'Купил');
     },
   },
+  {
+    // «К цели» (spec 14.19, item 16): the player stands at HUR-L1, looks at ARC-L1 and presses «цель» in the header of its table. ARC-L1 becomes the
+    // target, the window goes back to HUR-L1 and the options are the goods of that one pair with the set that fills the hold.
+    name: 'options-to-target',
+    title: '«К цели»: товары с твоей станции в точку цели и набор на трюм',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      app.setViewTerminal(ARC_L1);
+      await app.aimAt(ARC_L1);
+      await pause(300);
+    },
+  },
 ];

@@ -88,7 +88,7 @@ const AFFECTS_LOOKUP: Record<keyof Settings, 'always' | 'from' | 'never'> = {
   vehicleId: 'never', scuCapacity: 'always', starSystemId: 'always', budget: 'always',
   hotMin: 'always', warmMin: 'always', coolingMin: 'always', refillFullMin: 'always', serverChangedAt: 'always',
   quantumSpeedKkms: 'always', overheadMin: 'always', overheadEmptyMin: 'always', topN: 'always', sort: 'always',
-  nearby: 'from', detailedCalc: 'never', routesSince: 'always',
+  nearby: 'from', detailedCalc: 'never', optionsToTarget: 'never', routesSince: 'always',
   hotkeyPanel: 'never', hotkeyDepart: 'never', hotkeyArrive: 'never',
   panelWidth: 'never', stripCorner: 'never', opacity: 'never', showStrip: 'never', stripRangeTurns: 'never', logLevel: 'never',
   idleCollapseSec: 'never', openSections: 'never', windowDx: 'never', windowDy: 'never', windowLocked: 'never',
