@@ -14,6 +14,8 @@
     /** The name of that terminal, for the line that says where a price of a commodity it does not trade would go. */
     place?: string;
     commodityItems: Searchable[];
+    /** The commodities the form offers on a side: on «Куп.» what the terminal sells, on «Прод.» what it buys. Without it, all of `commodityItems`. */
+    itemsFor?: (side: Side) => Searchable[];
     /** What the viewed terminal trades: those commodities come first in the search. */
     boostIds: Set<number>;
     /**
@@ -30,7 +32,7 @@
     /** `onSave` threw instead of answering: the player sees a short sentence, the details belong in the log. */
     onFailure?: (err: unknown, entry: PriceEntry) => void;
   }
-  let { terminalId, place = '', commodityItems, boostIds, sideFor, sidesFor, onSave, onReject, onFailure }: Props = $props();
+  let { terminalId, place = '', commodityItems, itemsFor, boostIds, sideFor, sidesFor, onSave, onReject, onFailure }: Props = $props();
 
   const uid = $props.id();
   const groupName = `side-${uid}`;
@@ -68,11 +70,15 @@
   // the owner says for the empty line (the tab), so the switch never shows a side the price would not go to.
   const sides = $derived(sidesFor?.(commodityId) ?? null);
   const side = $derived<Side>(allowedSide(pickedSide ?? sideFor(commodityId), sides));
+  // The list of the search follows the side the line is on before a commodity is chosen: the side picked by hand, else the tab of
+  // the table. A commodity that is traded on the other side only is not offered here: the player switches the side to see it.
+  const listSide = $derived<Side>(pickedSide ?? sideFor(null));
+  const items = $derived(itemsFor ? itemsFor(listSide) : commodityItems);
 
   // Enter in the commodity field takes the first match, and the player goes on with the price.
   function pickCommodity(id: number): void {
     commodityId = id;
-    pickedSide = null;
+    pickedSide = listSide;
     status = null;
     badCommodity = false;
     badSave = false;
@@ -175,7 +181,7 @@
   <div class="line">
     <SearchBox
       bind:this={commodityBox}
-      items={commodityItems}
+      {items}
       {boostIds}
       placeholder="Товар"
       label="Товар: три буквы кода или названия и Enter"

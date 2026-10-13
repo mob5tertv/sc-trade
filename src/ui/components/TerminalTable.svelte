@@ -82,6 +82,22 @@
     roi = NO_ROI, pulse = NO_PULSE, noCapacity = false, cargo = NO_CARGO, sort = DEFAULT_TERMINAL_SORT, onSort,
   }: Props = $props();
 
+  // «убрать запись» confirms itself: the first click turns the button into the question, the second one on the same button removes.
+  // The question goes back by itself after a few seconds, and when another cell is asked. The cursor does not have to leave the row.
+  const REMOVE_SURE_MS = 4000;
+  let removing = $state<string | null>(null);
+  let removingTimer: ReturnType<typeof setTimeout> | undefined;
+  function removeClicked(key: string, e: { commodityId: number; side: Side; code: string }): void {
+    clearTimeout(removingTimer);
+    if (removing === key) {
+      removing = null;
+      onRemovePrice?.(e);
+      return;
+    }
+    removing = key;
+    removingTimer = setTimeout(() => { removing = null; }, REMOVE_SURE_MS);
+  }
+
   /**
    * What is being typed into one cell (one commodity, one side). A cell with no draft shows its values from
    * `rows`. `shown` holds the texts of the inputs that were typed into (`null`: show the value of `rows`) and
@@ -352,13 +368,17 @@
         {/if}
         {#if (onRemovePrice !== undefined && (hasOwnRecord?.(row.commodityId, side) ?? false))}
           <span class="spacer"></span>
+          {@const sure = removing === key}
           <button
             type="button"
             class="sc-btn fixed"
-            aria-label="Убрать мою запись цены {row.code}"
-            title="Убрать твою последнюю запись этой цены на этом терминале: если она попала сюда по ошибке. Останется прежняя твоя запись или данные UEX; если нет ни того, ни другого, товар исчезнет из таблицы"
-            onclick={() => onRemovePrice?.({ commodityId: row.commodityId, side, code: row.code })}
-          >убрать запись</button>
+            class:sure
+            aria-label={sure ? `Точно убрать мою запись цены ${row.code}` : `Убрать мою запись цены ${row.code}`}
+            title={sure
+              ? 'Нажми ещё раз, чтобы убрать запись. Ничего не нажимай — кнопка вернётся сама'
+              : 'Убрать твою последнюю запись этой цены на этом терминале: если она попала сюда по ошибке. Останется прежняя твоя запись или данные UEX; если нет ни того, ни другого, товар исчезнет из таблицы'}
+            onclick={() => removeClicked(key, { commodityId: row.commodityId, side, code: row.code })}
+          >{sure ? 'точно убрать?' : 'убрать запись'}</button>
         {/if}
       </div>
     {/if}
@@ -827,5 +847,11 @@
     height: var(--sc-row-h);
     color: var(--sc-muted);
     line-height: var(--sc-row-h);
+  }
+
+  /* «убрать запись» asked once more in its own place: the colour of a thing that cannot be taken back */
+  .sc-btn.sure {
+    border-color: var(--sc-bad);
+    color: var(--sc-bad);
   }
 </style>

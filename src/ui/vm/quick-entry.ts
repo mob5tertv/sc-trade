@@ -1,5 +1,7 @@
+import { estimate } from '../../core/estimate';
+import type { EstimateCtx } from '../../core/estimate';
 import { parsePrice, parseScu } from '../../core/input';
-import type { Side } from '../../core/types';
+import type { Market, Side } from '../../core/types';
 import type { TerminalRow } from './terminal-rows';
 
 // What the quick entry line of the Terminal tab decides: the side it shows and what its texts mean.
@@ -51,29 +53,45 @@ export function resolveQuickEntry(priceText: string, scuText: string): QuickEntr
   return { ok: true, price, scu };
 }
 
-/** Which sides of a commodity the viewed terminal trades: the sides the quick entry may write a price to. */
+/** Which sides of a commodity a terminal trades: the sides the quick entry may write a price to. */
 export interface EntrySides { buy: boolean; sell: boolean }
 
 /**
- * The commodities the quick entry offers (the author's decision of 13.10.2026: "do not let any commodity be written to a station
- * that does not trade it"): those that stand in the table of the viewed terminal, on either side. A price typed in while another
- * station was meant used to land at the viewed one as its own commodity, and stayed there.
- *
- * The one exception is a terminal whose table is EMPTY (nothing of UEX and no record of the player's): there every commodity is
- * offered, or a station UEX does not know yet could never be given its first price.
+ * What UEX knows the terminal to trade, side by side: commodity → whether it is sold there (a BUY price) and whether it is
+ * bought there (a SELL price). The player's own records are left out on purpose: a price typed in at the wrong station must not
+ * make its commodity one of that station's. A commodity UEX has no price for on either side is absent.
  */
-export function entryCommodities<T extends { id: number }>(all: T[], rows: ReadonlyArray<Pick<TerminalRow, 'commodityId'>>): T[] {
-  if (rows.length === 0) return all;
-  const traded = new Set(rows.map((row) => row.commodityId));
-  return all.filter((c) => traded.has(c.id));
+export function uexSides(m: Market, terminalId: number, ctx: EstimateCtx): Map<number, EntrySides> {
+  const bare: Market = { ...m, own: new Map() };
+  const sides = new Map<number, EntrySides>();
+  for (const commodityId of m.byTerminal.get(terminalId) ?? []) {
+    const buy = estimate(bare, terminalId, commodityId, 'buy', ctx) !== null;
+    const sell = estimate(bare, terminalId, commodityId, 'sell', ctx) !== null;
+    if (buy || sell) sides.set(commodityId, { buy, sell });
+  }
+  return sides;
 }
 
 /**
- * The sides the quick entry may write for a commodity: the ones its row has a cell on. `null` means "not limited": no commodity
- * is chosen yet, or the terminal has no row for it (the empty table of `entryCommodities`).
+ * The commodities the quick entry offers on one side (the author's decisions of 13.10.2026: "do not let any commodity be written
+ * to a station that does not trade it", and "the list must follow the chosen category, buy or sell"): on «Куп.» what the terminal
+ * sells, on «Прод.» what it buys, by what UEX knows (`uexSides`).
+ *
+ * The one exception is a terminal UEX knows NOTHING of (`sides` is empty): there every commodity is offered on both sides, or
+ * such a station could never be given its first price.
  */
-export function entrySides(row: Pick<TerminalRow, 'buy' | 'sell'> | undefined): EntrySides | null {
-  return row === undefined ? null : { buy: row.buy !== null, sell: row.sell !== null };
+export function entryCommodities<T extends { id: number }>(all: T[], sides: ReadonlyMap<number, EntrySides>, side: Side): T[] {
+  if (sides.size === 0) return all;
+  return all.filter((c) => sides.get(c.id)?.[side] === true);
+}
+
+/**
+ * The sides the quick entry may write for a commodity. `null` means "not limited": no commodity is chosen yet, or UEX knows
+ * nothing of the terminal. A commodity UEX does not list at a terminal it does know is traded on neither side.
+ */
+export function entrySides(commodityId: number | null, sides: ReadonlyMap<number, EntrySides>): EntrySides | null {
+  if (commodityId === null || sides.size === 0) return null;
+  return sides.get(commodityId) ?? { buy: false, sell: false };
 }
 
 /** The side a price goes to: the wanted one when the terminal trades the commodity on it, else the side it does trade it on. */
