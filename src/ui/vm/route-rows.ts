@@ -1,9 +1,10 @@
+import { boxAdvice, boxLine, loadingBar } from '../../core/cargo-fit';
 import { formatCompact, formatDuration, formatUec } from '../../core/format';
 import { stockKnown } from '../../core/routes';
 import type { RouteOption } from '../../core/routes';
 import type { SellAlternative, SellHere } from '../../core/sell';
 import { pairKey } from '../../core/types';
-import type { Estimate, Reference, Side, Temp } from '../../core/types';
+import type { Estimate, Reference, Side, Temp, Vehicle } from '../../core/types';
 import { lookupSteps } from './lookup';
 import { priceTrend } from './price-trend';
 import type { PriceTrend } from './price-trend';
@@ -154,6 +155,12 @@ export interface RouteOptionRow {
    * is, as the row says it ('пустой 5:10'; 'пустой —' when its length is not known). `null` for a trip bought at the terminal itself.
    */
   emptyLeg: string | null;
+  /**
+   * The ship of the settings at the terminal where this trip is LOADED (spec 14.19, item 10): which boxes to ask the kiosk for
+   * ('Ящики: до 8 SCU'), and why the ship cannot be loaded there at all ('нет грузового дока'). Each is `null` when UEX does not
+   * say, or no ship of the reference is chosen. A trip that cannot be loaded is marked, never hidden.
+   */
+  boxes: string | null; loadBar: string | null;
   /** How good the trip is by its ROI: the colour of the bar at the edge of the row and of the ROI number. */
   tier: RoiTier;
   commodity: string;
@@ -191,6 +198,8 @@ export interface RouteMarks {
   /** The second step of a target in two steps (`Settings.targetThenId`); `null` for a plain target. */
   targetThenId?: number | null;
   uexRange?: UexRangeOf;
+  /** The ship of the settings as the reference describes it; absent: nothing is said of boxes or of loading. */
+  vehicle?: Vehicle;
 }
 
 /** 'по твоим рейсам', 'оценка по расстоянию · пустой перелёт 4:10'; `null` without a time. */
@@ -205,7 +214,8 @@ export function routeOptionRow(
   o: RouteOption, ref: Reference, mode: RouteMode, runCounts: Map<string, number>, marks: RouteMarks = {},
 ): RouteOptionRow {
   const from = mode === 'from';
-  const { anchorTerminalId = null, targetTerminalId = null, targetThenId = null, uexRange } = marks;
+  const { anchorTerminalId = null, targetTerminalId = null, targetThenId = null, uexRange, vehicle } = marks;
+  const loadedAt = ref.terminals.get(o.originId);
   // the target this option would set, and whether it is the one that is set: both steps must be the same
   const steps = lookupSteps(o, mode, from ? anchorTerminalId : null);
   const elsewhere = from && anchorTerminalId !== null && o.originId !== anchorTerminalId;
@@ -222,6 +232,8 @@ export function routeOptionRow(
     whereTitle: whereTitle(ref, bothEnds, from ? o.destId : o.originId, o.originId, o.destId),
     isTarget: targetTerminalId !== null && steps.targetId === targetTerminalId && steps.thenId === targetThenId,
     emptyLeg: elsewhere ? `пустой ${o.emptyLegSec > 0 ? formatDuration(o.emptyLegSec) : NONE}` : null,
+    boxes: boxLine(boxAdvice(loadedAt, vehicle)),
+    loadBar: loadingBar(loadedAt, vehicle),
     tier: shownTier(o.roi),
     commodity: commodityLabel(ref, o.commodityId),
     distance: formatDistance(o.distanceGm),

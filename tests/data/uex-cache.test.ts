@@ -214,3 +214,28 @@ describe('uex cache: meta', () => {
     expect(await getMeta(db, 'k')).toBe('2');
   });
 });
+
+describe('what UEX says of loading goes through the cache (spec 14.19, item 10)', () => {
+  it('keeps the fields of a terminal and of a vehicle that carry them, and leaves the others without', async () => {
+    const db = await migratedDb();
+    const dock = term(5, { hasDockingPort: true, maxContainerScu: 32, hasLoadingDock: true });
+    const plain = term(6);
+    const hull = veh(8, { name: 'Hull C', containerScu: [1, 2, 4, 8, 16, 32], isLoadingDock: true, isDocking: true, padType: null });
+    const typed = veh(9, { name: 'Unknown' });
+    await saveReference(db, { terminals: [dock, plain], vehicles: [hull, typed] });
+
+    const loaded = await loadReference(db);
+    expect(loaded.terminals.get(5)).toMatchObject({ hasDockingPort: true, maxContainerScu: 32 });
+    expect(loaded.terminals.get(6)).toEqual(plain);
+    expect(loaded.vehicles.find((v) => v.id === 8)).toEqual(hull);
+    expect(loaded.vehicles.find((v) => v.id === 9)).toEqual(typed);
+  });
+
+  it('drops the loading rows of a terminal and of a vehicle that left the reference', async () => {
+    const db = await migratedDb();
+    await saveReference(db, { terminals: [term(5, { hasDockingPort: true, maxContainerScu: 32 })], vehicles: [veh(8, { containerScu: [1, 2], isLoadingDock: false, isDocking: false })] });
+    await saveReference(db, { terminals: [term(6)], vehicles: [veh(9)] });
+    expect(await db.select('SELECT id FROM uex_terminal_cargo')).toEqual([]);
+    expect(await db.select('SELECT id FROM uex_vehicle_cargo')).toEqual([]);
+  });
+});

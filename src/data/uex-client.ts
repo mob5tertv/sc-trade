@@ -114,7 +114,21 @@ function mapTerminal(r: Row): Terminal | null {
     hasLoadingDock: flag(r.has_loading_dock),
     isAutoLoad: flag(r.is_auto_load),
     isAvailableLive: flag(r.is_available_live),
+    hasDockingPort: flag(r.has_docking_port),
+    maxContainerScu: positiveOrNull(r.max_container_size),
   };
+}
+
+/** A size or a count of UEX where zero, an empty value and a non-number all mean "not said". */
+function positiveOrNull(v: unknown): number | null {
+  const n = toNumberOrNull(v);
+  return n !== null && n > 0 ? n : null;
+}
+
+/** '1,2,4,8' → [1, 2, 4, 8]; anything that is not such a list is an empty one ("not said"). */
+function containerSizes(v: unknown): number[] {
+  if (typeof v !== 'string') return [];
+  return v.split(',').map((part) => Number(part.trim())).filter((n) => Number.isFinite(n) && n > 0);
 }
 
 function mapCommodity(r: Row): Commodity | null {
@@ -137,7 +151,12 @@ const mapCompanyId = (r: Row): number | null => toNumberOrNull(r.id);
 function mapVehicle(r: Row): Vehicle | null {
   const id = toNumberOrNull(r.id);
   if (id === null) return null;
-  return { id, name: text(r.name), nameFull: text(r.name_full), scu: num(r.scu) };
+  return {
+    id, name: text(r.name), nameFull: text(r.name_full), scu: num(r.scu),
+    containerScu: containerSizes(r.container_sizes),
+    isLoadingDock: flag(r.is_loading_dock), isDocking: flag(r.is_docking),
+    padType: typeof r.pad_type === 'string' && r.pad_type !== '' ? r.pad_type : null,
+  };
 }
 
 // `price_buy` is what the player pays the terminal, `price_sell` what the terminal pays the player.

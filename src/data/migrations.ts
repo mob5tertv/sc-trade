@@ -109,6 +109,19 @@ export const MIGRATIONS: Migration[] = [
       `CREATE TABLE IF NOT EXISTS run_target (run_id INTEGER PRIMARY KEY, terminal_id INTEGER NOT NULL)`,
     ],
   },
+  {
+    // Version 1.2 (spec 14.19, item 10): what UEX says of loading at a terminal and of the boxes a ship takes. Tables of their
+    // own beside `uex_terminal` and `uex_vehicle`, not new columns: the reference that is there stays whole and usable (a
+    // rebuilt table would leave the application without terminals until the next download), and CREATE IF NOT EXISTS can be
+    // run twice. They are filled by the next download of the reference, which the dropped mark asks for at the next start.
+    version: 4,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS uex_terminal_cargo (id INTEGER PRIMARY KEY, has_docking_port INTEGER NOT NULL, max_container_scu INTEGER)`,
+      `CREATE TABLE IF NOT EXISTS uex_vehicle_cargo (
+        id INTEGER PRIMARY KEY, container_sizes TEXT NOT NULL, is_loading_dock INTEGER NOT NULL, is_docking INTEGER NOT NULL, pad_type TEXT)`,
+      `DELETE FROM uex_meta WHERE key = 'reference_synced_at'`,
+    ],
+  },
 ];
 
 /**

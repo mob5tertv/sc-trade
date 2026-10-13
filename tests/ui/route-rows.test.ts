@@ -146,7 +146,7 @@ describe('routeOptionRow', () => {
       runs: 0,
       price: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
       roi: '13%', rate: '256k', worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
-      origin: 'ARC-L1', dest: 'TDD Area 18', bothEnds: true, isTarget: false, emptyLeg: null, tier: 'ok',
+      origin: 'ARC-L1', dest: 'TDD Area 18', bothEnds: true, isTarget: false, emptyLeg: null, boxes: null, loadBar: null, tier: 'ok',
       whereTitle: 'ARC-L1 → TDD Area 18\nARC-L1: Stanton\nTDD Area 18: Stanton',
       invested: nb('587 520'), profit: nb('74 880'), profitLoss: false, trend: null, priceIsOwn: false,
       buy: { price: nb('6 120'), range: NO_PRICE, badge: { text: 'моя · 40 мин', kind: 'hot' } },
@@ -556,5 +556,26 @@ describe('routeOptionRow: a trip bought at another terminal than the one the lis
     const row = (targetThenId: number | null) => routeOptionRow(option(), ref, 'from', new Map(), { anchorTerminalId: 1, targetTerminalId: 2, targetThenId }).isTarget;
     expect(row(null)).toBe(true);
     expect(row(5)).toBe(false);
+  });
+});
+
+describe('routeOptionRow: the ship of the settings where the trip is loaded (spec 14.19, item 10)', () => {
+  // the trip is loaded at terminal 1; the reference of the fixtures says nothing of its boxes, so the terminal is given them here
+  const withBoxes = { ...ref, terminals: new Map(ref.terminals).set(1, { ...ref.terminals.get(1)!, maxContainerScu: 32, hasLoadingDock: false }) };
+  const small = { id: 1, name: 'Cutlass', nameFull: 'Drake Cutlass', scu: 46, containerScu: [1, 2, 4, 8], isLoadingDock: false };
+  const hull = { id: 2, name: 'Hull C', nameFull: 'MISC Hull C', scu: 4608, containerScu: [1, 2, 4, 8, 16, 24, 32], isLoadingDock: true };
+
+  it('says which boxes to ask for at the purchase terminal', () => {
+    expect(routeOptionRow(option(), withBoxes, 'from', new Map(), { vehicle: small })).toMatchObject({ boxes: 'Ящики: до 8 SCU', loadBar: null });
+    expect(routeOptionRow(option(), withBoxes, 'from', new Map(), { vehicle: hull }).boxes).toBe('Ящики: любые');
+  });
+
+  it('marks a trip whose purchase terminal has no loading dock for a ship that needs one, and keeps it', () => {
+    expect(routeOptionRow(option(), withBoxes, 'from', new Map(), { vehicle: hull }).loadBar).toBe('нет грузового дока');
+  });
+
+  it('says nothing without a ship of the reference, or where UEX says nothing of the terminal', () => {
+    expect(routeOptionRow(option(), withBoxes, 'from', new Map())).toMatchObject({ boxes: null, loadBar: null });
+    expect(routeOptionRow(option(), ref, 'from', new Map(), { vehicle: small }).boxes).toBeNull();
   });
 });

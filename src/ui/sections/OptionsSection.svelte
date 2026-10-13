@@ -135,6 +135,7 @@
         anchorTerminalId={asked.terminalId}
         targetTerminalId={app.settings.targetTerminalId}
         targetThenId={app.settings.targetThenId}
+        vehicle={app.vehicle}
         uexRange={(terminalId, commodityId, side) => uexRangeOf(app.market, terminalId, commodityId, side, app.routeCtx(undefined, app.rowsNow))}
         onTarget={(option) => {
           const steps = lookupSteps(option, asked.kind, asked.terminalId);

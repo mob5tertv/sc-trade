@@ -8,6 +8,7 @@
 
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { boxAdvice, boxLine, loadingBar } from '../../core/cargo-fit';
   import { cargoOf } from '../../core/run';
   import type { Side } from '../../core/types';
   import Icon from '../components/Icon.svelte';
@@ -37,6 +38,10 @@
   const open = $derived(app.sectionOpen(SECTION));
   const entryOpen = $derived(app.sectionOpen(ENTRY));
   const viewedId = $derived(app.viewTerminalId);
+  // the ship of the settings at this terminal (spec 14.19, item 10): which boxes to ask for, and whether it can be loaded here at all
+  const viewedTerminal = $derived(viewedId === null ? undefined : app.reference.terminals.get(viewedId));
+  const boxes = $derived(boxLine(boxAdvice(viewedTerminal, app.vehicle)));
+  const cannotLoad = $derived(loadingBar(viewedTerminal, app.vehicle));
   const rows = $derived(app.terminalRows);
   const side = $derived(app.terminalSide);
   const counts = $derived(sideCounts(rows));
@@ -306,7 +311,7 @@
       defaultPriceIsOwn={tradeState.defaults.priceIsOwn}
       stockUnknown={tradeState.defaults.stockUnknown}
       maxScu={tradeMaxScu}
-      note={tradeState.mode === 'income' ? INCOME_NOTE : null}
+      note={tradeState.mode === 'income' ? INCOME_NOTE : tradeState.side === 'buy' ? boxes : null}
       error={tradeState.error}
       onConfirm={(trade) => void confirmTrade(trade)}
       onCancel={() => closeTrade('cancelled')}
@@ -329,6 +334,11 @@
   {#if viewedId === null}
     <p class="empty">Выбери локацию в шапке окна.</p>
   {:else}
+    {#if cannotLoad !== null}
+      <p class="cannot" role="note" title="По данным UEX о терминале и о корабле из настроек">
+        {app.vehicle?.name ?? 'Корабль'} здесь не загрузится: {cannotLoad}
+      </p>
+    {/if}
     <TerminalTable
       {rows}
       {side}
@@ -355,6 +365,18 @@
 </Section>
 
 <style>
+  /* the ship of the settings cannot be loaded at this terminal: one line above the table, the table stays */
+  .cannot {
+    margin: 0;
+    padding: 0 var(--sc-pad-x);
+    height: var(--sc-row-h);
+    overflow: hidden;
+    color: var(--sc-bad);
+    line-height: var(--sc-row-h);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .entry[aria-pressed='true'] {
     background: var(--sc-border);
   }

@@ -54,6 +54,9 @@ const COMMODITY = {
   columns: ['id', 'name', 'code', 'is_illegal', 'is_buyable', 'is_sellable', 'is_available_live'],
 };
 const VEHICLE = { table: 'uex_vehicle', columns: ['id', 'name', 'name_full', 'scu'] };
+// What UEX says of loading (spec 14.19, item 10), beside the two tables above: a row only for a terminal or a vehicle that says it.
+const TERMINAL_CARGO = { table: 'uex_terminal_cargo', columns: ['id', 'has_docking_port', 'max_container_scu'] };
+const VEHICLE_CARGO = { table: 'uex_vehicle_cargo', columns: ['id', 'container_sizes', 'is_loading_dock', 'is_docking', 'pad_type'] };
 
 const upsertStarSystems = (db: Db, list: StarSystem[]) => upsertRows(db, STAR_SYSTEM.table, STAR_SYSTEM.columns, ['id'],
   list.map((s) => [s.id, s.name, s.code, int(s.isAvailableLive)]));
@@ -65,12 +68,22 @@ const upsertTerminals = (db: Db, list: Terminal[]) => upsertRows(db, TERMINAL.ta
     int(t.hasFreightElevator), int(t.hasLoadingDock), int(t.isAutoLoad), int(t.isAvailableLive),
   ]));
 
+const upsertTerminalCargo = (db: Db, list: Terminal[]) => upsertRows(db, TERMINAL_CARGO.table, TERMINAL_CARGO.columns, ['id'],
+  list.filter((t) => t.hasDockingPort !== undefined || (t.maxContainerScu ?? null) !== null)
+    .map((t) => [t.id, int(t.hasDockingPort ?? false), t.maxContainerScu ?? null]));
+
+const upsertVehicleCargo = (db: Db, list: Vehicle[]) => upsertRows(db, VEHICLE_CARGO.table, VEHICLE_CARGO.columns, ['id'],
+  list.filter((v) => v.containerScu !== undefined || v.isLoadingDock !== undefined || v.isDocking !== undefined)
+    .map((v) => [v.id, (v.containerScu ?? []).join(','), int(v.isLoadingDock ?? false), int(v.isDocking ?? false), v.padType ?? null]));
+
 const upsertCommodities = (db: Db, list: Commodity[]) => upsertRows(db, COMMODITY.table, COMMODITY.columns, ['id'],
   list.map((c) => [c.id, c.name, c.code, int(c.isIllegal), int(c.isBuyable), int(c.isSellable), int(c.isAvailableLive)]));
 
 /** Adds and updates vehicles but never deletes: for a vehicle list that is known to be incomplete. */
-export const upsertVehicles = (db: Db, list: Vehicle[]) => upsertRows(db, VEHICLE.table, VEHICLE.columns, ['id'],
-  list.map((v) => [v.id, v.name, v.nameFull, v.scu]));
+export async function upsertVehicles(db: Db, list: Vehicle[]): Promise<void> {
+  await upsertRows(db, VEHICLE.table, VEHICLE.columns, ['id'], list.map((v) => [v.id, v.name, v.nameFull, v.scu]));
+  await upsertVehicleCargo(db, list);
+}
 
 /**
  * Stores the lists that are present in `part`: each one is upserted, then the rows whose id is not
@@ -87,6 +100,8 @@ export async function saveReference(
   if (part.terminals) {
     await upsertTerminals(db, part.terminals);
     await deleteMissing(db, TERMINAL.table, part.terminals.map((t) => t.id));
+    await upsertTerminalCargo(db, part.terminals);
+    await deleteMissing(db, TERMINAL_CARGO.table, part.terminals.map((t) => t.id));
   }
   if (part.commodities) {
     await upsertCommodities(db, part.commodities);
@@ -95,6 +110,7 @@ export async function saveReference(
   if (part.vehicles) {
     await upsertVehicles(db, part.vehicles);
     await deleteMissing(db, VEHICLE.table, part.vehicles.map((v) => v.id));
+    await deleteMissing(db, VEHICLE_CARGO.table, part.vehicles.map((v) => v.id));
   }
 }
 
@@ -123,14 +139,25 @@ function toTerminal(r: Row): Terminal {
     hasLoadingDock: flag(r.has_loading_dock),
     isAutoLoad: flag(r.is_auto_load),
     isAvailableLive: flag(r.is_available_live),
+    // from `uex_terminal_cargo`; a terminal without a row there says nothing of it (the fields are absent, not false)
+    ...(r.cargo_id === null || r.cargo_id === undefined ? {} : {
+      hasDockingPort: flag(r.has_docking_port),
+      maxContainerScu: r.max_container_scu === null || r.max_container_scu === undefined ? null : Number(r.max_container_scu),
+    }),
   };
 }
+
+/** '1,2,4' as stored → [1, 2, 4]. */
+const sizes = (v: unknown): number[] => String(v ?? '').split(',').filter((part) => part !== '').map(Number);
 
 export async function loadReference(db: Db): Promise<Reference> {
   const starSystems = (await db.select<Row>('SELECT * FROM uex_star_system ORDER BY id')).map((r): StarSystem => (
     { id: Number(r.id), name: text(r.name), code: text(r.code), isAvailableLive: flag(r.is_available_live) }
   ));
-  const terminals = (await db.select<Row>('SELECT * FROM uex_terminal ORDER BY id')).map(toTerminal);
+  const terminals = (await db.select<Row>(
+    `SELECT t.*, c.id AS cargo_id, c.has_docking_port, c.max_container_scu
+       FROM uex_terminal t LEFT JOIN uex_terminal_cargo c ON c.id = t.id ORDER BY t.id`,
+  )).map(toTerminal);
   const commodities = (await db.select<Row>('SELECT * FROM uex_commodity ORDER BY id')).map((r): Commodity => ({
     id: Number(r.id),
     name: text(r.name),
@@ -140,9 +167,15 @@ export async function loadReference(db: Db): Promise<Reference> {
     isSellable: flag(r.is_sellable),
     isAvailableLive: flag(r.is_available_live),
   }));
-  const vehicles = (await db.select<Row>('SELECT * FROM uex_vehicle ORDER BY id')).map((r): Vehicle => (
-    { id: Number(r.id), name: text(r.name), nameFull: text(r.name_full), scu: Number(r.scu) }
-  ));
+  const vehicles = (await db.select<Row>(
+    `SELECT v.*, c.id AS cargo_id, c.container_sizes, c.is_loading_dock, c.is_docking, c.pad_type
+       FROM uex_vehicle v LEFT JOIN uex_vehicle_cargo c ON c.id = v.id ORDER BY v.id`,
+  )).map((r): Vehicle => ({
+    id: Number(r.id), name: text(r.name), nameFull: text(r.name_full), scu: Number(r.scu),
+    ...(r.cargo_id === null || r.cargo_id === undefined ? {} : {
+      containerScu: sizes(r.container_sizes), isLoadingDock: flag(r.is_loading_dock), isDocking: flag(r.is_docking), padType: textOrNull(r.pad_type ?? null),
+    }),
+  }));
   return {
     starSystems,
     terminals: new Map(terminals.map((t) => [t.id, t])),

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { RouteOption } from '../../core/routes';
-  import type { Reference } from '../../core/types';
+  import type { Reference, Vehicle } from '../../core/types';
   import { routeOptionRow } from '../vm/route-rows';
   import type { RouteMode, RouteOptionRow, UexRangeOf } from '../vm/route-rows';
   import { LEGEND, legendTitle } from '../vm/legend';
@@ -31,6 +31,8 @@
     targetTerminalId?: number | null;
     /** The second step of a target in two steps (a purchase elsewhere, then the sale); `null` for a plain target. */
     targetThenId?: number | null;
+    /** The ship of the settings: its boxes and how it is loaded stand in the rows; absent: nothing is said. */
+    vehicle?: Vehicle;
     /**
      * The range UEX knows for a side of a terminal. It stands in «Мин–макс» beside a price of mine, as a reference;
      * without it such a price has no range.
@@ -39,11 +41,11 @@
   }
   let {
     options, reference, runCounts, mode, showCommodity, emptyText, onTarget, onClearTarget, onToggleRow, anchorTerminalId = null, targetTerminalId = null,
-    targetThenId = null, uexRange,
+    targetThenId = null, uexRange, vehicle,
   }: Props = $props();
 
   const rows = $derived(
-    options.map(option => ({ option, row: routeOptionRow(option, reference, mode, runCounts, { anchorTerminalId, targetTerminalId, targetThenId, uexRange }) })),
+    options.map(option => ({ option, row: routeOptionRow(option, reference, mode, runCounts, { anchorTerminalId, targetTerminalId, targetThenId, uexRange, vehicle }) })),
   );
   // the trips bought at another terminal follow the ones bought here (the core orders them so): a line says where they begin
   const firstElsewhere = $derived(rows.find(({ row }) => row.emptyLeg !== null)?.row.key ?? null);
@@ -101,6 +103,7 @@
             {#if row.bothEnds}<span class="arrow">→</span><span class="end">{row.dest}</span>{/if}
             {#if row.isTarget}<span class="goal" title="Цель рейса">цель</span>{/if}
             {#if row.stockNote}<span class="unsure" role="img" aria-label={row.stockNote} title={row.stockNote}>?</span>{/if}
+            {#if row.loadBar}<span class="bar" title="Твой корабль здесь не загрузится: в точке закупки {row.loadBar}">док</span>{/if}
           </span>
           <span class="cell sc-num" class:hint={!row.priceIsOwn}>
             <TrendMark trend={row.trend} />
@@ -120,6 +123,8 @@
               <div class="fact" title={LEGEND.worst}><span class="sc-label">Худший</span><span class="sc-num" class:loss={row.worstLoss}>{row.worst}</span></div>
             </div>
             {#if row.stockNote}<p class="stock-note"><span class="unsure" aria-hidden="true">?</span> {row.stockNote}</p>{/if}
+            {#if row.loadBar}<p class="stock-note bar-note">Твой корабль в точке закупки не загрузится: {row.loadBar}</p>{/if}
+            {#if row.boxes}<p class="stock-note" title="По размерам ящиков, которые продаёт терминал закупки и которые берёт твой корабль">{row.boxes}</p>{/if}
             <div class="prices">
               {@render price('Купить', row.buy)}
               {@render price('Продать', row.sell)}
@@ -250,6 +255,17 @@
     flex: none;
     color: var(--sc-good);
     font-size: var(--sc-font-sm);
+  }
+
+  /* the ship of the settings cannot be loaded where this trip is bought: a mark, the trip stays in the list */
+  .bar {
+    flex: none;
+    color: var(--sc-bad);
+    font-size: var(--sc-font-sm);
+  }
+
+  .bar-note {
+    color: var(--sc-bad);
   }
 
   /* the volume of the trip was counted with no stock to limit it: the mark stands at the end of the names, where it moves no number */

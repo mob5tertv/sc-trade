@@ -42,7 +42,9 @@
     return here !== null && isOwnPrice(here) ? { scu: line.scu, herePrice: here.price } : null;
   });
 
-  const rows = $derived(guideRows(places, app.reference, { targetId: app.settings.targetTerminalId, hereId: app.settings.currentTerminalId, cargo }));
+  const rows = $derived(guideRows(places, app.reference, {
+    targetId: app.settings.targetTerminalId, hereId: app.settings.currentTerminalId, cargo, side: guide.side, vehicle: app.vehicle,
+  }));
   const filtered = $derived(mySystem || (guide.side === 'buy' && onlyStock));
   const setSide = (side: Side): void => app.openGuide(guide.commodityId, side);
 </script>
@@ -123,6 +125,7 @@
         <button type="button" class="where" title="{row.terminal}{row.place ? `\n${row.place}` : ''}\nКлик — открыть таблицу этого терминала" onclick={() => app.showFromGuide(row.terminalId)}>
           <span class="name">{row.terminal}</span>
           {#if row.isHere}<span class="mark">ты здесь</span>{/if}
+          {#if row.loadBar}<span class="bar" title="Твой корабль здесь не загрузится: {row.loadBar}">док</span>{/if}
           {#if row.place}<span class="place">{row.place}</span>{/if}
         </button>
         <span class="cell sc-num"><span>{row.price}</span><TempBadge compact text={row.badge.text} kind={row.badge.kind} /></span>
@@ -282,6 +285,12 @@
 
   .goal {
     text-align: center;
+  }
+
+  .bar {
+    flex: none;
+    color: var(--sc-bad);
+    font-size: var(--sc-font-sm);
   }
 
   .cell {

@@ -75,7 +75,13 @@ describe('uex client: reference data', () => {
 
   it('maps vehicles', async () => {
     const all = await client({ vehicles: vehiclesFx }).vehicles(195);
-    expect(all.find((v) => v.id === 13)).toEqual({ id: 13, name: '890 Jump', nameFull: 'Origin 890 Jump', scu: 388 });
+    expect(all.find((v) => v.id === 13)).toEqual({
+      id: 13, name: '890 Jump', nameFull: 'Origin 890 Jump', scu: 388,
+      // what UEX says of loading (spec 14.19, item 10): the boxes the ship takes, how it is loaded and docked, its pad
+      containerScu: [1, 2, 4, 8, 16, 24, 32], isLoadingDock: false, isDocking: true, padType: 'XL',
+    });
+    // a vehicle whose sizes UEX leaves empty, or does not give, has none ("not said"), never a zero
+    expect(all.filter((v) => v.containerScu?.some((n) => !(n > 0)))).toEqual([]);
     // Never the unfiltered list: it stalls on a throttled network. One request per manufacturer.
     expect(calls.at(-1)).toBe('https://api.uexcorp.uk/2.0/vehicles?id_company=195');
   });

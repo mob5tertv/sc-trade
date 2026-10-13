@@ -100,6 +100,8 @@ function toTerminal(t: TerminalSeed): Terminal {
     starSystemName: systemName, planetName: t.place.planet, orbitName: t.place.orbit, moonName: t.place.moon ?? null,
     spaceStationName: t.place.station ?? null, outpostName: t.place.outpost ?? null, cityName: t.place.city ?? null,
     hasFreightElevator: t.elevator ?? false, hasLoadingDock: t.dock ?? false, isAutoLoad: true, isAvailableLive: true,
+    // what UEX says of loading (spec 14.19, item 10): every terminal of the preview sells boxes up to 32 SCU
+    hasDockingPort: false, maxContainerScu: 32,
   };
 }
 
@@ -122,11 +124,11 @@ const commodityId = (code: string): number => {
 const basePrice = (id: number): number => COMMODITY_TABLE[id - 1][2];
 
 const VEHICLES: Vehicle[] = [
-  { id: 1, name: 'Cutlass Black', nameFull: 'Drake Cutlass Black', scu: 46 },
+  { id: 1, name: 'Cutlass Black', nameFull: 'Drake Cutlass Black', scu: 46, containerScu: [1, 2, 4, 8], isLoadingDock: false, isDocking: false, padType: 'S' },
   { id: 2, name: 'Freelancer MAX', nameFull: 'MISC Freelancer MAX', scu: 120 },
   { id: 3, name: 'Freelancer', nameFull: 'MISC Freelancer', scu: 66 },
   { id: 4, name: 'Caterpillar', nameFull: 'Drake Caterpillar', scu: 576 },
-  { id: C2_HERCULES, name: 'C2 Hercules', nameFull: 'Crusader C2 Hercules', scu: 696 },
+  { id: C2_HERCULES, name: 'C2 Hercules', nameFull: 'Crusader C2 Hercules', scu: 696, containerScu: [1, 2, 4, 8, 16, 24, 32], isLoadingDock: false, isDocking: false, padType: 'L' },
   { id: 6, name: 'Constellation Andromeda', nameFull: 'RSI Constellation Andromeda', scu: 96 },
   { id: 7, name: 'Hull A', nameFull: 'MISC Hull A', scu: 64 },
   { id: 8, name: 'Mercury Star Runner', nameFull: 'Crusader Mercury Star Runner', scu: 114 },

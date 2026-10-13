@@ -10,9 +10,21 @@ export interface Terminal {
   starSystemName: string | null; planetName: string | null; orbitName: string | null;
   moonName: string | null; spaceStationName: string | null; outpostName: string | null; cityName: string | null;
   hasFreightElevator: boolean; hasLoadingDock: boolean; isAutoLoad: boolean; isAvailableLive: boolean;
+  /** Что UEX говорит о погрузке на терминале (спека 14.19, пункт 10); нет поля — UEX об этом ещё не спрашивали. */
+  hasDockingPort?: boolean;
+  /** Самый большой ящик, который продаёт терминал, SCU; `null` или нет поля — неизвестно. */
+  maxContainerScu?: number | null;
 }
 export interface Commodity { id: number; name: string; code: string; isIllegal: boolean; isBuyable: boolean; isSellable: boolean; isAvailableLive: boolean }
-export interface Vehicle { id: number; name: string; nameFull: string; scu: number }
+export interface Vehicle {
+  id: number; name: string; nameFull: string; scu: number;
+  /** Размеры ящиков, которые берёт корабль, SCU (спека 14.19, пункт 10); пусто или нет поля — неизвестно. */
+  containerScu?: number[];
+  /** Корабль грузится у внешнего грузового дока (Hull C и подобные), стыкуется к порту; нет поля — неизвестно. */
+  isLoadingDock?: boolean; isDocking?: boolean;
+  /** Размер посадочной площадки: 'XS' … 'XL'; `null` или нет поля — неизвестно. */
+  padType?: string | null;
+}
 export interface Reference { starSystems: StarSystem[]; terminals: Map<number, Terminal>; commodities: Map<number, Commodity>; vehicles: Vehicle[] }
 
 export interface UexSideStats {

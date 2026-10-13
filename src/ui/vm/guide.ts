@@ -1,6 +1,7 @@
+import { loadingBar } from '../../core/cargo-fit';
 import { formatUec } from '../../core/format';
 import type { Place } from '../../core/places';
-import type { Reference, Side, Temp } from '../../core/types';
+import type { Reference, Side, Temp, Vehicle } from '../../core/types';
 import { terminalLabel } from './terminal-name';
 import { terminalFullPlace } from './terminal-place';
 import { badgeText } from './terminal-rows';
@@ -28,13 +29,16 @@ export interface GuideRow {
   extraLoss: boolean;
   /** The terminal is the target of the run, or the place the player stands at. */
   isTarget: boolean; isHere: boolean;
+  /** Why the ship of the settings cannot be loaded there ('нет грузового дока'); `null` when nothing says so. Said of places to BUY at only. */
+  loadBar: string | null;
 }
 
 const NONE = '—';
 const signed = (n: number): string => (Math.round(n) > 0 ? `+${formatUec(n)}` : formatUec(n));
 
 export function guideRows(
-  places: Place[], ref: Reference, marks: { targetId: number | null; hereId: number | null; cargo?: GuideCargo | null },
+  places: Place[], ref: Reference,
+  marks: { targetId: number | null; hereId: number | null; cargo?: GuideCargo | null; side?: Side; vehicle?: Vehicle },
 ): GuideRow[] {
   const cargo = marks.cargo ?? null;
   return places.map(({ terminalId, estimate: e }): GuideRow => {
@@ -51,6 +55,7 @@ export function guideRows(
       extraLoss: extra !== null && Math.round(extra) <= 0,
       isTarget: terminalId === marks.targetId,
       isHere: terminalId === marks.hereId,
+      loadBar: marks.side === 'buy' ? loadingBar(terminal, marks.vehicle) : null,
     };
   });
 }

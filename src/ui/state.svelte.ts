@@ -458,6 +458,15 @@ class AppState {
     };
   }
 
+  /**
+   * The ship of the settings as the reference describes it; `undefined` when none is chosen, when it left the reference, or when the
+   * capacity was typed in by hand (then nothing is known of its boxes or of how it is loaded: spec 14.19, item 10).
+   */
+  get vehicle(): Reference['vehicles'][number] | undefined {
+    const id = this.settings.vehicleId;
+    return id === null ? undefined : this.reference.vehicles.find((v) => v.id === id);
+  }
+
   /** Applies the loaded settings; the viewed terminal starts at the current location. */
   setSettings(settings: Settings): void {
     this.settings = settings;
