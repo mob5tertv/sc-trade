@@ -3,6 +3,7 @@ import { pairKey } from '../../src/core/types';
 import { routeRows } from '../../src/ui/vm/stats-rows';
 import {
   currentSession, routesSummary, sessionFigure, STATS_VIEWS, figuresOf, EMPTY_FIGURES, EMPTY_HISTORY, LIST_HEAD_PX, LIST_MAX_HEIGHT, LIST_ROWS,
+  routesSinceLine, runsSince,
 } from '../../src/ui/vm/stats-view';
 import { DEFAULT_SESSION_GAP_SEC, routeStats } from '../../src/core/stats';
 import { ref } from '../helpers/factories';
@@ -191,5 +192,46 @@ describe('figuresOf', () => {
 
   it('leaves out of the sessions the run no timestamp covers (the reason for reading the events too)', () => {
     expect(figuresOf({ runs: [R1], recordTs: [] }).sessions).toEqual([]);
+  });
+});
+
+// R1 ends at 3400, R2 at 11 800, R4 (lost) at 12 500, R3 at 21 000, R5 at 41 000; R6 is still going.
+describe('«Обнулить маршруты» (spec 14.19)', () => {
+  const history = { runs: [R6, R5, R4, R3, R2, R1], recordTs: [1000, 3400, 10000, 11800, 20000, 21000] };
+
+  it('counts the routes, my times, my run counts and my pace from the runs that ended since the reset', () => {
+    const all = figuresOf(history);
+    const since = figuresOf(history, 12_000);                      // R1 and R2 ended before it
+    expect(all.stats.map((s) => s.destId)).toEqual([2, 3]);
+    expect(since.stats.map((s) => s.destId)).toEqual([3]);
+    expect(since.ownMedian.has(pairKey(1, 2))).toBe(false);
+    expect(since.runCounts.get(pairKey(1, 2))).toBeUndefined();
+    expect(since.runCounts.get(pairKey(1, 3))).toBe(1);
+    expect(all.pace!.runs).toBe(5);
+    expect(since.pace!.runs).toBe(3);                              // R4, R3, R5
+  });
+
+  it('leaves the sessions as they were: what was earned is not taken back', () => {
+    expect(figuresOf(history, 12_000).sessions).toEqual(figuresOf(history).sessions);
+  });
+
+  it('is empty right after the reset, and counts the run that was going at that moment once it ends', () => {
+    const now = 60_000;
+    const fresh = figuresOf(history, now);
+    expect(fresh.stats).toEqual([]);
+    expect(fresh.pace).toBeNull();
+    expect(fresh.ownMedian.size).toBe(0);
+    expect(runsSince(history.runs, now)).toEqual([R6]);            // the run that goes on is kept: it will end after the reset
+    const ended = { run: { ...R6.run, status: 'done' as const, endedAt: now + 500 }, events: R6.events };
+    expect(figuresOf({ ...history, runs: [ended, R5, R4, R3, R2, R1] }, now).stats.map((s) => s.destId)).toEqual([2]);
+  });
+
+  it('takes a run that ended at the very second of the reset, and every run when there is no reset', () => {
+    expect(runsSince(history.runs, 21_000).map((r) => r.run.id)).toEqual([6, 5, 3]);
+    expect(runsSince(history.runs, null)).toBe(history.runs);
+  });
+
+  it('says since when the routes are counted', () => {
+    expect(routesSinceLine(1_759_748_700)).toMatch(/^Маршруты считаются с \d\d\.\d\d \d\d:\d\d$/);
   });
 });

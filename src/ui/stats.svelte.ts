@@ -28,7 +28,18 @@ class StatsState {
   view = $state<StatsView>('routes');
 
   #history = $state.raw<History>(EMPTY_HISTORY);
-  #figures = $state.raw<StatsFigures>(EMPTY_FIGURES);
+  /**
+   * The numbers made of the history, counted once per load and once per «Обнулить маршруты» (or its undo): the routes, the times
+   * and the pace are those of the runs since the reset, so they follow the setting by themselves, with no read of the database.
+   */
+  readonly #figures = $derived.by((): StatsFigures => {
+    try {
+      return figuresOf(this.#history, app.settings.routesSince);
+    } catch (err) {
+      app.log.error('ui', 'cannot count the statistics', { err });
+      return EMPTY_FIGURES;
+    }
+  });
   /** Reads overlap when the active run changes quickly; only the newest may put its answer in. */
   readonly #latest = createLatestRequest();
   #following = false;
@@ -150,8 +161,7 @@ class StatsState {
       const { db } = app.suggestDeps();
       const history = await loadHistorySafely(db, app.log); // logs its own failure
       if (history === null || !isNewest()) return;
-      this.#figures = figuresOf(history);
-      this.#history = history;
+      this.#history = history; // the figures are counted from it (`#figures`)
       app.log.debug('ui', 'statistics loaded', { reason, runs: history.runs.length, records: history.recordTs.length });
     } catch (err) {
       try {
@@ -188,6 +198,22 @@ class StatsState {
    */
   opened(): void {
     void this.reload('section opened');
+  }
+
+  /**
+   * «Обнулить маршруты»: from now on the routes, the player's own times and his pace are counted from the runs that end after this
+   * moment. Nothing is deleted: the history and the sessions keep every run, and `restoreRoutes` takes the reset back.
+   */
+  async resetRoutes(): Promise<void> {
+    const since = app.now;
+    app.log.info('ui', 'routes reset', { since, routes: this.routes.length });
+    await app.updateSetting('routesSince', since);
+  }
+
+  /** Takes «Обнулить маршруты» back: the routes are counted from the first run again. */
+  async restoreRoutes(): Promise<void> {
+    app.log.info('ui', 'routes reset taken back', { since: app.settings.routesSince });
+    await app.updateSetting('routesSince', null);
   }
 
   setView(next: StatsView): void {

@@ -18,6 +18,12 @@ export interface Settings {
    * маршруты» count the lost runs of a route (attempts, the profit and the rate with the losses).
    */
   detailedCalc: boolean;
+  /**
+   * «Обнулить маршруты» (spec 14.19): the moment (unix seconds) from which the player's routes are counted, `null` for "from the first run".
+   * The runs that ended before it stay in the history and in the sessions; the rating of the routes, the player's own times of the pairs and
+   * his usual pace do not see them. Nothing is deleted, so the reset can be taken back.
+   */
+  routesSince: number | null;
   /** Optional trigger keys, e.g. 'F8' or 'Ctrl+Alt+T'; '' means not assigned. */
   hotkeyPanel: string; hotkeyDepart: string; hotkeyArrive: string;
   /** Width of the expanded window in px; its height follows its content. */
@@ -57,7 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hotMin: 60, warmMin: 180, coolingMin: 240,
   refillFullMin: DEFAULT_REFILL_FULL_MIN,
   quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, topN: 5, roiHighlightPct: 50,
-  sort: 'uecPerHour', nearby: false, detailedCalc: false,
+  sort: 'uecPerHour', nearby: false, detailedCalc: false, routesSince: null,
   hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '',
   panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
   uiScale: 0,

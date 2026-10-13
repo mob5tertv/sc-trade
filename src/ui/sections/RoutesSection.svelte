@@ -14,7 +14,7 @@
   import { app } from '../state.svelte';
   import { stats } from '../stats.svelte';
   import { clickedSort, sortRoutes, type RouteSortKey } from '../vm/route-sort';
-  import { LIST_MAX_HEIGHT, STATS_VIEWS } from '../vm/stats-view';
+  import { LIST_MAX_HEIGHT, ROUTES_RESET_QUESTION, STATS_VIEWS, routesSinceLine } from '../vm/stats-view';
 
   const SECTION = 'routes';
   // When the window has no height to spare, this section gives way before the terminal table does: the table is what
@@ -32,6 +32,12 @@
     const opening = !open;
     void app.toggleSection(SECTION);
     if (opening) stats.opened();
+  }
+
+  const since = $derived(app.settings.routesSince);
+
+  function askReset(): void {
+    app.ask(ROUTES_RESET_QUESTION, () => stats.resetRoutes());
   }
 
   function sortBy(key: RouteSortKey): void {
@@ -71,9 +77,49 @@
 >
   {#if view === 'routes'}
     <RoutesTable rows={routes} sort={routeSort} onSort={sortBy} />
+    <!-- the reset of the rating: the history is not touched (it is cleared in «Настройки» → «Данные»), so it can be taken back -->
+    {#if since !== null}
+      <p class="reset">
+        <span class="since">{routesSinceLine(since)}</span>
+        <button type="button" class="sc-btn" title="Считать маршруты снова по всей истории рейсов" onclick={() => void stats.restoreRoutes()}>Вернуть прежние</button>
+      </p>
+    {:else if routes.length > 0}
+      <p class="reset">
+        <button
+          type="button"
+          class="sc-btn"
+          title="Начать рейтинг маршрутов заново. История рейсов и сессии останутся; обнуление можно вернуть"
+          onclick={askReset}
+        >Обнулить маршруты</button>
+      </p>
+    {/if}
   {:else if view === 'history'}
     <HistoryList rows={stats.historyList} />
   {:else}
     <SessionsList rows={stats.sessionList} />
   {/if}
 </Section>
+
+<style>
+  .reset {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sc-gap);
+    margin: 0;
+    padding: 0 var(--sc-pad-x);
+    height: var(--sc-row-h);
+    /* stays at the bottom of the body while a long list scrolls above it, as the line of heads stays at its top */
+    position: sticky;
+    bottom: 0;
+    background: var(--sc-bg-solid);
+  }
+
+  .since {
+    margin-right: auto;
+    overflow: hidden;
+    color: var(--sc-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>

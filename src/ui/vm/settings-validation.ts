@@ -130,6 +130,7 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
     case 'vehicleId':
     case 'starSystemId':
     case 'serverChangedAt':
+    case 'routesSince':
     case 'currentTerminalId':
     case 'targetTerminalId':
       return v === null || isNumber(v) ? null : NOT_A_NUMBER;

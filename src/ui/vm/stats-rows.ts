@@ -22,8 +22,8 @@ const routeName = (ref: Reference, originId: number, destId: number): string => 
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
-// '06.10 14:05' in the machine's local time zone
-function formatStamp(unixSec: number): string {
+/** '06.10 14:05' in the machine's local time zone. */
+export function formatStamp(unixSec: number): string {
   const d = new Date(unixSec * 1000);
   return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }

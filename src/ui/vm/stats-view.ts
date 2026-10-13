@@ -2,7 +2,7 @@ import { formatCompact, formatUec } from '../../core/format';
 import { DEFAULT_SESSION_GAP_SEC, ownLegIndex, ownMedianIndex, ownRunCounts, routeStats, sessions, usualPace } from '../../core/stats';
 import type { Pace, RouteStat, Session } from '../../core/stats';
 import type { RunWithEvents } from '../../core/types';
-import { NONE } from './stats-rows';
+import { NONE, formatStamp } from './stats-rows';
 import type { RouteRow } from './stats-rows';
 
 // What the "Мои маршруты" section decides without the screen: the lists it offers, the line of its header, and the
@@ -110,14 +110,36 @@ export interface StatsFigures {
 
 export const EMPTY_FIGURES: StatsFigures = { stats: [], ownMedian: new Map(), ownLeg: new Map(), runCounts: new Map(), sessions: [], pace: null };
 
-export function figuresOf(history: History): StatsFigures {
+/**
+ * The runs the routes are counted from after «Обнулить маршруты»: those that ended at `since` or later, and the run that is still
+ * going. `null` is "no reset": every run. A run that was going at the moment of the reset ends after it, so it counts.
+ */
+export function runsSince(runs: RunWithEvents[], since: number | null): RunWithEvents[] {
+  return since === null ? runs : runs.filter(({ run }) => run.endedAt === null || run.endedAt >= since);
+}
+
+/**
+ * `routesSince` is the moment of «Обнулить маршруты» (the setting of that name): the routes, the player's own times and his pace
+ * are counted from the runs that ended since (`runsSince`). The sessions are what was earned and when, so they keep every run.
+ */
+export function figuresOf(history: History, routesSince: number | null = null): StatsFigures {
   const { runs, recordTs } = history;
+  const counted = runsSince(runs, routesSince);
   return {
-    stats: routeStats(runs),
-    ownMedian: ownMedianIndex(runs),
-    ownLeg: ownLegIndex(runs),
-    runCounts: ownRunCounts(runs),
+    stats: routeStats(counted),
+    ownMedian: ownMedianIndex(counted),
+    ownLeg: ownLegIndex(counted),
+    runCounts: ownRunCounts(counted),
     sessions: sessions(recordTs, runs),
-    pace: usualPace(runs),
+    pace: usualPace(counted),
   };
 }
+
+/** 'Маршруты считаются с 13.10 20:55': the line under the table of routes after a reset. */
+export const routesSinceLine = (since: number): string => `Маршруты считаются с ${formatStamp(since)}`;
+
+/** The question before «Обнулить маршруты»: what starts again and what stays. */
+export const ROUTES_RESET_QUESTION = {
+  text: 'Рейтинг маршрутов, твои времена по парам и обычный темп начнут считаться заново. История рейсов и сессии останутся. Обнулить?',
+  yes: 'Да, обнулить',
+};
