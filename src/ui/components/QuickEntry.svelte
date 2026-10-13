@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { formatUec } from '../../core/format';
   import type { Searchable } from '../../core/search';
   import type { Side } from '../../core/types';
-  import { rejectionText, resolveQuickEntry, allowedSide, type EntrySides } from '../vm/quick-entry';
+  import { rejectionText, resolveQuickEntry, allowedSide, mayWrite, type EntrySides } from '../vm/quick-entry';
   import type { Rejection } from '../vm/quick-entry';
   import SearchBox from './SearchBox.svelte';
 
@@ -75,6 +76,23 @@
   const listSide = $derived<Side>(pickedSide ?? sideFor(null));
   const items = $derived(itemsFor ? itemsFor(listSide) : commodityItems);
 
+  // What is on the line belongs to the terminal it was typed for: with another terminal in the table the line starts empty, or a
+  // commodity picked from the list of one station would be written to the next one, which may not trade it at all.
+  $effect(() => {
+    void terminalId;
+    untrack(() => {
+      commodityId = null;
+      pickedSide = null;
+      priceText = '';
+      scuText = '';
+      badPrice = false;
+      badScu = false;
+      badCommodity = false;
+      badSave = false;
+      status = null;
+    });
+  });
+
   // Enter in the commodity field takes the first match, and the player goes on with the price.
   function pickCommodity(id: number): void {
     commodityId = id;
@@ -104,6 +122,14 @@
     if (commodityId === null) {
       badCommodity = true;
       reject('no-commodity');
+      commodityBox?.focus();
+      return;
+    }
+    // the list offers only what the terminal trades on the side; this is the same rule at the moment of the write, whatever
+    // the line went through since the commodity was picked
+    if (!mayWrite(side, sides)) {
+      badCommodity = true;
+      reject('not-traded');
       commodityBox?.focus();
       return;
     }

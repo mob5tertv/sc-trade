@@ -198,6 +198,14 @@ export async function addRunEvent(db: Db, e: Omit<RunEvent, 'id'>): Promise<numb
   return result.lastInsertId;
 }
 
+/**
+ * Makes the finished run `id` the run that is going again: a correction showed that cargo of it is still aboard. Only a run that
+ * is `done` is reopened. The index `run_one_active` refuses it while another run is going: the caller looks first.
+ */
+export async function reopenRun(db: Db, id: number): Promise<void> {
+  await db.execute("UPDATE run SET status = 'active', ended_at = NULL WHERE id = ? AND status = 'done'", [id]);
+}
+
 /** Changes the quantity and the price of a buy or sell event; any other event stays. Returns how many rows were changed. */
 export async function updateTradeEvent(db: Db, eventId: number, scu: number, price: number): Promise<number> {
   return (await db.execute("UPDATE run_event SET scu = ?, price = ? WHERE id = ? AND type IN ('buy', 'sell')", [scu, price, eventId])).rowsAffected;

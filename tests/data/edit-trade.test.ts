@@ -3,7 +3,7 @@ import { cargoOf, runTotals } from '../../src/core/run';
 import type { Db } from '../../src/data/db';
 import { latestObservations } from '../../src/data/repo/diary';
 import { getActiveRun, getRun, listRuns } from '../../src/data/repo/runs';
-import { editTrade, loseCargo, recordBuy, recordSell, removeRunRecord } from '../../src/data/trade';
+import { editTrade, loseCargo, recordBuy, recordIncome, recordSell, removeRunRecord } from '../../src/data/trade';
 import type { TradeDeps } from '../../src/data/trade';
 import { buyIn, NOW, sellIn, tradeFixture } from '../helpers/trade-fixtures';
 import type { Clock } from '../helpers/trade-fixtures';
@@ -144,5 +144,62 @@ describe('removeRunRecord: one finished run out of the history', () => {
     await expect(removeRunRecord(deps, going.run.id)).rejects.toMatchObject({ code: 'run_active' });
     expect((await getActiveRun(db))!.events).toHaveLength(1);
     await expect(removeRunRecord(deps, 9999)).rejects.toMatchObject({ code: 'no_trade' });
+  });
+});
+
+// What the review of 14.10.2026 found in the correction of a trade.
+describe('editTrade: what the status of the run follows', () => {
+  it('corrects a sale of goods that were never bought: an income has no purchase to compare with', async () => {
+    const income = await recordIncome(deps, sellIn(50, 7000));
+    const sale = income.events.find(e => e.type === 'sell')!;
+    const fixed = await editTrade(deps, { eventId: sale.id, scu: 60, price: 7100 });
+    expect(fixed.run.status).toBe('done');
+    expect(fixed.events.find(e => e.id === sale.id)).toMatchObject({ scu: 60, price: 7100 });
+    expect(await getActiveRun(db)).toBeNull();
+  });
+
+  it('makes a finished run the run that is going again when the correction leaves cargo aboard', async () => {
+    await recordBuy(deps, buyIn(300)); clock.advance(600);
+    const { run: sold } = await recordSell(deps, sellIn(300, 7000));
+    expect(sold.run.status).toBe('done');
+    const sale = sold.events.find(e => e.type === 'sell')!;
+
+    const fixed = await editTrade(deps, { eventId: sale.id, scu: 250, price: 7000 });      // 50 SCU were not sold after all
+    expect(fixed.run).toMatchObject({ id: sold.run.id, status: 'active', endedAt: null });
+    expect(cargoOf((await getActiveRun(db))!.events)).toEqual([{ commodityId: 10, scu: 50, avgBuyPrice: 6000 }]);
+
+    clock.advance(300);                                                                    // and the rest is sold as in any run
+    const { run: done, finished } = await recordSell(deps, sellIn(50, 7000));
+    expect(finished).toBe(true);
+    expect(done.run).toMatchObject({ id: sold.run.id, status: 'done', endedAt: NOW + 900 });
+  });
+
+  it('refuses that correction while another run is going, and writes nothing', async () => {
+    await recordBuy(deps, buyIn(300)); clock.advance(600);
+    const { run: sold } = await recordSell(deps, sellIn(300, 7000)); clock.advance(100);
+    const going = await recordBuy(deps, buyIn(100));
+    const sale = sold.events.find(e => e.type === 'sell')!;
+
+    await expect(editTrade(deps, { eventId: sale.id, scu: 250, price: 7000 })).rejects.toMatchObject({ code: 'run_active' });
+    const kept = (await getRun(db, sold.run.id))!;
+    expect(kept.run.status).toBe('done');
+    expect(kept.events.find(e => e.id === sale.id)).toMatchObject({ scu: 300, price: 7000 });
+    expect((await getActiveRun(db))!.run.id).toBe(going.run.id);
+  });
+
+  it('asks only a purchase that grows whether it fits, by the hold the run started with', async () => {
+    const bought = await recordBuy(deps, buyIn(300));                                      // the run started with 696 SCU
+    const smaller: TradeDeps = { ...deps, settings: { ...deps.settings, scuCapacity: 100 } };   // another ship is in the settings now
+    const id = bought.events[0].id;
+    const fixed = await editTrade(smaller, { eventId: id, scu: 300, price: 6120 });        // a price is always corrected
+    expect(cargoOf(fixed.events)[0]).toMatchObject({ scu: 300, avgBuyPrice: 6120 });
+    await editTrade(smaller, { eventId: id, scu: 250, price: 6120 });                      // and so is a smaller quantity
+    await expect(editTrade(smaller, { eventId: id, scu: 700, price: 6120 })).rejects.toMatchObject({ code: 'no_space' });
+  });
+
+  it('records the place of the SALE as the target of a lost run when the target has two steps', async () => {
+    await recordBuy(deps, buyIn(300));
+    const lost = await loseCargo({ ...deps, settings: { ...deps.settings, targetTerminalId: 1, targetThenId: 2 } });
+    expect(lost.run.targetId).toBe(2);
   });
 });

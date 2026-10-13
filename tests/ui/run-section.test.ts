@@ -212,6 +212,15 @@ describe('sameRun', () => {
   it('differs for another run', () => {
     expect(sameRun({ run: { ...active.run, id: 2 }, events: active.events }, active)).toBe(false);
   });
+  it('differs when a trade was corrected: the same events by their ids, another quantity or price', () => {
+    const trade = active.events.findIndex(e => e.type === 'buy');
+    const corrected = (change: { scu?: number; price?: number }) => ({
+      run: active.run, events: active.events.map((e, i) => (i === trade ? { ...e, ...change } : e)),
+    });
+    expect(sameRun(corrected({ price: active.events[trade].price! + 1 }), active)).toBe(false);
+    expect(sameRun(corrected({ scu: active.events[trade].scu! - 1 }), active)).toBe(false);
+    expect(sameRun(corrected({}), active)).toBe(true);
+  });
 });
 
 describe('sellLogContext and sellDecisionKey', () => {

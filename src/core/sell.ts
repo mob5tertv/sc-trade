@@ -81,7 +81,7 @@ function byGain(a: SellAlternative, b: SellAlternative): number {
  *
  * The choice is the marginal one (spec 14.19): the time already spent is spent whatever the player does, so an alternative
  * is judged by what it ADDS to selling here (`extraProfit`) over the time the way there takes (`extraSec`), and the list is
- * ordered by that rate (`byGain`). The system filter and terminals missing from the reference work as in `routesFrom`;
+ * ordered by that rate (`byGain`). The terminal that adds the most is always among the three, last when the rates left it out. The system filter and terminals missing from the reference work as in `routesFrom`;
  * an alternative may pay less than here, and the whole run may lose money, because so may selling here.
  */
 export function sellOrContinue(
@@ -121,5 +121,10 @@ export function sellOrContinue(
     });
   }
   found.sort((a, b) => byGain(a, b) || a.destId - b.destId);
-  return { here, alternatives: found.slice(0, MAX_ALTERNATIVES) };
+  const top = found.slice(0, MAX_ALTERNATIVES);
+  // the place that adds the MOST is never cut off by three better rates: a far terminal, or one with no known way, may pay much
+  // more than three near ones, and the player is the one to decide whether the way is worth it
+  const richest = found.reduce<SellAlternative | null>((best, a) => (a.extraProfit > 0 && (best === null || a.extraProfit > best.extraProfit) ? a : best), null);
+  if (richest !== null && !top.includes(richest)) top[top.length - 1] = richest;
+  return { here, alternatives: top };
 }

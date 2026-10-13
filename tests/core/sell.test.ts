@@ -125,3 +125,19 @@ describe('legSec', () => {
     expect(legSec({ ...far, distances: new Map() }, 3, 2)).toEqual({ sec: null, source: null });
   });
 });
+
+describe('sellOrContinue: the three that are shown', () => {
+  it('never cuts off the place that adds the most, even when three others earn more per hour', () => {
+    // B (2), 5 and 6 are near and timed; A (1) pays the most (7200) and nobody knows the way there
+    const near = { ...ctx, distances: new Map<string, number | null>([[distKey(3, 2), 10], [distKey(3, 5), 10], [distKey(3, 6), 10]]) };
+    const r = sellOrContinue(withManySellers(market), line, 3, 6500, 1200, near);
+    expect(r.alternatives).toHaveLength(3);
+    expect(r.alternatives.slice(0, 2).every(a => a.extraUecPerHour !== null)).toBe(true);
+    expect(r.alternatives[2]).toMatchObject({ destId: 1, extraProfit: 340 * (7200 - 6500), extraUecPerHour: null });
+  });
+
+  it('changes nothing when the richest place is already among the three', () => {
+    const r = sellOrContinue(withManySellers(market), line, 3, 6500, 1200, ctx);
+    expect(r.alternatives.map(a => a.destId)).toEqual([2, 1, 5]);
+  });
+});

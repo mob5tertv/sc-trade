@@ -38,9 +38,12 @@
   // «К цели» (spec 14.19, item 16): while a target is set and the options are those of ANOTHER terminal, the header offers the goods of
   // that one pair instead of the best trips to anywhere. The pair is counted from what is already loaded (prices and stocks), it asks
   // UEX for nothing, and again every 15 seconds on the slow clock of the table, which moves the stocks and the temperatures.
+  // A target in two steps is the place of the PURCHASE (the sale comes after it): "here → target" is not the pair that is flown, so
+  // the switch is not offered for it.
   const targetId = $derived(app.settings.targetTerminalId);
   const pairOffered = $derived(
-    request !== null && request.kind === 'from' && targetId !== null && targetId !== request.terminalId && app.reference.terminals.has(targetId),
+    request !== null && request.kind === 'from' && targetId !== null && app.settings.targetThenId === null
+      && targetId !== request.terminalId && app.reference.terminals.has(targetId),
   );
   const toTarget = $derived(pairOffered && app.settings.optionsToTarget);
   const pair = $derived.by(() => {

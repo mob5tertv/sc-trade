@@ -1,4 +1,4 @@
-import { cargoOf, runTotals } from '../core/run';
+import { cargoOf, isIncomeRun, runTotals } from '../core/run';
 import type { Settings } from '../core/settings';
 import type { RunEvent, RunWithEvents } from '../core/types';
 import type { Db } from './db';
@@ -6,7 +6,7 @@ import type { Logger } from './logger';
 import { addObservation, amendTradeObservation } from './repo/diary';
 import {
   addFinishedRun, addRunEvent, closeRun, emptyActiveRuns, getActiveRun, getRun, removeEmptyActiveRun, removeEmptyFinishedRuns, removeEmptyRun,
-  removeFinishedRun, removeFinishedRunEvents, removeFinishedRuns, removeOrphanRunTargets, removeRunEventsOf, runOfEvent, setRunTarget, startRun,
+  removeFinishedRun, removeFinishedRunEvents, removeFinishedRuns, removeOrphanRunTargets, removeRunEventsOf, reopenRun, runOfEvent, setRunTarget, startRun,
   updateTradeEvent,
 } from './repo/runs';
 
@@ -299,7 +299,8 @@ export function loseCargo(d: TradeDeps): Promise<RunWithEvents> {
     const active = await requireActiveRun(d.db);
     const runId = active.run.id;
     const ts = d.now();
-    const targetId = d.settings.targetTerminalId;
+    // with a target in two steps the cargo was going to the place of the sale, not to the place of the purchase
+    const targetId = d.settings.targetThenId ?? d.settings.targetTerminalId;
     if (targetId !== null) {
       await setRunTarget(d.db, runId, targetId).catch((err: unknown) => d.log.warn(LOG, 'cannot record the target of the lost run', { runId, targetId, err }));
     }
@@ -318,10 +319,20 @@ export interface TradeEdit { eventId: number; scu: number; price: number }
  * observation the trade wrote into the diary is corrected with it (the price, and the quantity left after the trade by as much as
  * the traded quantity changed). What is refused, and nothing is written then:
  *  - a quantity or a price that is not above zero, an event that is no trade;
- *  - a correction after which more of the commodity would be sold than was bought in that run;
- *  - in the run that is going, a purchase that no longer fits the hold (when the settings know a capacity).
- * A run that is going and whose hold the correction empties is closed as done at the time of its last sale, as a sale would
- * close it. The observation is corrected after the event: a failure there is logged, and the trade stays corrected.
+ *  - a correction after which more of the commodity would be sold than was bought in that run (a sale of goods that were never
+ *    bought, spec 14.10, has no purchase to compare with: it is corrected freely);
+ *  - in the run that is going, a purchase made LARGER than it was that no longer fits the hold the run started with;
+ *  - a correction that leaves cargo aboard a finished run while ANOTHER run is going (see below).
+ * The status of the run follows what its trades now say:
+ *  - a run that is going and whose hold the correction empties is closed as done at the time of its last sale, as a sale would
+ *    close it;
+ *  - a finished run that the correction leaves with cargo aboard (its last sale was typed in larger than it was, and that closed
+ *    the run) is the run that is going again: the cargo is still in the hold and has to be sold. A lost run keeps its status:
+ *    its cargo is gone whatever the numbers say.
+ * The order of the statements is the one a write that was cut off recovers from. The run is reopened before the event changes
+ * (reopened alone it is an active run that is sold out, which the repair of the next call closes again). The observation of the
+ * diary is corrected before the event: it is found by the price the event still holds, so a correction that was cut off can be
+ * made again (a failure there is logged, and the trade is still corrected). The run is closed last.
  */
 export function editTrade(d: TradeDeps, edit: TradeEdit): Promise<RunWithEvents> {
   return serialized(d, async () => {
@@ -339,18 +350,26 @@ export function editTrade(d: TradeDeps, edit: TradeEdit): Promise<RunWithEvents>
     const traded = (type: 'buy' | 'sell'): number => after
       .filter(e => e.type === type && e.commodityId === event.commodityId)
       .reduce((sum, e) => sum + (e.scu ?? 0), 0);
-    if (traded('sell') > traded('buy')) {
+    const income = isIncomeRun(before.events);
+    if (!income && traded('sell') > traded('buy')) {
       throw new TradeError('oversell', `Так выйдет, что продано ${traded('sell')} SCU, а куплено только ${traded('buy')}`);
     }
-    if (before.run.status === 'active' && d.settings.scuCapacity > 0 && holdScu(after) > d.settings.scuCapacity) {
-      throw new TradeError('no_space', `В трюм не поместится: вместимость ${d.settings.scuCapacity} SCU`);
+    // only a purchase that GROWS is asked whether it fits, and by the hold the run started with: a corrected price, or a ship
+    // changed in the settings since, is no reason to refuse
+    const capacity = before.run.scuCapacity;
+    if (before.run.status === 'active' && event.type === 'buy' && edit.scu > event.scu && capacity > 0 && holdScu(after) > capacity) {
+      throw new TradeError('no_space', `В трюм не поместится: вместимость ${capacity} SCU`);
+    }
+    // a finished run that would have cargo aboard is the run that is going again; that cannot be while another one goes
+    const reopens = before.run.status === 'done' && !income && cargoOf(after).length > 0;
+    if (reopens && (await getActiveRun(d.db)) !== null) {
+      throw new TradeError('run_active', 'Так в этом рейсе останется непроданный груз, а другой рейс уже идёт. Сначала заверши его.');
     }
 
-    await updateTradeEvent(d.db, edit.eventId, edit.scu, edit.price);
-    d.log.info(LOG, 'edited', {
-      runId: before.run.id, eventId: edit.eventId, type: event.type, terminalId: event.terminalId, commodityId: event.commodityId,
-      was: { scu: event.scu, price: event.price }, now: { scu: edit.scu, price: edit.price },
-    });
+    if (reopens) {
+      await reopenRun(d.db, before.run.id);
+      d.log.info(LOG, 'reopened', { runId: before.run.id, by: 'edit' });
+    }
     if (event.terminalId !== null) {
       // after a purchase the diary holds the stock that was left, after a sale what the buyer then held
       const scuDelta = event.type === 'buy' ? event.scu - edit.scu : edit.scu - event.scu;
@@ -358,6 +377,11 @@ export function editTrade(d: TradeDeps, edit: TradeEdit): Promise<RunWithEvents>
       await amendTradeObservation(d.db, d.log, was, edit.price, scuDelta)
         .catch((err: unknown) => d.log.warn(LOG, 'cannot correct the observation of the edited trade', { eventId: edit.eventId, err }));
     }
+    await updateTradeEvent(d.db, edit.eventId, edit.scu, edit.price);
+    d.log.info(LOG, 'edited', {
+      runId: before.run.id, eventId: edit.eventId, type: event.type, terminalId: event.terminalId, commodityId: event.commodityId,
+      was: { scu: event.scu, price: event.price }, now: { scu: edit.scu, price: edit.price },
+    });
     if (before.run.status === 'active' && cargoOf(after).length === 0) {
       const endedAt = lastSaleAt(after);
       if (endedAt !== null) {

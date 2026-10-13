@@ -87,7 +87,10 @@ export function sessionFigure(session: Session | null): SessionFigure | null {
  * without its unit (their column has a caption); the header has none, so the unit is added here.
  */
 export function routesSummary(rows: RouteRow[], session: SessionFigure | null = null): string {
-  const best = rows[0];
+  // the rows come best rate first by the numbers WITHOUT the lost runs; with «Подробные расчёты» a row carries its losses, and the
+  // best one is then looked for among the numbers that are shown
+  const rateOf = (row: RouteRow): number => row.stat.uecPerHour ?? Number.NEGATIVE_INFINITY;
+  const best = rows.reduce<RouteRow | undefined>((top, row) => (top === undefined || rateOf(row) > rateOf(top) ? row : top), undefined);
   const route = best === undefined ? null : best.rate === NONE ? best.route : `${best.route} · ${best.rate}/ч`;
   const parts = [session?.line ?? null, route].filter((part): part is string => part !== null);
   return parts.length === 0 ? NO_FINISHED_RUNS : parts.join(' · ');

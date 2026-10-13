@@ -23,13 +23,14 @@ export function defaultSide(row: Pick<TerminalRow, 'buy' | 'sell'> | undefined, 
   return sold ? 'buy' : 'sell';
 }
 
-/** Why Enter wrote nothing: there is nowhere to write to, no commodity, a price or a quantity that cannot be read. */
-export const REJECTIONS = ['no-terminal', 'no-commodity', 'bad-price', 'bad-scu'] as const;
+/** Why Enter wrote nothing: there is nowhere to write to, no commodity, a commodity the terminal does not trade on that side, a price or a quantity that cannot be read. */
+export const REJECTIONS = ['no-terminal', 'no-commodity', 'not-traded', 'bad-price', 'bad-scu'] as const;
 export type Rejection = (typeof REJECTIONS)[number];
 
 const REJECTION_TEXT: Record<Rejection, string> = {
   'no-terminal': 'Сначала выбери локацию в шапке окна',
   'no-commodity': 'Выбери товар',
+  'not-traded': 'Этот товар здесь так не торгуется: выбери другой товар или сторону',
   'bad-price': 'Цена — целое число больше нуля',
   'bad-scu': 'Количество — целое число от нуля',
 };
@@ -94,8 +95,16 @@ export function entrySides(commodityId: number | null, sides: ReadonlyMap<number
   return sides.get(commodityId) ?? { buy: false, sell: false };
 }
 
-/** The side a price goes to: the wanted one when the terminal trades the commodity on it, else the side it does trade it on. */
+/**
+ * The side a price goes to: the wanted one when the terminal trades the commodity on it, else the side it does trade it on. A
+ * commodity the terminal trades on NEITHER side stays on the wanted one: there is no side to move to, and the entry is refused
+ * (`mayWrite`).
+ */
 export function allowedSide(wanted: Side, sides: EntrySides | null): Side {
   if (sides === null || sides[wanted]) return wanted;
-  return wanted === 'buy' ? 'sell' : 'buy';
+  const other: Side = wanted === 'buy' ? 'sell' : 'buy';
+  return sides[other] ? other : wanted;
 }
+
+/** Whether the quick entry may write a price of a commodity on `side`: the terminal trades it there, or nothing limits the entry. */
+export const mayWrite = (side: Side, sides: EntrySides | null): boolean => sides === null || sides[side];

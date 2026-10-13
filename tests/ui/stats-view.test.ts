@@ -27,9 +27,11 @@ describe('routesSummary', () => {
     expect(routesSummary(rows)).toBe('ARC-L1 → TDD Area 18 · 467k/ч');
   });
 
-  it('takes the first row: the statistics deliver the best rate first', () => {
+  it('names the row with the best rate that is shown, wherever it stands', () => {
     const rows = routeRows([{ ...stat, destId: 3, uecPerHour: 310_000 }, { ...stat, uecPerHour: 120_000 }], ref);
     expect(routesSummary(rows)).toBe('ARC-L1 → CRU-L1 · 310k/ч');
+    // «Подробные расчёты» count the lost runs into a row: the route that was first by the runs that ended well may not be the best
+    expect(routesSummary([rows[1], rows[0]])).toBe('ARC-L1 → CRU-L1 · 310k/ч');
   });
 
   it('names only the route when it has no rate', () => {

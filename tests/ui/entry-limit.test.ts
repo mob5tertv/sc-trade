@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildMarket } from '../../src/core/market';
-import { allowedSide, entryCommodities, entrySides, uexSides } from '../../src/ui/vm/quick-entry';
+import { allowedSide, entryCommodities, entrySides, mayWrite, uexSides } from '../../src/ui/vm/quick-entry';
 import { obs } from '../helpers/factories';
 import { ctx, GOLD, market, NOW, withBuy } from '../helpers/route-fixtures';
 
@@ -60,5 +60,21 @@ describe('entrySides and allowedSide', () => {
     expect(entrySides(null, sides)).toBeNull();
     expect(entrySides(51, new Map())).toBeNull();
     expect(allowedSide('sell', null)).toBe('sell');
+  });
+});
+
+describe('mayWrite: the same rule at the moment of the write', () => {
+  it('keeps the wanted side for a commodity the terminal trades on neither, and refuses the write', () => {
+    const neither = { buy: false, sell: false };
+    expect(allowedSide('buy', neither)).toBe('buy');
+    expect(allowedSide('sell', neither)).toBe('sell');
+    expect(mayWrite('buy', neither)).toBe(false);
+    expect(mayWrite('sell', neither)).toBe(false);
+  });
+
+  it('lets a price be written on a side the terminal trades, and anywhere when nothing limits the entry', () => {
+    expect(mayWrite('sell', { buy: false, sell: true })).toBe(true);
+    expect(mayWrite('buy', { buy: false, sell: true })).toBe(false);
+    expect(mayWrite('buy', null)).toBe(true);
   });
 });

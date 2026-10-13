@@ -12,9 +12,13 @@ const TONES = [
   { hz: 1318.5, at: 0.14, sec: 0.26 },
 ];
 
+/** A chime that could not start for this long is not played at all: a sound that comes later says nothing about now. */
+const LATE_MS = 2000;
+
 /**
  * Plays the chime at `volume` (0 … 1). Never throws and never waits: a webview that will not play a sound (no device, a policy
- * that holds the audio back until the window is clicked) simply stays silent.
+ * that holds the audio back until the window is clicked) simply stays silent. While the audio is held back nothing is scheduled:
+ * the clock of a suspended output stands still, and every chime asked for in that time would sound at once when it starts.
  */
 export function playChime(volume: number): void {
   try {
@@ -22,9 +26,23 @@ export function playChime(volume: number): void {
     if (Ctor === undefined) return;
     context ??= new Ctor();
     const ctx = context;
-    void ctx.resume().catch(() => undefined);
     const level = Math.min(1, Math.max(0, volume)) * 0.35;   // a full volume is still a soft sound beside the game
     if (!(level > 0)) return;
+    if (ctx.state === 'running') {
+      tones(ctx, level);
+      return;
+    }
+    const asked = Date.now();
+    void ctx.resume()
+      .then(() => { if (ctx.state === 'running' && Date.now() - asked < LATE_MS) tones(ctx, level); })
+      .catch(() => undefined);
+  } catch {
+    // a hint that makes no sound is still a hint on the screen
+  }
+}
+
+function tones(ctx: AudioContext, level: number): void {
+  try {
     for (const tone of TONES) {
       const start = ctx.currentTime + tone.at;
       const gain = ctx.createGain();

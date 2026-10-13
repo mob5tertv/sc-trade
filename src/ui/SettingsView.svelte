@@ -244,6 +244,9 @@
   {@render numberField('overheadMin', 'Накладные на рейс, мин', { title: SETTING_HINTS.overheadMin })}
   {@render numberField('overheadEmptyMin', 'Накладные на пустой перелёт, мин', { title: SETTING_HINTS.overheadEmptyMin })}
   {@render numberField('nearbyMaxMin', 'Закупка рядом: пустой перелёт до, мин', { title: SETTING_HINTS.nearbyMaxMin })}
+  {#if app.settings.nearbyMaxMin <= app.settings.overheadEmptyMin}
+    <p class="error" role="note">Не больше накладных на пустой перелёт: кнопка «выгоднее» ничего не найдёт.</p>
+  {/if}
   {@render numberField('worsePricePct', 'Сказать, если цена хуже на, %', {
     title: 'Ты прилетел, ввёл цену продажи, а она ниже ожидаемой на столько процентов или больше: окно скажет об этом и назовёт место, где твой груз купят дороже. 0 — не говорить.',
   })}

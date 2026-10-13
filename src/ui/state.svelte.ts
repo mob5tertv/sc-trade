@@ -195,6 +195,8 @@ const FLASH_MS = 3000;
 const CONFIRM_MS = 10_000;
 const CONFIRM_BUSY = 'confirm';
 const TRADE_FAILED = 'Не удалось записать сделку. Подробности в логе.';
+const AIM_NEEDS_LOCATION = 'Цель задана. Укажи в шапке, где ты, — и «Варианты» покажут, что сюда везти.';
+const RUN_REOPENED = 'Рейс снова идёт: по исправленной сделке в трюме остался груз.';
 const CLEAR_FAILED = 'Не удалось очистить историю. Подробности в логе.';
 const RUN_READ_FAILED = 'Не удалось прочитать рейс из базы. Подробности в логе.';
 const NO_CURRENT_LOCATION = 'Сначала укажи, где ты находишься: выбери локацию в поиске (в рейсе — Ctrl+Enter или «Я здесь»).';
@@ -915,6 +917,9 @@ class AppState {
   #checkFavourites(): void {
     try {
       if (this.phase !== 'ready' || this.settings.favouriteRoutes.length === 0) return;
+      // a notice with a button to press (the worse price, the hint of the keys) and an error are not pushed away by the clock:
+      // the alert waits for the next look, the filling is not counted as said
+      if (this.mode === 'expanded' && this.notice !== null && (this.notice.action !== undefined || this.notice.kind === 'error')) return;
       const { alerts, alerted } = favouriteAlerts(
         this.settings.favouriteRoutes, this.market, this.reference, this.routeCtx(undefined, this.rowsNow), this.settings.scuCapacity, this.#favouritesFull,
       );
@@ -922,7 +927,8 @@ class AppState {
       if (alerts.length === 0) return;
       for (const alert of alerts) this.#log.info('ui', 'favourite route: a full hold is waiting', { key: alert.key });
       const text = alerts.length === 1 ? alerts[0].text : `${alerts[0].text} · и ещё ${alerts.length - 1}`;
-      this.#say(text, 'info', AppState.#FAVOURITE_STAY);
+      // while a run is going the mini line has the buttons of the marks, and they are not drawn under a message: the usual three seconds
+      this.#say(text, 'info', this.activeRun === null ? AppState.#FAVOURITE_STAY : { ...AppState.#FAVOURITE_STAY, flashMs: FLASH_MS });
       if (this.settings.favouriteSound) playChime(this.settings.favouriteVolume);
     } catch (err) {
       this.#log.warn('ui', 'cannot check the favourite routes', { err });
@@ -936,6 +942,8 @@ class AppState {
   openGuide(commodityId: number | null = this.guide.commodityId, side: Side = this.guide.side): void {
     this.#log.info('ui', 'open reference', { commodityId, side });
     if (this.confirm !== null) this.answer(false, 'reference');
+    // «вернуть цель» is for the reference that is open: one that was left without being closed (the window collapsed) offers it no more
+    if (this.view !== 'guide') this.targetUndo = null;
     this.guide = { commodityId, side };
     this.view = 'guide';
     this.#touch();
@@ -1531,8 +1539,12 @@ class AppState {
     return failure;
   }
 
-  /** How long the notice of a price that is worse than expected stays: the player has to read a place and two numbers, and decide. */
-  static readonly #WORSE_PRICE_STAY = { flashMs: 8000, noticeMs: 30_000 };
+  /**
+   * How long the notice of a price that is worse than expected stays: the player has to read a place and two numbers, and decide.
+   * That is the notice line; the mini line keeps its usual three seconds, because this is said only while a run is going, and the
+   * buttons of the marks are not drawn under a message.
+   */
+  static readonly #WORSE_PRICE_STAY = { flashMs: FLASH_MS, noticeMs: 30_000 };
 
   /**
    * «Цена на месте хуже — куда лететь» (spec 14.19, item 8). The player typed in what a terminal pays for a commodity that is in
@@ -1637,6 +1649,12 @@ class AppState {
     this.lookup = IDLE_LOOKUP;
   }
 
+  /** «Лучшее» of the header: the best trips from the current location to ANYWHERE, so the options leave «К цели» (`newRoute`). */
+  async bestRoutes(): Promise<void> {
+    if (this.settings.optionsToTarget) await this.updateSetting('optionsToTarget', false);
+    await this.newRoute();
+  }
+
   /**
    * "Маршрут": where to take cargo from the CURRENT location, whatever the table shows. The location
    * becomes the viewed terminal. Without a current location the player is asked to pick one.
@@ -1659,9 +1677,14 @@ class AppState {
    *
    * `thenId` makes it a target in two steps (spec 14.19, item 7): `terminalId` is where the cargo is bought, and after a purchase
    * there the target becomes `thenId` (`#advanceTarget`). A plain target, and taking the target away, forget the second step.
+   *
+   * `pair`: the options are to show the goods of the pair "here → this target" («К цели», item 16). That view belongs to the target
+   * it was asked for: every other way a target is set, and taking it away, turns the options back to the best trips to anywhere.
    */
-  async setTarget(terminalId: number | null, thenId: number | null = null): Promise<void> {
+  async setTarget(terminalId: number | null, thenId: number | null = null, pair = false): Promise<void> {
     if (this.settings.targetThenId !== (terminalId === null ? null : thenId)) await this.updateSetting('targetThenId', terminalId === null ? null : thenId);
+    const toTarget = pair && terminalId !== null && thenId === null;
+    if (this.settings.optionsToTarget !== toTarget) await this.updateSetting('optionsToTarget', toTarget);
     if (terminalId === null) {
       this.#log.info('ui', 'clear target');
       await this.updateSetting('targetTerminalId', null);
@@ -1702,8 +1725,7 @@ class AppState {
       this.#say('Откуда и куда — одна и та же станция.', 'info');
       return;
     }
-    await this.setTarget(toId);
-    await this.updateSetting('optionsToTarget', true);
+    await this.setTarget(toId, null, true);
     if (fromId === null) {
       this.#say('Цель задана. Выбери, откуда везти.', 'info');
       return;
@@ -1719,10 +1741,14 @@ class AppState {
    */
   async aimAt(terminalId: number): Promise<void> {
     this.#log.info('ui', 'aim at the viewed terminal', { terminalId, currentTerminalId: this.settings.currentTerminalId });
-    await this.setTarget(terminalId);
-    await this.updateSetting('optionsToTarget', true);
+    await this.setTarget(terminalId, null, true);
     const here = this.settings.currentTerminalId;
-    if (here !== null && here !== terminalId) await this.newRoute();
+    if (here === null || !this.reference.terminals.has(here)) {
+      // nothing can be listed without the other end of the pair: the click still says what it did and what is missing
+      this.#say(AIM_NEEDS_LOCATION, 'info');
+      return;
+    }
+    if (here !== terminalId) await this.newRoute();
   }
 
   // ---- trades and the run ----------------------------------------------------------------------------------
@@ -2021,8 +2047,9 @@ class AppState {
   /**
    * The player corrects a trade that was typed in wrong (spec 14.19, item 5), of the run that is going or of a finished one.
    * Everything that is counted from the trades follows: the hold, the money of the run, the routes, the sessions; the diary is
-   * corrected by the service. A correction that empties the hold of the run that is going ends that run, and its target goes
-   * with it, as after the last sale. Returns the sentence to show at the form when it was refused, `null` when it was written.
+   * corrected by the service. A correction that empties the hold of the run that is going ends that run: its result is said and
+   * its target goes with it, as after the last sale. A correction that leaves a finished run with cargo aboard makes it the run
+   * that is going again, and says so. Returns the sentence to show at the form when it was refused, `null` when it was written.
    */
   editTrade(edit: TradeEdit): Promise<string | null> {
     return this.#tradeQueue(async () => {
@@ -2031,7 +2058,13 @@ class AppState {
       let mayHaveWritten = true;
       try {
         const after = await correctTrade(this.#tradeDeps(), edit);
-        if (this.activeRun !== null && after.run.id === this.activeRun.run.id && after.run.status !== 'active') await this.#runEnded('done');
+        const wasGoing = this.activeRun !== null && after.run.id === this.activeRun.run.id;
+        if (wasGoing && after.run.status !== 'active') {
+          await this.#announceClosed(after);   // as after the sale that empties the hold: the result is said, then the target goes
+          await this.#runEnded('done');
+        } else if (!wasGoing && after.run.status === 'active') {
+          this.#say(RUN_REOPENED, 'info');     // a finished run that the correction left with cargo aboard is going again
+        }
       } catch (err) {
         failure = this.#tradeFailure('edit trade', err, { ...edit });
         mayHaveWritten = !(err instanceof TradeError);
@@ -2065,6 +2098,9 @@ class AppState {
   async #runEnded(how: 'done' | 'lost'): Promise<void> {
     this.#log.info('ui', 'run ended, the target is cleared', { how });
     this.#askedInRun = null;
+    // the second step of the target and «К цели» belong to the target: they go with it
+    if (this.settings.targetThenId !== null) await this.updateSetting('targetThenId', null);
+    if (this.settings.optionsToTarget) await this.updateSetting('optionsToTarget', false);
     await this.updateSetting('targetTerminalId', null);
   }
 
