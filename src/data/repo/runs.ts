@@ -198,6 +198,30 @@ export async function addRunEvent(db: Db, e: Omit<RunEvent, 'id'>): Promise<numb
   return result.lastInsertId;
 }
 
+/** Changes the quantity and the price of a buy or sell event; any other event stays. Returns how many rows were changed. */
+export async function updateTradeEvent(db: Db, eventId: number, scu: number, price: number): Promise<number> {
+  return (await db.execute("UPDATE run_event SET scu = ?, price = ? WHERE id = ? AND type IN ('buy', 'sell')", [scu, price, eventId])).rowsAffected;
+}
+
+/** The run an event belongs to, or `null` when there is no such event. */
+export async function runOfEvent(db: Db, eventId: number): Promise<number | null> {
+  const rows = await db.select<{ run_id: number }>('SELECT run_id FROM run_event WHERE id = ?', [eventId]);
+  return rows.length === 0 ? null : Number(rows[0].run_id);
+}
+
+// The removal of ONE record of the history (spec 14.19, item 5) is two statements, as the clearing is: the events of the run first,
+// the run after them. Both repeat in their own SQL that the run must be over; the run that is going is never matched.
+
+/** Deletes the events of the finished run `id`; returns how many. The events of a run that is going stay. */
+export async function removeRunEventsOf(db: Db, id: number): Promise<number> {
+  return (await db.execute(`DELETE FROM run_event WHERE run_id = ? AND run_id IN (SELECT id FROM run WHERE ${FINISHED})`, [id])).rowsAffected;
+}
+
+/** Deletes the finished run `id` when it has no event any more; returns how many rows went (0 or 1). */
+export async function removeFinishedRun(db: Db, id: number): Promise<number> {
+  return (await db.execute(`DELETE FROM run WHERE id = ? AND ${FINISHED} AND ${NO_EVENT}`, [id])).rowsAffected;
+}
+
 /** Records the target the run `id` had; a second record for the same run replaces the first. */
 export async function setRunTarget(db: Db, id: number, terminalId: number): Promise<void> {
   await db.execute(

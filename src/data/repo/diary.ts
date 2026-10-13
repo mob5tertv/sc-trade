@@ -23,6 +23,25 @@ export async function addObservation(db: Db, log: Logger, o: Omit<Observation, '
   return result.lastInsertId;
 }
 
+/** The observation a trade wrote: the moment, the place, the commodity, the side and the price of that trade. */
+export type TradeObservation = Pick<Observation, 'ts' | 'terminalId' | 'commodityId' | 'side' | 'price'>;
+
+/**
+ * Corrects the observation a trade wrote when that trade is corrected (spec 14.19, item 5): the price becomes `price`, and the
+ * quantity after the trade moves by `scuDelta` (never below zero; a quantity that was not recorded stays unrecorded). The row is
+ * found by what the trade wrote (`was`); when several match, the last one written. Returns how many rows were changed: 0 when
+ * the trade left no observation that still matches (it was written by an older version, or corrected by hand since).
+ */
+export async function amendTradeObservation(db: Db, log: Logger, was: TradeObservation, price: number, scuDelta: number): Promise<number> {
+  const result = await db.execute(
+    `UPDATE observation SET price = ?, scu = CASE WHEN scu IS NULL THEN NULL ELSE MAX(0, scu + ?) END
+      WHERE id = (SELECT id FROM observation WHERE ts = ? AND terminal_id = ? AND commodity_id = ? AND side = ? AND price = ? ORDER BY id DESC LIMIT 1)`,
+    [price, scuDelta, was.ts, was.terminalId, was.commodityId, was.side, was.price],
+  );
+  log.info('diary', 'observation corrected', { ...was, price, scuDelta, rows: result.rowsAffected });
+  return result.rowsAffected;
+}
+
 /**
  * One observation per terminal, commodity and side: the one with the greatest `ts`, the greatest `id`
  * when several share it. The correlated subquery is answered by the `observation_lookup` index.

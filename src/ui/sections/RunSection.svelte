@@ -1,12 +1,14 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import RunCard from '../components/RunCard.svelte';
+  import RunTrades from '../components/RunTrades.svelte';
   import SellDecisionView from '../components/SellDecisionView.svelte';
   import Section from '../components/Section.svelte';
   import { app } from '../state.svelte';
   import { stats } from '../stats.svelte';
   import { runOutlook } from '../vm/run-outlook';
   import { cardMarks, phaseLine, runPhases } from '../vm/run-phase';
+  import { tradeLines } from '../vm/run-trades';
   import {
     cargoRows, decisionAtClock, planSummary, runHeader, runSectionKind, sellDecisionKey, sellDecisions, sellLogContext, targetOffer,
   } from '../vm/run-section';
@@ -60,6 +62,10 @@
     });
   });
 
+  // the trades of the run that is going, to correct a price or a quantity typed in wrong (spec 14.19, item 5): behind a button, shut by default
+  let editing = $state(false);
+  const trades = $derived(editing && active !== null ? tradeLines(active, app.reference) : []);
+
   function askLost(): void {
     app.ask(
       { text: 'Рейс закроется как потерянный, груз спишется. Продолжить?', yes: 'Да, груз потерян' },
@@ -100,6 +106,18 @@
       <p class="plan">Таймер пойдёт с первой покупки</p>
     {:else if active !== null && phases !== null && outlook !== null}
       <RunCard {cargo} {phases} {outlook} {marks} onMark={(type) => void app.mark(type)} onLost={askLost} />
+      <p class="fix">
+        <button
+          type="button"
+          class="sc-btn"
+          aria-pressed={editing}
+          title="Исправить цену или количество покупки или продажи этого рейса, если ввёл не то"
+          onclick={() => (editing = !editing)}
+        >{editing ? 'Скрыть сделки' : 'Исправить сделку'}</button>
+      </p>
+      {#if editing}
+        <RunTrades lines={trades} onSave={(edit) => app.editTrade(edit)} />
+      {/if}
       {#each decisions as d (d.commodityId)}
         <SellDecisionView
           commodityCode={d.code}
@@ -134,6 +152,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .fix {
+    display: flex;
+    justify-content: flex-end;
+    margin: 0;
+    padding: 2px var(--sc-pad-x);
   }
 
   .plan {

@@ -4,6 +4,7 @@ import { app } from './state.svelte';
 import { loadHistorySafely } from './stats-history';
 import { historyCounts as countHistory, type HistoryCounts } from './vm/history-clearing';
 import { createLatestRequest } from './vm/latest-request';
+import { tradeLines, type TradeLine } from './vm/run-trades';
 import { historyRows, liveRows, routeRows, sessionRows, type HistoryRow, type RouteRow, type SessionRow } from './vm/stats-rows';
 import {
   currentSession, EMPTY_FIGURES, EMPTY_HISTORY, figuresOf, routesSummary, sessionFigure, type History, type StatsFigures, type StatsView,
@@ -122,6 +123,12 @@ class StatsState {
       return base;
     }
   });
+
+  /** The trades of the run `runId` of the history, for the form that corrects them; empty when the run is not there (any more). */
+  tradesOf(runId: number): TradeLine[] {
+    const run = this.#history.runs.find((r) => r.run.id === runId);
+    return run === undefined ? [] : tradeLines(run, app.reference);
+  }
 
   /**
    * How many finished runs the history holds, since when, and how many of them ended more than thirty days ago: the status line

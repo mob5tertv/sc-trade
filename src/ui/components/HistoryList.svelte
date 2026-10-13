@@ -1,10 +1,26 @@
 <script lang="ts">
   import { LEGEND } from '../vm/legend';
   import { routePieces } from '../vm/route-pieces';
+  import type { TradeLine } from '../vm/run-trades';
   import type { HistoryRow } from '../vm/stats-rows';
   import PieceLine from './PieceLine.svelte';
+  import RunTrades from './RunTrades.svelte';
 
-  let { rows }: { rows: HistoryRow[] } = $props();
+  interface Props {
+    rows: HistoryRow[];
+    /** The trades of a run, for the row that is opened. Without it the rows do not open. */
+    tradesOf?: (runId: number) => TradeLine[];
+    /** Writes the correction of a trade (`RunTrades`). */
+    onEditTrade?: (edit: { eventId: number; scu: number; price: number }) => Promise<string | null>;
+    /** Takes a finished run out of the history. */
+    onRemoveRun?: (runId: number) => void;
+  }
+  let { rows, tradesOf, onEditTrade, onRemoveRun }: Props = $props();
+
+  // One run is opened at a time; a click on its row again closes it.
+  let openId = $state<number | null>(null);
+  const canOpen = $derived(tradesOf !== undefined && onEditTrade !== undefined);
+  const toggleRow = (runId: number): void => { openId = openId === runId ? null : runId; };
 
   const STATUS: Record<HistoryRow['status'], string> = { active: 'идёт', done: 'завершён', lost: 'потерян' };
   const isLoss = (profit: string): boolean => profit.startsWith('-');
@@ -23,7 +39,16 @@
       <span role="columnheader" class="r" title={LEGEND.rateRoutes}>UEC/ч</span>
     </div>
     {#each rows as row (row.runId)}
-      <div class="grid line" role="row" title={STATUS[row.status]}>
+      <div
+        class="grid line"
+        class:opens={canOpen}
+        class:open={openId === row.runId}
+        role="row"
+        tabindex={canOpen ? 0 : undefined}
+        onkeydown={(e) => { if (canOpen && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleRow(row.runId); } }}
+        title={canOpen ? `${STATUS[row.status]} · клик — сделки рейса: исправить цену или количество` : STATUS[row.status]}
+        onclick={() => { if (canOpen) toggleRow(row.runId); }}
+      >
         <span class="when sc-num">{row.when}</span>
         <!-- the ends of the route give way equally, each with its own ellipsis, and the arrow stays; a title without a route is cut at its end -->
         <span class="title {row.status}" title="{row.hint} · {STATUS[row.status]}"><PieceLine pieces={routePieces(row.title)} /></span>
@@ -32,6 +57,13 @@
         <span class="sc-num" title="Длительность">{row.duration}</span>
         <span class="sc-num" title="UEC в час">{row.rate}</span>
       </div>
+      {#if openId === row.runId && tradesOf && onEditTrade}
+        <RunTrades
+          lines={tradesOf(row.runId)}
+          onSave={onEditTrade}
+          onRemove={row.status !== 'active' && onRemoveRun ? () => onRemoveRun?.(row.runId) : undefined}
+        />
+      {/if}
     {/each}
   </div>
 {/if}
@@ -64,6 +96,16 @@
   .line {
     height: var(--sc-row-h);
     border-bottom: 1px solid var(--sc-surface-2);
+  }
+
+  /* a row that opens the trades of its run */
+  .line.opens {
+    cursor: pointer;
+  }
+
+  .line.opens:hover,
+  .line.open {
+    background: var(--sc-surface-2);
   }
 
   .line span {

@@ -19,8 +19,9 @@ import {
 } from '../data/suggest';
 import { syncPrices, syncReference, type SyncDeps } from '../data/sync';
 import {
-  clearHistory as clearRunHistory, ClearHistoryError, loseCargo as closeAsLost, recordBuy, recordIncome, recordMark, recordSell, TradeError,
-  type ClearedHistory, type TradeDeps, type TradeInput,
+  clearHistory as clearRunHistory, ClearHistoryError, editTrade as correctTrade, loseCargo as closeAsLost, recordBuy, recordIncome, recordMark, recordSell,
+  removeRunRecord, TradeError,
+  type ClearedHistory, type TradeDeps, type TradeEdit, type TradeInput,
 } from '../data/trade';
 import { UexError, type UexClient } from '../data/uex-client';
 import { applyLogLevel } from '../platform/tauri-logger';
@@ -1816,6 +1817,49 @@ class AppState {
       if (closed !== null) await this.#announceClosed(closed);
       if (failure === null) await this.#runEnded('lost'); // before the run is read again, as after the last sale
       await this.#reloadRun(mayHaveWritten);
+      return failure;
+    });
+  }
+
+  /**
+   * The player corrects a trade that was typed in wrong (spec 14.19, item 5), of the run that is going or of a finished one.
+   * Everything that is counted from the trades follows: the hold, the money of the run, the routes, the sessions; the diary is
+   * corrected by the service. A correction that empties the hold of the run that is going ends that run, and its target goes
+   * with it, as after the last sale. Returns the sentence to show at the form when it was refused, `null` when it was written.
+   */
+  editTrade(edit: TradeEdit): Promise<string | null> {
+    return this.#tradeQueue(async () => {
+      this.#log.info('ui', 'edit trade', { ...edit });
+      let failure: string | null = null;
+      let mayHaveWritten = true;
+      try {
+        const after = await correctTrade(this.#tradeDeps(), edit);
+        if (this.activeRun !== null && after.run.id === this.activeRun.run.id && after.run.status !== 'active') await this.#runEnded('done');
+      } catch (err) {
+        failure = this.#tradeFailure('edit trade', err, { ...edit });
+        mayHaveWritten = !(err instanceof TradeError);
+      }
+      await this.#reloadRun(mayHaveWritten);
+      if (mayHaveWritten) await stats.reload('trade edited'); // a finished run changed: nothing else tells the statistics
+      return failure;
+    });
+  }
+
+  /**
+   * The player takes ONE finished run out of the history (spec 14.19, item 5). The run that is going is refused by the service.
+   * Returns the sentence to show when it was refused, `null` when the run is gone.
+   */
+  removeRun(runId: number): Promise<string | null> {
+    return this.#tradeQueue(async () => {
+      this.#log.info('ui', 'remove run', { runId });
+      let failure: string | null = null;
+      try {
+        await removeRunRecord(this.#tradeDeps(), runId);
+      } catch (err) {
+        failure = this.#tradeFailure('remove run', err, { runId });
+        this.#say(failure, 'error');
+      }
+      await stats.reload('run removed');
       return failure;
     });
   }

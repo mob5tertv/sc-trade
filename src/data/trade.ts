@@ -3,10 +3,11 @@ import type { Settings } from '../core/settings';
 import type { RunEvent, RunWithEvents } from '../core/types';
 import type { Db } from './db';
 import type { Logger } from './logger';
-import { addObservation } from './repo/diary';
+import { addObservation, amendTradeObservation } from './repo/diary';
 import {
   addFinishedRun, addRunEvent, closeRun, emptyActiveRuns, getActiveRun, getRun, removeEmptyActiveRun, removeEmptyFinishedRuns, removeEmptyRun,
-  removeFinishedRunEvents, removeFinishedRuns, removeOrphanRunTargets, setRunTarget, startRun,
+  removeFinishedRun, removeFinishedRunEvents, removeFinishedRuns, removeOrphanRunTargets, removeRunEventsOf, runOfEvent, setRunTarget, startRun,
+  updateTradeEvent,
 } from './repo/runs';
 
 // The trade service: records a purchase, a sale, a sale of goods that were never bought here (income), a depart or arrive
@@ -37,7 +38,7 @@ import {
 
 const LOG = 'run';
 
-export type TradeErrorCode = 'no_active_run' | 'oversell' | 'no_space' | 'bad_input' | 'on_board';
+export type TradeErrorCode = 'no_active_run' | 'oversell' | 'no_space' | 'bad_input' | 'on_board' | 'no_trade' | 'run_active';
 
 /** A trade that cannot happen. `message` is meant for the player; `code` is for the caller's logic. */
 export class TradeError extends Error {
@@ -305,6 +306,84 @@ export function loseCargo(d: TradeDeps): Promise<RunWithEvents> {
     await closeRun(d.db, runId, 'lost', ts);
     d.log.info(LOG, 'lost', { runId, endedAt: ts, targetId, cargo: cargoOf(active.events) });
     return reload(d.db, runId);
+  });
+}
+
+/** A correction of one trade: the event, and the quantity and the price it should have had. */
+export interface TradeEdit { eventId: number; scu: number; price: number }
+
+/**
+ * Corrects a purchase or a sale that was typed in wrong (spec 14.19, item 5), in the run that is going or in a finished one. The
+ * hold, the money of the run, the routes and the sessions are all counted from the events, so they follow by themselves; the
+ * observation the trade wrote into the diary is corrected with it (the price, and the quantity left after the trade by as much as
+ * the traded quantity changed). What is refused, and nothing is written then:
+ *  - a quantity or a price that is not above zero, an event that is no trade;
+ *  - a correction after which more of the commodity would be sold than was bought in that run;
+ *  - in the run that is going, a purchase that no longer fits the hold (when the settings know a capacity).
+ * A run that is going and whose hold the correction empties is closed as done at the time of its last sale, as a sale would
+ * close it. The observation is corrected after the event: a failure there is logged, and the trade stays corrected.
+ */
+export function editTrade(d: TradeDeps, edit: TradeEdit): Promise<RunWithEvents> {
+  return serialized(d, async () => {
+    if (!(Number.isFinite(edit.scu) && edit.scu > 0 && Number.isFinite(edit.price) && edit.price > 0)) {
+      throw new TradeError('bad_input', 'Количество и цена должны быть больше нуля');
+    }
+    const runId = await runOfEvent(d.db, edit.eventId);
+    const before = runId === null ? null : await getRun(d.db, runId);
+    const event = before?.events.find(e => e.id === edit.eventId);
+    if (before === null || event === undefined || (event.type !== 'buy' && event.type !== 'sell') || event.commodityId === null || event.scu === null || event.price === null) {
+      throw new TradeError('no_trade', 'Такой сделки нет: она уже удалена или изменена');
+    }
+
+    const after = before.events.map(e => (e.id === edit.eventId ? { ...e, scu: edit.scu, price: edit.price } : e));
+    const traded = (type: 'buy' | 'sell'): number => after
+      .filter(e => e.type === type && e.commodityId === event.commodityId)
+      .reduce((sum, e) => sum + (e.scu ?? 0), 0);
+    if (traded('sell') > traded('buy')) {
+      throw new TradeError('oversell', `Так выйдет, что продано ${traded('sell')} SCU, а куплено только ${traded('buy')}`);
+    }
+    if (before.run.status === 'active' && d.settings.scuCapacity > 0 && holdScu(after) > d.settings.scuCapacity) {
+      throw new TradeError('no_space', `В трюм не поместится: вместимость ${d.settings.scuCapacity} SCU`);
+    }
+
+    await updateTradeEvent(d.db, edit.eventId, edit.scu, edit.price);
+    d.log.info(LOG, 'edited', {
+      runId: before.run.id, eventId: edit.eventId, type: event.type, terminalId: event.terminalId, commodityId: event.commodityId,
+      was: { scu: event.scu, price: event.price }, now: { scu: edit.scu, price: edit.price },
+    });
+    if (event.terminalId !== null) {
+      // after a purchase the diary holds the stock that was left, after a sale what the buyer then held
+      const scuDelta = event.type === 'buy' ? event.scu - edit.scu : edit.scu - event.scu;
+      const was = { ts: event.ts, terminalId: event.terminalId, commodityId: event.commodityId, side: event.type, price: event.price };
+      await amendTradeObservation(d.db, d.log, was, edit.price, scuDelta)
+        .catch((err: unknown) => d.log.warn(LOG, 'cannot correct the observation of the edited trade', { eventId: edit.eventId, err }));
+    }
+    if (before.run.status === 'active' && cargoOf(after).length === 0) {
+      const endedAt = lastSaleAt(after);
+      if (endedAt !== null) {
+        await closeRun(d.db, before.run.id, 'done', endedAt);
+        d.log.info(LOG, 'finished', { runId: before.run.id, endedAt, by: 'edit' });
+      }
+    }
+    return reload(d.db, before.run.id);
+  });
+}
+
+/**
+ * Removes ONE finished run from the history (spec 14.19, item 5): its events, then the run. The run that is going is refused: it
+ * is ended first (sold, or written off). The diary of prices is not touched: what was seen at a terminal was seen. A failure of
+ * the second statement leaves a finished run without events, which the sweep of the next call removes.
+ */
+export function removeRunRecord(d: RepairDeps, runId: number): Promise<{ events: number }> {
+  return serialized(d, async () => {
+    const run = await getRun(d.db, runId);
+    if (run === null) throw new TradeError('no_trade', 'Такого рейса в истории нет');
+    if (run.run.status === 'active') throw new TradeError('run_active', 'Идущий рейс удалить нельзя: сначала продай груз или отметь «Груз потерян»');
+    const events = await removeRunEventsOf(d.db, runId);
+    await removeFinishedRun(d.db, runId);
+    await removeOrphanRunTargets(d.db).catch((err: unknown) => d.log.warn(LOG, 'cannot sweep the target of the removed run', { runId, err }));
+    d.log.info(LOG, 'run removed from the history', { runId, status: run.run.status, events });
+    return { events };
   });
 }
 

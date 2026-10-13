@@ -14,6 +14,7 @@
   import { app } from '../state.svelte';
   import { stats } from '../stats.svelte';
   import { clickedSort, sortRoutes, type RouteSortKey } from '../vm/route-sort';
+  import { REMOVE_RUN_QUESTION } from '../vm/run-trades';
   import { LIST_MAX_HEIGHT, ROUTES_RESET_QUESTION, STATS_VIEWS, routesSinceLine } from '../vm/stats-view';
 
   const SECTION = 'routes';
@@ -94,7 +95,12 @@
       </p>
     {/if}
   {:else if view === 'history'}
-    <HistoryList rows={stats.historyList} />
+    <HistoryList
+      rows={stats.historyList}
+      tradesOf={(runId) => stats.tradesOf(runId)}
+      onEditTrade={(edit) => app.editTrade(edit)}
+      onRemoveRun={(runId) => app.ask(REMOVE_RUN_QUESTION, async () => { await app.removeRun(runId); })}
+    />
   {:else}
     <SessionsList rows={stats.sessionList} />
   {/if}
