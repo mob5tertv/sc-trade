@@ -49,6 +49,8 @@ import { stats } from './stats.svelte';
 import { arrivalView, landingView, type ArrivalView } from './vm/arrival-view';
 import { clearedText, clearQuestion, countFor, oldRunsBefore, type ClearScope } from './vm/history-clearing';
 import { shouldCollapse } from './vm/idle';
+import { playChime } from '../platform/sound';
+import { favouriteAlerts, FAVOURITES_FULL, toggledFavourites, type FavouriteRoute } from './vm/favourites';
 import type { GuideState } from './vm/guide';
 import { createKeyboardHolds, type KeyboardHolds } from './vm/keyboard-holds';
 import { createLatestRequest } from './vm/latest-request';
@@ -414,6 +416,7 @@ class AppState {
     }, 1000);
     setInterval(() => {
       this.rowsNow = nowSec();
+      this.#checkFavourites();
     }, ROWS_TICK_MS);
   }
 
@@ -883,6 +886,43 @@ class AppState {
     if (this.confirm !== null) this.answer(false, 'settings');
     this.view = 'settings';
     this.#touch();
+  }
+
+  /** The favourite routes that have already said their hold is full: each speaks once per filling (`favouriteAlerts`). */
+  #favouritesFull: ReadonlySet<string> = new Set();
+  /** How long the alert of a favourite route stays: the mini line, the notice line. */
+  static readonly #FAVOURITE_STAY = { flashMs: 10_000, noticeMs: 60_000 };
+
+  /** The star of a route was clicked (spec 14.19, item 11): it becomes a favourite, or stops being one. */
+  async toggleFavourite(route: FavouriteRoute): Promise<void> {
+    const { list, full } = toggledFavourites(this.settings.favouriteRoutes, route);
+    this.#log.info('ui', 'favourite route', { ...route, favourites: list.length, full });
+    if (full) {
+      this.#say(FAVOURITES_FULL, 'info');
+      return;
+    }
+    await this.updateSetting('favouriteRoutes', list);
+  }
+
+  /**
+   * Looks, on the slow clock, whether the stock of a favourite route has grown to a full hold, and says so with a sound: always,
+   * a run going on or not, and once per filling. Never throws: it runs on a timer.
+   */
+  #checkFavourites(): void {
+    try {
+      if (this.phase !== 'ready' || this.settings.favouriteRoutes.length === 0) return;
+      const { alerts, alerted } = favouriteAlerts(
+        this.settings.favouriteRoutes, this.market, this.reference, this.routeCtx(undefined, this.rowsNow), this.settings.scuCapacity, this.#favouritesFull,
+      );
+      this.#favouritesFull = alerted;
+      if (alerts.length === 0) return;
+      for (const alert of alerts) this.#log.info('ui', 'favourite route: a full hold is waiting', { key: alert.key });
+      const text = alerts.length === 1 ? alerts[0].text : `${alerts[0].text} · и ещё ${alerts.length - 1}`;
+      this.#say(text, 'info', AppState.#FAVOURITE_STAY);
+      if (this.settings.favouriteSound) playChime(this.settings.favouriteVolume);
+    } catch (err) {
+      this.#log.warn('ui', 'cannot check the favourite routes', { err });
+    }
   }
 
   /**

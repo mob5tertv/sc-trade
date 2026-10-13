@@ -31,6 +31,12 @@ export interface Settings {
    * terminal than the one the options are of.
    */
   optionsToTarget: boolean;
+  /**
+   * Favourite routes (spec 14.19, item 11): the routes the player marked with a star (where a commodity is bought, where it is
+   * sold, and which), and the sound of their alert: whether it plays, and how loud (0 … 1).
+   */
+  favouriteRoutes: Array<{ originId: number; destId: number; commodityId: number }>;
+  favouriteSound: boolean; favouriteVolume: number;
   /** The commodity reference (spec 14.19, item 9): only the terminals of the star system of the settings; and, where to buy, only the places with a known stock that is not empty. */
   guideMySystem: boolean; guideOnlyStock: boolean;
   /**
@@ -88,7 +94,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hotMin: 60, warmMin: 180, coolingMin: 240,
   refillFullMin: DEFAULT_REFILL_FULL_MIN,
   quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, nearbyMaxMin: 10, worsePricePct: 15, topN: 5, roiHighlightPct: 50,
-  sort: 'uecPerHour', nearby: false, detailedCalc: false, optionsToTarget: false, guideMySystem: true, guideOnlyStock: false, routesSince: null,
+  sort: 'uecPerHour', nearby: false, detailedCalc: false, optionsToTarget: false, favouriteRoutes: [], favouriteSound: true, favouriteVolume: 0.5, guideMySystem: true, guideOnlyStock: false, routesSince: null,
   hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '',
   panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
   uiScale: 0,

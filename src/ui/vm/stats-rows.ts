@@ -50,6 +50,12 @@ export interface RouteRow {
   stat: RouteStat;
 }
 
+/** The route of a row as a favourite can hold it (spec 14.19, item 11): a route of ONE commodity; `null` for a mixed cargo. */
+export function favouriteOf(row: Pick<RouteRow, 'stat'>): { originId: number; destId: number; commodityId: number } | null {
+  const { originId, destId, commodityIds } = row.stat;
+  return commodityIds.length === 1 ? { originId, destId, commodityId: commodityIds[0] } : null;
+}
+
 const RUNS_TITLE = 'Число завершённых рейсов';
 const PROFIT_TITLE = 'Суммарная прибыль';
 const RATE_TITLE = 'UEC в час';

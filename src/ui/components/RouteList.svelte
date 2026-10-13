@@ -33,6 +33,9 @@
     targetThenId?: number | null;
     /** The ship of the settings: its boxes and how it is loaded stand in the rows; absent: nothing is said. */
     vehicle?: Vehicle;
+    /** Set: the expanded row has a star that makes the trip a favourite route, or takes that back (`isFavourite` says which). */
+    onFavourite?: (option: RouteOption) => void;
+    isFavourite?: (option: RouteOption) => boolean;
     /**
      * The range UEX knows for a side of a terminal. It stands in «Мин–макс» beside a price of mine, as a reference;
      * without it such a price has no range.
@@ -41,7 +44,7 @@
   }
   let {
     options, reference, runCounts, mode, showCommodity, emptyText, onTarget, onClearTarget, onToggleRow, anchorTerminalId = null, targetTerminalId = null,
-    targetThenId = null, uexRange, vehicle,
+    targetThenId = null, uexRange, vehicle, onFavourite, isFavourite,
   }: Props = $props();
 
   const rows = $derived(
@@ -134,6 +137,16 @@
               <span class="inline" title="Сколько раз ты уже возил это"><span class="sc-label">Рейсов</span><span class="sc-num">{row.runs}</span></span>
               <span class="inline" title="Расстояние"><span class="sc-label">Путь</span><span class="sc-num">{row.distance}</span></span>
               <span class="spacer"></span>
+              {#if onFavourite}
+                {@const on = isFavourite?.(option) ?? false}
+                <button
+                  type="button"
+                  class="sc-btn sc-btn--act"
+                  aria-pressed={on}
+                  title={on ? 'Избранный маршрут. Клик — убрать из избранного' : 'В избранное: окно скажет со звуком, когда запас в точке закупки дорастёт до полного трюма'}
+                  onclick={() => onFavourite?.(option)}
+                >{on ? '★' : '☆'}</button>
+              {/if}
               {#if row.isTarget && onClearTarget}
                 <button type="button" class="sc-btn sc-btn--act" title="Это цель рейса: убрать её" onclick={() => onClearTarget?.()}>Снять цель</button>
               {:else if onTarget}

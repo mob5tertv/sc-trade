@@ -76,6 +76,12 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
       return isNumber(v) && Number.isInteger(v) && v >= ROI_HIGHLIGHT_RANGE.min && v <= ROI_HIGHLIGHT_RANGE.max
         ? null
         : `Целое число от ${ROI_HIGHLIGHT_RANGE.min} до ${ROI_HIGHLIGHT_RANGE.max}`;
+    case 'favouriteVolume':
+      return isNumber(v) && v >= 0 && v <= 1 ? null : 'От 0 до 1';
+    case 'favouriteRoutes':
+      return Array.isArray(v) && v.every((f) => f !== null && typeof f === 'object' && ['originId', 'destId', 'commodityId'].every((k) => isNumber((f as Record<string, unknown>)[k])))
+        ? null
+        : 'Список маршрутов повреждён';
     case 'worsePricePct':
       return isNumber(v) && Number.isInteger(v) && v >= WORSE_PRICE_RANGE.min && v <= WORSE_PRICE_RANGE.max
         ? null
@@ -128,6 +134,7 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
     case 'nearby':
     case 'detailedCalc':
     case 'optionsToTarget':
+    case 'favouriteSound':
     case 'guideMySystem':
     case 'guideOnlyStock':
     case 'stripRangeTurns':

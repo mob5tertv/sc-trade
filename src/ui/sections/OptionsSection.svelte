@@ -8,6 +8,7 @@
   import TargetGoodsView from '../components/TargetGoodsView.svelte';
   import { app } from '../state.svelte';
   import { stats } from '../stats.svelte';
+  import { isFavourite } from '../vm/favourites';
   import { LEGEND, legendTitle } from '../vm/legend';
   import { lookupEmptyText, lookupSteps } from '../vm/lookup';
   import { optionsSummary } from '../vm/options-summary';
@@ -136,6 +137,8 @@
         targetTerminalId={app.settings.targetTerminalId}
         targetThenId={app.settings.targetThenId}
         vehicle={app.vehicle}
+        onFavourite={(option) => void app.toggleFavourite(option)}
+        isFavourite={(option) => isFavourite(app.settings.favouriteRoutes, option)}
         uexRange={(terminalId, commodityId, side) => uexRangeOf(app.market, terminalId, commodityId, side, app.routeCtx(undefined, app.rowsNow))}
         onTarget={(option) => {
           const steps = lookupSteps(option, asked.kind, asked.terminalId);

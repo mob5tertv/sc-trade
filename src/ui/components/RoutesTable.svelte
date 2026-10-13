@@ -2,7 +2,8 @@
   import { LEGEND, legendTitle } from '../vm/legend';
   import { routePieces } from '../vm/route-pieces';
   import { ariaSortOf, type RouteSort, type RouteSortKey } from '../vm/route-sort';
-  import type { RouteRow } from '../vm/stats-rows';
+  import { favouriteKey, type FavouriteRoute } from '../vm/favourites';
+  import { favouriteOf, type RouteRow } from '../vm/stats-rows';
   import PieceLine from './PieceLine.svelte';
 
   interface Props {
@@ -12,8 +13,13 @@
     sort: RouteSort;
     /** A numeric header was clicked. */
     onSort: (key: RouteSortKey) => void;
+    /** The favourite routes; with `onFavourite` every row of one commodity has a star. */
+    favourites?: readonly FavouriteRoute[];
+    onFavourite?: (route: FavouriteRoute) => void;
   }
-  let { rows, sort, onSort }: Props = $props();
+  let { rows, sort, onSort, favourites = [], onFavourite }: Props = $props();
+
+  const starred = $derived(new Set(favourites.map(favouriteKey)));
 
   const isLoss = (profit: string): boolean => profit.startsWith('-');
 </script>
@@ -45,7 +51,26 @@
     {#each rows as row (row.key)}
       <div class="grid line" role="row">
         <!-- both ends of the route give way equally, each with its own ellipsis, and the arrow stays: 'Port Tre… → TDD Are…' (the full name is the tooltip) -->
-        <span class="route" title={row.route}><PieceLine pieces={routePieces(row.route)} /></span>
+        <span class="route" title={row.route}>
+          {#if onFavourite}
+            {@const fav = favouriteOf(row)}
+            {#if fav !== null}
+              {@const on = starred.has(favouriteKey(fav))}
+              <button
+                type="button"
+                class="star"
+                class:on
+                aria-pressed={on}
+                aria-label="Избранный маршрут"
+                title={on ? 'Избранный маршрут: окно скажет, когда запас в точке закупки дорастёт до полного трюма. Клик — убрать' : 'В избранное: окно скажет со звуком, когда запас в точке закупки дорастёт до полного трюма'}
+                onclick={() => onFavourite?.(fav)}
+              >{on ? '★' : '☆'}</button>
+            {:else}
+              <span class="star none" title="Маршрут со смешанным грузом в избранное не ставится">☆</span>
+            {/if}
+          {/if}
+          <PieceLine pieces={routePieces(row.route)} />
+        </span>
         <span class="code" title={row.commodityHint ?? undefined}>{row.commodity}</span>
         <span class="sc-num strong" title={row.rateTitle}>{row.rate}</span>
         <span class="sc-num" title={row.runsTitle}>{row.runsText}</span>
@@ -80,6 +105,39 @@
 
   .r {
     text-align: right;
+  }
+
+  /* the star of a favourite route: before the name of the route, as wide as one letter */
+  .route {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .star {
+    flex: none;
+    width: 14px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--sc-muted);
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .star.on {
+    color: var(--sc-warn);
+  }
+
+  .star:hover:not(.none) {
+    color: var(--sc-accent);
+  }
+
+  .star.none {
+    opacity: 0.35;
+    cursor: default;
   }
 
   /* A header of a number is a button as tall as the head, so the head keeps its height; the column keeps its width: the

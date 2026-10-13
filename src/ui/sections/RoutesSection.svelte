@@ -77,7 +77,13 @@
   resetScrollOn={view}
 >
   {#if view === 'routes'}
-    <RoutesTable rows={routes} sort={routeSort} onSort={sortBy} />
+    <RoutesTable
+      rows={routes}
+      sort={routeSort}
+      onSort={sortBy}
+      favourites={app.settings.favouriteRoutes}
+      onFavourite={(route) => void app.toggleFavourite(route)}
+    />
     <!-- the reset of the rating: the history is not touched (it is cleared in «Настройки» → «Данные»), so it can be taken back -->
     {#if since !== null}
       <p class="reset">

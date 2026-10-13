@@ -265,6 +265,30 @@
       onchange={(event) => settle('detailedCalc', () => app.updateSetting('detailedCalc', event.currentTarget.checked))}
     />
   </div>
+  <div class="row" title="Избранный маршрут (звёздочка в «Моих маршрутах») говорит, когда запас в точке закупки дорос до полного трюма. Звук играет через Windows; в игру ничего не уходит.">
+    <label for="set-fav-sound">Звук избранных маршрутов</label>
+    <span class="range">
+      <input
+        id="set-fav-sound"
+        class="check"
+        type="checkbox"
+        checked={app.settings.favouriteSound}
+        onchange={(event) => settle('favouriteSound', () => app.updateSetting('favouriteSound', event.currentTarget.checked))}
+      />
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.05"
+        aria-label="Громкость звука избранных маршрутов"
+        title="Громкость"
+        disabled={!app.settings.favouriteSound}
+        value={app.settings.favouriteVolume}
+        onchange={(event) => settle('favouriteVolume', () => app.updateSetting('favouriteVolume', Number(event.currentTarget.value)))}
+      />
+      <span class="percent sc-num">{Math.round(app.settings.favouriteVolume * 100)}%</span>
+    </span>
+  </div>
 {/snippet}
 
 {#snippet keys()}
