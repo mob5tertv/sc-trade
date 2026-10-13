@@ -4,7 +4,7 @@ import type { RouteOption } from '../../core/routes';
 import type { SellAlternative, SellHere } from '../../core/sell';
 import { pairKey } from '../../core/types';
 import type { Estimate, Reference, Side, Temp } from '../../core/types';
-import { lookupTarget } from './lookup';
+import { lookupSteps } from './lookup';
 import { priceTrend } from './price-trend';
 import type { PriceTrend } from './price-trend';
 import { roiTier } from './roi-tier';
@@ -149,6 +149,11 @@ export interface RouteOptionRow {
   whereTitle: string;
   /** The other end is the current target, the terminal the "Цель" button of this row would set. */
   isTarget: boolean;
+  /**
+   * The trip is bought at another terminal than the one the list is of («выгоднее», spec 14.19): how long the empty flight there
+   * is, as the row says it ('пустой 5:10'; 'пустой —' when its length is not known). `null` for a trip bought at the terminal itself.
+   */
+  emptyLeg: string | null;
   /** How good the trip is by its ROI: the colour of the bar at the edge of the row and of the ROI number. */
   tier: RoiTier;
   commodity: string;
@@ -181,7 +186,12 @@ export interface RouteOptionRow {
  * What the rows are compared with: the viewed terminal (without one every row names both ends of its trip), the
  * current target of the trip, and where to ask for the UEX range that stands beside a price of mine.
  */
-export interface RouteMarks { anchorTerminalId?: number | null; targetTerminalId?: number | null; uexRange?: UexRangeOf }
+export interface RouteMarks {
+  anchorTerminalId?: number | null; targetTerminalId?: number | null;
+  /** The second step of a target in two steps (`Settings.targetThenId`); `null` for a plain target. */
+  targetThenId?: number | null;
+  uexRange?: UexRangeOf;
+}
 
 /** 'по твоим рейсам', 'оценка по расстоянию · пустой перелёт 4:10'; `null` without a time. */
 function timeTitle(o: RouteOption): string | null {
@@ -195,7 +205,10 @@ export function routeOptionRow(
   o: RouteOption, ref: Reference, mode: RouteMode, runCounts: Map<string, number>, marks: RouteMarks = {},
 ): RouteOptionRow {
   const from = mode === 'from';
-  const { anchorTerminalId = null, targetTerminalId = null, uexRange } = marks;
+  const { anchorTerminalId = null, targetTerminalId = null, targetThenId = null, uexRange } = marks;
+  // the target this option would set, and whether it is the one that is set: both steps must be the same
+  const steps = lookupSteps(o, mode, from ? anchorTerminalId : null);
+  const elsewhere = from && anchorTerminalId !== null && o.originId !== anchorTerminalId;
   const ownEndId = from ? o.originId : o.destId;
   const buyView = priceView(o.buy, () => uexRange?.(o.originId, o.commodityId, 'buy') ?? NO_RANGE);
   const sellView = priceView(o.sell, () => uexRange?.(o.destId, o.commodityId, 'sell') ?? NO_RANGE);
@@ -207,7 +220,8 @@ export function routeOptionRow(
     dest: terminalLabel(ref, o.destId),
     bothEnds,
     whereTitle: whereTitle(ref, bothEnds, from ? o.destId : o.originId, o.originId, o.destId),
-    isTarget: targetTerminalId !== null && lookupTarget(o, mode) === targetTerminalId,
+    isTarget: targetTerminalId !== null && steps.targetId === targetTerminalId && steps.thenId === targetThenId,
+    emptyLeg: elsewhere ? `пустой ${o.emptyLegSec > 0 ? formatDuration(o.emptyLegSec) : NONE}` : null,
     tier: shownTier(o.roi),
     commodity: commodityLabel(ref, o.commodityId),
     distance: formatDistance(o.distanceGm),

@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SETTING_HINTS, type HintedSetting } from '../../src/ui/vm/settings-hints';
 
-const FIELDS: HintedSetting[] = ['scuCapacity', 'budget', 'quantumSpeedKkms', 'overheadMin', 'overheadEmptyMin', 'topN', 'refillFullMin'];
+const FIELDS: HintedSetting[] = ['scuCapacity', 'budget', 'quantumSpeedKkms', 'overheadMin', 'overheadEmptyMin', 'nearbyMaxMin', 'topN', 'refillFullMin'];
 
 describe('SETTING_HINTS: what a field of the calculation does', () => {
-  it('has a sentence for each of the seven fields that had none', () => {
+  it('has a sentence for each of the fields that had none', () => {
     expect(Object.keys(SETTING_HINTS).sort()).toEqual([...FIELDS].sort());
     for (const field of FIELDS) expect(SETTING_HINTS[field].length, field).toBeGreaterThan(20);
   });

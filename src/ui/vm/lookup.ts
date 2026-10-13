@@ -69,6 +69,19 @@ export function lookupTarget(option: Pick<RouteOption, 'originId' | 'destId'>, k
   return kind === 'from' ? option.destId : option.originId;
 }
 
+/** A target as the "Цель" button of an option sets it: the terminal to fly to now, and the one after a purchase there (`null`: none). */
+export interface TargetSteps { targetId: number; thenId: number | null }
+
+/**
+ * What "Цель" of an option makes the target (spec 14.19, item 7). A trip from `homeId` that is bought at ANOTHER terminal is a
+ * route of two steps: first that terminal, to buy, and after the purchase the terminal of the sale. Any other trip is one step
+ * (`lookupTarget`).
+ */
+export function lookupSteps(option: Pick<RouteOption, 'originId' | 'destId'>, kind: LookupKind, homeId: number | null): TargetSteps {
+  if (kind === 'from' && homeId !== null && option.originId !== homeId) return { targetId: option.originId, thenId: option.destId };
+  return { targetId: lookupTarget(option, kind), thenId: null };
+}
+
 /**
  * The price a lookup started from a table row is about: my own price in that cell, else the UEX hint, `null`
  * when the row has no price on that side.
@@ -88,13 +101,13 @@ const AFFECTS_LOOKUP: Record<keyof Settings, 'always' | 'from' | 'never'> = {
   vehicleId: 'never', scuCapacity: 'always', starSystemId: 'always', budget: 'always',
   hotMin: 'always', warmMin: 'always', coolingMin: 'always', refillFullMin: 'always', serverChangedAt: 'always',
   quantumSpeedKkms: 'always', overheadMin: 'always', overheadEmptyMin: 'always', topN: 'always', sort: 'always',
-  nearby: 'from', detailedCalc: 'never', optionsToTarget: 'never', routesSince: 'always',
+  nearby: 'from', nearbyMaxMin: 'from', detailedCalc: 'never', optionsToTarget: 'never', routesSince: 'always',
   hotkeyPanel: 'never', hotkeyDepart: 'never', hotkeyArrive: 'never',
   panelWidth: 'never', stripCorner: 'never', opacity: 'never', showStrip: 'never', stripRangeTurns: 'never', logLevel: 'never',
   idleCollapseSec: 'never', openSections: 'never', windowDx: 'never', windowDy: 'never', windowLocked: 'never',
   uiScale: 'never',
   roiHighlightPct: 'never',
-  currentTerminalId: 'never', targetTerminalId: 'never', keysHintShown: 'never', scaleNoticeShown: 'never',
+  currentTerminalId: 'never', targetTerminalId: 'never', targetThenId: 'never', keysHintShown: 'never', scaleNoticeShown: 'never',
 };
 
 export function affectsLookup(key: keyof Settings, kind: LookupKind): boolean {

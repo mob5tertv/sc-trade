@@ -81,6 +81,7 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
     case 'overheadEmptyMin':
       return isNumber(v) && v >= 0 ? null : 'Число не меньше нуля';
     case 'refillFullMin':
+    case 'nearbyMaxMin':
       return isNumber(v) && v > 0 ? null : 'Число минут больше нуля';
     case 'opacity':
       return isNumber(v) && v >= OPACITY_RANGE.min && v <= OPACITY_RANGE.max ? null : 'От 0,5 до 1';
@@ -135,6 +136,7 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
     case 'routesSince':
     case 'currentTerminalId':
     case 'targetTerminalId':
+    case 'targetThenId':
       return v === null || isNumber(v) ? null : NOT_A_NUMBER;
   }
   return null;

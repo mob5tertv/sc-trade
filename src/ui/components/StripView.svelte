@@ -33,7 +33,7 @@
     {#if flash !== null}
       <span class="part flash" class:error={flashKind === 'error'} aria-live="polite">{flash}</span>
     {:else if model.kind === 'idle'}
-      <span class="part location">{model.location}{#if model.target !== null}<span class="to">→</span><span class="goal">{model.target}</span>{/if}</span>
+      <span class="part location">{model.location}{#if model.target !== null}<span class="to">→</span>{#if model.then}<span class="step">закупка</span>{/if}<span class="goal">{model.target}</span>{#if model.then}<span class="step then">потом {model.then}</span>{/if}{/if}</span>
       {#if model.session !== null}
         <span class="part session {model.session.tone}"><span class="caption">сессия</span>{model.session.short}</span>
       {/if}
@@ -252,6 +252,17 @@
 
   .goal {
     color: var(--sc-accent);
+  }
+
+  /* a target in two steps: the word before the place of the purchase, and the place of the sale after it */
+  .step {
+    padding-right: 5px;
+    color: var(--sc-muted);
+    font-size: var(--sc-font-sm);
+  }
+
+  .step.then {
+    padding: 0 0 0 6px;
   }
 
   .rate {

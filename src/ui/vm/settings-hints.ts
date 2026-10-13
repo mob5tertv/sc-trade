@@ -3,7 +3,7 @@
 
 /** The fields of the calculation that have a tooltip of their own (the others say it in their label or have a hint in the settings view). */
 export type HintedSetting =
-  | 'scuCapacity' | 'budget' | 'quantumSpeedKkms' | 'overheadMin' | 'overheadEmptyMin' | 'topN' | 'refillFullMin';
+  | 'scuCapacity' | 'budget' | 'quantumSpeedKkms' | 'overheadMin' | 'overheadEmptyMin' | 'nearbyMaxMin' | 'topN' | 'refillFullMin';
 
 export const SETTING_HINTS: Readonly<Record<HintedSetting, string>> = {
   scuCapacity: 'Сколько SCU влезает в трюм: столько самое большее берёт рейс в расчёте вариантов. Без вместимости варианты и ROI не считаются.',
@@ -11,6 +11,7 @@ export const SETTING_HINTS: Readonly<Record<HintedSetting, string>> = {
   quantumSpeedKkms: 'Скорость квантового прыжка: по ней из расстояния считается время полёта, пока своих рейсов по этой паре нет.',
   overheadMin: 'Минуты сверх самого прыжка, которые добавляются к расчётному времени полёта. По своим рейсам время берётся как есть, без них.',
   overheadEmptyMin: 'Те же накладные для пустого перелёта к терминалу закупки, когда рейс начинается не там, где ты стоишь.',
+  nearbyMaxMin: 'С кнопкой «выгоднее» варианты ищутся и с закупкой на другом терминале, но не дальше этого пустого перелёта от тебя.',
   topN: 'Сколько лучших вариантов показывает список «Варианты».',
   refillFullMin: 'За сколько минут склад пополняется от нуля до максимума, пока скорость его пополнения не выучена по твоим замерам: по ней считается оценка «≈».',
 };

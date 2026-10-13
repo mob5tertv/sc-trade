@@ -6,6 +6,8 @@ export interface Settings {
   /** Minutes a stock needs to refill from empty to its maximum while no rate is learned for it yet. */
   refillFullMin: number;
   quantumSpeedKkms: number; overheadMin: number; overheadEmptyMin: number; topN: number;
+  /** «Выгоднее» (spec 14.19, item 7): the longest EMPTY flight to a purchase at another terminal, in minutes; a purchase farther away is not offered. */
+  nearbyMaxMin: number;
   /**
    * Whole percent of ROI from which a row of the terminal table stands out (a coloured bar at its edge, and one soft flash
    * when it crosses the threshold after a price was entered). 0 marks every row that pays at all.
@@ -64,6 +66,11 @@ export interface Settings {
   stripRangeTurns: boolean;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   serverChangedAt: number | null; currentTerminalId: number | null; targetTerminalId: number | null;
+  /**
+   * The second step of a target in two steps (spec 14.19, item 7): `targetTerminalId` is then where the cargo is BOUGHT, and
+   * after a purchase there the target becomes this terminal, where it is sold. `null` for a plain target.
+   */
+  targetThenId: number | null;
   /** The one-time hint about the keys of "Взлетел" and "Прилетел" was shown, or such a key was assigned: it is never shown (again). */
   keysHintShown: boolean;
   /** The one-time word about the larger window was said («Авто» picked more than 100 %), or the player chose the scale himself: it is never said (again). */
@@ -73,13 +80,13 @@ export const DEFAULT_SETTINGS: Settings = {
   vehicleId: null, scuCapacity: 0, starSystemId: null, budget: null,
   hotMin: 60, warmMin: 180, coolingMin: 240,
   refillFullMin: DEFAULT_REFILL_FULL_MIN,
-  quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, topN: 5, roiHighlightPct: 50,
+  quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, nearbyMaxMin: 10, topN: 5, roiHighlightPct: 50,
   sort: 'uecPerHour', nearby: false, detailedCalc: false, optionsToTarget: false, routesSince: null,
   hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '',
   panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
   uiScale: 0,
   idleCollapseSec: 40, openSections: 'terminal,options,settings:ship',
   opacity: 0.92, showStrip: true, stripRangeTurns: true, logLevel: 'debug',
-  serverChangedAt: null, currentTerminalId: null, targetTerminalId: null,
+  serverChangedAt: null, currentTerminalId: null, targetTerminalId: null, targetThenId: null,
   keysHintShown: false, scaleNoticeShown: false,
 };

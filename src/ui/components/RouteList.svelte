@@ -29,6 +29,8 @@
     anchorTerminalId?: number | null;
     /** The terminal of the current target: the option that leads there carries the word "цель". */
     targetTerminalId?: number | null;
+    /** The second step of a target in two steps (a purchase elsewhere, then the sale); `null` for a plain target. */
+    targetThenId?: number | null;
     /**
      * The range UEX knows for a side of a terminal. It stands in «Мин–макс» beside a price of mine, as a reference;
      * without it such a price has no range.
@@ -36,12 +38,15 @@
     uexRange?: UexRangeOf;
   }
   let {
-    options, reference, runCounts, mode, showCommodity, emptyText, onTarget, onClearTarget, onToggleRow, anchorTerminalId = null, targetTerminalId = null, uexRange,
+    options, reference, runCounts, mode, showCommodity, emptyText, onTarget, onClearTarget, onToggleRow, anchorTerminalId = null, targetTerminalId = null,
+    targetThenId = null, uexRange,
   }: Props = $props();
 
   const rows = $derived(
-    options.map(option => ({ option, row: routeOptionRow(option, reference, mode, runCounts, { anchorTerminalId, targetTerminalId, uexRange }) })),
+    options.map(option => ({ option, row: routeOptionRow(option, reference, mode, runCounts, { anchorTerminalId, targetTerminalId, targetThenId, uexRange }) })),
   );
+  // the trips bought at another terminal follow the ones bought here (the core orders them so): a line says where they begin
+  const firstElsewhere = $derived(rows.find(({ row }) => row.emptyLeg !== null)?.row.key ?? null);
   // the best rate is the one number of the list that is told apart by colour on its own, apart from the ROI tiers
   const bestRate = $derived.by(() => {
     let best: { key: string; rate: number } | null = null;
@@ -84,11 +89,15 @@
     </div>
     {#each rows as { option, row } (row.key)}
       {@const expanded = expandedKey === row.key}
+      {#if row.key === firstElsewhere}
+        <p class="elsewhere" title="Закупка на другом терминале рядом: выгоднее по ROI, чем здесь. «Цель» у такого варианта ведёт сначала на закупку, потом на продажу">Выгоднее: закупка рядом</p>
+      {/if}
       <div class="row tier-{row.tier}" class:expanded role="row">
         <button type="button" class="grid line" aria-expanded={expanded} onclick={() => toggle(row.key, option)}>
           <span class="where" title={row.whereTitle}>
             {#if showCommodity}<span class="code">{row.commodity}</span>{/if}
             <span class="end">{row.bothEnds ? row.origin : row.terminal}</span>
+            {#if row.emptyLeg !== null}<span class="leg" title="Пустой перелёт до закупки">{row.emptyLeg}</span>{/if}
             {#if row.bothEnds}<span class="arrow">→</span><span class="end">{row.dest}</span>{/if}
             {#if row.isTarget}<span class="goal" title="Цель рейса">цель</span>{/if}
             {#if row.stockNote}<span class="unsure" role="img" aria-label={row.stockNote} title={row.stockNote}>?</span>{/if}
@@ -216,6 +225,25 @@
   .arrow {
     flex: none;
     color: var(--sc-muted);
+  }
+
+  /* the empty flight to a purchase elsewhere: small and muted, between the two ends of the trip */
+  .leg {
+    flex: none;
+    color: var(--sc-muted);
+    font-size: var(--sc-font-sm);
+  }
+
+  /* where the trips bought at another terminal begin */
+  .elsewhere {
+    margin: 0;
+    padding: 0 var(--sc-pad-x);
+    height: 18px;
+    border-bottom: 1px solid var(--sc-border);
+    color: var(--sc-label);
+    font-size: var(--sc-font-sm);
+    line-height: 18px;
+    letter-spacing: 0.04em;
   }
 
   .goal {

@@ -32,6 +32,8 @@ export type StripModel =
     kind: 'idle'; location: string;
     /** The target that is set before anything is bought: the line reads 'HUR-L1 → ARC-L1'. */
     target: string | null;
+    /** The second step of a target in two steps: `target` is where the cargo is bought, this is where it is sold ('… → закупка: X · потом Y'). */
+    then?: string | null;
     /** What the play session that is going has earned ('+1,24M'); `null` when there is no such session or nothing ended in it. */
     session: SessionFigure | null;
   }
@@ -146,7 +148,11 @@ export function stripModel(
 ): StripModel {
   const target = s.targetTerminalId === null ? undefined : ref.terminals.get(s.targetTerminalId);
   if (active === null) {
-    return { kind: 'idle', location: locationOf(ref, s.currentTerminalId), target: target ? terminalName(target) : null, session };
+    const then = target && s.targetThenId !== null ? ref.terminals.get(s.targetThenId) : undefined;
+    return {
+      kind: 'idle', location: locationOf(ref, s.currentTerminalId), target: target ? terminalName(target) : null, session,
+      ...(then ? { then: terminalName(then) } : {}),
+    };
   }
 
   const { run, events } = active;
@@ -197,7 +203,8 @@ export function outlookText(model: StripModel): string | null {
  */
 export function stripTitle(model: StripModel): string {
   if (model.kind === 'idle') {
-    return [model.target === null ? model.location : `${model.location} → ${model.target}`, model.session?.line].filter(Boolean).join(' · ');
+    const target = model.target === null ? null : model.then ? `закупка: ${model.target} · потом ${model.then}` : model.target;
+    return [target === null ? model.location : `${model.location} → ${target}`, model.session?.line].filter(Boolean).join(' · ');
   }
   const head = [
     `${model.phaseLabel} ${model.phaseTimer}`, `всего ${model.timer}`,

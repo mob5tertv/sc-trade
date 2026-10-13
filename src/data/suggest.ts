@@ -80,7 +80,7 @@ function routeCtx(d: SuggestDeps, now: number, freeScu: number, distances: Map<s
     settings: {
       starSystemId: s.starSystemId, budget: s.budget,
       quantumSpeedKkms: s.quantumSpeedKkms, overheadMin: s.overheadMin, overheadEmptyMin: s.overheadEmptyMin,
-      topN, sort: s.sort,
+      topN, sort: s.sort, nearbyMaxMin: s.nearbyMaxMin,
     },
     freeScu,
     terminals: d.reference.terminals,

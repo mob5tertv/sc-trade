@@ -46,7 +46,7 @@ describe('routesFrom', () => {
     expect(Math.round(options[0].uecPerHour!)).toBe(940611);
     expect(options[1]).toMatchObject({ profit: 244800, timeSec: 1025 });
     expect(Math.round(options[1].uecPerHour!)).toBe(859785);
-    expect(trace).toEqual({ considered: 3, kept: 2, dropped: { unknownTerminal: 0, systemFilter: 1, nonPositiveProfit: 0, zeroQty: 0 } });
+    expect(trace).toEqual({ considered: 3, kept: 2, dropped: { unknownTerminal: 0, systemFilter: 1, nonPositiveProfit: 0, zeroQty: 0, tooFar: 0, notBetter: 0 } });
   });
 
   it('prefers my own median time over the estimate', () => {
@@ -98,8 +98,14 @@ describe('routesFrom edge cases', () => {
   it('leaves the time of the whole route unknown when the empty leg distance is unknown', () => {
     const m2 = withBuy(market, 5, { avgWeek: 6000, minWeek: 5900, maxWeek: 6200 });
     const c = { ...ctx, distances: new Map([...ctx.distances, [distKey(5, 2), 60]]) };   // no 1–5 distance
-    const o = routesFrom(m2, [5], 1, c).options.find(x => x.destId === 2)!;
+    // among the candidates of an uncut search (the ones the distances are asked for) the trip has no time
+    const uncut = { ...c, settings: { ...c.settings, topN: Number.POSITIVE_INFINITY } };
+    const o = routesFrom(m2, [5], 1, uncut).options.find(x => x.destId === 2)!;
     expect(o).toMatchObject({ timeSec: null, timeSource: null, uecPerHour: null, distanceGm: 60 });
+    // and the list the player sees does not offer it: a purchase elsewhere must be known to be near (spec 14.19)
+    const shown = routesFrom(m2, [5], 1, c);
+    expect(shown.options).toEqual([]);
+    expect(shown.trace.dropped.tooFar).toBeGreaterThan(0);
   });
 
   it('counts a route out of an unknown origin terminal instead of throwing', () => {
@@ -147,7 +153,7 @@ describe('routesFrom edge cases', () => {
   it('does not use an origin whose buy price is zero', () => {
     const zeroBuy = obs({ ts: NOW - 60, terminalId: 5, commodityId: GOLD, side: 'buy', price: 0 });
     const r = routesFrom(withSell(buildMarket([], [zeroBuy]), 2, 6900), [5], 5, ctx);
-    expect(r).toEqual({ options: [], trace: { considered: 0, kept: 0, dropped: { unknownTerminal: 0, systemFilter: 0, nonPositiveProfit: 0, zeroQty: 0 } } });
+    expect(r).toEqual({ options: [], trace: { considered: 0, kept: 0, dropped: { unknownTerminal: 0, systemFilter: 0, nonPositiveProfit: 0, zeroQty: 0, tooFar: 0, notBetter: 0 } } });
   });
 
   it('ranks routes without time by ROI after the routes with time', () => {
@@ -228,12 +234,11 @@ describe('trips that rest on an unknown stock stand after the known ones', () =>
     expect(ends(options)).toEqual([[1, 2], [1, 3], [5, 2], [5, 3]]);
   });
 
-  it('chooses the best N after that order: a known trip is not pushed out by an unknown one that ranks higher', () => {
-    const { options, trace } = routesFrom(unknownStock, [1, 5], 1, sortedBy('uecPerHour', 2));
-    expect(ends(options)).toEqual([[1, 2], [1, 3]]);
+  it('chooses the best N of the trips bought here, and the trips bought elsewhere follow them: neither pushes the other out (spec 14.19)', () => {
+    const { options, trace } = routesFrom(unknownStock, [1, 5], 1, sortedBy('uecPerHour', 1));
+    expect(ends(options)).toEqual([[1, 2], [5, 2]]);   // the best one bought here, then the best one bought elsewhere
     expect(trace.kept).toBe(4);   // `kept` is counted before the cut, as it was
-    // and when there are fewer known trips than N the unknown ones fill what is left
-    expect(ends(routesFrom(unknownStock, [1, 5], 1, sortedBy('uecPerHour', 3)).options)).toEqual([[1, 2], [1, 3], [5, 2]]);
+    expect(ends(routesFrom(unknownStock, [1, 5], 1, sortedBy('uecPerHour', 2)).options)).toEqual([[1, 2], [1, 3], [5, 2], [5, 3]]);
   });
 
   it('orders the trips that END at a terminal the same way (the origin with an unknown stock is the cheaper one)', () => {
@@ -246,7 +251,8 @@ describe('trips that rest on an unknown stock stand after the known ones', () =>
     const cheapest = withBuy(unknownStock, 6, { avgWeek: 5000, minWeek: 4900, maxWeek: 5200 });
     const reading = obs({ id: 9, ts: NOW - 30 * 60, terminalId: 5, commodityId: GOLD, side: 'buy', price: 6000, scu: 100 });
     const m2 = buildMarket([...cheapest.uex.values()], [...cheapest.own.values(), reading]);
-    const { options } = routesFrom(m2, [1, 5, 6], 1, sortedBy('roi'));
+    const by = sortedBy('roi');
+    const { options } = routesFrom(m2, [1, 5, 6], 1, { ...by, distances: new Map([...by.distances, [distKey(1, 6), 2]]) });
     const stockOf = (originId: number) => options.find(o => o.originId === originId)!.buy;
     expect(stockOf(5).stock).not.toBeNull();             // the timer made the estimate
     expect(stockOf(5).scu).toBeGreaterThanOrEqual(100);
@@ -268,5 +274,62 @@ describe('stockKnown', () => {
 
   it('is false only for no stock at all (`null`)', () => {
     expect(stockKnown(buyWith(null))).toBe(false);
+  });
+});
+
+// «Выгоднее» (spec 14.19, item 7). A (1) is where the player stands: Gold at my 6120, ROI 12.7 % to B (2). A2 (5) is on the same
+// planet, 2 Gm away: the empty flight there is 5 min of overhead + 10 s of quantum = 310 s.
+describe('«Выгоднее»: a purchase at another terminal is offered only when it is near and better', () => {
+  const TITA = 20;
+  const cheaper = withBuy(market, 5, { avgWeek: 6000, minWeek: 5900, maxWeek: 6200 });
+  const near = { ...ctx, distances: new Map([...ctx.distances, [distKey(1, 5), 2], [distKey(5, 2), 60], [distKey(5, 3), 62]]) };
+  const within = (min: number) => ({ ...near, settings: { ...near.settings, nearbyMaxMin: min } });
+  const origins = (options: Array<{ originId: number }>) => options.map(o => o.originId);
+
+  it('keeps it when the empty flight is within the limit, and drops it beyond', () => {
+    expect(origins(routesFrom(cheaper, [1, 5], 1, within(10)).options)).toEqual([1, 1, 5, 5]);
+    const far = routesFrom(cheaper, [1, 5], 1, within(5));
+    expect(origins(far.options)).toEqual([1, 1]);
+    expect(far.trace.dropped).toMatchObject({ tooFar: 2, notBetter: 0 });
+    expect(far.trace.considered).toBe(far.trace.kept + Object.values(far.trace.dropped).reduce((sum, n) => sum + n, 0));
+  });
+
+  it('drops it when UEX does not know the distance to the purchase', () => {
+    const unknown = { ...near, distances: new Map([...near.distances, [distKey(1, 5), null]]) };
+    expect(origins(routesFrom(cheaper, [1, 5], 1, unknown).options)).toEqual([1, 1]);
+  });
+
+  it('drops it when the same commodity bought here gives no worse a ROI', () => {
+    const dearer = withBuy(market, 5, { avgWeek: 6200, minWeek: 6100, maxWeek: 6300 });
+    const r = routesFrom(dearer, [1, 5], 1, within(10));
+    expect(origins(r.options)).toEqual([1, 1]);
+    expect(r.trace.dropped).toMatchObject({ tooFar: 0, notBetter: 2 });
+    const same = withBuy(market, 5, { avgWeek: 6120, minWeek: 6120, maxWeek: 6120 });
+    expect(origins(routesFrom(same, [1, 5], 1, within(10)).options)).toEqual([1, 1]);
+  });
+
+  it('compares a commodity that is not sold here with the best option from here', () => {
+    // Titanium is sold only at A2: bought at 2500. At 2600 it pays 4 %, less than the Gold from here (12.7 %); at 3500 it pays 40 %.
+    const tita = (sell: number) => withSell(withBuy(market, 5, { avgWeek: 2500, minWeek: 2500, maxWeek: 2500 }, TITA), 2, sell, TITA);
+    expect(origins(routesFrom(tita(2600), [1, 5], 1, within(10)).options)).toEqual([1, 1]);
+    const better = routesFrom(tita(3500), [1, 5], 1, within(10)).options;
+    expect(better.map(o => [o.originId, o.commodityId])).toEqual([[1, GOLD], [1, GOLD], [5, TITA]]);
+  });
+
+  it('offers every near purchase when nothing can be bought here at all', () => {
+    const onlyThere = withBuy(buildMarket([...market.uex.values()], []), 5, { avgWeek: 6000, minWeek: 5900, maxWeek: 6200 });
+    expect(origins(routesFrom(onlyThere, [1, 5], 1, within(10)).options)).toEqual([5]);
+  });
+
+  it('offers at most three trips bought elsewhere, after the ones bought here', () => {
+    let many = cheaper;
+    for (const id of [101, 102, 103, 104]) many = withSell(many, id, 7000 + id);
+    const terminals = new Map(ctx.terminals);
+    for (const id of [101, 102, 103, 104]) terminals.set(id, { ...terminals.get(2)!, id });
+    const r = routesFrom(many, [1, 5], 1, { ...within(10), terminals, settings: { ...within(10).settings, topN: 2 } });
+    expect(origins(r.options)).toEqual([1, 1, 5, 5]);                                          // topN 2: two of each
+    const wide = routesFrom(many, [1, 5], 1, { ...within(10), terminals, settings: { ...within(10).settings, topN: 5 } });
+    expect(origins(wide.options).filter(id => id === 5)).toHaveLength(3);
+    expect(origins(wide.options).lastIndexOf(1)).toBeLessThan(origins(wide.options).indexOf(5));
   });
 });

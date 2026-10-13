@@ -146,7 +146,7 @@ describe('routeOptionRow', () => {
       runs: 0,
       price: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
       roi: '13%', rate: '256k', worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
-      origin: 'ARC-L1', dest: 'TDD Area 18', bothEnds: true, isTarget: false, tier: 'ok',
+      origin: 'ARC-L1', dest: 'TDD Area 18', bothEnds: true, isTarget: false, emptyLeg: null, tier: 'ok',
       whereTitle: 'ARC-L1 → TDD Area 18\nARC-L1: Stanton\nTDD Area 18: Stanton',
       invested: nb('587 520'), profit: nb('74 880'), profitLoss: false, trend: null, priceIsOwn: false,
       buy: { price: nb('6 120'), range: NO_PRICE, badge: { text: 'моя · 40 мин', kind: 'hot' } },
@@ -525,5 +525,36 @@ describe('sellAlternativeRow', () => {
   });
   it('falls back to the id for an unknown terminal', () => {
     expect(sellAlternativeRow(alternative({ destId: 777 }), ref).terminal).toBe('#777');
+  });
+});
+
+describe('routeOptionRow: a trip bought at another terminal than the one the list is of («выгоднее», spec 14.19)', () => {
+  // the list is of terminal 3; the trip is bought at 1 and sold at 2, after an empty flight of 310 s
+  const elsewhere = option({ emptyLegSec: 310 });
+
+  it('says the empty flight to the purchase, and names both ends', () => {
+    expect(routeOptionRow(elsewhere, ref, 'from', new Map(), { anchorTerminalId: 3 })).toMatchObject({ emptyLeg: 'пустой 5:10', bothEnds: true });
+    expect(routeOptionRow(option({ emptyLegSec: 0 }), ref, 'from', new Map(), { anchorTerminalId: 3 }).emptyLeg).toBe('пустой —');
+  });
+
+  it('has no empty flight for a trip bought at the terminal itself, nor for trips that end at it', () => {
+    expect(routeOptionRow(option(), ref, 'from', new Map(), { anchorTerminalId: 1 }).emptyLeg).toBeNull();
+    expect(routeOptionRow(option(), ref, 'to', new Map(), { anchorTerminalId: 2 }).emptyLeg).toBeNull();
+  });
+
+  it('is the target only when BOTH steps are the ones that are set: the purchase first, the sale after it', () => {
+    const row = (targetTerminalId: number | null, targetThenId: number | null) => (
+      routeOptionRow(elsewhere, ref, 'from', new Map(), { anchorTerminalId: 3, targetTerminalId, targetThenId }).isTarget
+    );
+    expect(row(1, 2)).toBe(true);
+    expect(row(2, null)).toBe(false);     // the sale alone is another target: it skips the purchase
+    expect(row(1, null)).toBe(false);
+    expect(row(null, null)).toBe(false);
+  });
+
+  it('keeps a trip bought here a target of one step', () => {
+    const row = (targetThenId: number | null) => routeOptionRow(option(), ref, 'from', new Map(), { anchorTerminalId: 1, targetTerminalId: 2, targetThenId }).isTarget;
+    expect(row(null)).toBe(true);
+    expect(row(5)).toBe(false);
   });
 });

@@ -29,6 +29,11 @@ export interface RouteSettings {
   starSystemId: number | null; budget: number | null;
   quantumSpeedKkms: number; overheadMin: number; overheadEmptyMin: number;
   topN: number; sort: 'uecPerHour' | 'roi';
+  /**
+   * «Выгоднее» (spec 14.19, item 7): how many minutes of an EMPTY flight a purchase at another terminal may cost. A trip bought
+   * farther than that is not offered. Absent: no limit (the search of trips from one terminal has no other purchase places anyway).
+   */
+  nearbyMaxMin?: number;
 }
 
 export interface RouteCtx extends EstimateCtx {
@@ -59,9 +64,19 @@ export interface RouteOption {
  * (the origin is never its own destination). Each one is either dropped, with the reason counted in
  * `dropped`, or kept: `considered = kept + Σ dropped`. `kept` is taken before the `topN` cut.
  * `zeroQty` is a trip with nothing to carry: no stock at the purchase terminal, no free space or a budget
- * that buys nothing. An empty selling terminal is not one of them.
+ * that buys nothing. An empty selling terminal is not one of them. `tooFar` and `notBetter` are the trips bought at another
+ * terminal that «Выгоднее» does not offer (`betterElsewhere`).
  */
-export interface RouteTrace { considered: number; kept: number; dropped: { unknownTerminal: number; systemFilter: number; nonPositiveProfit: number; zeroQty: number } }
+export interface RouteTrace {
+  considered: number; kept: number;
+  dropped: {
+    unknownTerminal: number; systemFilter: number; nonPositiveProfit: number; zeroQty: number;
+    /** Bought at another terminal that is farther than the empty flight allowed (`nearbyMaxMin`), or whose distance is not known (to UEX, or yet). */
+    tooFar: number;
+    /** Bought at another terminal and no better by ROI than what the player's own terminal gives (`betterElsewhere`). */
+    notBetter: number;
+  };
+}
 export interface RouteResult { options: RouteOption[]; trace: RouteTrace }
 
 /** The distance between two terminals, or `null` when it is not in the table or recorded as unknown. */
@@ -107,7 +122,7 @@ function tripTime(ctx: RouteCtx, originId: number, destId: number, currentTermin
 /** A fresh trace; `kept` is filled in when the result is assembled. */
 const newTrace = (): RouteTrace => ({
   considered: 0, kept: 0,
-  dropped: { unknownTerminal: 0, systemFilter: 0, nonPositiveProfit: 0, zeroQty: 0 },
+  dropped: { unknownTerminal: 0, systemFilter: 0, nonPositiveProfit: 0, zeroQty: 0, tooFar: 0, notBetter: 0 },
 });
 
 /** Prices both ends of one trip, or `null` after counting the reason it is dropped. */
@@ -171,15 +186,61 @@ function ranking(sort: RouteSettings['sort']): Compare {
   return (a, b) => byKnownStock(a, b) || first(a, b) || second(a, b) || a.originId - b.originId || a.destId - b.destId || a.commodityId - b.commodityId;
 }
 
-function finish(found: RouteOption[], trace: RouteTrace, settings: RouteSettings): RouteResult {
+/** How many trips bought at another terminal are offered beside the player's own: a few better ones, not a second list. */
+export const ELSEWHERE_MAX = 3;
+
+/**
+ * The best `topN` trips. With `homeId` (the terminal the player asks from) the trips bought there come first and fill the
+ * `topN`; the trips bought elsewhere follow them, the best `ELSEWHERE_MAX` at most: they are an addition to the player's own
+ * options and must neither push them out nor be pushed out by them.
+ */
+function finish(found: RouteOption[], trace: RouteTrace, settings: RouteSettings, homeId: number | null = null): RouteResult {
   trace.kept = found.length;
-  return { options: found.sort(ranking(settings.sort)).slice(0, settings.topN), trace };
+  const sorted = found.sort(ranking(settings.sort));
+  if (homeId === null) return { options: sorted.slice(0, settings.topN), trace };
+  const own = sorted.filter((o) => o.originId === homeId);
+  const elsewhere = sorted.filter((o) => o.originId !== homeId);
+  // an uncut search (the candidates whose distances are asked for) keeps every trip bought elsewhere, too
+  const more = Number.isFinite(settings.topN) ? Math.min(settings.topN, ELSEWHERE_MAX) : Number.POSITIVE_INFINITY;
+  return { options: [...own.slice(0, settings.topN), ...elsewhere.slice(0, more)], trace };
+}
+
+/**
+ * «Выгоднее» (spec 14.19, item 7): which of the trips bought at ANOTHER terminal than `homeId` are worth offering.
+ *  - Near: the empty flight to the purchase is within `settings.nearbyMaxMin`. A distance UEX does not know is not near. A
+ *    distance that is not in the table YET cannot be judged: the trip is not offered (a list cut to the best N is what the player
+ *    sees), but it stays among the candidates of an uncut search (`topN` infinite), which is what the distances are asked for.
+ *  - Better: its ROI is higher than the best ROI of the SAME commodity bought at `homeId`; when that commodity is not sold
+ *    there (or does not pay), higher than the best ROI of anything bought at `homeId`. With nothing to buy at home every near
+ *    trip is better.
+ * The trips bought at `homeId` are all kept. What is dropped is counted in the trace.
+ */
+function betterElsewhere(found: RouteOption[], homeId: number, ctx: RouteCtx, trace: RouteTrace): RouteOption[] {
+  const limitSec = ctx.settings.nearbyMaxMin === undefined ? Number.POSITIVE_INFINITY : ctx.settings.nearbyMaxMin * SEC_PER_MIN;
+  let bestHome = Number.NEGATIVE_INFINITY;
+  const bestHomeBy = new Map<number, number>();
+  for (const o of found) {
+    if (o.originId !== homeId) continue;
+    bestHome = Math.max(bestHome, o.roi);
+    bestHomeBy.set(o.commodityId, Math.max(bestHomeBy.get(o.commodityId) ?? Number.NEGATIVE_INFINITY, o.roi));
+  }
+  return found.filter((o) => {
+    if (o.originId === homeId) return true;
+    const key = distKey(homeId, o.originId);
+    const tooFar = ctx.distances.has(key)
+      ? ctx.distances.get(key) === null || o.emptyLegSec > limitSec
+      : Number.isFinite(ctx.settings.topN);
+    if (tooFar) { trace.dropped.tooFar++; return false; }
+    if (o.roi <= (bestHomeBy.get(o.commodityId) ?? bestHome)) { trace.dropped.notBetter++; return false; }
+    return true;
+  });
 }
 
 /**
  * Ranked trips that start at the given purchase terminals (the current one, and optionally its
  * neighbours): every commodity they sell, to every terminal that buys it. A purchase terminal other
- * than `currentTerminalId` costs an empty flight from the current one. `commodityId` narrows the search.
+ * than `currentTerminalId` costs an empty flight from the current one, and its trips are offered only when they are
+ * near and better (`betterElsewhere`); they follow the trips of the current terminal (`finish`). `commodityId` narrows the search.
  * A terminal that is missing from `ctx.terminals` is skipped and counted, never an error.
  */
 export function routesFrom(m: Market, originIds: number[], currentTerminalId: number, ctx: RouteCtx, commodityId?: number): RouteResult {
@@ -199,7 +260,7 @@ export function routesFrom(m: Market, originIds: number[], currentTerminalId: nu
       }
     }
   }
-  return finish(found, trace, ctx.settings);
+  return finish(betterElsewhere(found, currentTerminalId, ctx, trace), trace, ctx.settings, currentTerminalId);
 }
 
 /**

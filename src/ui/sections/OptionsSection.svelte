@@ -9,7 +9,7 @@
   import { app } from '../state.svelte';
   import { stats } from '../stats.svelte';
   import { LEGEND, legendTitle } from '../vm/legend';
-  import { lookupEmptyText, lookupTarget } from '../vm/lookup';
+  import { lookupEmptyText, lookupSteps } from '../vm/lookup';
   import { optionsSummary } from '../vm/options-summary';
   import { titlePieces } from '../vm/route-pieces';
   import { noGoodsText, targetGoods } from '../vm/target-goods';
@@ -88,7 +88,12 @@
     </div>
     {#if request.kind === 'from'}
       <div class="sc-seg" role="group" aria-label="Где искать">
-        <button type="button" aria-pressed={app.settings.nearby} title="Искать закупку и на других точках той же планеты" onclick={setNearby}>и рядом</button>
+        <button
+          type="button"
+          aria-pressed={app.settings.nearby}
+          title="Показать и варианты, где закупка рядом, в другом месте, выгоднее по ROI. Как далеко искать — «Закупка рядом» в настройках"
+          onclick={setNearby}
+        >выгоднее</button>
       </div>
     {/if}
   {/if}
@@ -129,8 +134,12 @@
         emptyText={lookupEmptyText(asked, app.reference)}
         anchorTerminalId={asked.terminalId}
         targetTerminalId={app.settings.targetTerminalId}
+        targetThenId={app.settings.targetThenId}
         uexRange={(terminalId, commodityId, side) => uexRangeOf(app.market, terminalId, commodityId, side, app.routeCtx(undefined, app.rowsNow))}
-        onTarget={(option) => void app.setTarget(lookupTarget(option, asked.kind))}
+        onTarget={(option) => {
+          const steps = lookupSteps(option, asked.kind, asked.terminalId);
+          void app.setTarget(steps.targetId, steps.thenId);
+        }}
         onClearTarget={() => void app.setTarget(null)}
         onToggleRow={(option, opened) => app.log.info('ui', opened ? 'options row opened' : 'options row closed', rowContext(option))}
       />

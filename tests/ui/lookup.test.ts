@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { formatUec } from '../../src/core/format';
 import { DEFAULT_SETTINGS } from '../../src/core/settings';
 import type { Reference } from '../../src/core/types';
-import { affectsLookup, kindForSide, lookupEmptyText, lookupPrice, lookupTarget, lookupTitle, sameRequest } from '../../src/ui/vm/lookup';
+import { affectsLookup, kindForSide, lookupEmptyText, lookupPrice, lookupSteps, lookupTarget, lookupTitle, sameRequest } from '../../src/ui/vm/lookup';
 import type { LookupRequest } from '../../src/ui/vm/lookup';
 import { terminalRows } from '../../src/ui/vm/terminal-rows';
 import { buildMarket } from '../../src/core/market';
@@ -158,5 +158,17 @@ describe('affectsLookup', () => {
     for (const key of Object.keys(DEFAULT_SETTINGS) as Array<keyof typeof DEFAULT_SETTINGS>) {
       expect(typeof affectsLookup(key, 'from'), key).toBe('boolean');
     }
+  });
+});
+
+describe('lookupSteps', () => {
+  const trip = { originId: 5, destId: 2 };
+  it('makes a trip bought at another terminal than the player\'s a target of two steps: the purchase, then the sale', () => {
+    expect(lookupSteps(trip, 'from', 1)).toEqual({ targetId: 5, thenId: 2 });
+  });
+  it('keeps every other trip a target of one step', () => {
+    expect(lookupSteps(trip, 'from', 5)).toEqual({ targetId: 2, thenId: null });      // bought where the list is of
+    expect(lookupSteps(trip, 'from', null)).toEqual({ targetId: 2, thenId: null });   // nobody says where the list is of
+    expect(lookupSteps(trip, 'to', 2)).toEqual({ targetId: 5, thenId: null });        // trips that END at a terminal point at their origin
   });
 });

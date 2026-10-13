@@ -63,6 +63,7 @@ import { stripModel, type StripModel } from './vm/strip';
 import { rowRoiMap, type RowRoi } from './vm/row-roi';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
 import { arrivalAsksWhere, askedInRun, pickEffect } from './vm/terminal-pick';
+import { terminalLabel } from './vm/terminal-name';
 import { resolveTerminalSide } from './vm/terminal-side';
 import { triggerErrorText } from './vm/trigger-error';
 import { bindNeeded, boundAfter, withoutErrorsOfEmptyKeys } from './vm/trigger-suspension';
@@ -469,7 +470,7 @@ class AppState {
       settings: {
         starSystemId: s.starSystemId, budget: s.budget,
         quantumSpeedKkms: s.quantumSpeedKkms, overheadMin: s.overheadMin, overheadEmptyMin: s.overheadEmptyMin,
-        topN: s.topN, sort: s.sort,
+        topN: s.topN, sort: s.sort, nearbyMaxMin: s.nearbyMaxMin,
       },
       freeScu,
       terminals: this.reference.terminals,
@@ -1486,15 +1487,31 @@ class AppState {
    * "Цель": the terminal the next trip is flown to; `null` takes the target away (a run that goes on keeps going).
    * The "Рейс" section shows the target, so a new one opens that section: the effect of the click is seen at once. Taking it
    * away says nothing: the section or the mark of the target going away is the answer.
+   *
+   * `thenId` makes it a target in two steps (spec 14.19, item 7): `terminalId` is where the cargo is bought, and after a purchase
+   * there the target becomes `thenId` (`#advanceTarget`). A plain target, and taking the target away, forget the second step.
    */
-  async setTarget(terminalId: number | null): Promise<void> {
+  async setTarget(terminalId: number | null, thenId: number | null = null): Promise<void> {
+    if (this.settings.targetThenId !== (terminalId === null ? null : thenId)) await this.updateSetting('targetThenId', terminalId === null ? null : thenId);
     if (terminalId === null) {
       this.#log.info('ui', 'clear target');
       await this.updateSetting('targetTerminalId', null);
       return;
     }
-    this.#log.info('ui', 'set target', { terminalId });
+    this.#log.info('ui', 'set target', { terminalId, thenId });
     if ((await this.updateSetting('targetTerminalId', terminalId)) === null) void this.openSection(RUN_SECTION);
+  }
+
+  /**
+   * After a purchase at `terminalId`: when that is the first step of a target in two steps, the target moves on to the terminal
+   * of the sale, and the player is told (the mini line and the notice line). Any other purchase changes nothing.
+   */
+  async #advanceTarget(terminalId: number): Promise<void> {
+    const { targetTerminalId, targetThenId } = this.settings;
+    if (targetThenId === null || targetTerminalId !== terminalId) return;
+    this.#log.info('ui', 'target moves to its second step', { boughtAt: terminalId, targetId: targetThenId });
+    await this.setTarget(targetThenId);
+    if (this.reference.terminals.has(targetThenId)) this.notify(`Цель рейса: ${terminalLabel(this.reference, targetThenId)}.`, 'info');
   }
 
   /**
@@ -1698,6 +1715,7 @@ class AppState {
       if (failure === null) {
         this.#askedInRun = null; // a trade says where the ship is: it is the terminal of the trade
         await this.#locateAt(input.terminalId);
+        await this.#advanceTarget(input.terminalId);
         if (startsRun) void this.openSection(RUN_SECTION);
       }
       return failure;

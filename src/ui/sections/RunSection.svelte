@@ -24,7 +24,7 @@
   const active = $derived(app.activeRun);
 
   const header = $derived(model.kind === 'run' ? runHeader(model) : null);
-  const summary = $derived(header !== null ? header.summary : model.kind === 'idle' && model.target !== null ? planSummary(model.target) : '');
+  const summary = $derived(header !== null ? header.summary : model.kind === 'idle' && model.target !== null ? planSummary(model.target, model.then ?? null) : '');
   const hasTarget = $derived(model.target !== null);
   // a run without a target can take the terminal that is viewed as its target, from the header of the section
   const offer = $derived(targetOffer(active, app.settings.targetTerminalId, app.viewTerminalId, app.reference));

@@ -38,8 +38,10 @@ export function runHeader(model: RunStripModel): RunHeader {
   return { summary, target, title: `${summary} · ${target} · всего ${model.timer}` };
 }
 
-/** The summary of the header while only the target is set. */
-export const planSummary = (target: string): string => `цель: ${target}`;
+/** The summary of the header while only the target is set; a target in two steps says both: where to buy, then where to sell. */
+export const planSummary = (target: string, then: string | null = null): string => (
+  then === null ? `цель: ${target}` : `закупка: ${target} · потом ${then}`
+);
 
 /** The button of the header that makes the viewed terminal the target of the run: where it points and what it says. */
 export interface TargetOffer {
