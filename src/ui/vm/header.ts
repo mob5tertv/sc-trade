@@ -103,3 +103,14 @@ export function searchTerminals(items: SearchItem[], query: string, boostIds: Se
 export function commoditySearchItems(ref: Reference): Searchable[] {
   return [...ref.commodities.values()].map(c => ({ id: c.id, code: c.code, name: c.name }));
 }
+
+/**
+ * The width of the window from which the header has room for all of its parts at their full size. Since 1.2 it has two more
+ * buttons («Маршрут» and the reference), and with «Я здесь» it needs 473 px, while the window is 440 px wide by default and may be
+ * 380. Below this width the parts stand closer (`headerCompact`), so that at the default width nothing leaves the window: the
+ * last icon of the header is the button that collapses it.
+ */
+export const HEADER_FULL_WIDTH = 480;
+
+/** Whether the header of a window `panelWidth` wide draws its parts closer together. */
+export const headerCompact = (panelWidth: number): boolean => panelWidth < HEADER_FULL_WIDTH;

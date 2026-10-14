@@ -226,3 +226,20 @@ describe('commoditySearchItems', () => {
     expect(search(commoditySearchItems(ref), 'tit').map(i => i.id)).toEqual([20]);
   });
 });
+
+import { HEADER_FULL_WIDTH, headerCompact } from '../../src/ui/vm/header';
+
+describe('headerCompact: the header of a narrow window draws its parts closer (1.2 added two buttons to it)', () => {
+  it('is on at the default width of the window: with «Я здесь» the full header needs 473 px and would push the collapse button out of 440', () => {
+    expect(DEFAULT_SETTINGS.panelWidth).toBeLessThan(HEADER_FULL_WIDTH);
+    expect(headerCompact(DEFAULT_SETTINGS.panelWidth)).toBe(true);
+    expect(headerCompact(380)).toBe(true);
+  });
+
+  it('is off from the width at which everything has room at its full size', () => {
+    expect(HEADER_FULL_WIDTH).toBeGreaterThanOrEqual(473);
+    expect(headerCompact(HEADER_FULL_WIDTH)).toBe(false);
+    expect(headerCompact(550)).toBe(false);
+    expect(headerCompact(HEADER_FULL_WIDTH - 1)).toBe(true);
+  });
+});

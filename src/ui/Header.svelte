@@ -2,7 +2,7 @@
   import Icon from './components/Icon.svelte';
   import SearchBox from './components/SearchBox.svelte';
   import { app } from './state.svelte';
-  import { searchTerminals, terminalSearchItems } from './vm/header';
+  import { searchTerminals, terminalSearchItems, headerCompact } from './vm/header';
   import { indicatorClick, indicatorFace } from './vm/keyboard-badge';
   import { locationFieldTitle, locationPlaceholder } from './vm/terminal-pick';
   import { windowHeader } from './vm/window-header';
@@ -41,7 +41,7 @@
 
 <!-- One line: grip, the location (a search field that shows the viewed terminal), what the freshness of UEX is, the
      main button and the icons. The ship and the system are in the settings. -->
-<header class="bar">
+<header class="bar" class:compact={headerCompact(app.settings.panelWidth)}>
   <WindowGrip />
   <div class="location">
     <SearchBox
@@ -256,6 +256,33 @@
 
   .icons .sc-btn {
     color: var(--sc-label);
+  }
+
+  /* A window narrower than the header at its full size (`headerCompact`; the default 440 px is one): the parts stand closer, which
+     is enough for everything to fit at the default width, «Я здесь» included. Narrower still, the freshness of UEX is what gives
+     way (its text is cut), never the icons: the last of them collapses the window. */
+  .bar.compact {
+    gap: 3px;
+  }
+
+  .bar.compact .location {
+    min-width: 52px;
+  }
+
+  .bar.compact .here,
+  .bar.compact .route,
+  .bar.compact .plan {
+    padding: 0 6px;
+  }
+
+  .bar.compact .icons .sc-btn {
+    width: 22px;
+  }
+
+  .bar.compact .uex {
+    flex: 0 1 auto;
+    min-width: 16px;
+    overflow: hidden;
   }
 
   .icons .sc-btn:hover:not(:disabled),
