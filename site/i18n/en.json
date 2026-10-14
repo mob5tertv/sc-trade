@@ -26,7 +26,7 @@
     "no_installer": "built without the installer",
     "platform": "Windows 10 / 11, 64-bit",
     "disclaimer": "Unofficial fan project. Not affiliated with Cloud Imperium Games.",
-    "facts": ["Your own prices", "Routes by UEC/\u2060h", "Trip timer", "Over the game"]
+    "facts": ["Your own prices", "Profit and time of a trip", "Trip timer", "Over the game"]
   },
   "features": {
     "label": "Features",
@@ -55,7 +55,7 @@
           },
           {
             "title": "Sell here or fly on",
-            "text": "When you have a price of your own here that has not gone cold, the app compares selling here with other buyers: profit, UEC per hour, flight time."
+            "text": "When you have a price of your own here that has not gone cold, the app compares selling here with other buyers: how much more they pay and how long the flight is."
           }
         ]
       },
@@ -63,12 +63,12 @@
         "name": "Routes",
         "items": [
           {
-            "title": "A route from where you are",
-            "text": "The «Маршрут» (route) button shows the best options from your current location, sorted by UEC per hour or by ROI."
+            "title": "The best from where you are",
+            "text": "The «Лучшее» (best) button shows the best options from your current location: where to haul, what it brings and how long it takes, sorted by profit or by ROI. The «Маршрут» (route) button picks goods for two places of your own choice."
           },
           {
             "title": "My routes",
-            "text": "Your trips add up to a ranking of routes by UEC per hour, a history of trips and what a session earned."
+            "text": "Your trips add up to a ranking of routes by profit per trip, a history of trips and what a session earned."
           }
         ]
       }
@@ -89,11 +89,11 @@
     },
     "terminal-options": {
       "caption": "The unfolded window: the terminal table and the options of where to haul",
-      "alt": "The unfolded SC Trade window: a table of the terminal's commodities with prices and ROI, and under it the «Варианты» (options) section — five destinations with price, ROI and UEC per hour. The interface is in Russian."
+      "alt": "The unfolded SC Trade window: a table of the terminal's commodities with prices and ROI, and under it the «Варианты» (options) section — five destinations with price, trip time, profit and ROI. The interface is in Russian."
     },
     "my-routes": {
-      "caption": "«Мои маршруты» (my routes): a ranking by UEC per hour",
-      "alt": "The «Мои маршруты» section: a table of routes with the commodity, UEC per hour, number of trips, time, profit and ROI. The interface is in Russian."
+      "caption": "«Мои маршруты» (my routes): what one trip brings",
+      "alt": "The «Мои маршруты» section: a table of routes with the commodity, profit per trip, number of trips, time, profit and ROI. The interface is in Russian."
     },
     "price-entry": {
       "caption": "A commodity row opened: price, quantity, «Где продать» (where to sell) and «Купил» (bought)",
@@ -101,11 +101,11 @@
     },
     "sell-or-fly": {
       "caption": "A trip: phases, cargo, totals and the “sell here or fly on” comparison",
-      "alt": "The «Рейс» (trip) section: phases and timer, cargo, money invested, the expected profit, ROI and UEC per hour; below, the «Здесь» (here) line and a table of other buyers. The interface is in Russian."
+      "alt": "The «Рейс» (trip) section: phases and timer, cargo, money invested, the expected profit and ROI; below, the «Здесь» (here) line and a table of other buyers. The interface is in Russian."
     },
     "history": {
       "caption": "«Мои маршруты», the «История» (history) tab: every trip, the newest first",
-      "alt": "The «История» tab: trips with date, route, profit, ROI, time and UEC per hour; the trip under way and a trip with lost cargo are marked in colour. The interface is in Russian."
+      "alt": "The «История» tab: trips with date, route, profit, ROI and time; the trip under way and a trip with lost cargo are marked in colour. The interface is in Russian."
     },
     "settings": {
       "caption": "Settings: six groups, from the ship to the data",

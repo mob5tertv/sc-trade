@@ -76,6 +76,10 @@ ${StrLoc}
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}"
 !define MANUKEY "Software\${MANUFACTURER}"
 !define MANUPRODUCTKEY "${MANUKEY}\${PRODUCTNAME}"
+; SC TRADE PUBLISHER: until 1.2 the publisher was written as "mob5terdisk", and the installed folder is kept under the key of the publisher
+!define OLDMANUKEY "Software\mob5terdisk"
+!define OLDMANUPRODUCTKEY "${OLDMANUKEY}\${PRODUCTNAME}"
+; SC TRADE PUBLISHER: end
 !define UNINSTALLERSIGNCOMMAND "{{uninstaller_sign_cmd}}"
 !define ESTIMATEDSIZE "{{estimated_size}}"
 !define STARTMENUFOLDER "{{start_menu_folder}}"
@@ -372,6 +376,11 @@ Function PageLeaveReinstall
       ExecWait '$R1' $0
     ${Else}
       ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""
+; SC TRADE PUBLISHER: the version that is removed first may be one of the old publisher: its folder is under the old key
+      ${If} $4 == ""
+        ReadRegStr $4 SHCTX "${OLDMANUPRODUCTKEY}" ""
+      ${EndIf}
+; SC TRADE PUBLISHER: end
       ReadRegStr $R1 SHCTX "${UNINSTKEY}" "UninstallString"
       ${IfThen} $UpdateMode = 1 ${|} StrCpy $R1 "$R1 /UPDATE" ${|} ; append /UPDATE
       ${IfThen} $PassiveMode = 1 ${|} StrCpy $R1 "$R1 /P" ${|} ; append /P
@@ -726,6 +735,10 @@ Section Install
 
   ; Save $INSTDIR in registry for future installations
   WriteRegStr SHCTX "${MANUPRODUCTKEY}" "" $INSTDIR
+; SC TRADE PUBLISHER: the folder is written under the new publisher now; the key of the old one would only point at it a second time
+  DeleteRegKey SHCTX "${OLDMANUPRODUCTKEY}"
+  DeleteRegKey /ifempty SHCTX "${OLDMANUKEY}"
+; SC TRADE PUBLISHER: end
 
   !if "${INSTALLMODE}" == "both"
     ; Save install mode to be selected by default for the next installation such as updating
@@ -942,6 +955,11 @@ SectionEnd
 
 Function RestorePreviousInstallLocation
   ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""
+; SC TRADE PUBLISHER: a version of the old publisher is offered its own folder too (the jump below still skips the one line after it)
+  ${If} $4 == ""
+    ReadRegStr $4 SHCTX "${OLDMANUPRODUCTKEY}" ""
+  ${EndIf}
+; SC TRADE PUBLISHER: end
   StrCmp $4 "" +2 0
     StrCpy $INSTDIR $4
 FunctionEnd

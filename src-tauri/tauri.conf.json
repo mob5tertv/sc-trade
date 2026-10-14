@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "SC Trade",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "identifier": "com.sctrade.app",
   "build": {
     "frontendDist": "../dist",
@@ -28,7 +28,28 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "form-action": "'none'"
+      },
+      "devCsp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'unsafe-inline'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost ws://localhost:1420",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "form-action": "'none'"
+      }
     }
   },
   "plugins": {
@@ -39,7 +60,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "publisher": "mob5terdisk",
+    "publisher": "mob5tertv",
     "shortDescription": "Price diary and trade-route helper overlay for Star Citizen",
     "icon": [
       "icons/32x32.png",

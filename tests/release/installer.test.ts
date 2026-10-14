@@ -203,6 +203,30 @@ function ownLines(template: string): string[] {
   return own;
 }
 
+/**
+ * The blocks "; SC TRADE PUBLISHER: ..." of the template, apart from the blocks of the theme: the lines they add (`own`), and
+ * the template without them (`rest`). They are the ONE place where our own lines of the template do more than paint: version 1.2
+ * changed the name of the publisher, the installer keeps the installed folder under a registry key named after the publisher,
+ * and a version installed by the old name has to be found. What they may hold is pinned line by line (see the tests below).
+ */
+function publisherBlocks(template: string): { own: string[]; rest: string } {
+  const own: string[] = [];
+  const rest: string[] = [];
+  let inBlock = false;
+  for (const line of template.split('\n')) {
+    if (inBlock) {
+      if (line === '; SC TRADE PUBLISHER: end') inBlock = false;
+      else own.push(line);
+    } else if (line.startsWith('; SC TRADE PUBLISHER:')) {
+      inBlock = true;
+    } else {
+      rest.push(line);
+    }
+  }
+  if (inBlock) throw new Error('the last "; SC TRADE PUBLISHER:" block of the template is not closed');
+  return { own, rest: rest.join('\n') };
+}
+
 /** Every `SetCtlColors hwnd text background` of the code, the colours resolved through the defines of `source`. */
 function ctlColors(file: string, code: string[], source: string) {
   const found: { file: string; line: string; hwnd: string; text: string; background: string }[] = [];
@@ -226,7 +250,7 @@ describe('the installer', () => {
   });
 
   it('says who publishes it and what it is', () => {
-    expect(bundle.publisher).toBe('mob5terdisk');
+    expect(bundle.publisher).toBe('mob5tertv');
     expect(bundle.shortDescription).toBeTruthy();
   });
 
@@ -387,7 +411,9 @@ describe('the colours of the welcome and finish pages', () => {
 
 describe('the template of the installer', () => {
   const templateFile = nsis?.template;
-  const template = templateFile && existsSync(resolve(tauriDir, templateFile)) ? readFileSync(resolve(tauriDir, templateFile), 'utf8').replace(/\r\n/g, '\n') : '';
+  const whole = templateFile && existsSync(resolve(tauriDir, templateFile)) ? readFileSync(resolve(tauriDir, templateFile), 'utf8').replace(/\r\n/g, '\n') : '';
+  // the blocks of the publisher (1.2) are judged by their own tests, below; everything else here is the template without them
+  const { own: publisherLines, rest: template } = publisherBlocks(whole);
   const upstream = existsSync(resolve(installerDir, 'installer.upstream.nsi')) ? readInstaller('installer.upstream.nsi') : '';
   const lock = (JSON.parse(readFileSync(resolve(tauriDir, '..', 'package-lock.json'), 'utf8')) as { packages: Record<string, { version: string }> }).packages;
   /** What the template says it was made from: `; SC TRADE THEME: pin cli=<version> bundler=<version> upstream-sha256=<hash>`. */
@@ -413,7 +439,7 @@ describe('the template of the installer', () => {
     expect(createHash('sha256').update(upstream).digest('hex')).toBe(pin?.[3]);
   });
 
-  it('differs from the original only in blocks that start with "; SC TRADE THEME:" and end with "; SC TRADE THEME: end"', () => {
+  it('differs from the original only in blocks that start with "; SC TRADE THEME:" and end with "; SC TRADE THEME: end" (and in the four blocks of the publisher)', () => {
     // inside a block the lines of the original that the block replaces stay as ";upstream| <line>"; put back, they give the original
     const rebuilt: string[] = [];
     let inBlock = false;
@@ -431,6 +457,62 @@ describe('the template of the installer', () => {
     }
     expect(inBlock, 'the last block of the template is closed').toBe(false);
     expect(rebuilt.join('\n')).toBe(upstream);
+  });
+
+  describe('the publisher changed in 1.2: a version installed by the old name is still found', () => {
+    const code = codeLines(publisherLines.join('\n'));
+    const lines = whole.split('\n');
+    /** The line of code that follows line `index` of the template, the comments and the markers of our blocks skipped. */
+    const nextCode = (index: number): string => codeLines(lines.slice(index + 1).join('\n'))[0] ?? '';
+
+    it('is published as mob5tertv, and names the old publisher once, as the old key of the registry', () => {
+      expect(bundle.publisher).toBe('mob5tertv');
+      expect(defines(whole).get('OLDMANUKEY')).toBe('Software\\mob5terdisk');
+      expect(resolveDefines(whole, defines(whole).get('OLDMANUPRODUCTKEY'))).toBe('Software\\mob5terdisk\\${PRODUCTNAME}'.replace('${PRODUCTNAME}', defines(whole).get('PRODUCTNAME') ?? ''));
+      expect(whole.match(/mob5terdisk/g)).toHaveLength(2);      // the comment of the block and the one define
+    });
+
+    it('adds exactly these lines and no other: the old key is read where the new one is empty, and removed once the new one is written', () => {
+      const read = ['${If} $4 == ""', 'ReadRegStr $4 SHCTX "${OLDMANUPRODUCTKEY}" ""', '${EndIf}'];
+      expect(code).toEqual([
+        '!define OLDMANUKEY "Software\\mob5terdisk"',
+        '!define OLDMANUPRODUCTKEY "${OLDMANUKEY}\\${PRODUCTNAME}"',
+        ...read,
+        'DeleteRegKey SHCTX "${OLDMANUPRODUCTKEY}"',
+        'DeleteRegKey /ifempty SHCTX "${OLDMANUKEY}"',
+        ...read,
+      ]);
+    });
+
+    it('reads the old key right after each read of the new one, into the same variable, and nowhere else', () => {
+      const reads = lines.map((line, i) => (line.trim() === 'ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""' ? i : -1)).filter((i) => i >= 0);
+      expect(reads, 'the two places where the template reads the installed folder').toHaveLength(2);
+      for (const index of reads) {
+        expect(lines[index + 1], 'a block of the publisher follows the read').toMatch(/^; SC TRADE PUBLISHER:/);
+        expect(nextCode(index)).toBe('${If} $4 == ""');
+      }
+    });
+
+    it('removes the old key only after the new one is written: the folder is never left without a key', () => {
+      const written = lines.findIndex((line) => line.trim() === 'WriteRegStr SHCTX "${MANUPRODUCTKEY}" "" $INSTDIR');
+      expect(written).toBeGreaterThan(0);
+      expect(nextCode(written)).toBe('DeleteRegKey SHCTX "${OLDMANUPRODUCTKEY}"');
+      expect(code.filter((line) => line.startsWith('DeleteRegKey'))).toHaveLength(2);
+      // nothing of ours deletes the key of the NEW publisher: the template does that itself, in its section of the removal
+      expect(code.join('\n')).not.toMatch(/"\$\{MANU(?:PRODUCT)?KEY\}"/);
+    });
+
+    it('leaves the jump of RestorePreviousInstallLocation where it was: the comparison is still followed by the one line it skips', () => {
+      const at = lines.findIndex((line) => line.trim() === 'StrCmp $4 "" +2 0');
+      expect(at).toBeGreaterThan(0);
+      expect(lines[at + 1].trim()).toBe('StrCpy $INSTDIR $4');
+      expect(lines[at + 2].trim()).toBe('FunctionEnd');
+    });
+
+    it('does nothing else that has an effect: no file, no process, no other key', () => {
+      const commands = new Set(code.map(commandOf));
+      expect([...commands].sort()).toEqual(['!define', '${EndIf}', '${If}', 'DeleteRegKey', 'ReadRegStr'].sort());
+    });
   });
 
   it('puts the name and the version of the application in the corner of the window, where NSIS prints the copyright line', () => {
