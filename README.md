@@ -1,6 +1,6 @@
 # SC Trade
 
-<img src="site/assets/shots/terminal-options.png" width="440" alt="The unfolded SC Trade window on demo data: a table of the terminal's commodities with prices and ROI, and under it the «Варианты» (options) section — five destinations with price, ROI and UEC per hour. The interface is in Russian.">
+<img src="site/assets/shots/terminal-options.png" width="440" alt="The unfolded SC Trade window on demo data: a table of the terminal's commodities with prices and ROI, and under it the «Варианты» (options) section — five destinations with price, trip time, profit and ROI. The interface is in Russian.">
 
 **A personal price diary and trade-route helper for Star Citizen — a small window that stays on top of the game.**
 You type in the prices you see at the in-game terminals; SC Trade keeps them, shows how fresh they are and works out which run pays best. [UEX](https://uexcorp.space/) is the reference where you have no prices of your own yet.
