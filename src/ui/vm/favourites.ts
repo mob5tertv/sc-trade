@@ -3,6 +3,7 @@ import type { EstimateCtx } from '../../core/estimate';
 import type { Market, Reference } from '../../core/types';
 import { formatRoi } from './route-rows';
 import { terminalLabel } from './terminal-name';
+import { tr } from '../../i18n';
 
 // Favourite routes (spec 14.19, item 11): the player marks a route with a star, and the window tells him, with a sound, when the
 // stock at its loading place has grown to a full hold. The route is good because he marked it himself: no ROI is asked. Pure.
@@ -57,7 +58,7 @@ export function favouriteAlerts(
     const sell = estimate(m, f.destId, f.commodityId, 'sell', ctx);
     const roi = sell !== null && buy.price > 0 ? ` · ROI ${formatRoi((sell.price - buy.price) / buy.price)}` : '';
     const code = ref.commodities.get(f.commodityId)?.code || `#${f.commodityId}`;
-    const how = ceiling === null ? 'на полный трюм' : `больше там не видели (трюм ${capacity})`;
+    const how = ceiling === null ? tr('на полный трюм') : tr('больше там не видели (трюм {capacity})', { capacity });
     const alert = { key, text: `★ ${terminalLabel(ref, f.originId)} → ${terminalLabel(ref, f.destId)}: ${code} ≈ ${Math.round(buy.scu)} SCU, ${how}${roi}` };
     ready.push(alert);
     if (!alerted.has(key)) alerts.push(alert);
@@ -66,4 +67,4 @@ export function favouriteAlerts(
 }
 
 /** What the window says when a star could not be added. */
-export const FAVOURITES_FULL = `Избранных маршрутов уже ${FAVOURITES_MAX}: сними звёздочку с одного из них`;
+export const FAVOURITES_FULL = (): string => tr('Избранных маршрутов уже {FAVOURITES_MAX}: сними звёздочку с одного из них', { FAVOURITES_MAX });

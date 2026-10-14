@@ -32,6 +32,7 @@
   import {
     goodsCameAboard, GOODS_ABOARD_NOTICE, INCOME_NOTE, knownScuOf, tradeDefaults, tradeLimit, tradeMode, type TradeDefaults, type TradeMode,
   } from '../vm/trade-form';
+  import { tr } from '../../i18n';
 
   const SECTION = 'terminal';
   const ENTRY = 'entry';
@@ -53,7 +54,7 @@
   const name = $derived(
     viewedId !== null && app.reference.terminals.has(viewedId)
       ? locationModel(app.reference, app.settings, viewedId, app.pricesSyncedAt, app.uexOk, app.now).header.location
-      : 'Локация не выбрана',
+      : tr('Локация не выбрана'),
   );
   // the tooltip of the header has the official name and says where it is (there are many terminals of one name in different star
   // systems); the line itself is not changed
@@ -62,7 +63,7 @@
     if (terminal === undefined) return undefined;
     const full = terminalFullName(terminal);
     const place = terminalFullPlace(terminal, app.reference.starSystems);
-    return place === '' && full === name ? undefined : `Терминал: ${full}${place === '' ? '' : `\n${place}`}`;
+    return place === '' && full === name ? undefined : tr('Терминал: {full}{v1}', { full, v1: place === '' ? '' : `\n${place}` });
   });
 
   // The rows that flash now (see `enteringPrice`): commodity ids, so they belong to the table that was drawn when they crossed the threshold
@@ -137,8 +138,8 @@
   // (what to bring here / where to take things from here)
   const searchTitle = $derived(
     side === 'sell'
-      ? 'Что везти сюда: лучшие варианты по всем товарам, которые здесь покупают'
-      : 'Куда отсюда: лучшие варианты по всем товарам, которые можно купить здесь',
+      ? tr('Что везти сюда: лучшие варианты по всем товарам, которые здесь покупают')
+      : tr('Куда отсюда: лучшие варианты по всем товарам, которые можно купить здесь'),
   );
   function searchAll(): void {
     if (viewedId === null) return;
@@ -241,7 +242,7 @@
       // an income form whose goods were bought meanwhile: its line "нет в трюме" would contradict the refusal, so it goes
       // and the notice line says what to do (the next "Продал" opens the ordinary sale)
       closeTrade('the goods are in the hold now', form.id);
-      app.notify(GOODS_ABOARD_NOTICE, 'info');
+      app.notify(GOODS_ABOARD_NOTICE(), 'info');
     } else if (tradeState !== null && tradeState.id === form.id) tradeState = { ...tradeState, error: failure };
   }
 
@@ -270,13 +271,13 @@
       <button
         type="button"
         class="sc-btn sc-btn--act"
-        title="Сделать этот терминал целью и подобрать товары, которые стоит везти сюда с твоей станции"
+        title={tr('Сделать этот терминал целью и подобрать товары, которые стоит везти сюда с твоей станции')}
         onclick={() => void app.aimAt(viewed)}
-      >цель</button>
+      >{tr('цель')}</button>
     {/if}
-    <div class="sc-seg" role="group" aria-label="Какую сторону терминала показать">
-      <button type="button" aria-pressed={side === 'buy'} title="Что можно купить здесь" onclick={() => app.setTerminalSide('buy')}>Купить · {counts.buy}</button>
-      <button type="button" aria-pressed={side === 'sell'} title="Что можно продать здесь" onclick={() => app.setTerminalSide('sell')}>Продать · {counts.sell}</button>
+    <div class="sc-seg" role="group" aria-label={tr('Какую сторону терминала показать')}>
+      <button type="button" aria-pressed={side === 'buy'} title={tr('Что можно купить здесь')} onclick={() => app.setTerminalSide('buy')}>{tr('Купить · {buy}', { buy: counts.buy })}</button>
+      <button type="button" aria-pressed={side === 'sell'} title={tr('Что можно продать здесь')} onclick={() => app.setTerminalSide('sell')}>{tr('Продать · {sell}', { sell: counts.sell })}</button>
     </div>
     <button type="button" class="sc-btn sc-btn--act sc-btn--icon search" aria-label={searchTitle} title={searchTitle} onclick={searchAll}>
       <Icon name="search" />
@@ -287,10 +288,10 @@
       type="button"
       class="sc-btn sc-btn--act entry"
       aria-pressed={entryOpen}
-      title="Ввести цену, которую ты видишь в игре"
+      title={tr('Ввести цену, которую ты видишь в игре')}
       data-opens-entry={entryOpen ? undefined : 'quick'}
       onclick={() => void app.toggleSection(ENTRY)}
-    >+ цена</button>
+    >{tr('+ цена')}</button>
   {/if}
 {/snippet}
 
@@ -312,14 +313,14 @@
 {#snippet tradeForm(row: TerminalRow)}
   {#if tradeState !== null}
     <TradeDialog
-      title="{tradeState.side === 'buy' ? 'Купил' : 'Продал'} {row.code}"
+      title="{tradeState.side === 'buy' ? tr('Купил') : tr('Продал')} {row.code}"
       side={tradeState.side}
       defaultScu={tradeState.defaults.scu}
       defaultPrice={tradeState.defaults.price}
       defaultPriceIsOwn={tradeState.defaults.priceIsOwn}
       stockUnknown={tradeState.defaults.stockUnknown}
       maxScu={tradeMaxScu}
-      note={tradeState.mode === 'income' ? INCOME_NOTE : tradeState.side === 'buy' ? boxes : null}
+      note={tradeState.mode === 'income' ? INCOME_NOTE() : tradeState.side === 'buy' ? boxes : null}
       error={tradeState.error}
       onConfirm={(trade) => void confirmTrade(trade)}
       onCancel={() => closeTrade('cancelled')}
@@ -330,7 +331,7 @@
 {/snippet}
 
 <Section
-  title="Терминал"
+  title={tr('Терминал')}
   summary={name}
   summaryTitle={nameTitle}
   {open}
@@ -340,11 +341,11 @@
   scroll
 >
   {#if viewedId === null}
-    <p class="empty">Выбери локацию в шапке окна.</p>
+    <p class="empty">{tr('Выбери локацию в шапке окна.')}</p>
   {:else}
     {#if cannotLoad !== null}
-      <p class="cannot" role="note" title="По данным UEX о терминале и о корабле из настроек">
-        {app.vehicle?.name ?? 'Корабль'} здесь не загрузится: {cannotLoad}
+      <p class="cannot" role="note" title={tr('По данным UEX о терминале и о корабле из настроек')}>
+        {tr('{ship} здесь не загрузится: {reason}', { ship: app.vehicle?.name ?? tr('Корабль'), reason: cannotLoad })}
       </p>
     {/if}
     <TerminalTable

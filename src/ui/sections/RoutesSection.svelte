@@ -20,6 +20,7 @@
   import { clickedSort, sortRoutes, type RouteSortKey } from '../vm/route-sort';
   import { doubtfulRecords, recordRows } from '../vm/records';
   import { LIST_MAX_HEIGHT, STATS_VIEWS, routesSinceLine } from '../vm/stats-view';
+  import { tr } from '../../i18n';
 
   const SECTION = 'routes';
   // When the window has no height to spare, this section gives way before the terminal table does: the table is what
@@ -57,7 +58,7 @@
 
 {#snippet actions()}
   {#if open}
-    <div class="sc-seg" role="group" aria-label="Что показать">
+    <div class="sc-seg" role="group" aria-label={tr('Что показать')}>
       {#each STATS_VIEWS as item (item.id)}
         <button type="button" aria-pressed={view === item.id} title={item.title} onclick={() => stats.setView(item.id)}>{item.label}</button>
       {/each}
@@ -72,7 +73,7 @@
   and goes back to its top when the list is switched; when the window has no height to spare it shrinks below that as before.
 -->
 <Section
-  title="Мои маршруты"
+  title={tr('Мои маршруты')}
   summary={open ? undefined : stats.summary}
   {open}
   onToggle={toggle}
@@ -95,14 +96,14 @@
     {#if since !== null}
       <p class="reset">
         <span class="since">{routesSinceLine(since)}</span>
-        <button type="button" class="sc-btn" title="Считать маршруты снова по всей истории рейсов" onclick={() => void stats.restoreRoutes()}>Вернуть прежние</button>
+        <button type="button" class="sc-btn" title={tr('Считать маршруты снова по всей истории рейсов')} onclick={() => void stats.restoreRoutes()}>{tr('Вернуть прежние')}</button>
       </p>
     {:else if routes.length > 0}
       <p class="reset">
         <ConfirmButton
-          label="Обнулить маршруты"
-          sureLabel="Точно обнулить?"
-          title="Начать рейтинг маршрутов, твои времена по парам и обычный темп заново. История рейсов и сессии останутся; обнуление можно вернуть"
+          label={tr('Обнулить маршруты')}
+          sureLabel={tr('Точно обнулить?')}
+          title={tr('Начать рейтинг маршрутов, твои времена по парам и обычный темп заново. История рейсов и сессии останутся; обнуление можно вернуть')}
           onConfirm={() => void stats.resetRoutes()}
         />
       </p>
@@ -117,21 +118,21 @@
   {:else if view === 'records'}
     <RecordsList
       rows={recordsFilter.onlyDoubt ? doubtful : records}
-      emptyText={recordsFilter.onlyDoubt ? 'Сомнительных записей нет' : undefined}
+      emptyText={recordsFilter.onlyDoubt ? tr('Сомнительных записей нет') : undefined}
       onEdit={(edit) => app.editRecord(edit)}
       onRemove={(row) => void app.removePrice({ terminalId: row.terminalId, commodityId: row.commodityId, side: row.side })}
     />
     {#if records.length > 0}
       <p class="reset">
-        <span class="since">Клик по строке — исправить или убрать</span>
-        <span class="sc-seg" role="group" aria-label="Какие записи показать">
-          <button type="button" aria-pressed={!recordsFilter.onlyDoubt} title="Все твои записи цен" onclick={() => (recordsFilter.onlyDoubt = false)}>Все · {records.length}</button>
+        <span class="since">{tr('Клик по строке — исправить или убрать')}</span>
+        <span class="sc-seg" role="group" aria-label={tr('Какие записи показать')}>
+          <button type="button" aria-pressed={!recordsFilter.onlyDoubt} title={tr('Все твои записи цен')} onclick={() => (recordsFilter.onlyDoubt = false)}>{tr('Все · {length}', { length: records.length })}</button>
           <button
             type="button"
             aria-pressed={recordsFilter.onlyDoubt}
-            title="Записи, которые стоит проверить: UEX этого товара на станции не знает, или цена далеко от его истории"
+            title={tr('Записи, которые стоит проверить: UEX этого товара на станции не знает, или цена далеко от его истории')}
             onclick={() => (recordsFilter.onlyDoubt = true)}
-          >Сомнительные · {doubtful.length}</button>
+          >{tr('Сомнительные · {length}', { length: doubtful.length })}</button>
         </span>
       </p>
     {/if}

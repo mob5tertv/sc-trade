@@ -1,5 +1,6 @@
 import { formatDuration } from '../../core/format';
 import type { Run, RunEvent, RunWithEvents } from '../../core/types';
+import { tr } from '../../i18n';
 
 // What a run is doing right now and for how long: loading, flight or unloading (spec 14.7, the live timers of 15c).
 //
@@ -16,8 +17,8 @@ export type RunPhase = 'loading' | 'flight' | 'unloading';
 const ORDER: readonly RunPhase[] = ['loading', 'flight', 'unloading'];
 const NONE = '—';
 
-const NAME: Record<RunPhase, string> = { loading: 'Погрузка', flight: 'Полёт', unloading: 'Выгрузка' };
-const CAPS: Record<RunPhase, string> = { loading: 'ПОГРУЗКА', flight: 'ПОЛЁТ', unloading: 'ВЫГРУЗКА' };
+const NAME: Record<RunPhase, string> = { get loading() { return tr('Погрузка'); }, get flight() { return tr('Полёт'); }, get unloading() { return tr('Выгрузка'); } };
+const CAPS: Record<RunPhase, string> = { get loading() { return tr('ПОГРУЗКА'); }, get flight() { return tr('ПОЛЁТ'); }, get unloading() { return tr('ВЫГРУЗКА'); } };
 
 export const phaseName = (phase: RunPhase): string => NAME[phase];
 /** For the mini line. */
@@ -96,17 +97,17 @@ export function cardMarks(phase: RunPhase): Array<'depart' | 'arrive'> {
   return phase === 'unloading' ? ['depart'] : [];
 }
 
-const NO_RUN = 'Нет активного рейса';
+const NO_RUN = (): string => tr('Нет активного рейса');
 
 /**
  * Why a mark cannot be written, in a sentence for the player; `null` when it can. There must be a run, and a mark
  * that repeats the one before it (two take-offs in a row, a double click) is not written twice.
  */
 export function markRefusal(type: 'depart' | 'arrive', active: RunWithEvents | null): string | null {
-  if (active === null) return NO_RUN;
+  if (active === null) return NO_RUN();
   const last = [...active.events].reverse().find((e) => e.type === 'depart' || e.type === 'arrive');
   if (last?.type !== type) return null;
-  return type === 'depart' ? 'Взлёт уже отмечен' : 'Прилёт уже отмечен';
+  return type === 'depart' ? tr('Взлёт уже отмечен') : tr('Прилёт уже отмечен');
 }
 
 export interface PhaseLine {

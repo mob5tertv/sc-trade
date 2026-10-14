@@ -59,8 +59,8 @@ describe('askedInRun: the question belongs to the run it was asked in', () => {
 describe('the words of the field of the location', () => {
   it('the placeholder is "Локация…", and "Где прилетел?" while the field asks', () => {
     expect(locationPlaceholder(false)).toBe('Локация…');
-    expect(locationPlaceholder(true)).toBe(WHERE_ARRIVED_PLACEHOLDER);
-    expect(WHERE_ARRIVED_PLACEHOLDER).toBe('Где прилетел?');
+    expect(locationPlaceholder(true)).toBe(WHERE_ARRIVED_PLACEHOLDER());
+    expect(WHERE_ARRIVED_PLACEHOLDER()).toBe('Где прилетел?');
   });
 
   const base = 'TDD Area 18\nStanton · ArcCorp';

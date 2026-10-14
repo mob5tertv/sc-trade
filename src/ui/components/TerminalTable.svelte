@@ -13,11 +13,12 @@
   import { tradeEntryField } from '../vm/trade-form';
   import TempBadge from './TempBadge.svelte';
   import TrendMark from './TrendMark.svelte';
+  import { tr } from '../../i18n';
 
   const NO_ROI: ReadonlyMap<number, RoiCell> = new Map();
   const NO_PULSE: ReadonlySet<number> = new Set();
   const NO_CARGO: readonly CargoLine[] = [];
-  const NO_CAPACITY_HINT = 'Укажи корабль в настройках — без вместимости ROI не считается';
+  const NO_CAPACITY_HINT = tr('Укажи корабль в настройках — без вместимости ROI не считается');
 
   interface Props {
     rows: TerminalRow[];
@@ -275,14 +276,14 @@
   const byRoi = $derived(sort.key === 'roi');
   const bestProfit = $derived(Math.max(0, ...[...roi.values()].map((cell) => cell.profit)));
 
-  const roiTitle = $derived(`${noCapacity ? NO_CAPACITY_HINT : 'ROI лучшего рейса с этим товаром'}\nНажми, чтобы отсортировать по ROI`);
-  const gainTitle = $derived(`${noCapacity ? NO_CAPACITY_HINT : LEGEND.profitTrip}\nНажми, чтобы отсортировать по прибыли`);
+  const roiTitle = $derived(tr('{what}\nНажми, чтобы отсортировать по ROI', { what: noCapacity ? NO_CAPACITY_HINT : tr('ROI лучшего рейса с этим товаром') }));
+  const gainTitle = $derived(tr('{v1}\nНажми, чтобы отсортировать по прибыли', { v1: noCapacity ? NO_CAPACITY_HINT : LEGEND.profitTrip }));
   // the hint of a price: its spread by UEX and whose price it is; under a spread, what the two numbers are (the legend of «Мин–макс»)
   const priceTitle = (span: ReturnType<typeof rangeView>, badge: { text: string } | null): string => {
     const hint = badge === null ? rangeHint(span) : `${rangeHint(span)} · ${badge.text}`;
     return span.kind === 'spread' || span.kind === 'flat' ? `${hint}\n${LEGEND.range}` : hint;
   };
-  const empty = $derived(rows.length === 0 ? 'Нет цен' : side === 'buy' ? 'Здесь ничего не продают' : 'Здесь ничего не покупают');
+  const empty = $derived(rows.length === 0 ? tr('Нет цен') : side === 'buy' ? tr('Здесь ничего не продают') : tr('Здесь ничего не покупают'));
 </script>
 
 {#snippet expanded(row: TerminalRow, cell: Cell)}
@@ -306,7 +307,7 @@
         autocomplete="off"
         data-cell={key}
         data-select-on-focus
-        aria-label="{row.code}: цена {side === 'buy' ? 'покупки' : 'продажи'}, UEC за SCU"
+        aria-label={side === 'buy' ? tr('{code}: цена покупки, UEC за SCU', { code: row.code }) : tr('{code}: цена продажи, UEC за SCU', { code: row.code })}
         aria-invalid={draft?.bad.price ? 'true' : undefined}
         placeholder={placeholder(cell.hint)}
         value={draft?.shown.price ?? texts.price}
@@ -321,7 +322,7 @@
         autocomplete="off"
         data-cell={key}
         data-select-on-focus
-        aria-label={side === 'buy' ? `${row.code}: количество у продавца, SCU` : `${row.code}: количество у покупателя на складе, SCU`}
+        aria-label={side === 'buy' ? tr('{code}: количество у продавца, SCU', { code: row.code }) : tr('{code}: количество у покупателя на складе, SCU', { code: row.code })}
         aria-invalid={draft?.bad.scu ? 'true' : undefined}
         placeholder={placeholder(cell.hintScu)}
         value={draft?.shown.scu ?? texts.scu}
@@ -332,7 +333,7 @@
       {#if estimated && cell.ownScu !== null}
         <span class="est" title={LEGEND.approxScu}>≈ {formatUec(cell.ownScu)}</span>
       {:else}
-        <span class="unit" title={side === 'sell' ? 'Столько уже лежит на складе у покупателя, а не сколько он готов купить' : undefined}>SCU</span>
+        <span class="unit" title={side === 'sell' ? tr('Столько уже лежит на складе у покупателя, а не сколько он готов купить') : undefined}>SCU</span>
       {/if}
       <span class="spacer"></span>
       <!-- `data-opens-entry`: the button opens the form of a trade, and the cursor goes into the field of the form with that name
@@ -342,39 +343,39 @@
         <button
           type="button"
           class="sc-btn sc-btn--act"
-          aria-label="Справочная: {row.code}"
-          title="Справочная: десять лучших мест {side === 'buy' ? 'купить' : 'продать'} этот товар"
+          aria-label={tr('Справочная: {code}', { code: row.code })}
+          title={side === 'buy' ? tr('Справочная: десять лучших мест купить этот товар') : tr('Справочная: десять лучших мест продать этот товар')}
           onclick={() => onGuide?.({ commodityId: row.commodityId, side })}
-        >места</button>
+        >{tr('места')}</button>
       {/if}
       {#if side === 'buy'}
-        <button type="button" class="sc-btn sc-btn--act" aria-label="Где продать {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где продать</button>
-        <button type="button" class="sc-btn sc-btn--act" aria-label="Купил {row.code}" data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>Купил</button>
+        <button type="button" class="sc-btn sc-btn--act" aria-label={tr('Где продать {code}', { code: row.code })} onclick={() => onLookup({ commodityId: row.commodityId, side })}>{tr('Где продать')}</button>
+        <button type="button" class="sc-btn sc-btn--act" aria-label={tr('Купил {code}', { code: row.code })} data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>{tr('Купил')}</button>
       {:else}
-        <button type="button" class="sc-btn sc-btn--act" aria-label="Где купить {row.code}" onclick={() => onLookup({ commodityId: row.commodityId, side })}>Где купить</button>
-        <button type="button" class="sc-btn sc-btn--act" aria-label="Продал {row.code}" data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>Продал</button>
+        <button type="button" class="sc-btn sc-btn--act" aria-label={tr('Где купить {code}', { code: row.code })} onclick={() => onLookup({ commodityId: row.commodityId, side })}>{tr('Где купить')}</button>
+        <button type="button" class="sc-btn sc-btn--act" aria-label={tr('Продал {code}', { code: row.code })} data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>{tr('Продал')}</button>
       {/if}
     </div>
     <!-- One line, never wrapped. The warning, the plaque and the rate mark keep their size; the texts between them give way
          with an ellipsis (the whole text is in their `title`), so the warning is never the part that is cut. -->
     {#if cell.badge || cell.warn || cell.ownLast || (estimated && cell.ownScuBase) || (onRemovePrice !== undefined && (hasOwnRecord?.(row.commodityId, side) ?? false))}
       <div class="meta">
-        {#if cell.warn}<span class="warn fixed">проверь цифру</span>{/if}
+        {#if cell.warn}<span class="warn fixed">{tr('проверь цифру')}</span>{/if}
         {#if cell.badge}<span class="fixed"><TempBadge text={cell.badge.text} kind={cell.badge.kind} /></span>{/if}
         {#if cell.trend}
           <span class="note"><TrendMark trend={cell.trend} /><span class="text muted" title={cell.trend.title}>{cell.trend.title}</span></span>
         {/if}
         {#if estimated && cell.ownScuBase}
-          {@const was = `было ${formatUec(cell.ownScuBase.scu)} · ${cell.ownScuBase.age}`}
+          {@const was = tr('было {scu} · {age}', { scu: formatUec(cell.ownScuBase.scu), age: cell.ownScuBase.age })}
           <span class="text muted" title={was}>{was}</span>
           {#if cell.ownScuRate === 'learned'}
-            <span class="rate learned fixed" title={LEGEND.rateLearned}>скорость выучена</span>
+            <span class="rate learned fixed" title={LEGEND.rateLearned}>{tr('скорость выучена')}</span>
           {:else if cell.ownScuRate === 'default'}
-            <span class="rate fixed" title={LEGEND.rateDefault}>скорость запасная</span>
+            <span class="rate fixed" title={LEGEND.rateDefault}>{tr('скорость запасная')}</span>
           {/if}
         {/if}
         {#if cell.ownLast}
-          {@const last = `моя была ${formatUec(cell.ownLast.price)} · ${cell.ownLast.age}`}
+          {@const last = tr('моя была {price} · {age}', { price: formatUec(cell.ownLast.price), age: cell.ownLast.age })}
           <span class="text muted" title={last}>{last}</span>
         {/if}
         {#if (onRemovePrice !== undefined && (hasOwnRecord?.(row.commodityId, side) ?? false))}
@@ -384,12 +385,12 @@
             type="button"
             class="sc-btn fixed"
             class:sure
-            aria-label={sure ? `Точно убрать мою запись цены ${row.code}` : `Убрать мою запись цены ${row.code}`}
+            aria-label={sure ? tr('Точно убрать мою запись цены {code}', { code: row.code }) : tr('Убрать мою запись цены {code}', { code: row.code })}
             title={sure
-              ? 'Нажми ещё раз, чтобы убрать запись. Ничего не нажимай — кнопка вернётся сама'
-              : 'Убрать твою последнюю запись этой цены на этом терминале: если она попала сюда по ошибке. Останется прежняя твоя запись или данные UEX; если нет ни того, ни другого, товар исчезнет из таблицы'}
+              ? tr('Нажми ещё раз, чтобы убрать запись. Ничего не нажимай — кнопка вернётся сама')
+              : tr('Убрать твою последнюю запись этой цены на этом терминале: если она попала сюда по ошибке. Останется прежняя твоя запись или данные UEX; если нет ни того, ни другого, товар исчезнет из таблицы')}
             onclick={() => removeClicked(key, { commodityId: row.commodityId, side, code: row.code })}
-          >{sure ? 'точно убрать?' : 'убрать запись'}</button>
+          >{sure ? tr('точно убрать?') : tr('убрать запись')}</button>
         {/if}
       </div>
     {/if}
@@ -420,16 +421,16 @@
   <div
     class="table"
     role="table"
-    aria-label={side === 'buy' ? 'Что можно купить' : 'Что можно продать'}
+    aria-label={side === 'buy' ? tr('Что можно купить') : tr('Что можно продать')}
     bind:this={table}
     onfocusin={onFieldFocus}
     onfocusout={onFieldBlur}
   >
     <div class="grid head sc-label" role="row">
-      {@render head('name', 'Товар', 'Порядок по умолчанию: по названию товара')}
-      <span role="columnheader" class="r price-head" title="Наведи на цену — увидишь её минимум и максимум по UEX">Цена</span>
+      {@render head('name', tr('Товар'), tr('Порядок по умолчанию: по названию товара'))}
+      <span role="columnheader" class="r price-head" title={tr('Наведи на цену — увидишь её минимум и максимум по UEX')}>{tr('Цена')}</span>
       <span role="columnheader" class="r">SCU</span>
-      {@render head('profit', 'Прибыль', gainTitle)}
+      {@render head('profit', tr('Прибыль'), gainTitle)}
       {@render head('roi', 'ROI', roiTitle)}
     </div>
     {#each shown as row (row.commodityId)}
@@ -457,7 +458,7 @@
                 {/if}
               </span>
               <span class="price sc-num" class:hint={cell.own === null} title={priceTitle(span, cell.badge)}>
-                {#if cell.warn}<span class="bang" title="Цена далеко от истории UEX: проверь цифру">!</span>{/if}
+                {#if cell.warn}<span class="bang" title={tr('Цена далеко от истории UEX: проверь цифру')}>!</span>{/if}
                 <TrendMark trend={cell.trend} />
                 <span class="digits">{cell.own === null && cell.hint === null ? '—' : formatUec(cell.own ?? cell.hint ?? 0)}</span>
                 {#if cell.badge}<TempBadge compact text={cell.badge.text} kind={cell.badge.kind} />{:else}<span class="nomark"></span>{/if}
@@ -468,7 +469,7 @@
               <button
                 type="button"
                 class="best sc-num"
-                aria-label="Прибыль {best.gain}, ROI {best.text}: варианты для {row.name}"
+                aria-label={tr('Прибыль {gain}, ROI {text}: варианты для {name}', { gain: best.gain, text: best.text, name: row.name })}
                 title={best.title}
                 onclick={() => onLookup({ commodityId: row.commodityId, side })}
               ><span class="gain">{best.gain}</span><span class="roi">{best.text}</span></button>

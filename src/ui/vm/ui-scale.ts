@@ -1,4 +1,5 @@
 import type { Size } from '../../core/layout';
+import { tr } from '../../i18n';
 
 // The scale of the whole window (the setting `uiScale`): the values the player can pick, what «Авто» picks, and the words
 // of the field. The scale is a zoom of the root of the interface (`App.svelte`); nothing here touches the DOM.
@@ -48,7 +49,7 @@ export function uiScaleChoice(value: number): number {
  * for the window follows «Авто» for it. The field and the summary of the group «Окно» say it the same way.
  */
 export function uiScaleLabel(value: number, monitor: Size | null): string {
-  return uiScaleChoice(value) === UI_SCALE_AUTO ? `Авто · ${autoScalePct(monitor)} %` : `${value} %`;
+  return uiScaleChoice(value) === UI_SCALE_AUTO ? tr('Авто · {v1} %', { v1: autoScalePct(monitor) }) : `${value} %`;
 }
 
 /** The source of a screen reading that is the primary monitor, as `boot.ts` names it. */
@@ -86,13 +87,13 @@ export function scaleNoticeStep(s: { uiScale: number; scaleNoticeShown: boolean 
 
 /** The word on the larger window, for the notice line. */
 export function scaleNoticeText(pct: number): string {
-  return `Окно стало крупнее: масштаб «Авто» выбрал ${pct} %. Изменить — Настройки → Окно → Масштаб`;
+  return tr('Окно стало крупнее: масштаб «Авто» выбрал {pct} %. Изменить — Настройки → Окно → Масштаб', { pct });
 }
 
 /** The tooltip of the field; for «Авто» it says what was picked and by what. */
 export function uiScaleHint(value: number, monitor: Size | null): string {
-  const what = 'Размер всего окна и мини-строки.';
+  const what = tr('Размер всего окна и мини-строки.');
   if (uiScaleChoice(value) !== UI_SCALE_AUTO) return what;
-  const rule = AUTO_STEPS.map((step) => `от ${step.fromHeight} — ${step.pct} %`).join(', ');
-  return `${what} «${uiScaleLabel(value, monitor)}»: выбрано по высоте основного монитора с учётом масштаба Windows (${rule}, иначе ${AUTO_DEFAULT_PCT} %).`;
+  const rule = AUTO_STEPS.map((step) => tr('от {fromHeight} — {pct} %', { fromHeight: step.fromHeight, pct: step.pct })).join(', ');
+  return tr('{what} «{v1}»: выбрано по высоте основного монитора с учётом масштаба Windows ({rule}, иначе {AUTO_DEFAULT_PCT} %).', { what, v1: uiScaleLabel(value, monitor), rule, AUTO_DEFAULT_PCT });
 }

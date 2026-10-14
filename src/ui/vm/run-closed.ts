@@ -1,6 +1,7 @@
 import { isIncomeRun } from '../../core/run';
 import type { RunWithEvents } from '../../core/types';
 import { NONE, runFigures, type RunFigures } from './stats-rows';
+import { tr } from '../../i18n';
 
 // What the window says at the moment a run is closed (a sale that empties the hold, the cargo lost, a sale without a purchase), so
 // that the result is not found only later in the history. Pure; the state says it (`app.#announceClosed`). The numbers are the
@@ -50,10 +51,10 @@ export function closedRunNotice(closed: RunWithEvents): ClosedRunNotice {
   const { run, events } = closed;
   const figures = runFigures(run, events, run.endedAt ?? run.startedAt);
   const kind = figures.tone === 'loss' ? 'error' : 'info';
-  if (isIncomeRun(events)) return { text: `Доход записан: ${signed(figures)}`, kind, closesRun: false };
-  if (run.status === 'lost') return { text: `Рейс закрыт: груз потерян, ${signed(figures)}`, kind, closesRun: true };
+  if (isIncomeRun(events)) return { text: tr('Доход записан: {v1}', { v1: signed(figures) }), kind, closesRun: false };
+  if (run.status === 'lost') return { text: tr('Рейс закрыт: груз потерян, {v1}', { v1: signed(figures) }), kind, closesRun: true };
   // a run that took no time at all (the sale was written in the second of the purchase) has no time to say
-  const took = figures.duration === NONE || figures.duration === '0:00' ? '' : ` за ${figures.duration}`;
+  const took = figures.duration === NONE || figures.duration === '0:00' ? '' : tr(' за {duration}', { duration: figures.duration });
   const parts = [`${signed(figures)}${took}`, ...known(figures.roi, (roi) => `ROI ${roi}`)];
-  return { text: `Рейс закрыт: ${parts.join(' · ')}`, kind, closesRun: true };
+  return { text: tr('Рейс закрыт: {v1}', { v1: parts.join(' · ') }), kind, closesRun: true };
 }

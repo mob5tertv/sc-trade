@@ -26,21 +26,21 @@ describe('triggerErrorText', () => {
       'the hook thread ended before the hook was installed',
       'Error: invoke failed',
     ]) {
-      expect(triggerErrorText(raw)).toBe(TRIGGERS_FAILED);
+      expect(triggerErrorText(raw)).toBe(TRIGGERS_FAILED());
     }
   });
 
   it('does not let a localized system message carry an English prefix onto the screen', () => {
     const raw = 'SetWindowsHookExW failed: Отказано в доступе. (0x80070005)';
-    expect(triggerErrorText(raw)).toBe(TRIGGERS_FAILED);
+    expect(triggerErrorText(raw)).toBe(TRIGGERS_FAILED());
   });
 
   it('replaces an empty text too', () => {
-    expect(triggerErrorText('')).toBe(TRIGGERS_FAILED);
-    expect(triggerErrorText('   ')).toBe(TRIGGERS_FAILED);
+    expect(triggerErrorText('')).toBe(TRIGGERS_FAILED());
+    expect(triggerErrorText('   ')).toBe(TRIGGERS_FAILED());
   });
 
   it('is a Russian sentence that points to the log', () => {
-    expect(TRIGGERS_FAILED).toBe('Не удалось включить клавиши. Подробности в логе.');
+    expect(TRIGGERS_FAILED()).toBe('Не удалось включить клавиши. Подробности в логе.');
   });
 });

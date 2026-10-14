@@ -1,6 +1,7 @@
 <script lang="ts">
   import { app } from './state.svelte';
   import { BADGE_HINT, BADGE_TEXT, GONE_HINT, GONE_TEXT, keyboardSign } from './vm/keyboard-badge';
+  import { tr } from '../i18n';
 
   const sign = $derived(keyboardSign(app.keyboardHeld, app.keyboardGoneSign));
 </script>
@@ -14,11 +15,11 @@
   muted, and no button, it only tells. A press on a field takes it away at once.
 -->
 {#if sign === 'held'}
-  <button class="badge" type="button" aria-label="{BADGE_TEXT}: вернуть клавиатуру игре" title={BADGE_HINT} onclick={() => void app.giveKeyboardBack()}>
-    {BADGE_TEXT}
+  <button class="badge" type="button" aria-label={tr('{badge}: вернуть клавиатуру игре', { badge: BADGE_TEXT() })} title={BADGE_HINT()} onclick={() => void app.giveKeyboardBack()}>
+    {BADGE_TEXT()}
   </button>
 {:else if sign === 'gone'}
-  <span class="badge gone" role="status" title={GONE_HINT}>{GONE_TEXT}</span>
+  <span class="badge gone" role="status" title={GONE_HINT()}>{GONE_TEXT()}</span>
 {/if}
 
 <style>

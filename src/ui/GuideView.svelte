@@ -13,6 +13,7 @@
   import { estimate } from '../core/estimate';
   import { isOwnPrice } from './vm/terminal-rows';
   import WindowGrip from './WindowGrip.svelte';
+  import { tr } from '../i18n';
 
   // The commodity reference (spec 14.19, item 9): the ten best places to buy or to sell one commodity, by the prices that are
   // already loaded. A screen of its own in the same window, as the settings are; the header button, a button of a table row
@@ -51,12 +52,12 @@
 
 <header class="bar">
   <WindowGrip />
-  <button class="sc-btn sc-btn--ghost sc-btn--icon back" type="button" aria-label="Назад" title="Назад" onclick={() => app.closeGuide()}>
+  <button class="sc-btn sc-btn--ghost sc-btn--icon back" type="button" aria-label={tr('Назад')} title={tr('Назад')} onclick={() => app.closeGuide()}>
     <Icon name="back" />
   </button>
-  <strong class="title">Справочная</strong>
+  <strong class="title">{tr('Справочная')}</strong>
   <KeyboardBadge />
-  <button class="sc-btn sc-btn--ghost sc-btn--icon collapse" type="button" aria-label="Свернуть" title="Свернуть" onclick={() => app.collapse('close button')}>
+  <button class="sc-btn sc-btn--ghost sc-btn--icon collapse" type="button" aria-label={tr('Свернуть')} title={tr('Свернуть')} onclick={() => app.collapse('close button')}>
     <Icon name="minus" />
   </button>
 </header>
@@ -68,18 +69,18 @@
     <SearchBox
       {items}
       value={commodity ? `${commodity.code} ${commodity.name}` : ''}
-      placeholder="Товар: три буквы и Enter"
-      label="Товар справочной"
+      placeholder={tr('Товар: три буквы и Enter')}
+      label={tr('Товар справочной')}
       onPick={(id) => app.openGuide(id, guide.side)}
     />
   </div>
-  <div class="sc-seg" role="group" aria-label="Что показать">
-    <button type="button" aria-pressed={guide.side === 'buy'} title="Где дешевле купить" onclick={() => setSide('buy')}>Купить</button>
-    <button type="button" aria-pressed={guide.side === 'sell'} title="Где дороже продать" onclick={() => setSide('sell')}>Продать</button>
+  <div class="sc-seg" role="group" aria-label={tr('Что показать')}>
+    <button type="button" aria-pressed={guide.side === 'buy'} title={tr('Где дешевле купить')} onclick={() => setSide('buy')}>{tr('Купить')}</button>
+    <button type="button" aria-pressed={guide.side === 'sell'} title={tr('Где дороже продать')} onclick={() => setSide('sell')}>{tr('Продать')}</button>
   </div>
 </div>
 <div class="filters">
-  <label title={systemId === null ? 'Система не выбрана в настройках: показаны все' : 'Только терминалы системы из настроек'}>
+  <label title={systemId === null ? tr('Система не выбрана в настройках: показаны все') : tr('Только терминалы системы из настроек')}>
     <input
       class="check"
       type="checkbox"
@@ -87,54 +88,54 @@
       disabled={systemId === null}
       onchange={(event) => void app.updateSetting('guideMySystem', event.currentTarget.checked)}
     />
-    моя система
+    {tr('моя система')}
   </label>
   {#if guide.side === 'buy'}
-    <label title="Только места, где запас известен и он не пуст">
+    <label title={tr('Только места, где запас известен и он не пуст')}>
       <input class="check" type="checkbox" checked={onlyStock} onchange={(event) => void app.updateSetting('guideOnlyStock', event.currentTarget.checked)} />
-      есть запас
+      {tr('есть запас')}
     </label>
   {/if}
-  {#if cargo !== null}<span class="for">для твоего груза: {cargo.scu} SCU</span>{/if}
+  {#if cargo !== null}<span class="for">{tr('для твоего груза: {scu} SCU', { scu: cargo.scu })}</span>{/if}
 </div>
 {#if app.targetUndo !== null}
   {@const before = app.targetUndo.targetId}
   <p class="undo">
-    <span>Цель изменена</span>
-    <button type="button" class="sc-btn" title="Вернуть цель, которая стояла до этого клика" onclick={() => void app.undoRetarget()}>
-      {before !== null && app.reference.terminals.has(before) ? `Вернуть: ${app.reference.terminals.get(before)?.nickname || app.reference.terminals.get(before)?.name}` : 'Снять цель'}
+    <span>{tr('Цель изменена')}</span>
+    <button type="button" class="sc-btn" title={tr('Вернуть цель, которая стояла до этого клика')} onclick={() => void app.undoRetarget()}>
+      {before !== null && app.reference.terminals.has(before) ? tr('Вернуть: {name}', { name: app.reference.terminals.get(before)?.nickname || app.reference.terminals.get(before)?.name || '' }) : tr('Снять цель')}
     </button>
   </p>
 {/if}
 
 {#if guide.commodityId === null}
-  <p class="line">Выбери товар: покажу десять лучших мест</p>
+  <p class="line">{tr('Выбери товар: покажу десять лучших мест')}</p>
 {:else if rows.length === 0}
   <p class="line">{guideEmptyText(guide.side, filtered)}</p>
 {:else}
-  <div class="table" class:with-extra={cargo !== null} role="table" aria-label="Лучшие места">
+  <div class="table" class:with-extra={cargo !== null} role="table" aria-label={tr('Лучшие места')}>
     <div class="grid head sc-label" role="row">
-      <span role="columnheader">Место</span>
-      <span role="columnheader" class="r">Цена</span>
+      <span role="columnheader">{tr('Место')}</span>
+      <span role="columnheader" class="r">{tr('Цена')}</span>
       <span role="columnheader" class="r" title={GUIDE_SCU_HEAD[guide.side].title}>{GUIDE_SCU_HEAD[guide.side].label}</span>
-      {#if cargo !== null}<span role="columnheader" class="r" title="Сколько добавит продажа там к продаже здесь, за весь твой груз">Добавка</span>{/if}
+      {#if cargo !== null}<span role="columnheader" class="r" title={tr('Сколько добавит продажа там к продаже здесь, за весь твой груз')}>{tr('Добавка')}</span>{/if}
       <span role="columnheader"></span>
     </div>
     {#each rows as row (row.terminalId)}
       <div class="grid row" role="row">
-        <button type="button" class="where" title="{row.terminal}{row.place ? `\n${row.place}` : ''}\nКлик — открыть таблицу этого терминала" onclick={() => app.showFromGuide(row.terminalId)}>
+        <button type="button" class="where" title={tr('{terminal}{place}\nКлик — открыть таблицу этого терминала', { terminal: row.terminal, place: row.place ? `\n${row.place}` : '' })} onclick={() => app.showFromGuide(row.terminalId)}>
           <span class="name">{row.terminal}</span>
-          {#if row.isHere}<span class="mark">ты здесь</span>{/if}
-          {#if row.loadBar}<span class="bar" title="Твой корабль здесь не загрузится: {row.loadBar}">док</span>{/if}
+          {#if row.isHere}<span class="mark">{tr('ты здесь')}</span>{/if}
+          {#if row.loadBar}<span class="bar" title={tr('Твой корабль здесь не загрузится: {loadBar}', { loadBar: row.loadBar })}>{tr('док')}</span>{/if}
           {#if row.place}<span class="place">{row.place}</span>{/if}
         </button>
         <span class="cell sc-num"><span>{row.price}</span><TempBadge compact text={row.badge.text} kind={row.badge.kind} /></span>
         <span class="sc-num">{row.scu}</span>
         {#if row.extra !== null}<span class="sc-num" class:good={!row.extraLoss} class:loss={row.extraLoss}>{row.extra}</span>{/if}
         {#if row.isTarget}
-          <span class="goal" title="Цель рейса">цель</span>
+          <span class="goal" title={tr('Цель рейса')}>{tr('цель')}</span>
         {:else}
-          <button type="button" class="sc-btn sc-btn--act" title="Сделать этот терминал целью рейса" onclick={() => void app.retarget(row.terminalId)}>цель</button>
+          <button type="button" class="sc-btn sc-btn--act" title={tr('Сделать этот терминал целью рейса')} onclick={() => void app.retarget(row.terminalId)}>{tr('цель')}</button>
         {/if}
       </div>
     {/each}

@@ -1,4 +1,5 @@
 import type { Terminal, Vehicle } from './types';
+import { tr } from '../i18n';
 
 // What the selected ship can do at a terminal (spec 14.19, item 10): which boxes to ask the kiosk for, and whether the ship
 // can be loaded there at all. Both rest on what UEX says of the terminal and of the ship; where it says nothing, nothing is
@@ -27,7 +28,7 @@ export function boxAdvice(
 /** 'Ящики: любые' or 'Ящики: до 8 SCU'; `null` without an advice. */
 export function boxLine(advice: BoxAdvice | null): string | null {
   if (advice === null) return null;
-  return advice.kind === 'any' ? 'Ящики: любые' : `Ящики: до ${advice.scu} SCU`;
+  return advice.kind === 'any' ? tr('Ящики: любые') : tr('Ящики: до {scu} SCU', { scu: advice.scu });
 }
 
 /**
@@ -37,5 +38,5 @@ export function boxLine(advice: BoxAdvice | null): string | null {
  */
 export function loadingBar(terminal: Pick<Terminal, 'hasLoadingDock'> | undefined, vehicle: Pick<Vehicle, 'isLoadingDock'> | undefined): string | null {
   if (terminal === undefined || vehicle === undefined || vehicle.isLoadingDock !== true) return null;
-  return terminal.hasLoadingDock ? null : 'нет грузового дока';
+  return terminal.hasLoadingDock ? null : tr('нет грузового дока');
 }

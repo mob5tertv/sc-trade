@@ -45,6 +45,11 @@ export interface Settings {
    * his usual pace do not see them. Nothing is deleted, so the reset can be taken back.
    */
   routesSince: number | null;
+  /**
+   * The language of the window (version 1.3). '' until the player has chosen one: the window then speaks the language of Windows
+   * and asks on its first screen; a player who updated from 1.2 is asked once too.
+   */
+  language: '' | 'ru' | 'en';
   /** Optional trigger keys, e.g. 'F8' or 'Ctrl+Alt+T'; '' means not assigned. */
   hotkeyPanel: string; hotkeyDepart: string; hotkeyArrive: string;
   /** Width of the expanded window in px; its height follows its content. */
@@ -95,6 +100,7 @@ export const DEFAULT_SETTINGS: Settings = {
   refillFullMin: DEFAULT_REFILL_FULL_MIN,
   quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, nearbyMaxMin: 10, worsePricePct: 15, topN: 5, roiHighlightPct: 50,
   sort: 'profit', nearby: false, detailedCalc: false, optionsToTarget: false, favouriteRoutes: [], favouriteSound: true, favouriteVolume: 0.5, guideMySystem: true, guideOnlyStock: false, routesSince: null,
+  language: '',
   hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '',
   panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
   uiScale: 0,

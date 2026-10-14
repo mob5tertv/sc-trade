@@ -12,6 +12,7 @@
   import {
     cargoRows, decisionAtClock, planSummary, runHeader, runSectionKind, sellDecisionKey, sellDecisions, sellLogContext, targetOffer,
   } from '../vm/run-section';
+  import { tr } from '../../i18n';
 
   const SECTION = 'run';
   // The window gives up the length of this section after the table (shrink 1) and before the options (0.2): it is short
@@ -76,28 +77,28 @@
     {#if offer !== null && !hasTarget}
       <button type="button" class="sc-btn sc-btn--act offer" title={offer.title} onclick={() => void app.setTarget(offer.terminalId)}>{offer.label}</button>
     {:else}
-      <span class="target" class:none={!hasTarget} title={hasTarget ? 'Цель рейса' : 'Цель выбирается в списке вариантов'}>{header.target}</span>
+      <span class="target" class:none={!hasTarget} title={hasTarget ? tr('Цель рейса') : tr('Цель выбирается в списке вариантов')}>{header.target}</span>
     {/if}
     {#if next !== null}
-      <button type="button" class="sc-btn sc-btn--act" onclick={() => void app.mark(next)}>{next === 'depart' ? 'Взлетел' : 'Прилетел'}</button>
+      <button type="button" class="sc-btn sc-btn--act" onclick={() => void app.mark(next)}>{next === 'depart' ? tr('Взлетел') : tr('Прилетел')}</button>
     {/if}
   {/if}
 {/snippet}
 
 {#if kind !== null}
   <Section
-    title="Рейс"
+    title={tr('Рейс')}
     {summary}
     {open}
     onToggle={() => void app.toggleSection(SECTION)}
     onClose={hasTarget ? () => void app.setTarget(null) : undefined}
-    closeTitle="Снять цель"
+    closeTitle={tr('Снять цель')}
     actions={kind === 'run' ? actions : undefined}
     scroll
     shrink={SHRINK}
   >
     {#if kind === 'plan'}
-      <p class="plan">Таймер пойдёт с первой покупки</p>
+      <p class="plan">{tr('Таймер пойдёт с первой покупки')}</p>
     {:else if active !== null && phases !== null && outlook !== null}
       <RunCard {cargo} {phases} {outlook} {marks} onMark={(type) => void app.mark(type)} onLost={lost} />
       <p class="fix">
@@ -105,9 +106,9 @@
           type="button"
           class="sc-btn"
           aria-pressed={editing}
-          title="Исправить цену или количество покупки или продажи этого рейса, если ввёл не то"
+          title={tr('Исправить цену или количество покупки или продажи этого рейса, если ввёл не то')}
           onclick={() => (editing = !editing)}
-        >{editing ? 'Скрыть сделки' : 'Исправить сделку'}</button>
+        >{editing ? tr('Скрыть сделки') : tr('Исправить сделку')}</button>
       </p>
       {#if editing}
         <RunTrades lines={trades} onSave={(edit) => app.editTrade(edit)} />

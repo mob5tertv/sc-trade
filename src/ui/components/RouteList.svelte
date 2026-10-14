@@ -6,6 +6,7 @@
   import { LEGEND, legendTitle } from '../vm/legend';
   import TempBadge from './TempBadge.svelte';
   import TrendMark from './TrendMark.svelte';
+  import { tr } from '../../i18n';
 
   interface Props {
     options: RouteOption[];
@@ -87,30 +88,30 @@
 {#if rows.length === 0}
   <p class="empty">{emptyText}</p>
 {:else}
-  <div class="list" role="table" aria-label="Варианты">
+  <div class="list" role="table" aria-label={tr('Варианты')}>
     <div class="grid head sc-label" role="row">
-      <span role="columnheader">{mode === 'to' ? 'Откуда' : 'Куда'}</span>
-      <span role="columnheader" class="r price-head" title="Наведи на цену — увидишь её минимум и максимум по UEX">Цена</span>
-      <span role="columnheader" class="r" title={LEGEND.time}>Время</span>
-      <span role="columnheader" class="r" title={LEGEND.profitTrip}>Прибыль</span>
+      <span role="columnheader">{mode === 'to' ? tr('Откуда') : tr('Куда')}</span>
+      <span role="columnheader" class="r price-head" title={tr('Наведи на цену — увидишь её минимум и максимум по UEX')}>{tr('Цена')}</span>
+      <span role="columnheader" class="r" title={LEGEND.time}>{tr('Время')}</span>
+      <span role="columnheader" class="r" title={LEGEND.profitTrip}>{tr('Прибыль')}</span>
       <span role="columnheader" class="r">ROI</span>
     </div>
     {#each rows as { option, row } (row.key)}
       {@const expanded = expandedKey === row.key}
       {#if row.key === firstElsewhere}
-        <p class="elsewhere" title="Закупка на другом терминале рядом: рейс приносит больше, чем отсюда. «Цель» у такого варианта ведёт сначала на закупку, потом на продажу">Выгоднее: закупка рядом</p>
+        <p class="elsewhere" title={tr('Закупка на другом терминале рядом: рейс приносит больше, чем отсюда. «Цель» у такого варианта ведёт сначала на закупку, потом на продажу')}>{tr('Выгоднее: закупка рядом')}</p>
       {/if}
       <div class="row tier-{row.tier}" class:expanded role="row">
         <button type="button" class="grid line" aria-expanded={expanded} onclick={() => toggle(row.key, option)}>
           <span class="where" title={row.whereTitle}>
             {#if showCommodity}<span class="code">{row.commodity}</span>{/if}
             <span class="end">{row.bothEnds ? row.origin : row.terminal}</span>
-            {#if row.emptyLeg !== null}<span class="leg" title="Пустой перелёт до закупки">{row.emptyLeg}</span>{/if}
+            {#if row.emptyLeg !== null}<span class="leg" title={tr('Пустой перелёт до закупки')}>{row.emptyLeg}</span>{/if}
             {#if row.bothEnds}<span class="arrow">→</span><span class="end">{row.dest}</span>{/if}
-            {#if row.isTarget}<span class="goal" title="Цель рейса">цель</span>{/if}
+            {#if row.isTarget}<span class="goal" title={tr('Цель рейса')}>{tr('цель')}</span>{/if}
             {#if row.stockNote}<span class="unsure" role="img" aria-label={row.stockNote} title={row.stockNote}>?</span>{/if}
             {#if row.soleNote}<span class="unsure" role="img" aria-label={row.soleNote} title={row.soleNote}>!</span>{/if}
-            {#if row.loadBar}<span class="bar" title="Твой корабль здесь не загрузится: в точке закупки {row.loadBar}">док</span>{/if}
+            {#if row.loadBar}<span class="bar" title={tr('Твой корабль здесь не загрузится: в точке закупки {loadBar}', { loadBar: row.loadBar })}>{tr('док')}</span>{/if}
           </span>
           <span class="cell sc-num" class:hint={!row.priceIsOwn} title={priceTitle(row)}>
             <TrendMark trend={row.trend} />
@@ -118,32 +119,32 @@
             <TempBadge compact text={row.price.badge.text} kind={row.price.badge.kind} />
           </span>
           <span class="time sc-num" title={legendTitle(LEGEND.time, row.timeTitle)}>{row.time}</span>
-          <span class="gain sc-num" class:best={row.key === bestGain} class:loss={row.profitLoss} title="Прибыль за рейс: {row.profit} · взять {row.qty}">{row.gain}</span>
-          <span class="roi sc-num" title="Прибыль к вложенному">{row.roi}</span>
+          <span class="gain sc-num" class:best={row.key === bestGain} class:loss={row.profitLoss} title={tr('Прибыль за рейс: {profit} · взять {qty}', { profit: row.profit, qty: row.qty })}>{row.gain}</span>
+          <span class="roi sc-num" title={tr('Прибыль к вложенному')}>{row.roi}</span>
         </button>
         {#if expanded}
           <div class="detail sc-reveal">
             <div class="facts">
-              <div class="fact" title="Сколько взять: меньшее из свободного места в трюме, запаса на станции и бюджета">
-                <span class="sc-label">Взять</span><span class="sc-num">{row.qty}</span>
+              <div class="fact" title={tr('Сколько взять: меньшее из свободного места в трюме, запаса на станции и бюджета')}>
+                <span class="sc-label">{tr('Взять')}</span><span class="sc-num">{row.qty}</span>
               </div>
-              <div class="fact"><span class="sc-label">Вложение</span><span class="sc-num">{row.invested}</span></div>
-              <div class="fact"><span class="sc-label">Прибыль</span><span class="sc-num" class:loss={row.profitLoss}>{row.profit}</span></div>
-              <div class="fact" title={LEGEND.worst}><span class="sc-label">Худший</span><span class="sc-num" class:loss={row.worstLoss}>{row.worst}</span></div>
+              <div class="fact"><span class="sc-label">{tr('Вложение')}</span><span class="sc-num">{row.invested}</span></div>
+              <div class="fact"><span class="sc-label">{tr('Прибыль')}</span><span class="sc-num" class:loss={row.profitLoss}>{row.profit}</span></div>
+              <div class="fact" title={LEGEND.worst}><span class="sc-label">{tr('Худший')}</span><span class="sc-num" class:loss={row.worstLoss}>{row.worst}</span></div>
             </div>
             {#if row.stockNote}<p class="stock-note"><span class="unsure" aria-hidden="true">?</span> {row.stockNote}</p>{/if}
             {#if row.stockLimit}<p class="stock-note">{row.stockLimit}</p>{/if}
             {#if row.soleNote}<p class="stock-note"><span class="unsure" aria-hidden="true">!</span> {row.soleNote}</p>{/if}
-            {#if row.loadBar}<p class="stock-note bar-note">Твой корабль в точке закупки не загрузится: {row.loadBar}</p>{/if}
-            {#if row.boxes}<p class="stock-note" title="По размерам ящиков, которые продаёт терминал закупки и которые берёт твой корабль">{row.boxes}</p>{/if}
+            {#if row.loadBar}<p class="stock-note bar-note">{tr('Твой корабль в точке закупки не загрузится: {loadBar}', { loadBar: row.loadBar })}</p>{/if}
+            {#if row.boxes}<p class="stock-note" title={tr('По размерам ящиков, которые продаёт терминал закупки и которые берёт твой корабль')}>{row.boxes}</p>{/if}
             <div class="prices">
-              {@render price('Купить', row.buy)}
-              {@render price('Продать', row.sell)}
+              {@render price(tr('Купить'), row.buy)}
+              {@render price(tr('Продать'), row.sell)}
             </div>
             <div class="foot">
-              <span class="inline" title={legendTitle(LEGEND.time, row.timeTitle)}><span class="sc-label">Время</span><span class="sc-num">{row.time}</span></span>
-              <span class="inline" title="Сколько раз ты уже возил это"><span class="sc-label">Рейсов</span><span class="sc-num">{row.runs}</span></span>
-              <span class="inline" title="Расстояние"><span class="sc-label">Путь</span><span class="sc-num">{row.distance}</span></span>
+              <span class="inline" title={legendTitle(LEGEND.time, row.timeTitle)}><span class="sc-label">{tr('Время')}</span><span class="sc-num">{row.time}</span></span>
+              <span class="inline" title={tr('Сколько раз ты уже возил это')}><span class="sc-label">{tr('Рейсов')}</span><span class="sc-num">{row.runs}</span></span>
+              <span class="inline" title={tr('Расстояние')}><span class="sc-label">{tr('Путь')}</span><span class="sc-num">{row.distance}</span></span>
               <span class="spacer"></span>
               {#if onFavourite}
                 {@const on = isFavourite?.(option) ?? false}
@@ -151,14 +152,14 @@
                   type="button"
                   class="sc-btn sc-btn--act"
                   aria-pressed={on}
-                  title={on ? 'Избранный маршрут. Клик — убрать из избранного' : 'В избранное: окно скажет со звуком, когда запас в точке закупки дорастёт до полного трюма'}
+                  title={on ? tr('Избранный маршрут. Клик — убрать из избранного') : tr('В избранное: окно скажет со звуком, когда запас в точке закупки дорастёт до полного трюма')}
                   onclick={() => onFavourite?.(option)}
                 >{on ? '★' : '☆'}</button>
               {/if}
               {#if row.isTarget && onClearTarget}
-                <button type="button" class="sc-btn sc-btn--act" title="Это цель рейса: убрать её" onclick={() => onClearTarget?.()}>Снять цель</button>
+                <button type="button" class="sc-btn sc-btn--act" title={tr('Это цель рейса: убрать её')} onclick={() => onClearTarget?.()}>{tr('Снять цель')}</button>
               {:else if onTarget}
-                <button type="button" class="sc-btn sc-btn--act" disabled={row.isTarget} title={row.isTarget ? 'Уже цель рейса' : 'Сделать целью рейса'} onclick={() => onTarget?.(option)}>Цель</button>
+                <button type="button" class="sc-btn sc-btn--act" disabled={row.isTarget} title={row.isTarget ? tr('Уже цель рейса') : tr('Сделать целью рейса')} onclick={() => onTarget?.(option)}>{tr('Цель')}</button>
               {/if}
             </div>
           </div>

@@ -5,6 +5,7 @@ import type { Reference, Side, Temp, Vehicle } from '../../core/types';
 import { terminalLabel } from './terminal-name';
 import { terminalFullPlace } from './terminal-place';
 import { badgeText } from './terminal-rows';
+import { tr } from '../../i18n';
 
 // Display rows of the commodity reference (spec 14.19, item 9): the best places to buy or to sell one commodity. Every
 // number is already formatted; the places themselves are chosen in core/places.ts.
@@ -62,12 +63,12 @@ export function guideRows(
 
 /** The heads of the quantity column: a stock when buying, the buyer's own inventory when selling. */
 export const GUIDE_SCU_HEAD: Record<Side, { label: string; title: string }> = {
-  buy: { label: 'Запас', title: 'Сколько товара на станции, SCU. «≈» — оценка по таймеру пополнения от твоего замера' },
-  sell: { label: 'Склад', title: 'Столько уже лежит на складе у покупателя, а не сколько он готов купить' },
+  buy: { get label() { return tr('Запас'); }, get title() { return tr('Сколько товара на станции, SCU. «≈» — оценка по таймеру пополнения от твоего замера'); } },
+  sell: { get label() { return tr('Склад'); }, get title() { return tr('Столько уже лежит на складе у покупателя, а не сколько он готов купить'); } },
 };
 
 /** What the list says when it is empty. */
 export function guideEmptyText(side: Side, filtered: boolean): string {
-  const where = side === 'buy' ? 'Купить этот товар негде' : 'Продать этот товар некуда';
-  return filtered ? `${where}: сними фильтры — возможно, место есть в другой системе или без запаса` : `${where}: цен на него нет ни у тебя, ни в UEX`;
+  const where = side === 'buy' ? tr('Купить этот товар негде') : tr('Продать этот товар некуда');
+  return filtered ? tr('{where}: сними фильтры — возможно, место есть в другой системе или без запаса', { where }) : tr('{where}: цен на него нет ни у тебя, ни в UEX', { where });
 }

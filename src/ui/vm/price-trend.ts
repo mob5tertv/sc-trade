@@ -1,5 +1,6 @@
 import { formatAge, formatUec } from '../../core/format';
 import type { Estimate, Side } from '../../core/types';
+import { tr } from '../../i18n';
 
 /** How my own price moved since my previous reading of it at the same place: the triangle next to the price. */
 export interface PriceTrend {
@@ -15,8 +16,8 @@ export interface PriceTrend {
 function trendTitle(price: number, prev: { price: number; ageSec: number }): string {
   const diff = price - prev.price;
   // a reading younger than a minute has no age to count (it cannot happen with the real gap rule, 120 s)
-  const ago = prev.ageSec < 60 ? 'только что' : `${formatAge(prev.ageSec)} назад`;
-  return `было ${formatUec(prev.price)} · ${ago} (${diff > 0 ? '+' : ''}${formatUec(diff)})`;
+  const ago = prev.ageSec < 60 ? tr('только что') : tr('{v1} назад', { v1: formatAge(prev.ageSec) });
+  return tr('было {v1} · {ago} ({v2}{v3})', { v1: formatUec(prev.price), ago, v2: diff > 0 ? '+' : '', v3: formatUec(diff) });
 }
 
 /**

@@ -6,6 +6,7 @@ import { pairKey } from '../../core/types';
 import type { Reference, Run, RunEvent, RunWithEvents } from '../../core/types';
 import { formatRoi } from './route-rows';
 import { terminalLabel } from './terminal-name';
+import { tr } from '../../i18n';
 
 // Display rows of the "Мои маршруты" section: the routes, the run history and the session list. Every number is already
 // formatted, the way the list of options formats it: the ROI in `formatRoi`, the profit of one run in the short form ('467k').
@@ -29,7 +30,7 @@ export function formatStamp(unixSec: number): string {
 }
 
 /** The word for the commodities of a run or of a route that trades in several: the list is too long for the line, and stands in the hint of the row. */
-const SEVERAL_COMMODITIES = 'смеш.';
+const SEVERAL_COMMODITIES = (): string => tr('смеш.');
 
 export interface RouteRow {
   /** The route and its set of goods: a simple route and a mixed cargo of the same two terminals have keys of their own. */
@@ -58,24 +59,24 @@ export function favouriteOf(row: Pick<RouteRow, 'stat'>): { originId: number; de
   return commodityIds.length === 1 ? { originId, destId, commodityId: commodityIds[0] } : null;
 }
 
-const RUNS_TITLE = 'Число завершённых рейсов';
-const PROFIT_TITLE = 'Суммарная прибыль';
-const PER_RUN_TITLE = 'Средняя прибыль за рейс';
+const RUNS_TITLE = (): string => tr('Число завершённых рейсов');
+const PROFIT_TITLE = (): string => tr('Суммарная прибыль');
+const PER_RUN_TITLE = (): string => tr('Средняя прибыль за рейс');
 
 /** The tooltips of a route that has lost runs counted into its numbers. */
 function lossTitles(s: RouteStat): Pick<RouteRow, 'runsTitle' | 'profitTitle' | 'perRunTitle'> {
   const attempts = s.runs + s.lostRuns;
   const lost = formatUec(s.lostProfit);
   return {
-    runsTitle: `Удачных рейсов ${s.runs} из ${attempts} (${Math.round((s.runs / attempts) * 100)} %): потерянных ${s.lostRuns}`,
-    profitTitle: `Прибыль с потерями: потерянный груз ${lost}`,
-    perRunTitle: `Средняя прибыль за попытку, с потерями: потерянный груз ${lost}, потерянные рейсы входят в счёт`,
+    runsTitle: tr('Удачных рейсов {runs} из {attempts} ({v1} %): потерянных {lostRuns}', { runs: s.runs, attempts, v1: Math.round((s.runs / attempts) * 100), lostRuns: s.lostRuns }),
+    profitTitle: tr('Прибыль с потерями: потерянный груз {lost}', { lost }),
+    perRunTitle: tr('Средняя прибыль за попытку, с потерями: потерянный груз {lost}, потерянные рейсы входят в счёт', { lost }),
   };
 }
 
 /** The goods of a route of mixed cargo by their codes, in the order of the codes (a set has no order of its own). */
 function mixedGoods(ref: Reference, commodityIds: number[]): string {
-  return `Смешанный груз: ${commodityIds.map(id => commodityName(ref, id)).sort().join(', ')}`;
+  return tr('Смешанный груз: {v1}', { v1: commodityIds.map(id => commodityName(ref, id)).sort().join(', ') });
 }
 
 /**
@@ -90,11 +91,11 @@ export function routeRows(stats: RouteStat[], ref: Reference, detailed = false):
     stat: s,
     key: `${pairKey(s.originId, s.destId)}:${s.commodityIds.join(',')}`,
     route: routeName(ref, s.originId, s.destId),
-    commodity: s.commodityIds.length === 1 ? commodityName(ref, s.commodityIds[0]) : SEVERAL_COMMODITIES,
+    commodity: s.commodityIds.length === 1 ? commodityName(ref, s.commodityIds[0]) : SEVERAL_COMMODITIES(),
     commodityHint: s.commodityIds.length === 1 ? null : mixedGoods(ref, s.commodityIds),
     runs: s.runs,
     runsText: lossy ? `${s.runs}/${s.runs + s.lostRuns}` : String(s.runs),
-    ...(lossy ? lossTitles(s) : { runsTitle: RUNS_TITLE, profitTitle: PROFIT_TITLE, perRunTitle: PER_RUN_TITLE }),
+    ...(lossy ? lossTitles(s) : { runsTitle: RUNS_TITLE(), profitTitle: PROFIT_TITLE(), perRunTitle: PER_RUN_TITLE() }),
     time: formatDuration(s.medianDurationSec),
     phases: s.medianPhases && [s.medianPhases.loadingSec, s.medianPhases.flightSec, s.medianPhases.unloadingSec].map(formatDuration).join(' · '),
     profit: formatUec(s.totalProfit),
@@ -142,14 +143,14 @@ function runLabel(status: HistoryRow['status'], events: RunEvent[], ref: Referen
   const commodities = ids.map(id => commodityName(ref, id)).join(', ');
   const same = (kind: string) => ({ title: `${commodities}: ${kind}`, hint: `${commodities}: ${kind}` });
 
-  if (isIncomeRun(events)) return same('продажа без закупки');
+  if (isIncomeRun(events)) return same(tr('продажа без закупки'));
   const route = simpleRoute(events);
   if (route !== null) return same(routeName(ref, route.originId, route.destId));
-  if (!events.some(e => e.type === 'sell' && isTrade(e))) return same(status === 'lost' ? 'груз потерян' : status === 'active' ? 'идёт' : 'рейс без продаж');
-  if (ids.length === 1) return same('смешанный рейс');
+  if (!events.some(e => e.type === 'sell' && isTrade(e))) return same(status === 'lost' ? tr('груз потерян') : status === 'active' ? tr('идёт') : tr('рейс без продаж'));
+  if (ids.length === 1) return same(tr('смешанный рейс'));
 
   const ends = mixedRoute(events, ref);
-  return { title: `${SEVERAL_COMMODITIES}: ${ends}`, hint: `${commodities}: смешанный рейс, ${ends}` };
+  return { title: `${SEVERAL_COMMODITIES()}: ${ends}`, hint: tr('{commodities}: смешанный рейс, {ends}', { commodities, ends }) };
 }
 
 /** 'ARC-L1 → TDD Area 18': from the terminal of the first purchase to the one of the last sale; a trade without a terminal is a dash. */

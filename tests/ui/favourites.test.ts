@@ -32,7 +32,7 @@ describe('toggledFavourites', () => {
     expect(refused.full).toBe(true);
     expect(refused.list).toEqual(many);
     expect(toggledFavourites(many, many[0])).toMatchObject({ full: false });      // taking one away always works
-    expect(FAVOURITES_FULL).toContain(String(FAVOURITES_MAX));
+    expect(FAVOURITES_FULL()).toContain(String(FAVOURITES_MAX));
   });
 
   it('is offered for a route of one commodity only', () => {

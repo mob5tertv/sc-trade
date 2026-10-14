@@ -1,11 +1,12 @@
 import type { Settings } from '../../core/settings';
+import { tr } from '../../i18n';
 
 // The one-time hint after the first run is closed (version 1.1): the cursor is not in the flight, so the player is told that the marks
 // "Взлетел" and "Прилетел" can have keys of their own. Pure; the state decides when it is said (`app.#announceClosed`) and keeps the flag
 // `keysHintShown` (shown, or a key was assigned: never again).
 
 /** The sentence that follows the result of the run in the notice line. */
-export const KEYS_HINT = 'В полёте курсора нет: назначь клавиши «Взлетел» и «Прилетел»';
+export const KEYS_HINT = (): string => tr('В полёте курсора нет: назначь клавиши «Взлетел» и «Прилетел»');
 
 /**
  * How long the notice that carries the hint stays on the screen (version 1.1.1): no time of its own (`null`). At the last sale the player
@@ -50,7 +51,7 @@ export async function carryOutKeysHint(step: KeysHintStep, effects: { show: () =
 
 /** The result of the run and the hint after it, one sentence after another (a full stop that stands at the end of the result is not doubled). */
 export function withKeysHint(text: string): string {
-  return `${text.replace(/\.$/, '')}. ${KEYS_HINT}`;
+  return `${text.replace(/\.$/, '')}. ${KEYS_HINT()}`;
 }
 
 /** A key written into the field of "Взлетел" or "Прилетел": the player knows the keys, so the hint is never needed. A key taken off is not one. */
@@ -60,7 +61,7 @@ export function assignsMarkKey(key: keyof Settings, value: unknown): boolean {
 
 /** The notice on the screen is the hint about the keys: it is the result of the run with the sentence of the hint at its end (`withKeysHint`). */
 export function isKeysHint(notice: { text: string } | null): boolean {
-  return notice !== null && notice.text.endsWith(KEYS_HINT);
+  return notice !== null && notice.text.endsWith(KEYS_HINT());
 }
 
 /**

@@ -4,6 +4,7 @@ import type { CargoLine, RunWithEvents, Side } from '../../core/types';
 import { priceIsOwn } from './inputs';
 import { cellStock, isStockUnknown, shownPrice } from './terminal-rows';
 import type { Cell } from './terminal-rows';
+import { tr } from '../../i18n';
 
 // What the trade form under a table row starts with, and what it writes (`tradeMode`: a purchase, a sale of the cargo, or
 // an income). Pure: the form is drawn by `TradeDialog`, the owner is `TerminalSection`.
@@ -16,7 +17,7 @@ export interface TradeDefaults {
   priceIsOwn: boolean;
   /**
    * A purchase whose OFFERED quantity rests on no stock: nobody knows how much the seller has (neither a reading of mine nor a quantity of UEX,
-   * `isStockUnknown`), so what is offered is the hold and the budget alone and the real stock may be smaller. The form says so (`STOCK_UNKNOWN_NOTE`).
+   * `isStockUnknown`), so what is offered is the hold and the budget alone and the real stock may be smaller. The form says so (`STOCK_UNKNOWN_NOTE()`).
    * `false` when no quantity is offered (`scu` is `null`) and always for a sale: what the buyer already holds limits nothing.
    */
   stockUnknown: boolean;
@@ -61,7 +62,7 @@ export function tradeDefaults(i: DefaultsInput): TradeDefaults {
 }
 
 /** The line under the form of a purchase whose stock is unknown, next to the «?» by the quantity (the words of the same note of an option of the list). */
-export const STOCK_UNKNOWN_NOTE = 'Запас неизвестен: количество — по трюму и бюджету';
+export const STOCK_UNKNOWN_NOTE = (): string => tr('Запас неизвестен: количество — по трюму и бюджету');
 
 /**
  * The quantity the trade is counted from, as it goes into the record (`knownScu`): the quantity of my own that the row
@@ -107,19 +108,19 @@ export function tradeEntryField(side: Side, inHold: boolean): TradeEntryField {
 }
 
 /** The one muted line under the form of an income. */
-export const INCOME_NOTE = 'Нет в трюме — запишется как доход без закупки';
+export const INCOME_NOTE = (): string => tr('Нет в трюме — запишется как доход без закупки');
 
 /**
  * Whether a form that was opened as an income is out of date: the goods are in the hold of the run by now (a purchase came
  * in between), so the form's promise ("нет в трюме") is no longer true, and the service refuses it. The owner then closes the
- * form and says `GOODS_ABOARD_NOTICE`, and the next press of "Продал" opens the ordinary sale.
+ * form and says `GOODS_ABOARD_NOTICE()`, and the next press of "Продал" opens the ordinary sale.
  */
 export function goodsCameAboard(mode: TradeMode, active: RunWithEvents | null, commodityId: number): boolean {
   return mode === 'income' && tradeMode('sell', active, commodityId) === 'sell';
 }
 
 /** What the notice line says when `goodsCameAboard`. */
-export const GOODS_ABOARD_NOTICE = 'Этот товар уже в трюме — нажми «Продал» ещё раз';
+export const GOODS_ABOARD_NOTICE = (): string => tr('Этот товар уже в трюме — нажми «Продал» ещё раз');
 
 /**
  * The largest quantity the service takes for the form, as far as the screen knows: for a sale from the run what the hold
@@ -150,7 +151,7 @@ export interface Confirmation {
 
 /**
  * A price that is not mine (the one of UEX, or mine gone cold) and that the player did not touch is not written by one press of
- * Enter: the first confirmation asks him to check it (`PRICE_CHECK_NOTE`, the cursor goes into the price), the second one
+ * Enter: the first confirmation asks him to check it (`PRICE_CHECK_NOTE()`, the cursor goes into the price), the second one
  * writes. A price of mine, or one he put his hand to, is written at once. The same for a purchase, a sale and an income.
  *
  * The refusals come first. The numbers the form itself refuses never get here. A quantity the service is going to refuse
@@ -162,4 +163,4 @@ export function confirmStep(c: Confirmation): ConfirmStep {
 }
 
 /** The line under the form after the confirmation that only asked. */
-export const PRICE_CHECK_NOTE = 'Цена справочная — проверь её и подтверди ещё раз';
+export const PRICE_CHECK_NOTE = (): string => tr('Цена справочная — проверь её и подтверди ещё раз');

@@ -2,6 +2,7 @@
   import { resolveTrade } from '../vm/inputs';
   import ConfirmButton from './ConfirmButton.svelte';
   import type { TradeLine } from '../vm/run-trades';
+  import { tr } from '../../i18n';
 
   interface Props {
     /** The trades of one run, in the order they were made. */
@@ -47,7 +48,7 @@
   }
 </script>
 
-<div class="trades sc-reveal" role="group" aria-label="Сделки рейса">
+<div class="trades sc-reveal" role="group" aria-label={tr('Сделки рейса')}>
   {#each lines as line (line.eventId)}
     {@const text = textOf(line)}
     <form class="trade" novalidate onsubmit={(e) => void save(e, line)}>
@@ -60,8 +61,8 @@
         inputmode="numeric"
         autocomplete="off"
         data-select-on-focus
-        aria-label="Количество, SCU"
-        title="Количество, SCU"
+        aria-label={tr('Количество, SCU')}
+        title={tr('Количество, SCU')}
         value={text.scu}
         oninput={(e) => set(line, 'scu', e.currentTarget.value)}
       />
@@ -72,22 +73,22 @@
         inputmode="numeric"
         autocomplete="off"
         data-select-on-focus
-        aria-label="Цена за SCU, UEC"
-        title="Цена за SCU, UEC"
+        aria-label={tr('Цена за SCU, UEC')}
+        title={tr('Цена за SCU, UEC')}
         value={text.price}
         oninput={(e) => set(line, 'price', e.currentTarget.value)}
       />
-      <button type="submit" class="sc-btn sc-btn--act" disabled={changed(line) === null || busy !== null} title="Записать исправленную сделку">Исправить</button>
+      <button type="submit" class="sc-btn sc-btn--act" disabled={changed(line) === null || busy !== null} title={tr('Записать исправленную сделку')}>{tr('Исправить')}</button>
     </form>
     {#if failure?.eventId === line.eventId}<p class="failure" role="alert">{failure.text}</p>{/if}
   {/each}
-  {#if lines.length === 0}<p class="none">В этом рейсе нет сделок</p>{/if}
+  {#if lines.length === 0}<p class="none">{tr('В этом рейсе нет сделок')}</p>{/if}
   {#if onRemove}
     <p class="foot">
       <ConfirmButton
-        label="Удалить рейс"
-        sureLabel="Точно удалить?"
-        title="Убрать этот рейс из истории, маршрутов и заработка сессии. Цены в дневнике останутся"
+        label={tr('Удалить рейс')}
+        sureLabel={tr('Точно удалить?')}
+        title={tr('Убрать этот рейс из истории, маршрутов и заработка сессии. Цены в дневнике останутся')}
         onConfirm={() => onRemove?.()}
       />
     </p>

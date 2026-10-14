@@ -6,6 +6,7 @@
   import { rejectionText, resolveQuickEntry, allowedSide, mayWrite, type EntrySides } from '../vm/quick-entry';
   import type { Rejection } from '../vm/quick-entry';
   import SearchBox from './SearchBox.svelte';
+  import { tr } from '../../i18n';
 
   interface PriceEntry { terminalId: number; commodityId: number; side: Side; price: number; scu: number | null }
 
@@ -158,7 +159,7 @@
       failure = await onSave(entry);
     } catch (err) {
       onFailure?.(err, entry);
-      failure = 'Не удалось записать цену. Подробности в логе.';
+      failure = tr('Не удалось записать цену. Подробности в логе.');
     } finally {
       busy = false;
     }
@@ -169,7 +170,9 @@
       return;
     }
     status = {
-      text: `Записано: ${label} · ${entry.side === 'buy' ? 'покупка' : 'продажа'} ${formatUec(entry.price)}`,
+      text: entry.side === 'buy'
+        ? tr('Записано: {label} · покупка {price}', { label, price: formatUec(entry.price) })
+        : tr('Записано: {label} · продажа {price}', { label, price: formatUec(entry.price) }),
       kind: 'ok',
     };
     commodityId = null;
@@ -197,7 +200,7 @@
      the keyboard has gone back to the game by itself no stray letter is left in «Товар». -->
 <form
   class="quick"
-  aria-label="Быстрый ввод цены"
+  aria-label={tr('Быстрый ввод цены')}
   data-entry-field="quick"
   onsubmit={(event) => {
     event.preventDefault();
@@ -209,8 +212,8 @@
       bind:this={commodityBox}
       {items}
       {boostIds}
-      placeholder="Товар"
-      label="Товар: три буквы кода или названия и Enter"
+      placeholder={tr('Товар')}
+      label={tr('Товар: три буквы кода или названия и Enter')}
       value={chosen ? `${chosen.code} ${chosen.name}` : ''}
       invalid={badCommodity}
       title={badCommodity && problem !== null ? problem : undefined}
@@ -219,14 +222,14 @@
     <!-- `data-opens-entry`: for the keyboard the switch is a button that opens an entry (ui/keyboard.ts). The pointer over it arms the
          window like a field, the press on a side takes the keyboard (or keeps it), and the cursor goes into the price (`data-entry-field`
          with the same name), its number selected: picking a side never leaves the line without a cursor, with its keys going to the game. -->
-    <div class="sc-seg" role="radiogroup" aria-label="Сторона" data-opens-entry="quick-price">
-      <label class="side" class:is-on={side === 'buy'} class:off={sides !== null && !sides.buy} title={sides !== null && !sides.buy ? 'Этот товар здесь не продают' : 'Цена, по которой здесь можно купить'}>
+    <div class="sc-seg" role="radiogroup" aria-label={tr('Сторона')} data-opens-entry="quick-price">
+      <label class="side" class:is-on={side === 'buy'} class:off={sides !== null && !sides.buy} title={sides !== null && !sides.buy ? tr('Этот товар здесь не продают') : tr('Цена, по которой здесь можно купить')}>
         <input type="radio" name={groupName} checked={side === 'buy'} disabled={sides !== null && !sides.buy} onchange={() => (pickedSide = 'buy')} />
-        <span>Куп.</span>
+        <span>{tr('Куп.')}</span>
       </label>
-      <label class="side" class:is-on={side === 'sell'} class:off={sides !== null && !sides.sell} title={sides !== null && !sides.sell ? 'Этот товар здесь не покупают' : 'Цена, по которой здесь можно продать'}>
+      <label class="side" class:is-on={side === 'sell'} class:off={sides !== null && !sides.sell} title={sides !== null && !sides.sell ? tr('Этот товар здесь не покупают') : tr('Цена, по которой здесь можно продать')}>
         <input type="radio" name={groupName} checked={side === 'sell'} disabled={sides !== null && !sides.sell} onchange={() => (pickedSide = 'sell')} />
-        <span>Прод.</span>
+        <span>{tr('Прод.')}</span>
       </label>
     </div>
     <input
@@ -238,9 +241,9 @@
       autocomplete="off"
       data-select-on-focus
       data-entry-field="quick-price"
-      placeholder="Цена"
-      title={badPrice && problem !== null ? problem : 'Цена, UEC за SCU'}
-      aria-label="Цена, UEC за SCU"
+      placeholder={tr('Цена')}
+      title={badPrice && problem !== null ? problem : tr('Цена, UEC за SCU')}
+      aria-label={tr('Цена, UEC за SCU')}
       aria-invalid={badPrice ? 'true' : undefined}
       aria-describedby={badPrice && reasonShown ? reasonId : undefined}
       oninput={() => (badPrice = false)}
@@ -255,8 +258,8 @@
       autocomplete="off"
       data-select-on-focus
       placeholder="SCU"
-      title={badScu && problem !== null ? problem : 'Количество, SCU (можно не вводить)'}
-      aria-label="Количество, SCU (можно не вводить)"
+      title={badScu && problem !== null ? problem : tr('Количество, SCU (можно не вводить)')}
+      aria-label={tr('Количество, SCU (можно не вводить)')}
       aria-invalid={badScu ? 'true' : undefined}
       aria-describedby={badScu && reasonShown ? reasonId : undefined}
       oninput={() => (badScu = false)}
@@ -269,10 +272,12 @@
       data-failed={badSave ? '' : undefined}
       title={badSave && problem !== null ? problem : undefined}
       aria-describedby={badSave && reasonShown ? reasonId : undefined}
-    >Записать</button>
+    >{tr('Записать')}</button>
   </div>
   {#if foreign && !reasonShown}
-    <p class="foreign">{chosen?.code ?? 'Товар'} здесь по данным UEX не торгуется. Запишется как твоя цена{place ? ` на ${place}` : ' на этом терминале'}.</p>
+    <p class="foreign">{place
+      ? tr('{code} здесь по данным UEX не торгуется. Запишется как твоя цена на {place}.', { code: chosen?.code ?? tr('Товар'), place })
+      : tr('{code} здесь по данным UEX не торгуется. Запишется как твоя цена на этом терминале.', { code: chosen?.code ?? tr('Товар') })}</p>
   {/if}
   <!-- the words of a refusal: only while a field is marked; the screen reader gets the same sentence from the status below -->
   {#if reasonShown}<p class="reason" id={reasonId} aria-hidden="true">{problem}</p>{/if}

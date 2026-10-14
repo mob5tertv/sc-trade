@@ -2,10 +2,12 @@
   import StripView from './components/StripView.svelte';
   import { app } from './state.svelte';
   import WindowGrip from './WindowGrip.svelte';
+  import { tr } from '../i18n';
+  import { bootStatusText } from './vm/boot-status';
 
   // While the application starts, or when the start failed, the line says so instead of the location; after that it is
   // the short message of an action (a mark that cannot be written, ...) for three seconds.
-  const flash = $derived(app.phase === 'booting' ? app.bootStatus : app.phase === 'failed' ? 'Ошибка запуска' : app.flash);
+  const flash = $derived(app.phase === 'booting' ? bootStatusText(app.bootStage) : app.phase === 'failed' ? tr('Ошибка запуска') : app.flash);
   const model = $derived(app.strip);
   // the one button of the line: the mark that comes next by the phase of the run (none while unloading)
   const next = $derived(model.kind === 'run' ? model.next : null);

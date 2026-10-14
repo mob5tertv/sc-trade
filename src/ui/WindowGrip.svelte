@@ -1,5 +1,6 @@
 <script lang="ts">
   import { app } from './state.svelte';
+  import { tr } from '../i18n';
 
   /** A hairline at its right edge: the mini line tells its parts apart by lines. */
   let { divider = false }: { divider?: boolean } = $props();
@@ -14,8 +15,8 @@
   data-drag
   data-locked={locked}
   role="img"
-  aria-label={locked ? 'Окно закреплено' : 'Перетащить окно'}
-  title={locked ? 'Окно закреплено: открой замок, чтобы переместить' : 'Перетащить окно'}
+  aria-label={locked ? tr('Окно закреплено') : tr('Перетащить окно')}
+  title={locked ? tr('Окно закреплено: открой замок, чтобы переместить') : tr('Перетащить окно')}
 >
   <svg viewBox="0 0 8 12" width="8" height="12" aria-hidden="true">
     <circle cx="2" cy="2" r="1" /><circle cx="6" cy="2" r="1" />

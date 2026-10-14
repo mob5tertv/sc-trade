@@ -4,6 +4,8 @@
 // of a far station and must not lose the "from" of his trip.
 
 /** What the choice does: the terminal is only viewed (`view`), or viewed and made the current location too (`here`). */
+import { tr } from '../../i18n';
+
 export type PickEffect = 'view' | 'here';
 
 export interface PickContext {
@@ -35,23 +37,23 @@ export function askedInRun(askedIn: number | null, activeId: number | null): boo
   return askedIn !== null && askedIn === activeId;
 }
 
-const LOCATION_PLACEHOLDER = 'Локация…';
-export const WHERE_ARRIVED_PLACEHOLDER = 'Где прилетел?';
+const LOCATION_PLACEHOLDER = (): string => tr('Локация…');
+export const WHERE_ARRIVED_PLACEHOLDER = (): string => tr('Где прилетел?');
 
 /** The placeholder of the field: the question while it asks where the ship has landed. */
 export function locationPlaceholder(askingWhere: boolean): string {
-  return askingWhere ? WHERE_ARRIVED_PLACEHOLDER : LOCATION_PLACEHOLDER;
+  return askingWhere ? WHERE_ARRIVED_PLACEHOLDER() : LOCATION_PLACEHOLDER();
 }
 
-const HINT_NO_RUN = 'Enter — посмотреть терминал и сделать его локацией («Я здесь»). Ctrl+Enter — «Я здесь» всегда, и в рейсе.';
-const HINT_RUN = 'Enter — только посмотреть терминал: твоё «откуда» не меняется. Ctrl+Enter — «Я здесь», сделать его локацией.';
-const HINT_ASKING = 'Где прилетел? Enter или Ctrl+Enter — этот терминал станет локацией («Я здесь»).';
+const HINT_NO_RUN = (): string => tr('Enter — посмотреть терминал и сделать его локацией («Я здесь»). Ctrl+Enter — «Я здесь» всегда, и в рейсе.');
+const HINT_RUN = (): string => tr('Enter — только посмотреть терминал: твоё «откуда» не меняется. Ctrl+Enter — «Я здесь», сделать его локацией.');
+const HINT_ASKING = (): string => tr('Где прилетел? Enter или Ctrl+Enter — этот терминал станет локацией («Я здесь»).');
 
 /**
  * The tooltip of the field: what it says of the terminal that is shown (`base`), then what Enter and Ctrl+Enter do now. While the field asks
  * "Где прилетел?" it shows no terminal and the tooltip is the question alone.
  */
 export function locationFieldTitle(base: string, { runGoing, askingWhere }: Pick<PickContext, 'runGoing' | 'askingWhere'>): string {
-  if (askingWhere) return HINT_ASKING;
-  return `${base}\n${runGoing ? HINT_RUN : HINT_NO_RUN}`;
+  if (askingWhere) return HINT_ASKING();
+  return `${base}\n${runGoing ? HINT_RUN() : HINT_NO_RUN()}`;
 }

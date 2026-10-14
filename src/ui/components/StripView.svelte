@@ -1,6 +1,7 @@
 <script lang="ts">
   import { LEGEND } from '../vm/legend';
   import { outlookText, stripTitle, type StripModel } from '../vm/strip';
+  import { tr } from '../../i18n';
 
   interface Props {
     model: StripModel;
@@ -36,19 +37,19 @@
       <span class="part flash" class:error={flashKind === 'error'} aria-live="polite">{flash}</span>
     {:else if model.kind === 'idle'}
       {#if favourites.length > 0}<span class="part fav" title={favourites.join('\n')}>★{favourites.length}</span>{/if}
-      <span class="part location">{model.location}{#if model.target !== null}<span class="to">→</span>{#if model.then}<span class="step">закупка</span>{/if}<span class="goal">{model.target}</span>{#if model.then}<span class="step then">потом {model.then}</span>{/if}{/if}</span>
+      <span class="part location">{model.location}{#if model.target !== null}<span class="to">→</span>{#if model.then}<span class="step">{tr('закупка')}</span>{/if}<span class="goal">{model.target}</span>{#if model.then}<span class="step then">{tr('потом {then}', { then: model.then })}</span>{/if}{/if}</span>
       {#if model.session !== null}
-        <span class="part session {model.session.tone}"><span class="caption">сессия</span>{model.session.short}</span>
+        <span class="part session {model.session.tone}"><span class="caption">{tr('сессия')}</span>{model.session.short}</span>
       {/if}
     {:else}
       {#if favourites.length > 0}<span class="part fav" title={favourites.join('\n')}>★{favourites.length}</span>{/if}
-      <span class="part timer" title="Всего: {model.timer}"><span class="phase">{model.phaseLabel}</span>{model.phaseTimer}</span>
+      <span class="part timer" title={tr('Всего: {timer}', { timer: model.timer })}><span class="phase">{model.phaseLabel}</span>{model.phaseTimer}</span>
       {#if lot !== null}
         <span class="part lot" title={model.cargoTitle || undefined}>
           <span class="code">{lot.code}</span><span class="qty">{lot.qty}</span><span class="buy">{lot.buy}</span>
           {#if lot.person !== null || lot.range !== null || lot.single !== null}<span class="arrow" aria-hidden="true">→</span>{/if}
           {#if lot.person !== null}
-            <span class="person" title="Цена, которую ввёл человек, и её возраст">
+            <span class="person" title={tr('Цена, которую ввёл человек, и её возраст')}>
               <svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><circle cx="5" cy="3" r="2.2" /><path d="M1 10c0-2.6 1.8-4 4-4s4 1.4 4 4z" /></svg>
               <span class="who">{lot.person.who}</span>{lot.person.price}<span class="age">{lot.person.age}</span>
             </span>
@@ -57,9 +58,9 @@
             {#if rangeStill}
               <span class="range still"><span class="low">{lot.range.low}</span>–<span class="high">{lot.range.high}</span></span>
             {:else}
-              <span class="range turn" title="Минимум и максимум цены продажи в точке цели, по очереди">
-                <span class="low"><span class="cap">мин</span>{lot.range.low}</span>
-                <span class="high"><span class="cap">макс</span>{lot.range.high}</span>
+              <span class="range turn" title={tr('Минимум и максимум цены продажи в точке цели, по очереди')}>
+                <span class="low"><span class="cap">{tr('мин')}</span>{lot.range.low}</span>
+                <span class="high"><span class="cap">{tr('макс')}</span>{lot.range.high}</span>
               </span>
             {/if}
           {:else if lot.single !== null}
@@ -69,14 +70,14 @@
       {:else}
         <span class="part cargo" title={model.cargoTitle || undefined}>{model.cargoLine}</span>
       {/if}
-      <span class="part" class:muted={model.target === null}>{model.target === null ? 'цель не выбрана' : `→ ${model.target}`}</span>
+      <span class="part" class:muted={model.target === null}>{model.target === null ? tr('цель не выбрана') : `→ ${model.target}`}</span>
       {#if outlook}<span class="part outlook" class:loss={model.profitLoss} title={LEGEND.approxStrip}>{outlook}</span>{/if}
     {/if}
   </button>
   {#if showMarks}
     <div class="marks">
-      {#if onDepart}<button type="button" class="sc-btn sc-btn--act" onclick={() => onDepart?.()}>Взлетел</button>{/if}
-      {#if onArrive}<button type="button" class="sc-btn sc-btn--act" onclick={() => onArrive?.()}>Прилетел</button>{/if}
+      {#if onDepart}<button type="button" class="sc-btn sc-btn--act" onclick={() => onDepart?.()}>{tr('Взлетел')}</button>{/if}
+      {#if onArrive}<button type="button" class="sc-btn sc-btn--act" onclick={() => onArrive?.()}>{tr('Прилетел')}</button>{/if}
     </div>
   {/if}
 </div>

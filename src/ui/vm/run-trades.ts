@@ -1,6 +1,7 @@
 import { formatUec } from '../../core/format';
 import type { Reference, RunWithEvents } from '../../core/types';
 import { terminalLabel } from './terminal-name';
+import { tr } from '../../i18n';
 
 // The trades of one run as the correction form lists them (spec 14.19, item 5): what was bought or sold, where, how much and for
 // what. Pure; the form is `components/RunTrades.svelte`.
@@ -28,7 +29,7 @@ export function tradeLines(run: RunWithEvents, ref: Reference): TradeLine[] {
     if ((e.type !== 'buy' && e.type !== 'sell') || e.commodityId === null || e.scu === null || e.price === null) continue;
     lines.push({
       eventId: e.id, type: e.type,
-      label: e.type === 'buy' ? 'Купил' : 'Продал',
+      label: e.type === 'buy' ? tr('Купил') : tr('Продал'),
       terminal: e.terminalId === null ? NONE : terminalLabel(ref, e.terminalId),
       code: ref.commodities.get(e.commodityId)?.code || `#${e.commodityId}`,
       scu: e.scu, price: e.price,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from '../../i18n';
   // A button for a thing that must not happen by a misclick, which asks IN ITS OWN PLACE (the author's word of 13.10.2026: "put the
   // confirmation into the same button, so as not to carry the cursor across the whole application"). The first click turns it into
   // the question, the second one on the same button does the thing; left alone, it goes back by itself.
@@ -37,7 +38,7 @@
   class:sc-btn--act={danger}
   class:danger
   class:sure
-  title={sure ? 'Нажми ещё раз, чтобы подтвердить. Не нажмёшь — кнопка вернётся сама' : title}
+  title={sure ? tr('Нажми ещё раз, чтобы подтвердить. Не нажмёшь — кнопка вернётся сама') : title}
   onclick={click}
 >{sure ? sureLabel : label}</button>
 

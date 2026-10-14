@@ -14,6 +14,7 @@ import { terminalLabel } from './terminal-name';
 import { terminalFullPlace } from './terminal-place';
 import { NO_RANGE, badgeText, isOwnPrice, rangeHint, rangeOfEstimate, rangeView } from './terminal-rows';
 import type { RangeView, UexRange } from './terminal-rows';
+import { decimal, tr } from '../../i18n';
 
 // Display rows of the route suggestions and of the "sell here or fly on" block. Every number is already formatted.
 
@@ -29,14 +30,14 @@ const hasRange = (e: Estimate): boolean => e.low < e.high;
  * limit is absent and the volume is the hold or what the budget buys. The buyer is not asked: what it holds limits nothing
  * (spec 14.5), so its unknown stock is no reason for the mark.
  */
-export const UNKNOWN_STOCK_NOTE = 'Запас в точке закупки неизвестен: количество посчитано по трюму и бюджету';
+export const UNKNOWN_STOCK_NOTE = (): string => tr('Запас в точке закупки неизвестен: количество посчитано по трюму и бюджету');
 
 /**
  * What an option says when the stock at the purchase terminal is what limits it: «Взять» is then not the hold of the ship but
  * everything the station has. (The author read the old caption «Объём 180 SCU» as the volume of his ship, 14.10.2026: the hold
  * was 512, and UEX knew of 180 SCU of copper at the station.)
  */
-export const stockLimitNote = (scu: number): string => `На станции всего ${scu} SCU: больше взять нечего`;
+export const stockLimitNote = (scu: number): string => tr('На станции всего {scu} SCU: больше взять нечего', { scu });
 
 /** Which end of a suggested trip is named: the destination for trips that start here, the origin for trips that end here. */
 export type RouteMode = 'from' | 'to';
@@ -75,7 +76,7 @@ export function narrowCompact(uec: number | null): string {
   const sign = uec < 0 ? '-' : '';
   const tenths = Math.round(abs / 100_000);
   if (tenths >= 1000) return `${sign}${Math.round(abs / 1_000_000)}M`;
-  return `${sign}${String(tenths / 10).replace('.', ',')}M`;
+  return `${sign}${decimal(tenths / 10)}M`;
 }
 
 /**
@@ -94,7 +95,7 @@ export function shownPercent(ratio: number): number | null {
 /** '42%', '-4%', '2,5%'; the dash for a ratio that is not a number. */
 export function formatRoi(ratio: number): string {
   const percent = shownPercent(ratio);
-  return percent === null ? NONE : `${String(percent).replace('.', ',')}%`;
+  return percent === null ? NONE : `${decimal(percent)}%`;
 }
 
 /** The tier of the ROI that is shown (29,96% reads 30% and is coloured as 30%); a dash is the quiet tier. */
@@ -107,7 +108,7 @@ export function shownTier(ratio: number): RoiTier {
 export function formatDistance(gm: number | null): string {
   if (gm === null) return NONE;
   const rounded = gm >= 1 ? Math.round(gm * 10) / 10 : Math.round(gm * 100) / 100;
-  return `${String(rounded).replace('.', ',')} Гм`;
+  return tr('{v1} Гм', { v1: decimal(rounded) });
 }
 
 /**
@@ -130,7 +131,7 @@ function priceView(e: Estimate, uexRange: () => UexRange = () => NO_RANGE): Pric
 
 /** What an option says when a price of it is the player's alone (`RouteOptionRow.soleNote`). */
 export const soleNote = (terminals: string[]): string =>
-  `Цена на ${terminals.join(' и ')} только твоя: UEX этого товара там не знает. Проверь её во вкладке «Записи»`;
+  tr('Цена на {terminals} только твоя: UEX этого товара там не знает. Проверь её во вкладке «Записи»', { terminals: terminals.join(tr(' и ')) });
 
 /** The hint of a price in a list: its spread by UEX (or why there is none), then whose price it is and how old. */
 export function priceHint(view: PriceView): string {
@@ -190,7 +191,7 @@ export interface RouteOptionRow {
   /** The profit at the unfavourable end of both price ranges, and whether it is a loss; the dash when neither price has a range (both are mine). */
   worst: string; worstLoss: boolean;
   qty: string;
-  /** Set when the volume was counted with no stock at the purchase terminal to limit it (`UNKNOWN_STOCK_NOTE`): the mark «?» and the line of the expanded row say it; `null` when the stock is known (zero is known). */
+  /** Set when the volume was counted with no stock at the purchase terminal to limit it (`UNKNOWN_STOCK_NOTE()`): the mark «?» and the line of the expanded row say it; `null` when the stock is known (zero is known). */
   stockNote: string | null;
   /** Set when what is taken is everything the purchase terminal has (`stockLimitNote`): the line of the expanded row says why it is less than the hold; `null` otherwise. */
   stockLimit: string | null;
@@ -221,8 +222,8 @@ export interface RouteMarks {
 /** 'по твоим рейсам', 'оценка по расстоянию · пустой перелёт 4:10'; `null` without a time. */
 function timeTitle(o: RouteOption): string | null {
   if (o.timeSec === null || o.timeSource === null) return null;
-  const source = o.timeSource === 'own' ? 'по твоим рейсам' : 'оценка по расстоянию';
-  return o.emptyLegSec > 0 ? `${source} · пустой перелёт ${formatDuration(o.emptyLegSec)}` : source;
+  const source = o.timeSource === 'own' ? tr('по твоим рейсам') : tr('оценка по расстоянию');
+  return o.emptyLegSec > 0 ? tr('{source} · пустой перелёт {v1}', { source, v1: formatDuration(o.emptyLegSec) }) : source;
 }
 
 /** `runCounts` is keyed with `pairKey(originId, destId)`; `marks` tells which terminal is viewed and which is the target. */
@@ -252,7 +253,7 @@ export function routeOptionRow(
     bothEnds,
     whereTitle: whereTitle(ref, bothEnds, from ? o.destId : o.originId, o.originId, o.destId),
     isTarget: targetTerminalId !== null && steps.targetId === targetTerminalId && steps.thenId === targetThenId,
-    emptyLeg: elsewhere ? `пустой ${o.emptyLegSec > 0 ? formatDuration(o.emptyLegSec) : NONE}` : null,
+    emptyLeg: elsewhere ? tr('пустой {v1}', { v1: o.emptyLegSec > 0 ? formatDuration(o.emptyLegSec) : NONE }) : null,
     boxes: boxLine(boxAdvice(loadedAt, vehicle)),
     loadBar: loadingBar(loadedAt, vehicle),
     tier: shownTier(o.roi),
@@ -269,7 +270,7 @@ export function routeOptionRow(
     worst: hasRange(o.buy) || hasRange(o.sell) ? formatUec(o.worstProfit) : NONE,
     worstLoss: o.worstProfit < 0,
     qty: `${o.qty} SCU`,
-    stockNote: stockKnown(o) ? null : UNKNOWN_STOCK_NOTE,
+    stockNote: stockKnown(o) ? null : UNKNOWN_STOCK_NOTE(),
     stockLimit: o.buy.scu !== null && o.qty >= Math.floor(o.buy.scu) ? stockLimitNote(o.qty) : null,
     soleNote: sole.length === 0 ? null : soleNote(sole.map((id) => terminalLabel(ref, id))),
     invested: formatUec(o.qty * o.buy.price), profit: formatUec(o.profit), profitLoss: o.profit < 0,
@@ -289,8 +290,8 @@ const signedUec = (n: number): string => (Math.round(n) > 0 ? `+${formatUec(n)}`
 
 /** Where the time of «Лететь» comes from, for its tooltip. */
 const LEG_SOURCE: Record<'own' | 'estimate', string> = {
-  own: 'По твоим рейсам: перелёт и выгрузка',
-  estimate: 'Оценка по расстоянию',
+  get own() { return tr('По твоим рейсам: перелёт и выгрузка'); },
+  get estimate() { return tr('Оценка по расстоянию'); },
 };
 
 export interface SellAlternativeRow {

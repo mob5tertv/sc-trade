@@ -16,13 +16,14 @@ import { applyLogLevel } from '../platform/tauri-logger';
 import { app } from './state.svelte';
 import { startDatabase, startFailureText } from './vm/startup-order';
 import { monitorToKnow, PRIMARY_MONITOR } from './vm/ui-scale';
+import { tr } from '../i18n';
 
 export type BootResult = { ok: true } | { ok: false; reason: string };
 
 // What the player reads when the start fails. Never raw error text: that is in the log. (The one failure that speaks
 // for itself, a database from a newer version, carries a sentence written for the player: `startFailureText`.)
-const DATABASE_FAILED = 'Не удалось открыть локальную базу данных. Подробности в логе.';
-const DATA_FAILED = 'Не удалось прочитать данные из локальной базы. Подробности в логе.';
+const DATABASE_FAILED = (): string => tr('Не удалось открыть локальную базу данных. Подробности в логе.');
+const DATA_FAILED = (): string => tr('Не удалось прочитать данные из локальной базы. Подробности в логе.');
 
 // The database is opened exactly once per run: the trade service serialises its calls per `Db` object,
 // so a second object would break that. A retry after a failed start reuses it.
@@ -145,6 +146,8 @@ async function prepare(log: Logger): Promise<void> {
   // The start line comes first: the window logs its own lines as soon as it is shown.
   await logStart(log, schema, screenReading);
   app.ensureShown();
+  // the first start of 1.3 (or the first after an update) asks for the language before anything else: the window unfolds with the question
+  if (app.view === 'language') void app.expand('choose language');
   await app.applyTriggers();
   prepared = true;
 }
@@ -169,28 +172,28 @@ export async function boot(): Promise<BootResult> {
   const log = app.log;
   app.phase = 'booting';
   app.bootError = null;
-  app.bootStatus = 'Запуск…';
+  app.bootStage = 'start';
 
   try {
     await prepare(log);
   } catch (err) {
     // a database from a newer version has its own line in the log already (`checkSchemaVersion`): not said twice
     if (!(err instanceof NewerDatabaseError)) log.error('app', 'start failed before the data was ready', { err });
-    return fail(startFailureText(err, DATABASE_FAILED));
+    return fail(startFailureText(err, DATABASE_FAILED()));
   }
 
   try {
     await app.loadFromDb();
     if (referenceIsEmpty(app.reference)) {
       // First launch: without the reference nothing can be shown.
-      app.bootStatus = 'Загрузка справочника UEX…';
+      app.bootStage = 'reference';
       const failure = await app.syncReferenceNow();
       if (failure !== null) return fail(failure);
       await app.loadFromDb();
     }
   } catch (err) {
     log.error('app', 'cannot load the data', { err });
-    return fail(DATA_FAILED);
+    return fail(DATA_FAILED());
   }
 
   app.phase = 'ready';

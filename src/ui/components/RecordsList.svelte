@@ -2,6 +2,7 @@
   import { resolveQuickEntry } from '../vm/quick-entry';
   import type { RecordRow } from '../vm/records';
   import ConfirmButton from './ConfirmButton.svelte';
+  import { tr } from '../../i18n';
 
   interface Props {
     /** The player's records in the order to show them (the owner filters and sorts). */
@@ -13,7 +14,7 @@
     /** What the list says when it is empty. */
     emptyText?: string;
   }
-  let { rows, onEdit, onRemove, emptyText = 'Своих записей цен пока нет' }: Props = $props();
+  let { rows, onEdit, onRemove, emptyText = tr('Своих записей цен пока нет') }: Props = $props();
 
   // One row is open at a time: its price and quantity can be typed over.
   let openId = $state<number | null>(null);
@@ -57,12 +58,12 @@
 {#if rows.length === 0}
   <p class="empty">{emptyText}</p>
 {:else}
-  <div class="table" role="table" aria-label="Мои записи цен">
+  <div class="table" role="table" aria-label={tr('Мои записи цен')}>
     <div class="grid head sc-label" role="row">
-      <span role="columnheader">Когда</span>
-      <span role="columnheader">Станция</span>
-      <span role="columnheader">Товар</span>
-      <span role="columnheader" class="r">Цена</span>
+      <span role="columnheader">{tr('Когда')}</span>
+      <span role="columnheader">{tr('Станция')}</span>
+      <span role="columnheader">{tr('Товар')}</span>
+      <span role="columnheader" class="r">{tr('Цена')}</span>
       <span role="columnheader" class="r">SCU</span>
     </div>
     {#each rows as row (row.id)}
@@ -72,7 +73,7 @@
         class:doubt={row.doubt !== null}
         role="row"
         tabindex="0"
-        title={row.doubt === null ? `Записано ${row.age} назад. Клик — исправить или убрать` : `${row.doubt}. Клик — исправить или убрать`}
+        title={row.doubt === null ? tr('Записано {age} назад. Клик — исправить или убрать', { age: row.age }) : tr('{doubt}. Клик — исправить или убрать', { doubt: row.doubt })}
         onkeydown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(row); } }}
         onclick={() => toggle(row)}
       >
@@ -90,8 +91,8 @@
             inputmode="numeric"
             autocomplete="off"
             data-select-on-focus
-            aria-label="Цена, UEC за SCU"
-            title="Цена, UEC за SCU"
+            aria-label={tr('Цена, UEC за SCU')}
+            title={tr('Цена, UEC за SCU')}
             bind:value={priceText}
           />
           <input
@@ -101,16 +102,16 @@
             autocomplete="off"
             data-select-on-focus
             placeholder="SCU"
-            aria-label="Количество, SCU (можно не вводить)"
-            title="Количество, SCU (можно не вводить)"
+            aria-label={tr('Количество, SCU (можно не вводить)')}
+            title={tr('Количество, SCU (можно не вводить)')}
             bind:value={scuText}
           />
-          <button type="submit" class="sc-btn sc-btn--act" disabled={changed(row) === null || busy} title="Записать исправленные цену и количество. Время записи не меняется">Исправить</button>
+          <button type="submit" class="sc-btn sc-btn--act" disabled={changed(row) === null || busy} title={tr('Записать исправленные цену и количество. Время записи не меняется')}>{tr('Исправить')}</button>
           <span class="spacer"></span>
           <ConfirmButton
-            label="Убрать запись"
-            sureLabel="Точно убрать?"
-            title="Убрать эту запись из дневника. Если до неё была другая твоя запись, вернётся она, иначе цена UEX"
+            label={tr('Убрать запись')}
+            sureLabel={tr('Точно убрать?')}
+            title={tr('Убрать эту запись из дневника. Если до неё была другая твоя запись, вернётся она, иначе цена UEX')}
             onConfirm={() => { openId = null; onRemove(row); }}
           />
         </form>

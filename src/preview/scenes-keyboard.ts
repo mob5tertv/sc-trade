@@ -216,7 +216,7 @@ const formSays = (): { check: string | null; error: string | null } => ({
 /** Fails the scene unless the form asks about the price (or does not), and unless `written` trades were written. */
 function expectForm(when: string, wanted: { asks: boolean; written: number; error?: string | null }): void {
   const says = formSays();
-  const asks = says.check === PRICE_CHECK_NOTE;
+  const asks = says.check === PRICE_CHECK_NOTE();
   if (says.check !== null && !asks) throw new Error(`${when}: the form asks in other words than it should: "${says.check}"`);
   if (asks !== wanted.asks) throw new Error(`${when}: the form ${asks ? 'asks' : 'does not ask'} to check the price (${JSON.stringify(says)})`);
   if (tradesWritten().length !== wanted.written) throw new Error(`${when}: ${tradesWritten().length} trades are written, not ${wanted.written}`);
@@ -361,9 +361,9 @@ function expectSettingsSign(app: SceneApp, when: string, wanted: 'held' | 'gone'
   };
   if (told !== wanted) fail();
   if (wanted === null && sign !== null) fail();
-  if (wanted === 'held' && !(sign !== null && sign.text === BADGE_TEXT && sign.button && !sign.muted)) fail();
+  if (wanted === 'held' && !(sign !== null && sign.text === BADGE_TEXT() && sign.button && !sign.muted)) fail();
   // «Клавиатура у игры» only tells: it is muted, and it is no button
-  if (wanted === 'gone' && !(sign !== null && sign.text === GONE_TEXT && !sign.button && sign.muted)) fail();
+  if (wanted === 'gone' && !(sign !== null && sign.text === GONE_TEXT() && !sign.button && sign.muted)) fail();
 }
 
 /**
@@ -392,9 +392,9 @@ function expectHeaderSign(app: SceneApp, when: string, wanted: 'held' | 'gone' |
   };
   if (told !== wanted) fail();
   if (wanted === null && sign !== null) fail();
-  if (wanted === 'held' && !(sign !== null && sign.text === BADGE_TEXT && !sign.muted && sign.fits)) fail();
+  if (wanted === 'held' && !(sign !== null && sign.text === BADGE_TEXT() && !sign.muted && sign.fits)) fail();
   // «Клавиатура у игры» only tells: it is muted, and it stands inside the slot «Esc — в игру» stood in
-  if (wanted === 'gone' && !(sign !== null && sign.text === GONE_TEXT && sign.muted && sign.fits)) fail();
+  if (wanted === 'gone' && !(sign !== null && sign.text === GONE_TEXT() && sign.muted && sign.fits)) fail();
   // a press on the slot does nothing only while that sign stands, and the button says so then and at no other time: «Esc — в игру»
   // gives the keyboard back, the indicator refreshes the prices
   if (disabled !== (wanted === 'gone')) fail();
@@ -411,7 +411,7 @@ async function settingsKeyboardGone(app: SceneApp): Promise<void> {
   await pause(KEYBOARD_IDLE_MS - 1500);
   expectSettingsSign(app, 'a second and a half before the limit', 'held');
   await until('the keyboard to go back to the game by itself', () => !app.keyboardHeld, 3000);
-  await until('the sign «Клавиатура у игры» to stand where «Esc — в игру» stood', () => settingsSign()?.text === GONE_TEXT, 1000);
+  await until('the sign «Клавиатура у игры» to stand where «Esc — в игру» stood', () => settingsSign()?.text === GONE_TEXT(), 1000);
   expectKeyboard(app, 'after the keyboard went back by itself', { held: false, owner: 'game', cursor: null });
   expectSettingsSign(app, 'after the keyboard went back by itself', 'gone');
 }

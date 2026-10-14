@@ -3,6 +3,7 @@
   import type { Reference } from '../../core/types';
   import { sellAlternativeRow, sellHereRow } from '../vm/route-rows';
   import TempBadge from './TempBadge.svelte';
+  import { tr } from '../../i18n';
 
   interface Props {
     commodityCode: string;
@@ -21,34 +22,34 @@
   const rows = $derived(alternatives.slice(0, MAX_ALTERNATIVES).map(a => sellAlternativeRow(a, reference)));
 </script>
 
-<section class="card" aria-label="Продать здесь или лететь дальше: {commodityCode}">
-  <div class="here" title="Продать весь груз здесь и сейчас">
-    <span class="caption">Здесь <span class="code">{commodityCode}</span></span>
+<section class="card" aria-label={tr('Продать здесь или лететь дальше: {commodityCode}', { commodityCode })}>
+  <div class="here" title={tr('Продать весь груз здесь и сейчас')}>
+    <span class="caption">{tr('Здесь')} <span class="code">{commodityCode}</span></span>
     <span class="sc-num qty">{hereRow.qty}</span>
-    <span class="item" title="Прибыль, если продать здесь">
-      <span class="sc-label">Прибыль</span>
+    <span class="item" title={tr('Прибыль, если продать здесь')}>
+      <span class="sc-label">{tr('Прибыль')}</span>
       <span class="sc-num" class:good={!hereRow.loss} class:loss={hereRow.loss}>{hereRow.profit}</span>
     </span>
-    <span class="item" title="Прибыль к вложенному"><span class="sc-label">ROI</span><span class="sc-num">{hereRow.roi}</span></span>
+    <span class="item" title={tr('Прибыль к вложенному')}><span class="sc-label">ROI</span><span class="sc-num">{hereRow.roi}</span></span>
   </div>
 
   {#if rows.length === 0}
-    <p class="none">Других покупателей нет</p>
+    <p class="none">{tr('Других покупателей нет')}</p>
   {:else}
-    <div class="table" class:detailed role="table" aria-label="Лететь дальше">
+    <div class="table" class:detailed role="table" aria-label={tr('Лететь дальше')}>
       <div class="grid head sc-label" role="row">
-        <span role="columnheader">Лететь дальше</span>
-        <span role="columnheader" class="r">Цена</span>
-        <span role="columnheader" class="r" title="Сколько добавит перелёт туда к продаже здесь">Добавка</span>
+        <span role="columnheader">{tr('Лететь дальше')}</span>
+        <span role="columnheader" class="r">{tr('Цена')}</span>
+        <span role="columnheader" class="r" title={tr('Сколько добавит перелёт туда к продаже здесь')}>{tr('Добавка')}</span>
         {#if detailed}
-          <span role="columnheader" class="r" title="Добавка, если там заплатят по нижней цене диапазона. У твоей цены диапазона нет — прочерк">По нижней</span>
+          <span role="columnheader" class="r" title={tr('Добавка, если там заплатят по нижней цене диапазона. У твоей цены диапазона нет — прочерк')}>{tr('По нижней')}</span>
         {/if}
-        <span role="columnheader" class="r" title="Сколько займёт путь отсюда: перелёт и выгрузка">Лететь</span>
+        <span role="columnheader" class="r" title={tr('Сколько займёт путь отсюда: перелёт и выгрузка')}>{tr('Лететь')}</span>
       </div>
       {#each rows as row (row.key)}
         <div class="grid line" role="row">
           <span class="terminal" title={row.terminal}>{row.terminal}</span>
-          <span class="cell sc-num" title={row.price.range.kind === 'spread' ? `Диапазон цен ${row.price.range.text}` : undefined}>
+          <span class="cell sc-num" title={row.price.range.kind === 'spread' ? tr('Диапазон цен {text}', { text: row.price.range.text }) : undefined}>
             <span>{row.price.price}</span>
             <TempBadge compact text={row.price.badge.text} kind={row.price.badge.kind} />
           </span>
@@ -56,7 +57,7 @@
           {#if detailed}
             <span class="sc-num" class:loss={row.extraLowLoss}>{row.extraLow}</span>
           {/if}
-          <span class="sc-num" title={row.timeTitle ?? 'Нет ни твоих рейсов по этой паре, ни расстояния'}>{row.time}</span>
+          <span class="sc-num" title={row.timeTitle ?? tr('Нет ни твоих рейсов по этой паре, ни расстояния')}>{row.time}</span>
         </div>
       {/each}
     </div>

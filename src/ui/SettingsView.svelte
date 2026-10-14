@@ -16,6 +16,7 @@
   import { draftAfterSave, parseNumberText } from './vm/settings-validation';
   import { UI_SCALES, uiScaleChoice, uiScaleHint, uiScaleLabel } from './vm/ui-scale';
   import WindowGrip from './WindowGrip.svelte';
+  import { LANG_NAMES, LANGS, tr, type Lang } from '../i18n';
 
   type NumberKey =
     | 'scuCapacity' | 'budget' | 'hotMin' | 'warmMin' | 'coolingMin' | 'quantumSpeedKkms'
@@ -24,27 +25,27 @@
 
   // What the field says in its tooltip: how it is filled, what the key does, and that the press still reaches the game (the hook that
   // catches the keys never swallows one).
-  const HOW_TO_FILL = 'Нажми клавишу в этом поле — она запишется. Подходят F1–F24, кроме F5, F11 и F12, ScrollLock, Pause, Insert, Home, End, PageUp, PageDown и буква или цифра с Ctrl или Alt; Backspace или Delete снимают клавишу. Пока курсор в поле, назначенные клавиши не срабатывают.';
+  const HOW_TO_FILL = tr('Нажми клавишу в этом поле — она запишется. Подходят F1–F24, кроме F5, F11 и F12, ScrollLock, Pause, Insert, Home, End, PageUp, PageDown и буква или цифра с Ctrl или Alt; Backspace или Delete снимают клавишу. Пока курсор в поле, назначенные клавиши не срабатывают.');
   const TRIGGERS: ReadonlyArray<{ key: TriggerKey; name: TriggerName; label: string; title: string }> = [
     {
-      key: 'hotkeyPanel', name: 'panel', label: 'Развернуть и свернуть окно',
-      title: `${HOW_TO_FILL} Например F8 или Ctrl+Alt+T. Клавиша разворачивает и сворачивает окно, игра её тоже получает. Без клавиши окно разворачивается кликом по мини-строке.`,
+      key: 'hotkeyPanel', name: 'panel', label: tr('Развернуть и свернуть окно'),
+      title: tr('{HOW_TO_FILL} Например F8 или Ctrl+Alt+T. Клавиша разворачивает и сворачивает окно, игра её тоже получает. Без клавиши окно разворачивается кликом по мини-строке.', { HOW_TO_FILL }),
     },
     {
-      key: 'hotkeyDepart', name: 'depart', label: 'Отметка «Взлетел»',
-      title: `${HOW_TO_FILL} Клавиша ставит в идущем рейсе отметку «Взлетел», как одноимённая кнопка; игра её тоже получает.`,
+      key: 'hotkeyDepart', name: 'depart', label: tr('Отметка «Взлетел»'),
+      title: tr('{HOW_TO_FILL} Клавиша ставит в идущем рейсе отметку «Взлетел», как одноимённая кнопка; игра её тоже получает.', { HOW_TO_FILL }),
     },
     {
-      key: 'hotkeyArrive', name: 'arrive', label: 'Отметка «Прилетел»',
-      title: `${HOW_TO_FILL} Клавиша ставит в идущем рейсе отметку «Прилетел», как одноимённая кнопка (с целью окно покажет её терминал); игра её тоже получает.`,
+      key: 'hotkeyArrive', name: 'arrive', label: tr('Отметка «Прилетел»'),
+      title: tr('{HOW_TO_FILL} Клавиша ставит в идущем рейсе отметку «Прилетел», как одноимённая кнопка (с целью окно покажет её терминал); игра её тоже получает.', { HOW_TO_FILL }),
     },
   ];
 
   const CORNERS: ReadonlyArray<{ id: Settings['stripCorner']; label: string }> = [
-    { id: 'top-left', label: 'Сверху слева' },
-    { id: 'top-right', label: 'Сверху справа' },
-    { id: 'bottom-left', label: 'Снизу слева' },
-    { id: 'bottom-right', label: 'Снизу справа' },
+    { id: 'top-left', label: tr('Сверху слева') },
+    { id: 'top-right', label: tr('Сверху справа') },
+    { id: 'bottom-left', label: tr('Снизу слева') },
+    { id: 'bottom-right', label: tr('Снизу справа') },
   ];
 
   const LOG_LEVELS: ReadonlyArray<Settings['logLevel']> = ['debug', 'info', 'warn', 'error'];
@@ -165,11 +166,11 @@
   const s = $derived(app.settings);
   const summaries = $derived({
     ship: headerModel(app.reference, s, app.pricesSyncedAt, app.uexOk, app.now).ship,
-    fresh: `${s.hotMin} / ${s.warmMin} / ${s.coolingMin} мин`,
-    routes: `вариантов: ${s.topN} · ROI от ${s.roiHighlightPct}%${s.detailedCalc ? ' · подробно' : ''}`,
-    keys: [s.hotkeyPanel, s.hotkeyDepart, s.hotkeyArrive].filter((key) => key !== '').join(', ') || 'не назначены',
-    window: `${uiScaleLabel(s.uiScale, app.scaleMonitor)} · ${s.panelWidth} px · ${Math.round(s.opacity * 100)}%`,
-    data: `журнал: ${s.logLevel}`,
+    fresh: tr('{hotMin} / {warmMin} / {coolingMin} мин', { hotMin: s.hotMin, warmMin: s.warmMin, coolingMin: s.coolingMin }),
+    routes: tr('вариантов: {topN} · ROI от {pct}%', { topN: s.topN, pct: s.roiHighlightPct }) + (s.detailedCalc ? tr(' · подробно') : ''),
+    keys: [s.hotkeyPanel, s.hotkeyDepart, s.hotkeyArrive].filter((key) => key !== '').join(', ') || tr('не назначены'),
+    window: `${LANG_NAMES[app.language]} · ${uiScaleLabel(s.uiScale, app.scaleMonitor)} · ${s.panelWidth} px · ${Math.round(s.opacity * 100)}%`,
+    data: tr('журнал: {logLevel}', { logLevel: s.logLevel }),
   });
 </script>
 
@@ -209,57 +210,57 @@
 {#snippet ship()}
   {#if vehicles.length > 0}
     <div class="row">
-      <label for="set-vehicle">Корабль</label>
+      <label for="set-vehicle">{tr('Корабль')}</label>
       <select id="set-vehicle" class="sc-input field" value={app.settings.vehicleId ?? ''} onchange={(event) => chooseVehicle(event.currentTarget.value)}>
-        <option value="">не выбран</option>
+        <option value="">{tr('не выбран')}</option>
         {#each vehicles as vehicle (vehicle.id)}
           <option value={vehicle.id}>{vehicle.name}{vehicle.scu > 0 ? ` · ${vehicle.scu} SCU` : ''}</option>
         {/each}
       </select>
     </div>
   {:else}
-    <p class="line">Список кораблей не загружен: введи вместимость вручную.</p>
+    <p class="line">{tr('Список кораблей не загружен: введи вместимость вручную.')}</p>
   {/if}
-  {@render numberField('scuCapacity', 'Вместимость, SCU', { title: SETTING_HINTS.scuCapacity })}
+  {@render numberField('scuCapacity', tr('Вместимость, SCU'), { title: SETTING_HINTS.scuCapacity })}
   <div class="row">
-    <label for="set-system">Система</label>
+    <label for="set-system">{tr('Система')}</label>
     <select id="set-system" class="sc-input field" value={app.settings.starSystemId ?? ''} onchange={(event) => chooseSystem(event.currentTarget.value)}>
-      <option value="">Все системы</option>
+      <option value="">{tr('Все системы')}</option>
       {#each systems as system (system.id)}
         <option value={system.id}>{system.name}</option>
       {/each}
     </select>
   </div>
-  {@render numberField('budget', 'Бюджет, UEC', { placeholder: 'не ограничен', title: SETTING_HINTS.budget })}
+  {@render numberField('budget', tr('Бюджет, UEC'), { placeholder: tr('не ограничен'), title: SETTING_HINTS.budget })}
 {/snippet}
 
 {#snippet fresh()}
-  {@render numberField('hotMin', 'Горячая до, мин')}
-  {@render numberField('warmMin', 'Тёплая до, мин')}
-  {@render numberField('coolingMin', 'Остывает до, мин', { title: 'Дальше своя цена считается холодной' })}
+  {@render numberField('hotMin', tr('Горячая до, мин'))}
+  {@render numberField('warmMin', tr('Тёплая до, мин'))}
+  {@render numberField('coolingMin', tr('Остывает до, мин'), { title: tr('Дальше своя цена считается холодной') })}
 {/snippet}
 
 {#snippet routes()}
-  {@render numberField('quantumSpeedKkms', 'Скорость квантума, тыс. км/с', { title: SETTING_HINTS.quantumSpeedKkms })}
-  {@render numberField('overheadMin', 'Накладные на рейс, мин', { title: SETTING_HINTS.overheadMin })}
-  {@render numberField('overheadEmptyMin', 'Накладные на пустой перелёт, мин', { title: SETTING_HINTS.overheadEmptyMin })}
-  {@render numberField('nearbyMaxMin', 'Закупка рядом: пустой перелёт до, мин', { title: SETTING_HINTS.nearbyMaxMin })}
+  {@render numberField('quantumSpeedKkms', tr('Скорость квантума, тыс. км/с'), { title: SETTING_HINTS.quantumSpeedKkms })}
+  {@render numberField('overheadMin', tr('Накладные на рейс, мин'), { title: SETTING_HINTS.overheadMin })}
+  {@render numberField('overheadEmptyMin', tr('Накладные на пустой перелёт, мин'), { title: SETTING_HINTS.overheadEmptyMin })}
+  {@render numberField('nearbyMaxMin', tr('Закупка рядом: пустой перелёт до, мин'), { title: SETTING_HINTS.nearbyMaxMin })}
   {#if app.settings.nearbyMaxMin <= app.settings.overheadEmptyMin}
-    <p class="error" role="note">Не больше накладных на пустой перелёт: кнопка «выгоднее» ничего не найдёт.</p>
+    <p class="error" role="note">{tr('Не больше накладных на пустой перелёт: кнопка «выгоднее» ничего не найдёт.')}</p>
   {/if}
-  {@render numberField('worsePricePct', 'Сказать, если цена хуже на, %', {
-    title: 'Ты прилетел, ввёл цену продажи, а она ниже ожидаемой на столько процентов или больше: окно скажет об этом и назовёт место, где твой груз купят дороже. 0 — не говорить.',
+  {@render numberField('worsePricePct', tr('Сказать, если цена хуже на, %'), {
+    title: tr('Ты прилетел, ввёл цену продажи, а она ниже ожидаемой на столько процентов или больше: окно скажет об этом и назовёт место, где твой груз купят дороже. 0 — не говорить.'),
   })}
-  {@render numberField('topN', 'Число вариантов', { title: SETTING_HINTS.topN })}
-  {@render numberField('refillFullMin', 'Полное пополнение склада, мин', { title: SETTING_HINTS.refillFullMin })}
-  {@render numberField('roiHighlightPct', 'Выделять ROI от, %', {
-    title: 'Когда таблица терминала отсортирована по ROI, строка с таким ROI и выше выделяется цветной полосой (0 — всё, что в плюсе). В остальное время полосой отмечены строки, которые приносят больше всех.',
+  {@render numberField('topN', tr('Число вариантов'), { title: SETTING_HINTS.topN })}
+  {@render numberField('refillFullMin', tr('Полное пополнение склада, мин'), { title: SETTING_HINTS.refillFullMin })}
+  {@render numberField('roiHighlightPct', tr('Выделять ROI от, %'), {
+    title: tr('Когда таблица терминала отсортирована по ROI, строка с таким ROI и выше выделяется цветной полосой (0 — всё, что в плюсе). В остальное время полосой отмечены строки, которые приносят больше всех.'),
   })}
   <div
     class="row"
-    title="«Лететь дальше» покажет ещё добавку по нижней цене диапазона; «Мои маршруты» посчитают потерянные рейсы."
+    title={tr('«Лететь дальше» покажет ещё добавку по нижней цене диапазона; «Мои маршруты» посчитают потерянные рейсы.')}
   >
-    <label for="set-detailed-calc">Подробные расчёты</label>
+    <label for="set-detailed-calc">{tr('Подробные расчёты')}</label>
     <input
       id="set-detailed-calc"
       class="check"
@@ -268,8 +269,8 @@
       onchange={(event) => settle('detailedCalc', () => app.updateSetting('detailedCalc', event.currentTarget.checked))}
     />
   </div>
-  <div class="row" title="Избранный маршрут (звёздочка в «Моих маршрутах») говорит, когда запас в точке закупки дорос до полного трюма. Звук играет через Windows; в игру ничего не уходит.">
-    <label for="set-fav-sound">Звук избранных маршрутов</label>
+  <div class="row" title={tr('Избранный маршрут (звёздочка в «Моих маршрутах») говорит, когда запас в точке закупки дорос до полного трюма. Звук играет через Windows; в игру ничего не уходит.')}>
+    <label for="set-fav-sound">{tr('Звук избранных маршрутов')}</label>
     <span class="range">
       <input
         id="set-fav-sound"
@@ -283,8 +284,8 @@
         min="0"
         max="1"
         step="0.05"
-        aria-label="Громкость звука избранных маршрутов"
-        title="Громкость"
+        aria-label={tr('Громкость звука избранных маршрутов')}
+        title={tr('Громкость')}
         disabled={!app.settings.favouriteSound}
         value={app.settings.favouriteVolume}
         onchange={(event) => settle('favouriteVolume', () => app.updateSetting('favouriteVolume', Number(event.currentTarget.value)))}
@@ -306,7 +307,7 @@
         autocomplete="off"
         spellcheck="false"
         data-trigger-key
-        placeholder="нажми клавишу"
+        placeholder={tr('нажми клавишу')}
         value={drafts[trigger.key] ?? app.settings[trigger.key]}
         aria-invalid={error ? 'true' : undefined}
         onfocus={() => suspension.focus()}
@@ -323,7 +324,20 @@
 
 {#snippet windowGroup()}
   <div class="row">
-    <label for="set-corner">Угол экрана</label>
+    <label for="set-language">{tr('Язык')}</label>
+    <select
+      id="set-language"
+      class="sc-input field"
+      value={app.language}
+      onchange={(event) => settle('language', () => app.updateSetting('language', event.currentTarget.value as Lang))}
+    >
+      {#each LANGS as lang (lang)}
+        <option value={lang} {lang}>{LANG_NAMES[lang]}</option>
+      {/each}
+    </select>
+  </div>
+  <div class="row">
+    <label for="set-corner">{tr('Угол экрана')}</label>
     <select
       id="set-corner"
       class="sc-input field"
@@ -335,9 +349,9 @@
       {/each}
     </select>
   </div>
-  {@render numberField('panelWidth', 'Ширина окна, px (380–640)')}
+  {@render numberField('panelWidth', tr('Ширина окна, px (380–640)'))}
   <div class="row" title={uiScaleHint(app.settings.uiScale, app.scaleMonitor)}>
-    <label for="set-ui-scale">Масштаб</label>
+    <label for="set-ui-scale">{tr('Масштаб')}</label>
     <select
       id="set-ui-scale"
       class="sc-input field"
@@ -350,12 +364,12 @@
     </select>
   </div>
   {#if errors.uiScale}<p class="error" role="alert">{errors.uiScale}</p>{/if}
-  {@render numberField('idleCollapseSec', 'Сворачивать через, с', {
-    placeholder: '0 — не сворачивать',
-    title: 'Окно само сворачивается в мини-строку, когда курсор ушёл с него и прошло это время. 0 — не сворачивать.',
+  {@render numberField('idleCollapseSec', tr('Сворачивать через, с'), {
+    placeholder: tr('0 — не сворачивать'),
+    title: tr('Окно само сворачивается в мини-строку, когда курсор ушёл с него и прошло это время. 0 — не сворачивать.'),
   })}
   <div class="row">
-    <label for="set-opacity">Прозрачность</label>
+    <label for="set-opacity">{tr('Прозрачность')}</label>
     <span class="slider">
       <input
         id="set-opacity"
@@ -370,8 +384,8 @@
     </span>
   </div>
   {#if errors.opacity}<p class="error" role="alert">{errors.opacity}</p>{/if}
-  <div class="row" title="Без мини-строки свёрнутое окно скрыто: оно открывается через значок в трее или назначенную клавишу.">
-    <label for="set-show-strip">Показывать мини-строку</label>
+  <div class="row" title={tr('Без мини-строки свёрнутое окно скрыто: оно открывается через значок в трее или назначенную клавишу.')}>
+    <label for="set-show-strip">{tr('Показывать мини-строку')}</label>
     <input
       id="set-show-strip"
       class="check"
@@ -380,8 +394,8 @@
       onchange={(event) => settle('showStrip', () => app.updateSetting('showStrip', event.currentTarget.checked))}
     />
   </div>
-  <div class="row" title="В мини-строке рейса минимум и максимум цены продажи в точке цели сменяют друг друга. Выключи — будут стоять рядом: «мин–макс».">
-    <label for="set-strip-turns">Сменять мин и макс в мини-строке</label>
+  <div class="row" title={tr('В мини-строке рейса минимум и максимум цены продажи в точке цели сменяют друг друга. Выключи — будут стоять рядом: «мин–макс».')}>
+    <label for="set-strip-turns">{tr('Сменять мин и макс в мини-строке')}</label>
     <input
       id="set-strip-turns"
       class="check"
@@ -394,7 +408,7 @@
 
 {#snippet data()}
   <div class="row">
-    <label for="set-log-level">Уровень журнала</label>
+    <label for="set-log-level">{tr('Уровень журнала')}</label>
     <select
       id="set-log-level"
       class="sc-input field"
@@ -418,25 +432,25 @@
     </div>
   {/if}
   <div class="buttons">
-    <button class="sc-btn" type="button" onclick={() => app.openLogs()}>Открыть папку логов</button>
+    <button class="sc-btn" type="button" onclick={() => app.openLogs()}>{tr('Открыть папку логов')}</button>
     <button class="sc-btn" type="button" disabled={app.referenceBusy} onclick={() => app.refreshReference()}>
-      {app.referenceBusy ? 'Обновление…' : 'Обновить справочник'}
+      {app.referenceBusy ? tr('Обновление…') : tr('Обновить справочник')}
     </button>
   </div>
   <!-- leaving stands apart, in a row of its own at the right: with a run going it asks first (the question is under the header) -->
   <div class="buttons leave">
-    <button class="sc-btn quit" type="button" title="Закрыть программу. Идущий рейс сохранится" onclick={() => app.askQuit()}>Выход</button>
+    <button class="sc-btn quit" type="button" title={tr('Закрыть программу. Идущий рейс сохранится')} onclick={() => app.askQuit()}>{tr('Выход')}</button>
   </div>
 {/snippet}
 
 <header class="bar">
   <WindowGrip />
-  <button class="sc-btn sc-btn--ghost sc-btn--icon back" type="button" aria-label="Назад" title="Назад" onclick={() => app.closeSettings()}>
+  <button class="sc-btn sc-btn--ghost sc-btn--icon back" type="button" aria-label={tr('Назад')} title={tr('Назад')} onclick={() => app.closeSettings()}>
     <Icon name="back" />
   </button>
-  <strong class="title">Настройки</strong>
+  <strong class="title">{tr('Настройки')}</strong>
   <KeyboardBadge />
-  <button class="sc-btn sc-btn--ghost sc-btn--icon collapse" type="button" aria-label="Свернуть" title="Свернуть" onclick={() => app.collapse('close button')}>
+  <button class="sc-btn sc-btn--ghost sc-btn--icon collapse" type="button" aria-label={tr('Свернуть')} title={tr('Свернуть')} onclick={() => app.collapse('close button')}>
     <Icon name="minus" />
   </button>
 </header>
@@ -447,12 +461,12 @@
 <!-- the header stands still; when the groups are taller than the window allows, this area scrolls -->
 <!-- `data-saves-on-leave`: every field in here is saved at Enter and when it is left; the keyboard rules read it (ui/keyboard.ts) -->
 <div class="groups" data-saves-on-leave>
-  {@render group('settings:ship', 'Корабль и поиск', summaries.ship, ship)}
-  {@render group('settings:fresh', 'Свежесть цен', summaries.fresh, fresh)}
-  {@render group('settings:routes', 'Расчёт маршрутов', summaries.routes, routes)}
-  {@render group('settings:keys', 'Клавиши', summaries.keys, keys)}
-  {@render group('settings:window', 'Окно', summaries.window, windowGroup)}
-  {@render group('settings:data', 'Данные', summaries.data, data)}
+  {@render group('settings:ship', tr('Корабль и поиск'), summaries.ship, ship)}
+  {@render group('settings:fresh', tr('Свежесть цен'), summaries.fresh, fresh)}
+  {@render group('settings:routes', tr('Расчёт маршрутов'), summaries.routes, routes)}
+  {@render group('settings:keys', tr('Клавиши'), summaries.keys, keys)}
+  {@render group('settings:window', tr('Окно'), summaries.window, windowGroup)}
+  {@render group('settings:data', tr('Данные'), summaries.data, data)}
 </div>
 
 <style>

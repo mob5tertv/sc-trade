@@ -223,6 +223,9 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
   /** The commands of `src-tauri/src` (`generate_handler!` in lib.rs). */
   function ownCommand(name: string, args: Payload): unknown {
     switch (name) {
+      case 'set_tray_labels':
+        log('info', `[preview] tray menu: ${String(args.showPanel)} / ${String(args.quit)}`);
+        return null;
       case 'backup_db':
         return null; // no database file, so nothing to back up
       case 'set_log_level':

@@ -3,6 +3,7 @@ import type { EstimateCtx } from '../../core/estimate';
 import { parsePrice, parseScu } from '../../core/input';
 import type { Market, Side } from '../../core/types';
 import type { TerminalRow } from './terminal-rows';
+import { tr } from '../../i18n';
 
 // What the quick entry line of the Terminal tab decides: the side it shows and what its texts mean.
 
@@ -28,11 +29,11 @@ export const REJECTIONS = ['no-terminal', 'no-commodity', 'not-traded', 'bad-pri
 export type Rejection = (typeof REJECTIONS)[number];
 
 const REJECTION_TEXT: Record<Rejection, string> = {
-  'no-terminal': 'Сначала выбери локацию в шапке окна',
-  'no-commodity': 'Выбери товар',
-  'not-traded': 'Этот товар здесь так не торгуется: выбери другой товар или сторону',
-  'bad-price': 'Цена — целое число больше нуля',
-  'bad-scu': 'Количество — целое число от нуля',
+  get 'no-terminal'() { return tr('Сначала выбери локацию в шапке окна'); },
+  get 'no-commodity'() { return tr('Выбери товар'); },
+  get 'not-traded'() { return tr('Этот товар здесь так не торгуется: выбери другой товар или сторону'); },
+  get 'bad-price'() { return tr('Цена — целое число больше нуля'); },
+  get 'bad-scu'() { return tr('Количество — целое число от нуля'); },
 };
 
 /** What the line says under the quick entry when it refuses: a few words, the reason and what it takes. */

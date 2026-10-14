@@ -5,12 +5,13 @@ import type { Settings } from '../../core/settings';
 import type { Reference } from '../../core/types';
 import { terminalFullName, terminalName } from './terminal-name';
 import { terminalFullPlace, terminalPlace, terminalSystem } from './terminal-place';
+import { tr } from '../../i18n';
 
 export interface HeaderModel { location: string; ship: string; system: string; uex: string; uexStale: boolean }
 
-const NO_LOCATION = 'Локация не выбрана';
-const NO_SHIP = 'Корабль не выбран';
-const ALL_SYSTEMS = 'Все системы';
+const NO_LOCATION = (): string => tr('Локация не выбрана');
+const NO_SHIP = (): string => tr('Корабль не выбран');
+const ALL_SYSTEMS = (): string => tr('Все системы');
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -24,24 +25,24 @@ function formatStamp(unixSec: number): string {
 
 function shipLine(ref: Reference, s: Settings): string {
   const name = s.vehicleId === null ? null : ref.vehicles.find(v => v.id === s.vehicleId)?.name ?? null;
-  if (name === null) return s.scuCapacity > 0 ? `${s.scuCapacity} SCU` : NO_SHIP;
+  if (name === null) return s.scuCapacity > 0 ? `${s.scuCapacity} SCU` : NO_SHIP();
   return s.scuCapacity > 0 ? `${name} · ${s.scuCapacity} SCU` : name;
 }
 
 function uexLine(pricesSyncedAt: number | null, uexOk: boolean, now: number): string {
-  if (!uexOk) return pricesSyncedAt === null ? 'UEX недоступен' : `UEX недоступен, данные от ${formatStamp(pricesSyncedAt)}`;
-  if (pricesSyncedAt === null) return 'UEX ещё не загружен';
+  if (!uexOk) return pricesSyncedAt === null ? tr('UEX недоступен') : tr('UEX недоступен, данные от {v1}', { v1: formatStamp(pricesSyncedAt) });
+  if (pricesSyncedAt === null) return tr('UEX ещё не загружен');
   const age = Math.max(0, now - pricesSyncedAt);
-  return age < 60 ? 'UEX сейчас' : `UEX ${formatAge(age)} назад`;
+  return age < 60 ? tr('UEX сейчас') : tr('UEX {v1} назад', { v1: formatAge(age) });
 }
 
 export function headerModel(ref: Reference, s: Settings, pricesSyncedAt: number | null, uexOk: boolean, now: number): HeaderModel {
   const terminal = s.currentTerminalId === null ? undefined : ref.terminals.get(s.currentTerminalId);
   const system = s.starSystemId === null ? undefined : ref.starSystems.find(x => x.id === s.starSystemId);
   return {
-    location: terminal ? terminalName(terminal) : NO_LOCATION,
+    location: terminal ? terminalName(terminal) : NO_LOCATION(),
     ship: shipLine(ref, s),
-    system: system ? system.name : ALL_SYSTEMS,
+    system: system ? system.name : ALL_SYSTEMS(),
     uex: uexLine(pricesSyncedAt, uexOk, now),
     uexStale: !uexOk,
   };

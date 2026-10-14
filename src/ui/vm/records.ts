@@ -6,6 +6,7 @@ import type { Market, Observation, Reference, Side } from '../../core/types';
 import { formatStamp } from './stats-rows';
 import { terminalLabel } from './terminal-name';
 import { uexRangeOf } from './terminal-rows';
+import { tr } from '../../i18n';
 
 // «Записи» of «Мои маршруты» (the author, 14.10.2026): every price of the player's own that the program counts with, in one list,
 // where a record can be corrected or taken out. What made it necessary: a test price typed in at a station where UEX does not
@@ -16,8 +17,8 @@ import { uexRangeOf } from './terminal-rows';
 export type RecordDoubt = 'no-uex' | 'far';
 
 const DOUBT_TEXT: Record<RecordDoubt, string> = {
-  'no-uex': 'UEX этого товара на этой станции не знает: сверить цену не с чем, и ничто её не заменит',
-  far: 'Цена далеко от истории UEX: меньше половины минимума или больше двух максимумов',
+  get 'no-uex'() { return tr('UEX этого товара на этой станции не знает: сверить цену не с чем, и ничто её не заменит'); },
+  get far() { return tr('Цена далеко от истории UEX: меньше половины минимума или больше двух максимумов'); },
 };
 
 export interface RecordRow {
@@ -58,7 +59,7 @@ export function recordRows(m: Market, ref: Reference, ctx: EstimateCtx): RecordR
         when: formatStamp(o.ts), age: formatAge(Math.max(0, ctx.now - o.ts)),
         terminal: terminalLabel(ref, o.terminalId),
         code: commodity?.code || `#${o.commodityId}`, name: commodity?.name || `#${o.commodityId}`,
-        sideLabel: o.side === 'buy' ? 'куп.' : 'прод.',
+        sideLabel: o.side === 'buy' ? tr('куп.') : tr('прод.'),
         price: o.price, scu: o.scu,
         priceText: formatUec(o.price), scuText: o.scu === null ? '' : String(o.scu),
         doubt: doubt === null ? null : DOUBT_TEXT[doubt],

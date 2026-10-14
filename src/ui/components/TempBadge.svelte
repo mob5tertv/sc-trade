@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Temp } from '../../core/types';
+  import { tr } from '../../i18n';
 
   type Kind = Temp | 'uex';
   interface Props {
@@ -15,11 +16,11 @@
 
   // The colour is not the only carrier of the meaning: the text says whose price it is and how old.
   const TITLES: Record<Kind, string> = {
-    hot: 'Моя цена, горячая',
-    warm: 'Моя цена, тёплая',
-    cooling: 'Моя цена, остывает',
-    cold: 'Моя цена, холодная',
-    uex: 'Данные UEX',
+    hot: tr('Моя цена, горячая'),
+    warm: tr('Моя цена, тёплая'),
+    cooling: tr('Моя цена, остывает'),
+    cold: tr('Моя цена, холодная'),
+    uex: tr('Данные UEX'),
   };
 </script>
 

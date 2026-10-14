@@ -1,6 +1,7 @@
 import type { Settings } from '../../core/settings';
 import { WORSE_PRICE_RANGE } from './worse-price';
 import { UI_SCALES } from './ui-scale';
+import { tr } from '../../i18n';
 
 // Checks a setting before it is saved. The answer is a short Russian sentence for the field, or null
 // when the value is fine. Numbers typed by the player arrive through `parseNumberText`.
@@ -16,8 +17,8 @@ const PANEL_WIDTH_RANGE = { min: 380, max: 640 };
 // Whole percent of ROI; 0 marks every row that pays at all
 const ROI_HIGHLIGHT_RANGE = { min: 0, max: 500 };
 
-const NOT_A_NUMBER = 'Введи число';
-const THRESHOLD_ORDER = 'Пороги должны быть больше нуля и расти: горячая < тёплая < остывает';
+const NOT_A_NUMBER = (): string => tr('Введи число');
+const THRESHOLD_ORDER = (): string => tr('Пороги должны быть больше нуля и расти: горячая < тёплая < остывает');
 
 const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
@@ -57,7 +58,7 @@ const TRIGGER_KEYS = ['hotkeyPanel', 'hotkeyDepart', 'hotkeyArrive'] as const;
 
 function validateThresholds(next: Settings): string | null {
   const { hotMin, warmMin, coolingMin } = next;
-  return hotMin > 0 && warmMin > hotMin && coolingMin > warmMin ? null : THRESHOLD_ORDER;
+  return hotMin > 0 && warmMin > hotMin && coolingMin > warmMin ? null : THRESHOLD_ORDER();
 }
 
 /** `value` is what the field would hold; `current` the settings as they are now (the other fields of a rule come from it). */
@@ -67,70 +68,72 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
     case 'hotMin':
     case 'warmMin':
     case 'coolingMin':
-      if (!isNumber(v)) return NOT_A_NUMBER;
+      if (!isNumber(v)) return NOT_A_NUMBER();
       return validateThresholds({ ...current, [key]: v });
 
     case 'topN':
-      return isNumber(v) && Number.isInteger(v) && v >= 1 ? null : 'Целое число не меньше 1';
+      return isNumber(v) && Number.isInteger(v) && v >= 1 ? null : tr('Целое число не меньше 1');
     case 'roiHighlightPct':
       return isNumber(v) && Number.isInteger(v) && v >= ROI_HIGHLIGHT_RANGE.min && v <= ROI_HIGHLIGHT_RANGE.max
         ? null
-        : `Целое число от ${ROI_HIGHLIGHT_RANGE.min} до ${ROI_HIGHLIGHT_RANGE.max}`;
+        : tr('Целое число от {min} до {max}', { min: ROI_HIGHLIGHT_RANGE.min, max: ROI_HIGHLIGHT_RANGE.max });
     case 'favouriteVolume':
-      return isNumber(v) && v >= 0 && v <= 1 ? null : 'От 0 до 1';
+      return isNumber(v) && v >= 0 && v <= 1 ? null : tr('От 0 до 1');
     case 'favouriteRoutes':
       return Array.isArray(v) && v.every((f) => f !== null && typeof f === 'object' && ['originId', 'destId', 'commodityId'].every((k) => isNumber((f as Record<string, unknown>)[k])))
         ? null
-        : 'Список маршрутов повреждён';
+        : tr('Список маршрутов повреждён');
     case 'worsePricePct':
       return isNumber(v) && Number.isInteger(v) && v >= WORSE_PRICE_RANGE.min && v <= WORSE_PRICE_RANGE.max
         ? null
-        : `Целое число от ${WORSE_PRICE_RANGE.min} до ${WORSE_PRICE_RANGE.max}`;
+        : tr('Целое число от {min} до {max}', { min: WORSE_PRICE_RANGE.min, max: WORSE_PRICE_RANGE.max });
     case 'quantumSpeedKkms':
-      return isNumber(v) && v > 0 ? null : 'Число больше нуля';
+      return isNumber(v) && v > 0 ? null : tr('Число больше нуля');
     case 'overheadMin':
     case 'overheadEmptyMin':
-      return isNumber(v) && v >= 0 ? null : 'Число не меньше нуля';
+      return isNumber(v) && v >= 0 ? null : tr('Число не меньше нуля');
     case 'refillFullMin':
     case 'nearbyMaxMin':
-      return isNumber(v) && v > 0 ? null : 'Число минут больше нуля';
+      return isNumber(v) && v > 0 ? null : tr('Число минут больше нуля');
     case 'opacity':
-      return isNumber(v) && v >= OPACITY_RANGE.min && v <= OPACITY_RANGE.max ? null : 'От 0,5 до 1';
+      return isNumber(v) && v >= OPACITY_RANGE.min && v <= OPACITY_RANGE.max ? null : tr('От 0,5 до 1');
     case 'panelWidth':
       return isNumber(v) && v >= PANEL_WIDTH_RANGE.min && v <= PANEL_WIDTH_RANGE.max
         ? null
-        : `От ${PANEL_WIDTH_RANGE.min} до ${PANEL_WIDTH_RANGE.max} пикселей`;
+        : tr('От {min} до {max} пикселей', { min: PANEL_WIDTH_RANGE.min, max: PANEL_WIDTH_RANGE.max });
     case 'uiScale':
-      return isNumber(v) && UI_SCALES.includes(v) ? null : 'Авто, 100, 110, 125 или 150 %';
+      return isNumber(v) && UI_SCALES.includes(v) ? null : tr('Авто, 100, 110, 125 или 150 %');
     // an offset that would push the window off the monitor is not refused: the window layer cuts it when it places the window
     case 'windowDx':
     case 'windowDy':
-      return isNumber(v) && Number.isInteger(v) && v >= 0 ? null : 'Целое число пикселей, от нуля';
+      return isNumber(v) && Number.isInteger(v) && v >= 0 ? null : tr('Целое число пикселей, от нуля');
     case 'idleCollapseSec':
-      return isNumber(v) && Number.isInteger(v) && v >= 0 ? null : 'Целое число секунд, 0 — не сворачивать';
+      return isNumber(v) && Number.isInteger(v) && v >= 0 ? null : tr('Целое число секунд, 0 — не сворачивать');
     case 'openSections':
-      return typeof v === 'string' ? null : 'Нужен текст';
+      return typeof v === 'string' ? null : tr('Нужен текст');
     case 'scuCapacity':
-      return isNumber(v) && Number.isInteger(v) && v >= 0 ? null : 'Целое число SCU, от нуля';
+      return isNumber(v) && Number.isInteger(v) && v >= 0 ? null : tr('Целое число SCU, от нуля');
     case 'budget':
-      return v === null || (isNumber(v) && v > 0) ? null : 'Число больше нуля или пустое поле';
+      return v === null || (isNumber(v) && v > 0) ? null : tr('Число больше нуля или пустое поле');
 
     case 'hotkeyPanel':
     case 'hotkeyDepart':
     case 'hotkeyArrive': {
-      if (typeof v !== 'string') return 'Клавиша — это текст';
+      if (typeof v !== 'string') return tr('Клавиша — это текст');
       const wanted = normalizeKey(v);
       if (wanted === '') return null;
       const taken = TRIGGER_KEYS.some((other) => other !== key && normalizeKey(current[other]) === wanted);
-      return taken ? 'Эта клавиша уже назначена другому действию' : null;
+      return taken ? tr('Эта клавиша уже назначена другому действию') : null;
     }
 
+    case 'language':
+      return v === '' || v === 'ru' || v === 'en' ? null : tr('Неизвестный язык');
     case 'stripCorner':
-      return CORNERS.includes(v as Settings['stripCorner']) ? null : 'Неизвестный угол';
+      return CORNERS.includes(v as Settings['stripCorner']) ? null : tr('Неизвестный угол');
     case 'logLevel':
-      return LOG_LEVELS.includes(v as Settings['logLevel']) ? null : 'Неизвестный уровень';
+      return LOG_LEVELS.includes(v as Settings['logLevel']) ? null : tr('Неизвестный уровень');
     case 'sort':
-      return SORTS.includes(v as Settings['sort']) ? null : 'Неизвестная сортировка';
+      return SORTS.includes(v as Settings['sort']) ? null : tr('Неизвестная сортировка');
     case 'nearby':
     case 'detailedCalc':
     case 'optionsToTarget':
@@ -142,7 +145,7 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
     case 'windowLocked':
     case 'keysHintShown':
     case 'scaleNoticeShown':
-      return typeof v === 'boolean' ? null : 'Нужно да или нет';
+      return typeof v === 'boolean' ? null : tr('Нужно да или нет');
 
     case 'vehicleId':
     case 'starSystemId':
@@ -151,7 +154,7 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
     case 'currentTerminalId':
     case 'targetTerminalId':
     case 'targetThenId':
-      return v === null || isNumber(v) ? null : NOT_A_NUMBER;
+      return v === null || isNumber(v) ? null : NOT_A_NUMBER();
   }
   return null;
 }

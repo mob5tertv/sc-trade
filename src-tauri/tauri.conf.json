@@ -77,7 +77,8 @@
         "sidebarImage": "installer/sidebar.bmp",
         "installerHooks": "installer/hooks.nsh",
         "template": "installer/installer.nsi",
-        "languages": ["Russian", "English"]
+        "languages": ["English", "Russian"],
+        "displayLanguageSelector": true
       }
     },
     "android": {

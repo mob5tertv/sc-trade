@@ -152,7 +152,7 @@ describe('routeOptionRow', () => {
       invested: nb('587 520'), profit: nb('74 880'), profitLoss: false, trend: null, priceIsOwn: false,
       buy: { price: nb('6 120'), range: NO_PRICE, badge: { text: 'моя · 40 мин', kind: 'hot' } },
       sell: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
-      stockNote: UNKNOWN_STOCK_NOTE, stockLimit: null, soleNote: null,
+      stockNote: UNKNOWN_STOCK_NOTE(), stockLimit: null, soleNote: null,
     });
   });
 
@@ -160,9 +160,9 @@ describe('routeOptionRow', () => {
     const known = (scu: number | null) => estimate({ price: 6120, low: 6120, high: 6120, source: 'own', temp: 'hot', scu, scuOrigin: scu === null ? null : 'own' });
 
     it('says so when the stock at the purchase terminal is unknown: nothing but the hold and the budget limited the volume', () => {
-      expect(routeOptionRow(option({ buy: known(null) }), ref, 'from', new Map()).stockNote).toBe(UNKNOWN_STOCK_NOTE);
-      expect(routeOptionRow(option({ buy: known(null) }), ref, 'to', new Map()).stockNote).toBe(UNKNOWN_STOCK_NOTE);
-      expect(UNKNOWN_STOCK_NOTE).toBe('Запас в точке закупки неизвестен: количество посчитано по трюму и бюджету');
+      expect(routeOptionRow(option({ buy: known(null) }), ref, 'from', new Map()).stockNote).toBe(UNKNOWN_STOCK_NOTE());
+      expect(routeOptionRow(option({ buy: known(null) }), ref, 'to', new Map()).stockNote).toBe(UNKNOWN_STOCK_NOTE());
+      expect(UNKNOWN_STOCK_NOTE()).toBe('Запас в точке закупки неизвестен: количество посчитано по трюму и бюджету');
     });
 
     it('says nothing when the stock is known, a known zero included (zero is a known empty stock)', () => {
@@ -181,7 +181,7 @@ describe('routeOptionRow', () => {
     it('does not look at the buyer: what the buyer holds limits nothing (spec 14.5), known or not', () => {
       const sell = (scu: number | null) => estimate({ scu, scuOrigin: scu === null ? null : 'uex' });
       expect(routeOptionRow(option({ buy: known(340), sell: sell(null) }), ref, 'from', new Map()).stockNote).toBeNull();
-      expect(routeOptionRow(option({ buy: known(null), sell: sell(500) }), ref, 'from', new Map()).stockNote).toBe(UNKNOWN_STOCK_NOTE);
+      expect(routeOptionRow(option({ buy: known(null), sell: sell(500) }), ref, 'from', new Map()).stockNote).toBe(UNKNOWN_STOCK_NOTE());
     });
   });
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PriceTrend } from '../vm/price-trend';
+  import { tr } from '../../i18n';
 
   interface Props {
     /**
@@ -18,7 +19,7 @@
     class:good={trend.good}
     class:bad={!trend.good}
     role="img"
-    aria-label={trend.dir === 'up' ? 'цена выросла' : 'цена упала'}
+    aria-label={trend.dir === 'up' ? tr('цена выросла') : tr('цена упала')}
     title={trend.title}
   ><span class="tri"></span></span>
 {:else}

@@ -12,7 +12,7 @@ const fresh = { keysHintShown: false, hotkeyDepart: '', hotkeyArrive: '' };
 
 describe('keysHintStep: what the closing of a run does about the one-time hint', () => {
   it('has the words of the brief', () => {
-    expect(KEYS_HINT).toBe('В полёте курсора нет: назначь клавиши «Взлетел» и «Прилетел»');
+    expect(KEYS_HINT()).toBe('В полёте курсора нет: назначь клавиши «Взлетел» и «Прилетел»');
   });
 
   it('shows the hint when a run closes in the expanded window, it was never shown and neither mark has a key', () => {
@@ -113,11 +113,11 @@ describe('carryOutKeysHint: the hint is on the screen BEFORE it is remembered', 
 
 describe('withKeysHint: the notice line says the result first and the hint after it', () => {
   it('follows the closed run as a sentence of its own', () => {
-    expect(withKeysHint('Рейс закрыт: +73 400 · 369k/ч · ROI 15%')).toBe(`Рейс закрыт: +73 400 · 369k/ч · ROI 15%. ${KEYS_HINT}`);
+    expect(withKeysHint('Рейс закрыт: +73 400 · 369k/ч · ROI 15%')).toBe(`Рейс закрыт: +73 400 · 369k/ч · ROI 15%. ${KEYS_HINT()}`);
   });
 
   it('does not double a full stop that is there already', () => {
-    expect(withKeysHint('Рейс закрыт: груз потерян.')).toBe(`Рейс закрыт: груз потерян. ${KEYS_HINT}`);
+    expect(withKeysHint('Рейс закрыт: груз потерян.')).toBe(`Рейс закрыт: груз потерян. ${KEYS_HINT()}`);
   });
 });
 

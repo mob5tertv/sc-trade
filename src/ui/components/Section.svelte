@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte';
   import type { Piece } from '../vm/route-pieces';
   import PieceLine from './PieceLine.svelte';
+  import { tr } from '../../i18n';
 
   interface Props {
     /** In small spaced capitals (`.sc-label`). */
@@ -45,7 +46,7 @@
     resetScrollOn?: unknown;
   }
   let {
-    title, summary, summaryPieces, summaryTitle, open, onToggle, onClose, closeTitle = 'Закрыть', actions, lead, children, scroll = false, shrink = 1,
+    title, summary, summaryPieces, summaryTitle, open, onToggle, onClose, closeTitle = tr('Закрыть'), actions, lead, children, scroll = false, shrink = 1,
     bodyMaxHeight, resetScrollOn,
   }: Props = $props();
 

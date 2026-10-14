@@ -102,8 +102,8 @@ VIAddVersionKey "FileVersion" "${VERSION}"
 
 !insertmacro SCT_FUNCTIONS_GUIINIT ""
 
-!insertmacro MUI_LANGUAGE "Russian"
 !insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "Russian"
 
 ; ---- the words of the pages that the mock-up has to say itself (the real ones are in the language files of Tauri) ----
 LangString previewCaption ${LANG_RUSSIAN} "SC Trade - макет установщика (ничего не устанавливается)"

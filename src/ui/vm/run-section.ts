@@ -8,6 +8,7 @@ import { ratePerHour } from './run-rate';
 import type { StripModel } from './strip';
 import { terminalName } from './terminal-name';
 import { isOwnPrice } from './terminal-rows';
+import { tr } from '../../i18n';
 
 // What the "Рейс" section says (spec 14.7, 15c): when it is there, what its header reads, and where the choice
 // "sell here or fly on" is offered. Pure; the section itself is `sections/RunSection.svelte`.
@@ -34,13 +35,13 @@ export interface RunHeader {
 
 export function runHeader(model: RunStripModel): RunHeader {
   const summary = [`${phaseName(model.phase)} ${model.phaseTimer}`, model.cargo].filter((part) => part !== '').join(' · ');
-  const target = model.target === null ? 'цель не выбрана' : `→ ${model.target}`;
-  return { summary, target, title: `${summary} · ${target} · всего ${model.timer}` };
+  const target = model.target === null ? tr('цель не выбрана') : `→ ${model.target}`;
+  return { summary, target, title: tr('{summary} · {target} · всего {timer}', { summary, target, timer: model.timer }) };
 }
 
 /** The summary of the header while only the target is set; a target in two steps says both: where to buy, then where to sell. */
 export const planSummary = (target: string, then: string | null = null): string => (
-  then === null ? `цель: ${target}` : `закупка: ${target} · потом ${then}`
+  then === null ? tr('цель: {target}', { target }) : tr('закупка: {target} · потом {then}', { target, then })
 );
 
 /** The button of the header that makes the viewed terminal the target of the run: where it points and what it says. */
@@ -67,7 +68,7 @@ export function targetOffer(active: RunWithEvents | null, targetId: number | nul
     .reduce<RunEvent | null>((first, e) => (first === null || e.ts < first.ts || (e.ts === first.ts && e.id < first.id) ? e : first), null);
   if (firstBuy?.terminalId === viewedId) return null;
   const name = terminalName(terminal);
-  return { terminalId: viewedId, label: `Цель: ${name}`, title: `Сделать целью рейса: ${name}` };
+  return { terminalId: viewedId, label: tr('Цель: {name}', { name }), title: tr('Сделать целью рейса: {name}', { name }) };
 }
 
 /** The code a commodity is known by; a commodity that left the reference is told by its number. */

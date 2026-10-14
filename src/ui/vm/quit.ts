@@ -4,6 +4,8 @@
 // system's and stays as it is.
 
 /** The question that comes before leaving while a run goes; `null` without a run: no question. */
+import { tr } from '../../i18n';
+
 export function quitQuestion(runGoing: boolean): { text: string; yes: string } | null {
-  return runGoing ? { text: 'Идёт рейс. Закрыть программу? Рейс сохранится и продолжит отсчёт.', yes: 'Да, закрыть' } : null;
+  return runGoing ? { text: tr('Идёт рейс. Закрыть программу? Рейс сохранится и продолжит отсчёт.'), yes: tr('Да, закрыть') } : null;
 }

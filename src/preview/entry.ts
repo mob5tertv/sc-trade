@@ -175,6 +175,8 @@ async function run(): Promise<void> {
 
   if (galleryName !== null) {
     const { mountGallery } = await import('./gallery/mount');
+    // `lang=en`: the components in English (the gallery has no settings to choose it in)
+    if (params.get('lang') === 'en') (await import('../i18n')).setLang('en');
     await mountGallery({ name: galleryName, bg: params.get('bg'), opacity: params.get('opacity'), win, scale: monitor.scale });
     await waitForQuiet();
     await document.fonts.ready;
@@ -188,6 +190,11 @@ async function run(): Promise<void> {
   const { app } = await import('../ui/state.svelte');
   await waitForStart(app);
   await waitForQuiet();
+  // `lang=en` (`npm run preview:shot -- --lang en`): the scene in English, chosen as the player would, before the scene acts
+  if (params.get('lang') === 'en') {
+    await app.updateSetting('language', 'en');
+    await waitForQuiet();
+  }
 
   await scene.act?.(app);
 

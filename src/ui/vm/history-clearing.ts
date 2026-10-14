@@ -1,4 +1,5 @@
 import type { Run } from '../../core/types';
+import { tr, trn } from '../../i18n';
 
 // Clearing the history of the player's runs (spec 14.14): "Настройки" → "Данные" says how many runs the history holds and since
 // when, and has two buttons, one for the runs that ended more than thirty days ago and one for the whole history. The pure
@@ -45,12 +46,7 @@ export const countFor = (scope: ClearScope, counts: HistoryCounts): number => (s
 
 /** 'рейс' after 1, 21, 101 ...; 'рейса' after 2-4, 22-24 ...; 'рейсов' after the rest (the teens included). */
 export function pluralRuns(n: number): string {
-  const lastTwo = Math.abs(n) % 100;
-  const last = lastTwo % 10;
-  if (lastTwo >= 11 && lastTwo <= 14) return 'рейсов';
-  if (last === 1) return 'рейс';
-  if (last >= 2 && last <= 4) return 'рейса';
-  return 'рейсов';
+  return trn(n, 'рейс|рейса|рейсов');
 }
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
@@ -63,32 +59,32 @@ function formatDate(unixSec: number): string {
 
 /** 'История: 57 рейсов, с 03.08.2026', or 'История пуста' when no run is over. */
 export function historyStatus(counts: HistoryCounts): string {
-  if (counts.finished === 0 || counts.since === null) return 'История пуста';
-  return `История: ${counts.finished} ${pluralRuns(counts.finished)}, с ${formatDate(counts.since)}`;
+  if (counts.finished === 0 || counts.since === null) return tr('История пуста');
+  return tr('История: {finished} {runsWord}, с {since}', { finished: counts.finished, runsWord: pluralRuns(counts.finished), since: formatDate(counts.since) });
 }
 
 /** The labels of the two buttons and what each says when the mouse rests on it. */
 export const CLEAR_BUTTONS: Readonly<Record<ClearScope, { label: string; title: string }>> = {
   old: {
-    label: `Очистить старше ${OLD_RUN_DAYS} дней`,
-    title: `Удаляет завершённые и потерянные рейсы, которые закончились больше ${OLD_RUN_DAYS} дней назад. Идущий рейс и свои цены остаются.`,
+    get label() { return tr('Очистить старше {OLD_RUN_DAYS} дней', { OLD_RUN_DAYS }); },
+    get title() { return tr('Удаляет завершённые и потерянные рейсы, которые закончились больше {OLD_RUN_DAYS} дней назад. Идущий рейс и свои цены остаются.', { OLD_RUN_DAYS }); },
   },
   all: {
-    label: 'Очистить всю историю',
-    title: 'Удаляет все завершённые и потерянные рейсы. Идущий рейс и свои цены остаются.',
+    get label() { return tr('Очистить всю историю'); },
+    get title() { return tr('Удаляет все завершённые и потерянные рейсы. Идущий рейс и свои цены остаются.'); },
   },
 };
 
 /** The question under the header before a clearing: it names the number of runs that will go. */
 export function clearQuestion(scope: ClearScope, runs: number): { text: string; yes: string } {
-  const recount = 'Рейтинг маршрутов и сессии пересчитаются по оставшимся.';
+  const recount = tr('Рейтинг маршрутов и сессии пересчитаются по оставшимся.');
   const text = scope === 'old'
-    ? `Удалить ${runs} ${pluralRuns(runs)} старше ${OLD_RUN_DAYS} дней? ${recount} Свои цены не трогаются.`
-    : `Удалить всю историю — ${runs} ${pluralRuns(runs)}? ${recount} Идущий рейс и свои цены не трогаются.`;
-  return { text, yes: 'Да, удалить' };
+    ? tr('Удалить {runs} {runsWord} старше {OLD_RUN_DAYS} дней? {recount} Свои цены не трогаются.', { runs, runsWord: pluralRuns(runs), OLD_RUN_DAYS, recount })
+    : tr('Удалить всю историю — {runs} {runsWord}? {recount} Идущий рейс и свои цены не трогаются.', { runs, runsWord: pluralRuns(runs), recount });
+  return { text, yes: tr('Да, удалить') };
 }
 
 /** The notice after a clearing. */
 export function clearedText(runs: number): string {
-  return runs === 0 ? 'Удалять было нечего' : `Удалено ${runs} ${pluralRuns(runs)}`;
+  return runs === 0 ? tr('Удалять было нечего') : tr('Удалено {runs} {runsWord}', { runs, runsWord: pluralRuns(runs) });
 }

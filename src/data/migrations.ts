@@ -1,5 +1,6 @@
 import type { Db } from './db';
 import type { Logger } from './logger';
+import { tr } from '../i18n';
 
 export interface Migration {
   version: number;
@@ -130,7 +131,7 @@ export const MIGRATIONS: Migration[] = [
  */
 export class NewerDatabaseError extends Error {
   constructor(readonly schema: number, readonly known: number) {
-    super(`База создана более новой версией программы (схема ${schema}, эта версия знает ${known}). Обнови программу.`);
+    super(tr('База создана более новой версией программы (схема {schema}, эта версия знает {known}). Обнови программу.', { schema, known }));
     this.name = 'NewerDatabaseError';
   }
 }

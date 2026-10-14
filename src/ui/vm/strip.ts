@@ -9,6 +9,7 @@ import { expectedRun, priceAtTarget, type PricedLine } from './run-rate';
 import type { SessionFigure } from './stats-view';
 import { terminalName } from './terminal-name';
 import { isOwnPrice, uexRangeOf } from './terminal-rows';
+import { tr } from '../../i18n';
 
 /**
  * The one commodity of the hold as the line of the strip draws it (spec 14.19, the run line): what it is, how much, what it was bought
@@ -67,11 +68,11 @@ export type StripModel =
     profitLoss: boolean;
   };
 
-const NO_LOCATION = 'Локация не выбрана';
+const NO_LOCATION = (): string => tr('Локация не выбрана');
 
 function locationOf(ref: Reference, terminalId: number | null): string {
   const terminal = terminalId === null ? undefined : ref.terminals.get(terminalId);
-  return terminal ? terminalName(terminal) : NO_LOCATION;
+  return terminal ? terminalName(terminal) : NO_LOCATION();
 }
 
 const commodityCode = (ref: Reference, commodityId: number): string => {
@@ -88,9 +89,9 @@ const commodityCode = (ref: Reference, commodityId: number): string => {
  */
 export function cargoText(ref: Reference, cargo: CargoLine[], expected: ReadonlyArray<number | null> = []): string {
   const unit = cargo.length === 1 ? ' SCU' : '';
-  const text = cargo.map(({ commodityId, scu, avgBuyPrice }) => `${commodityCode(ref, commodityId)} ${scu}${unit} по ${formatUec(avgBuyPrice)}`).join(', ');
+  const text = cargo.map(({ commodityId, scu, avgBuyPrice }) => tr('{v1} {scu}{unit} по {v2}', { v1: commodityCode(ref, commodityId), scu, unit, v2: formatUec(avgBuyPrice) })).join(', ');
   const price = cargo.length === 1 ? expected[0] ?? null : null;
-  return price === null ? text : `${text}, ждём ${formatUec(price)}`;
+  return price === null ? text : tr('{text}, ждём {v1}', { text, v1: formatUec(price) });
 }
 
 /**
@@ -99,12 +100,12 @@ export function cargoText(ref: Reference, cargo: CargoLine[], expected: Readonly
  */
 export function cargoTitle(ref: Reference, priced: PricedLine[]): string {
   return priced.map(({ line, sell }) => [
-    `${commodityCode(ref, line.commodityId)} ${line.scu} SCU`, `куплено по ${formatUec(line.avgBuyPrice)}`, sell && `ждём ${formatUec(sell.price)}`,
+    `${commodityCode(ref, line.commodityId)} ${line.scu} SCU`, tr('куплено по {v1}', { v1: formatUec(line.avgBuyPrice) }), sell && tr('ждём {v1}', { v1: formatUec(sell.price) }),
   ].filter(Boolean).join(' · ')).join('\n');
 }
 
 /** The word that stands for the player in the frame of a price he typed in himself. */
-export const OWN_PRICE_NAME = 'моя';
+export const OWN_PRICE_NAME = (): string => tr('моя');
 
 /**
  * The one commodity of the hold in parts (`StripLot`); `null` for an empty hold and for several commodities (the line then
@@ -125,7 +126,7 @@ export function stripLot(
   const sell = sale?.priced[0]?.sell ?? null;
   if (sale === null || sell === null) return { ...base, person: null, range: null, single: null };
 
-  const person = isOwnPrice(sell) ? { who: OWN_PRICE_NAME, price: formatUec(sell.price), age: formatAge(sell.ageSec) } : null;
+  const person = isOwnPrice(sell) ? { who: OWN_PRICE_NAME(), price: formatUec(sell.price), age: formatAge(sell.ageSec) } : null;
   const uex = uexRangeOf(sale.m, sale.targetId, commodityId, 'sell', sale.ctx);
   const range = uex.kind === 'spread' ? { low: formatUec(uex.low), high: formatUec(uex.high) } : null;
   return { ...base, person, range, single: person === null && range === null ? formatUec(sell.price) : null };
@@ -199,12 +200,12 @@ export function outlookText(model: StripModel): string | null {
  */
 export function stripTitle(model: StripModel): string {
   if (model.kind === 'idle') {
-    const target = model.target === null ? null : model.then ? `закупка: ${model.target} · потом ${model.then}` : model.target;
+    const target = model.target === null ? null : model.then ? tr('закупка: {target} · потом {then}', { target: model.target, then: model.then }) : model.target;
     return [target === null ? model.location : `${model.location} → ${target}`, model.session?.line].filter(Boolean).join(' · ');
   }
   const head = [
-    `${model.phaseLabel} ${model.phaseTimer}`, `всего ${model.timer}`,
-    model.target === null ? 'цель не выбрана' : `→ ${model.target}`, outlookText(model),
+    `${model.phaseLabel} ${model.phaseTimer}`, tr('всего {timer}', { timer: model.timer }),
+    model.target === null ? tr('цель не выбрана') : `→ ${model.target}`, outlookText(model),
   ].filter(Boolean).join(' · ');
   return model.cargoTitle === '' ? head : `${head}\n${model.cargoTitle}`;
 }

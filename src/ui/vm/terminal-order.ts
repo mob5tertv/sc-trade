@@ -1,6 +1,7 @@
 import { formatUec } from '../../core/format';
 import type { CargoLine, Side } from '../../core/types';
 import type { SortDir } from './route-sort';
+import { tr } from '../../i18n';
 
 // The order of the rows of the terminal table. Two things order it: the cargo in the hold (on the sell side the commodities the
 // player carries stand first and wear a mark) and the header the player clicked («Товар», «Прибыль» or «ROI»). Pure: the rows are not
@@ -33,7 +34,7 @@ export interface HoldMark { text: string; title: string }
 
 export function holdMark(line: CargoLine): HoldMark {
   const scu = formatUec(line.scu);
-  return { text: scu, title: `В трюме ${scu} SCU, куплено по ${formatUec(line.avgBuyPrice)}` };
+  return { text: scu, title: tr('В трюме {scu} SCU, куплено по {v1}', { scu, v1: formatUec(line.avgBuyPrice) }) };
 }
 
 /**

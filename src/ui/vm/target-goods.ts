@@ -4,6 +4,7 @@ import type { Reference, Temp } from '../../core/types';
 import type { RoiTier } from './roi-tier';
 import { formatRoi, shownTier } from './route-rows';
 import { badgeText } from './terminal-rows';
+import { tr } from '../../i18n';
 
 // Display rows of «К цели» (spec 14.19, item 16): the goods the viewed terminal sells and the target buys, and the set
 // that fills the hold. Every number is already formatted; the numbers themselves are counted in core/pair.ts.
@@ -44,19 +45,19 @@ export interface HoldSet {
 export interface TargetGoods { rows: TargetGoodsRow[]; set: HoldSet | null }
 
 const LIMIT_TITLE: Record<PickLimit, (scu: number) => string> = {
-  space: (scu) => `Столько помещается в трюм: ${scu} SCU`,
-  stock: (scu) => `Весь запас станции: ${scu} SCU`,
-  budget: (scu) => `На столько хватает бюджета: ${scu} SCU`,
+  space: (scu) => tr('Столько помещается в трюм: {scu} SCU', { scu }),
+  stock: (scu) => tr('Весь запас станции: {scu} SCU', { scu }),
+  budget: (scu) => tr('На столько хватает бюджета: {scu} SCU', { scu }),
 };
 
-const UNKNOWN_STOCK = 'Запас станции неизвестен: количество принято по трюму и бюджету';
+const UNKNOWN_STOCK = (): string => tr('Запас станции неизвестен: количество принято по трюму и бюджету');
 
 const priceOf = (e: PairGood['buy']): GoodsPrice => ({ price: formatUec(e.price), badge: badgeText(e) });
 
 function takeTitle(pick: HoldPick | undefined, good: PairGood, fill: HoldFill): string {
-  if (pick !== undefined) return pick.stockKnown ? LIMIT_TITLE[pick.limit](pick.scu) : `${LIMIT_TITLE[pick.limit](pick.scu)}. ${UNKNOWN_STOCK}`;
-  if (good.buy.scu === 0) return 'В набор не вошёл: на станции его сейчас нет';
-  return fill.short === 'budget' ? 'В набор не вошёл: не хватило бюджета' : 'В набор не вошёл: трюм заполнен товарами выгоднее';
+  if (pick !== undefined) return pick.stockKnown ? LIMIT_TITLE[pick.limit](pick.scu) : `${LIMIT_TITLE[pick.limit](pick.scu)}. ${UNKNOWN_STOCK()}`;
+  if (good.buy.scu === 0) return tr('В набор не вошёл: на станции его сейчас нет');
+  return fill.short === 'budget' ? tr('В набор не вошёл: не хватило бюджета') : tr('В набор не вошёл: трюм заполнен товарами выгоднее');
 }
 
 /**
@@ -89,16 +90,16 @@ export function targetGoods(goods: PairGood[], fill: HoldFill, ref: Reference, r
   const free = Math.max(0, Math.floor(room.freeScu));
   if (fill.picks.length === 0) return { rows, set: null };
   const set: HoldSet = {
-    caption: room.aboard ? `Набор на свободные ${free} SCU` : `Набор на ${free} SCU`,
-    filled: `${fill.scu} из ${free} SCU`,
+    caption: room.aboard ? tr('Набор на свободные {free} SCU', { free }) : tr('Набор на {free} SCU', { free }),
+    filled: tr('{scu} из {free} SCU', { scu: fill.scu, free }),
     invested: formatUec(fill.invested),
     profit: `≈ ${formatUec(fill.profit)}`,
     roi: fill.roi === null ? NONE : formatRoi(fill.roi),
     note: fill.short === null ? null
-      : fill.short === 'budget' ? `Бюджета хватает на ${fill.scu} из ${free} SCU` : `Запаса на станции хватает на ${fill.scu} из ${free} SCU`,
+      : fill.short === 'budget' ? tr('Бюджета хватает на {scu} из {free} SCU', { scu: fill.scu, free }) : tr('Запаса на станции хватает на {scu} из {free} SCU', { scu: fill.scu, free }),
   };
   return { rows, set };
 }
 
 /** What the list says when the pair has no goods: 'HUR-L1 не продаёт ничего, что ARC-L1 купил бы дороже'. */
-export const noGoodsText = (origin: string, dest: string): string => `${origin} не продаёт ничего, что ${dest} купил бы дороже`;
+export const noGoodsText = (origin: string, dest: string): string => tr('{origin} не продаёт ничего, что {dest} купил бы дороже', { origin, dest });

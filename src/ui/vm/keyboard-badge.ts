@@ -1,5 +1,6 @@
 import { KEYBOARD_IDLE_MS } from './keyboard-idle';
 import type { WindowHeader } from './window-header';
+import { tr } from '../../i18n';
 
 // The signs of the keyboard. «Esc — в игру»: the window holds the keyboard while the player types into a field, and the sign says how to
 // give it back. «Клавиатура у игры»: the keyboard went back by itself (nobody used it for a while, `vm/keyboard-idle.ts`), and the player,
@@ -10,23 +11,22 @@ import type { WindowHeader } from './window-header';
 // and a sign moves and shrinks nothing. In the header of the settings, which has free space, it is a badge of its own (`KeyboardBadge.svelte`).
 
 /** The sign, as the player reads it. */
-export const BADGE_TEXT = 'Esc — в игру';
+export const BADGE_TEXT = (): string => tr('Esc — в игру');
 
 /** The tooltip of the sign: it is a button too, and the key does the same. */
-export const BADGE_HINT = 'Клавиатура у окна: Esc или клик сюда возвращают её игре';
+export const BADGE_HINT = (): string => tr('Клавиатура у окна: Esc или клик сюда возвращают её игре');
 
 /** A no-break space, by its number: an invisible character is not written into the source. */
-const NO_BREAK_SPACE = String.fromCharCode(0xa0);
 
 /**
  * The sign that the keyboard went back to the game by itself, as the player reads it: «Клавиатура у игры». The space before «игры» is a
  * no-break one: in the slot of the header, which is narrower than the three words (93,7 px against 64 and up, measured in the preview),
  * the sign stands in two lines, and they are «Клавиатура» (58,2 px) and «у игры», never a line that ends with «у».
  */
-export const GONE_TEXT = `Клавиатура у${NO_BREAK_SPACE}игры`;
+export const GONE_TEXT = (): string => tr('Клавиатура у\u00a0игры');
 
 /** The tooltip of that sign: why the keyboard went, and how to type again. */
-export const GONE_HINT = `Клавиатура вернулась игре сама: ${KEYBOARD_IDLE_MS / 1000} секунд не было ни одной клавиши. Чтобы печатать снова, кликни в поле`;
+export const GONE_HINT = (): string => tr('Клавиатура вернулась игре сама: {v1} секунд не было ни одной клавиши. Чтобы печатать снова, кликни в поле', { v1: KEYBOARD_IDLE_MS / 1000 });
 
 /** How long, ms, the sign «Клавиатура у игры» stands, unless the player presses a field first (then it goes at once). */
 export const GONE_SIGN_MS = 6000;
@@ -63,8 +63,8 @@ export interface IndicatorFace {
  */
 export function indicatorFace(keyboardHeld: boolean, uex: WindowHeader['uex'], goneByItself = false): IndicatorFace {
   const sign = keyboardSign(keyboardHeld, goneByItself);
-  if (sign === 'held') return { sign: true, text: BADGE_TEXT, muted: false, title: BADGE_HINT, stale: false, busy: false };
-  if (sign === 'gone') return { sign: true, text: GONE_TEXT, muted: true, title: GONE_HINT, stale: false, busy: false };
+  if (sign === 'held') return { sign: true, text: BADGE_TEXT(), muted: false, title: BADGE_HINT(), stale: false, busy: false };
+  if (sign === 'gone') return { sign: true, text: GONE_TEXT(), muted: true, title: GONE_HINT(), stale: false, busy: false };
   return { sign: false, text: '', muted: false, title: uex.title, stale: uex.stale, busy: uex.busy };
 }
 

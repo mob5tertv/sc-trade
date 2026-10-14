@@ -5,6 +5,7 @@ import type { Market, Reference, Side } from '../../core/types';
 import type { RoiTier } from './roi-tier';
 import { formatRoi, narrowCompact, shownPercent, shownTier } from './route-rows';
 import { terminalLabel } from './terminal-name';
+import { tr } from '../../i18n';
 
 // The profit of a row of the terminal table (spec 14.10): for each commodity of the viewed terminal, the best ROI there is
 // with it AND the most a trip with it brings (plan item 17: a cheap commodity with a fine percentage stood above one that
@@ -123,7 +124,7 @@ export interface RoiCell {
 const MAX_SHOWN_PERCENT = 999;
 
 export function roiCell(best: RowRoi, side: Side, ref: Reference, thresholdPct: number): RoiCell {
-  const way = side === 'sell' ? 'из' : 'в';
+  const way = side === 'sell' ? tr('из') : tr('в');
   const where = `${way} ${terminalLabel(ref, best.otherId)}`;
   // the trip that brings the most is named only when it is another one than the trip of the best ROI
   const richest = best.profitOtherId === best.otherId ? '' : `, ${way} ${terminalLabel(ref, best.profitOtherId)}`;
@@ -136,7 +137,7 @@ export function roiCell(best: RowRoi, side: Side, ref: Reference, thresholdPct: 
     hot: isHot(best.roi, thresholdPct),
     gain: narrowCompact(best.profit), profit: best.profit,
     title: `${capped ? `ROI ${formatRoi(best.roi)} · ` : ''}${where} · ${formatUec(best.buyPrice)} → ${formatUec(best.sellPrice)}\n`
-      + `Больше всего за рейс: ${formatUec(best.profit)} (${best.qty} SCU${richest})\nНажми, чтобы открыть варианты`,
+      + tr('Больше всего за рейс: {v1} ({qty} SCU{richest})\nНажми, чтобы открыть варианты', { v1: formatUec(best.profit), qty: best.qty, richest }),
   };
 }
 

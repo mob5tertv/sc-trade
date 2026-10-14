@@ -109,7 +109,7 @@ describe('tradeDefaults, buying: the stock at the seller is unknown (version 1.1
   });
 
   it('has the words of the brief', () => {
-    expect(STOCK_UNKNOWN_NOTE).toBe('Запас неизвестен: количество — по трюму и бюджету');
+    expect(STOCK_UNKNOWN_NOTE()).toBe('Запас неизвестен: количество — по трюму и бюджету');
   });
 });
 
@@ -210,7 +210,7 @@ describe('tradeMode', () => {
     expect((await listRuns(deps.db)).map(r => r.run.status)).toEqual(['active']);              // nothing was turned into an income
   });
   it('says in one muted line what an income is', () => {
-    expect(INCOME_NOTE).toBe('Нет в трюме — запишется как доход без закупки');
+    expect(INCOME_NOTE()).toBe('Нет в трюме — запишется как доход без закупки');
   });
 });
 
@@ -227,7 +227,7 @@ describe('goodsCameAboard', () => {
     expect(goodsCameAboard('buy', runOf(bought(0)), GOLD)).toBe(false);
   });
   it('has its own sentence for the notice line, which tells the player what to do', () => {
-    expect(GOODS_ABOARD_NOTICE).toBe('Этот товар уже в трюме — нажми «Продал» ещё раз');
+    expect(GOODS_ABOARD_NOTICE()).toBe('Этот товар уже в трюме — нажми «Продал» ещё раз');
   });
 });
 
@@ -316,7 +316,7 @@ describe('confirmStep: a price that is not mine is not written without a look (t
   });
 
   it('has one sentence for the line under the form', () => {
-    expect(PRICE_CHECK_NOTE).toBe('Цена справочная — проверь её и подтверди ещё раз');
+    expect(PRICE_CHECK_NOTE()).toBe('Цена справочная — проверь её и подтверди ещё раз');
   });
 });
 

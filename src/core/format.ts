@@ -1,9 +1,9 @@
+import { decimal, tr } from '../i18n';
+
 const NBSP = ' ';
 
-// Russian decimal separator
-function comma(n: number): string {
-  return String(n).replace('.', ',');
-}
+// the decimal separator of the language of the window: '1,5' in Russian, '1.5' in English
+const comma = (n: number): string => decimal(n);
 
 /** '6 120' (non-breaking space as the thousands separator). */
 export function formatUec(n: number): string {
@@ -26,15 +26,15 @@ export function formatCompact(n: number): string {
 /** '12,7%' from a ratio of 0.127. */
 export function formatPct(ratio: number): string {
   const tenths = Math.round(ratio * 1000) / 10;
-  return `${(tenths === 0 ? 0 : tenths).toFixed(1).replace('.', ',')}%`;
+  return `${decimal((tenths === 0 ? 0 : tenths).toFixed(1))}%`;
 }
 
 /** Age of a data point: 'сейчас', '40 мин', '1,5 ч' (half-hour steps), '2 д'. Rounds down. */
 export function formatAge(sec: number): string {
-  if (sec < 60) return 'сейчас';
-  if (sec < 3600) return `${Math.floor(sec / 60)} мин`;
-  if (sec < 86_400) return `${comma(Math.floor(sec / 1800) / 2)} ч`;
-  return `${Math.floor(sec / 86_400)} д`;
+  if (sec < 60) return tr('сейчас');
+  if (sec < 3600) return tr('{v1} мин', { v1: Math.floor(sec / 60) });
+  if (sec < 86_400) return tr('{v1} ч', { v1: comma(Math.floor(sec / 1800) / 2) });
+  return tr('{v1} д', { v1: Math.floor(sec / 86_400) });
 }
 
 /** '14:32' or '1:04:32'. */

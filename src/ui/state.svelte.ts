@@ -77,6 +77,9 @@ import { bindNeeded, boundAfter, withoutErrorsOfEmptyKeys } from './vm/trigger-s
 import { uexErrorText } from './vm/uex-error';
 import { effectiveScalePct, scaleNoticeStep, scaleNoticeText } from './vm/ui-scale';
 import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
+import { langOf, setLang, tr, type Lang } from '../i18n';
+import { setTrayLabels } from '../platform/tray';
+import type { BootStage } from './vm/boot-status';
 
 // The one application state. Everything the screens show lives here, and every action of the player
 // goes through a method of `app`, which logs it under `ui`. Later tasks add their fields and methods
@@ -128,7 +131,7 @@ import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 //    ever awaits the mode queue. A drag (`dragBegin` .. `dragEnd`) is the one thing that stops `#refit`.
 
 /** What the expanded window shows: the main screen or the settings, which take the whole window. */
-export type View = 'main' | 'settings' | 'guide';
+export type View = 'main' | 'settings' | 'guide' | 'language';
 export type Phase = 'booting' | 'ready' | 'failed';
 /** A button of the notice line next to its cross: what it says and what a click does. */
 export interface NoticeAction { label: string; run: () => void }
@@ -179,9 +182,9 @@ const ROWS_TICK_MS = 15_000;
  */
 const FOCUS_SETTLE_MS = 500;
 
-const RECORD_FAILED = 'Не удалось записать цену. Подробности в логе.';
-const LOOKUP_FAILED = 'Не удалось подобрать маршруты. Подробности в логе.';
-const REFINE_FAILED = 'Не удалось уточнить расстояния. Показан предварительный ответ.';
+const RECORD_FAILED = (): string => tr('Не удалось записать цену. Подробности в логе.');
+const LOOKUP_FAILED = (): string => tr('Не удалось подобрать маршруты. Подробности в логе.');
+const REFINE_FAILED = (): string => tr('Не удалось уточнить расстояния. Показан предварительный ответ.');
 /** The `reason` of the lookup that repeats the one on screen after a setting changed (it must not reopen a section the player closed). */
 const LOOKUP_REPEAT = 'settings changed';
 /** The id of the "Варианты" section among the open sections. */
@@ -194,12 +197,12 @@ const KEYS_SECTION = 'settings:keys';
 const FLASH_MS = 3000;
 const CONFIRM_MS = 10_000;
 const CONFIRM_BUSY = 'confirm';
-const TRADE_FAILED = 'Не удалось записать сделку. Подробности в логе.';
-const AIM_NEEDS_LOCATION = 'Цель задана. Укажи в шапке, где ты, — и «Варианты» покажут, что сюда везти.';
-const RUN_REOPENED = 'Рейс снова идёт: по исправленной сделке в трюме остался груз.';
-const CLEAR_FAILED = 'Не удалось очистить историю. Подробности в логе.';
-const RUN_READ_FAILED = 'Не удалось прочитать рейс из базы. Подробности в логе.';
-const NO_CURRENT_LOCATION = 'Сначала укажи, где ты находишься: выбери локацию в поиске (в рейсе — Ctrl+Enter или «Я здесь»).';
+const TRADE_FAILED = (): string => tr('Не удалось записать сделку. Подробности в логе.');
+const AIM_NEEDS_LOCATION = (): string => tr('Цель задана. Укажи в шапке, где ты, — и «Варианты» покажут, что сюда везти.');
+const RUN_REOPENED = (): string => tr('Рейс снова идёт: по исправленной сделке в трюме остался груз.');
+const CLEAR_FAILED = (): string => tr('Не удалось очистить историю. Подробности в логе.');
+const RUN_READ_FAILED = (): string => tr('Не удалось прочитать рейс из базы. Подробности в логе.');
+const NO_CURRENT_LOCATION = (): string => tr('Сначала укажи, где ты находишься: выбери локацию в поиске (в рейсе — Ctrl+Enter или «Я здесь»).');
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);
 
@@ -355,7 +358,9 @@ class AppState {
   askingWhere = $derived(askedInRun(this.#askedInRun, this.activeRun?.run.id ?? null));
   phase = $state<Phase>('booting');
   /** One line for the strip while the application starts. */
-  bootStatus = $state('Запуск…');
+  bootStage = $state<BootStage>('start');
+  /** The language the window speaks (version 1.3): `App.svelte` draws the window anew when it changes. */
+  language = $state<Lang>('ru');
   bootError = $state<string | null>(null);
   notice = $state<Notice | null>(null);
   /** The reference is being downloaded by the button. */
@@ -479,7 +484,29 @@ class AppState {
   /** Applies the loaded settings; the viewed terminal starts at the current location. */
   setSettings(settings: Settings): void {
     this.settings = settings;
+    this.useLanguage(settings.language || langOf(navigator.language));
+    if (settings.language === '') this.view = 'language'; // the first screen of 1.3: asked once
     this.#showTerminal(settings.currentTerminalId);
+  }
+
+  /**
+   * Speaks `next` from now on: the texts of the window and the tray menu. A text computed before (a notice already on the screen)
+   * stays as it was said.
+   */
+  useLanguage(next: Lang): void {
+    setLang(next);
+    this.language = next;
+    document.documentElement.lang = next; // for a screen reader and for the hyphenation of the system
+    setTrayLabels(tr('Показать панель'), tr('Выход'))
+      .catch((err: unknown) => this.#log.warn('ui', 'cannot set the words of the tray menu', { err }));
+  }
+
+  /** The choice of the first screen: the language is used at once and saved, and the window goes on to its main view. */
+  async chooseLanguage(next: Lang): Promise<void> {
+    this.#log.info('ui', 'language chosen', { lang: next });
+    this.useLanguage(next);
+    await this.updateSetting('language', next);
+    if (this.view === 'language') this.view = 'main';
   }
 
   /**
@@ -546,7 +573,7 @@ class AppState {
       await this.#loadMarketData();
     } catch (err) {
       this.#log.error('ui', 'cannot reload the market', { err });
-      this.notify('Не удалось обновить данные рынка. Подробности в логе.', 'error');
+      this.notify(tr('Не удалось обновить данные рынка. Подробности в логе.'), 'error');
     }
   }
 
@@ -571,7 +598,7 @@ class AppState {
     } catch (err) {
       // the download worked; it is the local database that failed
       this.#log.error('ui', 'cannot load the reference after the sync', { err });
-      return 'Не удалось прочитать справочник из локальной базы. Подробности в логе.';
+      return tr('Не удалось прочитать справочник из локальной базы. Подробности в логе.');
     }
     await this.reloadMarket();
     return null;
@@ -681,7 +708,7 @@ class AppState {
     this.referenceBusy = true;
     try {
       const failure = await this.syncReferenceNow();
-      this.notify(failure ?? 'Справочник обновлён.', failure === null ? 'info' : 'error');
+      this.notify(failure ?? tr('Справочник обновлён.'), failure === null ? 'info' : 'error');
     } finally {
       this.referenceBusy = false;
     }
@@ -910,7 +937,7 @@ class AppState {
     const { list, full } = toggledFavourites(this.settings.favouriteRoutes, route);
     this.#log.info('ui', 'favourite route', { ...route, favourites: list.length, full });
     if (full) {
-      this.#say(FAVOURITES_FULL, 'info');
+      this.#say(FAVOURITES_FULL(), 'info');
       return;
     }
     await this.updateSetting('favouriteRoutes', list);
@@ -939,7 +966,7 @@ class AppState {
       this.#favouritesFull = alerted;
       if (alerts.length === 0) return;
       for (const alert of alerts) this.#log.info('ui', 'favourite route: a full hold is waiting', { key: alert.key });
-      const text = alerts.length === 1 ? alerts[0].text : `${alerts[0].text} · и ещё ${alerts.length - 1}`;
+      const text = alerts.length === 1 ? alerts[0].text : tr('{text} · и ещё {v1}', { text: alerts[0].text, v1: alerts.length - 1 });
       // while a run is going the mini line has the buttons of the marks, and they are not drawn under a message: the usual three seconds
       this.#say(text, 'info', this.activeRun === null ? AppState.#FAVOURITE_STAY : { ...AppState.#FAVOURITE_STAY, flashMs: FLASH_MS });
       if (this.settings.favouriteSound) playChime(this.settings.favouriteVolume);
@@ -1067,7 +1094,7 @@ class AppState {
       if (this.settings.windowDy !== dy) await saveSetting(db, this.#log, 'windowDy', dy);
     } catch (err) {
       this.#log.error('ui', 'cannot save the position of the window', { ...next, err });
-      const text = 'Не удалось сохранить положение окна. Подробности в логе.';
+      const text = tr('Не удалось сохранить положение окна. Подробности в логе.');
       this.notify(text, 'error');
       return text;
     }
@@ -1448,7 +1475,7 @@ class AppState {
     const ts = this.#syncDeps().now();
     this.#log.info('ui', 'server changed', { ts });
     if ((await this.updateSetting('serverChangedAt', ts)) === null) {
-      this.notify('Отмечено: сервер сменился, свои цены до этого момента считаются холодными.', 'info');
+      this.notify(tr('Отмечено: сервер сменился, свои цены до этого момента считаются холодными.'), 'info');
     }
   }
 
@@ -1478,7 +1505,7 @@ class AppState {
     // that a mark of a hotkey cannot come between the clearing and the re-read
     const { cleared, failure } = await this.#tradeQueue(async (): Promise<{ cleared: ClearedHistory | null; failure: string }> => {
       let done: ClearedHistory | null = null;
-      let why = CLEAR_FAILED;
+      let why = CLEAR_FAILED();
       try {
         done = await clearRunHistory(this.#tradeDeps(), endedBefore);
       } catch (err) {
@@ -1515,7 +1542,7 @@ class AppState {
       await addObservation(db, log, { ts: now(), ...input });
     } catch (err) {
       this.#log.error('ui', 'cannot record the price', { ...input, err });
-      failure = RECORD_FAILED;
+      failure = RECORD_FAILED();
     }
     await this.reloadMarket();
     this.rowsNow = nowSec();
@@ -1543,7 +1570,7 @@ class AppState {
       await removeLatestObservation(db, log, cell);
     } catch (err) {
       this.#log.error('ui', 'cannot remove the price', { ...cell, err });
-      failure = 'Не удалось убрать запись. Подробности в логе.';
+      failure = tr('Не удалось убрать запись. Подробности в логе.');
       this.notify(failure, 'error');
     }
     await this.reloadMarket();
@@ -1562,13 +1589,13 @@ class AppState {
     let failure: string | null = null;
     try {
       if (!(Number.isFinite(edit.price) && edit.price > 0) || (edit.scu !== null && !(Number.isFinite(edit.scu) && edit.scu >= 0))) {
-        return 'Цена — целое число больше нуля, количество — от нуля';
+        return tr('Цена — целое число больше нуля, количество — от нуля');
       }
       const { db, log } = this.#syncDeps();
-      if ((await editObservation(db, log, edit.id, edit.price, edit.scu)) === 0) failure = 'Такой записи уже нет';
+      if ((await editObservation(db, log, edit.id, edit.price, edit.scu)) === 0) failure = tr('Такой записи уже нет');
     } catch (err) {
       this.#log.error('ui', 'cannot correct the record', { ...edit, err });
-      failure = 'Не удалось исправить запись. Подробности в логе.';
+      failure = tr('Не удалось исправить запись. Подробности в логе.');
     }
     await this.reloadMarket();
     this.rowsNow = nowSec();
@@ -1605,7 +1632,7 @@ class AppState {
       });
       this.#say(text, 'info', AppState.#WORSE_PRICE_STAY);
       // the notice line has the button whether or not the window is expanded now: it is there when the player opens it
-      this.notify(text, 'info', AppState.#WORSE_PRICE_STAY.noticeMs, { label: WORSE_PRICE_ACTION, run: () => this.openGuide(input.commodityId, 'sell') });
+      this.notify(text, 'info', AppState.#WORSE_PRICE_STAY.noticeMs, { label: WORSE_PRICE_ACTION(), run: () => this.openGuide(input.commodityId, 'sell') });
     } catch (err) {
       this.#log.warn('ui', 'cannot judge the price typed in against the expected one', { err });
     }
@@ -1661,12 +1688,12 @@ class AppState {
         },
         failed: (err) => {
           this.#log.error('ui', 'lookup failed', { ...request, err });
-          this.lookup = { request, title, options: [], ...quiet, error: err instanceof UexError ? uexErrorText(err) : LOOKUP_FAILED };
+          this.lookup = { request, title, options: [], ...quiet, error: err instanceof UexError ? uexErrorText(err) : LOOKUP_FAILED() };
         },
         refineFailed: (err) => {
           this.#log.error('ui', 'lookup: the distances could not be fetched, the preliminary answer stays', { ...request, err });
           this.lookup = { ...this.lookup, progress: null };
-          this.notify(err instanceof UexError ? uexErrorText(err) : REFINE_FAILED, 'error');
+          this.notify(err instanceof UexError ? uexErrorText(err) : REFINE_FAILED(), 'error');
         },
       },
     });
@@ -1700,7 +1727,7 @@ class AppState {
     const terminalId = this.settings.currentTerminalId;
     this.#log.info('ui', 'new route', { currentTerminalId: terminalId });
     if (terminalId === null || !this.reference.terminals.has(terminalId)) {
-      this.notify(NO_CURRENT_LOCATION, 'info');
+      this.notify(NO_CURRENT_LOCATION(), 'info');
       return;
     }
     this.#showTerminal(terminalId);
@@ -1740,7 +1767,7 @@ class AppState {
     if (targetThenId === null || targetTerminalId !== terminalId) return;
     this.#log.info('ui', 'target moves to its second step', { boughtAt: terminalId, targetId: targetThenId });
     await this.setTarget(targetThenId);
-    if (this.reference.terminals.has(targetThenId)) this.notify(`Цель рейса: ${terminalLabel(this.reference, targetThenId)}.`, 'info');
+    if (this.reference.terminals.has(targetThenId)) this.notify(tr('Цель рейса: {v1}.', { v1: terminalLabel(this.reference, targetThenId) }), 'info');
   }
 
   /** The button «Маршрут» of the header: shows or hides the line of the two ends. A hidden line forgets a "where from" picked by hand. */
@@ -1759,12 +1786,12 @@ class AppState {
   async planRoute(fromId: number | null, toId: number): Promise<void> {
     this.#log.info('ui', 'plan route', { fromId, toId });
     if (fromId === toId) {
-      this.#say('Откуда и куда — одна и та же станция.', 'info');
+      this.#say(tr('Откуда и куда — одна и та же станция.'), 'info');
       return;
     }
     await this.setTarget(toId, null, true);
     if (fromId === null) {
-      this.#say('Цель задана. Выбери, откуда везти.', 'info');
+      this.#say(tr('Цель задана. Выбери, откуда везти.'), 'info');
       return;
     }
     this.#showTerminal(fromId);
@@ -1782,7 +1809,7 @@ class AppState {
     const here = this.settings.currentTerminalId;
     if (here === null || !this.reference.terminals.has(here)) {
       // nothing can be listed without the other end of the pair: the click still says what it did and what is missing
-      this.#say(AIM_NEEDS_LOCATION, 'info');
+      this.#say(AIM_NEEDS_LOCATION(), 'info');
       return;
     }
     if (here !== terminalId) await this.newRoute();
@@ -1814,7 +1841,7 @@ class AppState {
       if (!sameRun(read, this.activeRun)) this.activeRun = read;
     } catch (err) {
       this.#log.error('ui', 'cannot read the active run', { err });
-      this.notify(RUN_READ_FAILED, 'error');
+      this.notify(RUN_READ_FAILED(), 'error');
     }
     if (!mayHaveWritten) return;
     await this.reloadMarket();
@@ -1828,7 +1855,7 @@ class AppState {
       return err.message;
     }
     this.#log.error('ui', 'cannot write the trade', { what, ...context, err });
-    return TRADE_FAILED;
+    return TRADE_FAILED();
   }
 
   /**
@@ -1876,7 +1903,7 @@ class AppState {
   #showKeysHint(notice: ClosedRunNotice): boolean {
     if (this.mode !== 'expanded' || this.notice?.text !== notice.text) return false;
     this.#log.info('ui', 'keys hint shown');
-    this.notify(withKeysHint(notice.text), notice.kind, KEYS_HINT_STAY_MS, { label: 'Настроить', run: () => void this.openKeysSettings() });
+    this.notify(withKeysHint(notice.text), notice.kind, KEYS_HINT_STAY_MS, { label: tr('Настроить'), run: () => void this.openKeysSettings() });
     return true;
   }
 
@@ -2100,7 +2127,7 @@ class AppState {
           await this.#announceClosed(after);   // as after the sale that empties the hold: the result is said, then the target goes
           await this.#runEnded('done');
         } else if (!wasGoing && after.run.status === 'active') {
-          this.#say(RUN_REOPENED, 'info');     // a finished run that the correction left with cargo aboard is going again
+          this.#say(RUN_REOPENED(), 'info');     // a finished run that the correction left with cargo aboard is going again
         }
       } catch (err) {
         failure = this.#tradeFailure('edit trade', err, { ...edit });
@@ -2194,7 +2221,7 @@ class AppState {
       await saveSetting(this.#syncDeps().db, this.#log, key, value);
     } catch (err) {
       this.#log.error('ui', 'cannot save the setting', { key, err });
-      const text = 'Не удалось сохранить настройку. Подробности в логе.';
+      const text = tr('Не удалось сохранить настройку. Подробности в логе.');
       this.notify(text, 'error');
       return text;
     }
@@ -2210,6 +2237,9 @@ class AppState {
 
   async #applySetting(key: keyof Settings): Promise<void> {
     switch (key) {
+      case 'language':
+        this.useLanguage(this.settings.language || langOf(navigator.language));
+        break;
       case 'hotkeyPanel':
       case 'hotkeyDepart':
       case 'hotkeyArrive':
@@ -2250,7 +2280,7 @@ class AppState {
       await revealItemInDir(await join(await appLogDir(), 'sctrade.log'));
     } catch (err) {
       this.#log.error('ui', 'cannot open the logs folder', { err });
-      this.notify('Не удалось открыть папку логов.', 'error');
+      this.notify(tr('Не удалось открыть папку логов.'), 'error');
     }
   }
 
@@ -2271,7 +2301,7 @@ class AppState {
       await getCurrentWindow().close();
     } catch (err) {
       this.#log.error('ui', 'cannot quit', { err });
-      this.notify('Не удалось выйти. Закрой приложение через значок в трее.', 'error');
+      this.notify(tr('Не удалось выйти. Закрой приложение через значок в трее.'), 'error');
     }
   }
 

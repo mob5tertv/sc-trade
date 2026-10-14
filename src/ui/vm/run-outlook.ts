@@ -5,14 +5,15 @@ import type { Settings } from '../../core/settings';
 import type { Market, Reference, RunWithEvents } from '../../core/types';
 import { formatRoi } from './route-rows';
 import { expectedRun } from './run-rate';
+import { tr } from '../../i18n';
 
 // What the card of a run that is still going says about its money. A run that has not ended is not a loss: what is put in and
 // what is already sold are facts; profit and ROI are the EXPECTED result of the whole run (marked with «≈»), from what
 // the target is expected to pay for what is still aboard. The profit is THE number of the mini line (`expectedRun` in `run-rate.ts`).
 
 const NONE = '—';
-const NO_TARGET = 'выбери цель';
-const NO_PRICE = 'нет цены в точке цели';
+const NO_TARGET = (): string => tr('выбери цель');
+const NO_PRICE = (): string => tr('нет цены в точке цели');
 
 export interface ExpectedResult {
   /** '≈ 74 880'. */
@@ -55,9 +56,9 @@ export function runOutlook(active: RunWithEvents, m: Market, ref: Reference, s: 
   const facts = { invested: formatUec(invested), revenue: formatUec(revenue) };
 
   const target = s.targetTerminalId === null ? undefined : ref.terminals.get(s.targetTerminalId);
-  if (!target && cargoOf(active.events).length > 0) return { ...facts, expected: null, why: NO_TARGET };
+  if (!target && cargoOf(active.events).length > 0) return { ...facts, expected: null, why: NO_TARGET() };
   const result = expectedRun(active, m, target?.id ?? null, ctx);
-  if (result === null) return { ...facts, expected: null, why: NO_PRICE };
+  if (result === null) return { ...facts, expected: null, why: NO_PRICE() };
 
   return {
     ...facts,

@@ -26,6 +26,7 @@ const HELP = `usage: npm run preview:shot -- --scene <name> [options]
   --monitor <WxH@s>     monitor in physical pixels and scale, default 1920x1080@1
   --view window|desktop only the overlay window (8 px around it, the game under it), or the whole field; default window
   --scale <n>           pixel density of the picture, default 1
+  --lang ru|en          the language of the window in a scene that has settings, default ru (version 1.3)
   --out <file.png>      default .superpowers/preview/<scene>-<view>.png
   --do "<steps>"        steps before the picture, separated by ";": click:<css>, type:<text>, press:<Key>, hover:<css>,
                         drag:<css>:<dx>,<dy>, leave, game, wait:<ms>, eval:<js>
@@ -58,7 +59,7 @@ const sleep = (/** @type {number} */ ms) => new Promise((resolve) => setTimeout(
 function readOptions() {
   const { values } = parseArgs({
     options: {
-      scene: { type: 'string' }, monitor: { type: 'string' }, view: { type: 'string' }, scale: { type: 'string' },
+      scene: { type: 'string' }, lang: { type: 'string' }, monitor: { type: 'string' }, view: { type: 'string' }, scale: { type: 'string' },
       out: { type: 'string' }, do: { type: 'string' }, state: { type: 'boolean' }, timeout: { type: 'string' },
       gallery: { type: 'string' }, bg: { type: 'string' }, opacity: { type: 'string' }, 'allow-crash': { type: 'boolean' },
       help: { type: 'boolean' },
@@ -83,6 +84,8 @@ function readOptions() {
     throw new ShotError('--bg and --opacity are for --gallery pages only', 1);
   }
   if (!values.scene) throw new ShotError(`--scene is required\n${HELP}`, 1);
+  if (values.lang !== undefined && values.lang !== 'ru' && values.lang !== 'en') throw new ShotError(`--lang must be ru or en, not "${values.lang}"`, 1);
+  if (values.lang === 'en') galleryParams.lang = 'en';
   const view = values.view ?? 'window';
   if (view !== 'window' && view !== 'desktop') throw new ShotError(`--view must be window or desktop, not "${view}"`, 1);
   const scale = Number(values.scale ?? 1);
@@ -95,7 +98,7 @@ function readOptions() {
   } catch (err) {
     throw new ShotError(`--do: ${err instanceof Error ? err.message : err}`, 1);
   }
-  const out = resolve(projectRoot, values.out ?? `.superpowers/preview/${values.scene}-${view}.png`);
+  const out = resolve(projectRoot, values.out ?? `.superpowers/preview/${values.scene}${values.lang === 'en' ? '-en' : ''}-${view}.png`);
   return {
     scene: values.scene, monitor: values.monitor ?? '1920x1080@1', view, scale, out, steps, state: values.state === true, timeout,
     allowCrash: values['allow-crash'] === true,

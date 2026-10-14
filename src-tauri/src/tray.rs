@@ -1,5 +1,6 @@
 //! Tray icon with "Показать панель" and "Выход". The strip opens the panel by a click; the tray
-//! is the way to open it when the strip is hidden, and the way to quit.
+//! is the way to open it when the strip is hidden, and the way to quit. The two words are Russian until
+//! the window says which language it speaks (`set_tray_labels`, version 1.3).
 
 use tauri::menu::{Menu, MenuEvent, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -32,13 +33,32 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     }
 }
 
+const TRAY_ID: &str = "main";
+
+fn build_menu(app: &AppHandle, show_panel: &str, quit: &str) -> tauri::Result<Menu<tauri::Wry>> {
+    let show_panel = MenuItem::with_id(app, SHOW_PANEL_ID, show_panel, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, QUIT_ID, quit, true, None::<&str>)?;
+    Menu::with_items(app, &[&show_panel, &quit])
+}
+
+/// The words of the tray menu in the language of the window: it sends them once it knows the language
+/// and again when the player changes it. The ids of the items stay, so the menu does what it did.
+#[tauri::command]
+pub fn set_tray_labels(app: AppHandle, show_panel: String, quit: String) -> Result<(), String> {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return Err("no tray icon".to_string());
+    };
+    let menu = build_menu(&app, &show_panel, &quit).map_err(|err| err.to_string())?;
+    tray.set_menu(Some(menu)).map_err(|err| err.to_string())?;
+    log::info!("[tray] labels set");
+    Ok(())
+}
+
 /// Creates the tray icon. Call it from the `setup` hook.
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
-    let show_panel = MenuItem::with_id(app, SHOW_PANEL_ID, "Показать панель", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, QUIT_ID, "Выход", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_panel, &quit])?;
+    let menu = build_menu(app, "Показать панель", "Выход")?;
 
-    let mut builder = TrayIconBuilder::with_id("main")
+    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("SC Trade")
         .menu(&menu)
         .on_menu_event(on_menu_event);

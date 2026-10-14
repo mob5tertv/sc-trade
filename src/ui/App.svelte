@@ -100,11 +100,14 @@
   style:--sc-ui-scale={scale}
   style:zoom={scale === 1 ? undefined : scale}
 >
-  {#if app.mode === 'mini'}
-    <Strip />
-  {:else}
-    <Panel />
-  {/if}
+  <!-- drawn anew when the language changes (version 1.3): every text of the window is said again in the new one -->
+  {#key app.language}
+    {#if app.mode === 'mini'}
+      <Strip />
+    {:else}
+      <Panel />
+    {/if}
+  {/key}
 </div>
 
 <style>

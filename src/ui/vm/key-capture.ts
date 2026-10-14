@@ -8,6 +8,8 @@
 // (reload, full screen, tools), and Pause with Ctrl, which Windows reports as another virtual key.
 
 /** What a `keydown` says: `key` is what the layout makes of the press, `code` is the place of the key on the keyboard. */
+import { tr } from '../../i18n';
+
 export interface KeyPress {
   key: string;
   code: string;
@@ -45,10 +47,10 @@ const LETTER_OR_DIGIT = /^[a-zA-Z0-9]$/;
 const LETTER_CODE = /^Key([A-Z])$/;
 const DIGIT_CODE = /^Digit([0-9])$/;
 
-const NOT_SUITABLE = 'Эта клавиша не подходит: ';
-const SUITABLE = 'Подходят F1–F24, кроме F5, F11 и F12, ScrollLock, Pause, Insert, Home, End, PageUp, PageDown, а также буква или цифра с Ctrl или Alt.';
+const NOT_SUITABLE = (): string => tr('Эта клавиша не подходит: ');
+const SUITABLE = (): string => tr('Подходят F1–F24, кроме F5, F11 и F12, ScrollLock, Pause, Insert, Home, End, PageUp, PageDown, а также буква или цифра с Ctrl или Alt.');
 
-const refuse = (reason: string): KeyCapture => ({ kind: 'refuse', reason: `${NOT_SUITABLE}${reason}` });
+const refuse = (reason: string): KeyCapture => ({ kind: 'refuse', reason: `${NOT_SUITABLE()}${reason}` });
 
 /** The main key: its name (for the text or for the refusal), whether the check knows it, and whether it is a letter or a digit (those need Ctrl or Alt). */
 interface Main { name: string; known: boolean; alnum: boolean }
@@ -81,13 +83,13 @@ export function captureKey(press: KeyPress): KeyCapture {
   if (!ctrlKey && !altKey && !shiftKey && !metaKey && (press.key === 'Backspace' || press.key === 'Delete')) return { kind: 'clear' };
 
   const main = mainKey(press);
-  if (metaKey) return refuse('клавиша Win в записи не используется.');
-  if (!main.known) return refuse(`неизвестная клавиша: ${main.name}. ${SUITABLE}`);
+  if (metaKey) return refuse(tr('клавиша Win в записи не используется.'));
+  if (!main.known) return refuse(tr('неизвестная клавиша: {name}. {suitable}', { name: main.name, suitable: SUITABLE() }));
   // Ctrl+R and Ctrl+Shift+R reload the page; with Alt as well (Ctrl+Alt+R) the press is not a reload
-  if (WINDOW_KEYS.has(main.name) || (main.name === 'R' && ctrlKey && !altKey)) return refuse(`${main.name} — её занимает окно.`);
+  if (WINDOW_KEYS.has(main.name) || (main.name === 'R' && ctrlKey && !altKey)) return refuse(tr('{name} — её занимает окно.', { name: main.name }));
   // Windows reports Ctrl+Pause as another virtual key (Break), the check of the Rust side would bind Pause, and the bound key would never fire
-  if (main.name === 'Pause' && ctrlKey) return refuse('Pause с Ctrl Windows передаёт как другую клавишу, и запись не сработала бы. Pause подходит сама, с Alt или с Shift.');
-  if (main.alnum && !ctrlKey && !altKey) return refuse('нужен Ctrl или Alt (буква или цифра сама по себе не подходит).');
+  if (main.name === 'Pause' && ctrlKey) return refuse(tr('Pause с Ctrl Windows передаёт как другую клавишу, и запись не сработала бы. Pause подходит сама, с Alt или с Shift.'));
+  if (main.alnum && !ctrlKey && !altKey) return refuse(tr('нужен Ctrl или Alt (буква или цифра сама по себе не подходит).'));
 
   const modifiers = [ctrlKey && 'Ctrl', altKey && 'Alt', shiftKey && 'Shift'].filter((name): name is string => name !== false);
   return { kind: 'set', text: [...modifiers, main.name].join('+') };

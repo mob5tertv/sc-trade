@@ -11,9 +11,9 @@ const syncing = { text: 'UEX 23/57', title: 'Цены UEX обновляются
 
 describe('the words of the sign', () => {
   it('say what to press and where the keyboard goes, and the hint says the sign is a button too', () => {
-    expect(BADGE_TEXT).toBe('Esc — в игру');
-    expect(BADGE_HINT).toContain('Esc');
-    expect(BADGE_HINT).toContain('клик');
+    expect(BADGE_TEXT()).toBe('Esc — в игру');
+    expect(BADGE_HINT()).toContain('Esc');
+    expect(BADGE_HINT()).toContain('клик');
   });
 });
 
@@ -22,15 +22,15 @@ const NO_BREAK_SPACE = String.fromCharCode(0xa0);
 
 describe('the words of the sign that the keyboard went back by itself (task 54)', () => {
   it('say where the keyboard is now; the hint says why it went and how to type again', () => {
-    expect(GONE_TEXT.replaceAll(NO_BREAK_SPACE, ' ')).toBe('Клавиатура у игры');
-    expect(GONE_HINT).toContain(`${KEYBOARD_IDLE_MS / 1000} секунд`);
-    expect(GONE_HINT).toContain('кликни в поле');
+    expect(GONE_TEXT().replaceAll(NO_BREAK_SPACE, ' ')).toBe('Клавиатура у игры');
+    expect(GONE_HINT()).toContain(`${KEYBOARD_IDLE_MS / 1000} секунд`);
+    expect(GONE_HINT()).toContain('кликни в поле');
   });
 
   it('break in one place only, after «Клавиатура»: in the narrow slot of the header no line ends with «у»', () => {
-    expect(GONE_TEXT).toBe(`Клавиатура у${NO_BREAK_SPACE}игры`);
-    expect(GONE_TEXT.split(' ')).toEqual(['Клавиатура', `у${NO_BREAK_SPACE}игры`]);
-    expect(GONE_TEXT).toHaveLength('Клавиатура у игры'.length);
+    expect(GONE_TEXT()).toBe(`Клавиатура у${NO_BREAK_SPACE}игры`);
+    expect(GONE_TEXT().split(' ')).toEqual(['Клавиатура', `у${NO_BREAK_SPACE}игры`]);
+    expect(GONE_TEXT()).toHaveLength('Клавиатура у игры'.length);
   });
 
   it('stays for six seconds', () => {
@@ -63,7 +63,7 @@ describe('indicatorFace, what the slot of the UEX indicator shows (task 44)', ()
 
   it('is the sign with its own tooltip while it does, whatever the indicator was', () => {
     for (const uex of [quiet, offline, syncing]) {
-      expect(indicatorFace(true, uex)).toEqual({ sign: true, text: BADGE_TEXT, muted: false, title: BADGE_HINT, stale: false, busy: false });
+      expect(indicatorFace(true, uex)).toEqual({ sign: true, text: BADGE_TEXT(), muted: false, title: BADGE_HINT(), stale: false, busy: false });
     }
   });
 
@@ -75,12 +75,12 @@ describe('indicatorFace, what the slot of the UEX indicator shows (task 44)', ()
 
   it('is the muted sign «Клавиатура у игры» in the same slot after the keyboard went back by itself, whatever the indicator was', () => {
     for (const uex of [quiet, offline, syncing]) {
-      expect(indicatorFace(false, uex, true)).toEqual({ sign: true, text: GONE_TEXT, muted: true, title: GONE_HINT, stale: false, busy: false });
+      expect(indicatorFace(false, uex, true)).toEqual({ sign: true, text: GONE_TEXT(), muted: true, title: GONE_HINT(), stale: false, busy: false });
     }
   });
 
   it('is «Esc — в игру», not muted, as soon as the window holds the keyboard again', () => {
-    expect(indicatorFace(true, quiet, true)).toEqual({ sign: true, text: BADGE_TEXT, muted: false, title: BADGE_HINT, stale: false, busy: false });
+    expect(indicatorFace(true, quiet, true)).toEqual({ sign: true, text: BADGE_TEXT(), muted: false, title: BADGE_HINT(), stale: false, busy: false });
   });
 
   it('with nothing said about the keyboard having gone by itself, there is no such sign', () => {

@@ -13,6 +13,11 @@
 // loop) fails its item, and its tab is closed and replaced by a new one: nothing the old tab says later can reach the
 // next item, and the next item does not meet a tab that cannot answer, so the sweep goes on. It takes no pictures: for
 // those there is `preview:shot`.
+//
+// `--texts <file>` also writes what every item shows in words (the text of the window, its tooltips, labels and
+// placeholders) into one JSON file, item by item. Two such files, written before and after a change that must not change
+// any wording (the move of the texts into the dictionary of 1.3), are compared with `diff`.
+import { writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { findBrowser, launchBrowser, pageSocketUrl } from './browser.mjs';
 import { connect } from './cdp.mjs';
@@ -24,7 +29,8 @@ import { exceptionText, findUncaughtErrors, formatItemLine, itemResult, sweepExi
 const HELP = `usage: npm run preview:sweep [-- options]
   --allow-crash <names>   items that show a crash on purpose, as printed ("scene boom") or by the bare name, separated by commas
   --timeout <seconds>     how long an item may take to get ready, default 30
-  --item-deadline <sec>   how long a whole item may take before its tab is given up on, default --timeout + 17`;
+  --item-deadline <sec>   how long a whole item may take before its tab is given up on, default --timeout + 17
+  --texts <file>          also write the words every item shows into this JSON file`;
 
 const SETTLE_MS = 2000;
 const ITEM_MARGIN_MS = 15_000;
@@ -118,6 +124,20 @@ async function clear(/** @type {import('./cdp.mjs').Cdp} */ cdp) {
   }
 }
 
+/** What the application of the page shows in words: its text, and the tooltips, labels and placeholders of its elements. */
+const TEXTS = `(() => {
+  const doc = ${APP_FRAME}?.contentDocument;
+  if (!doc) return null;
+  const attrs = [];
+  for (const el of doc.querySelectorAll('[title], [aria-label], [placeholder], [alt]')) {
+    for (const name of ['title', 'aria-label', 'placeholder', 'alt']) {
+      const value = el.getAttribute(name);
+      if (value) attrs.push(name + ': ' + value);
+    }
+  }
+  return { text: doc.body.innerText.split('\\n').map((line) => line.trim()).filter((line) => line !== ''), attrs };
+})()`;
+
 /**
  * One item: a blank page, then the item's page; wait until it is ready and settled; judge it by what it threw and logged.
  * @returns {Promise<import('./uncaught.mjs').ItemResult>}
@@ -130,14 +150,19 @@ async function visit(
   tab.exceptions.length = 0;
   await tab.cdp.send('Page.navigate', { url: `${url}/preview.html?${new URLSearchParams({ ...item.params, monitor: item.monitor, zoom: '1' })}` });
   const { failure } = await waitReady(tab.cdp, timeout, signal);
+  if (texts !== null && failure === null) texts[item.name] = await tryEvaluate(tab.cdp, TEXTS);
   const log = await tryEvaluate(tab.cdp, `${APP_FRAME}.contentWindow.__preview?.log ?? []`);
   const errors = findUncaughtErrors({ log: log ?? [], exceptions: tab.exceptions });
   return itemResult({ name: item.name, errors, allowCrash, failure });
 }
 
+/** item name → what it shows in words; `null` without `--texts`. */
+/** @type {Record<string, unknown> | null} */
+let texts = null;
+
 async function main() {
   const { values } = parseArgs({
-    options: { 'allow-crash': { type: 'string' }, timeout: { type: 'string' }, 'item-deadline': { type: 'string' }, help: { type: 'boolean' } },
+    options: { 'allow-crash': { type: 'string' }, timeout: { type: 'string' }, 'item-deadline': { type: 'string' }, texts: { type: 'string' }, help: { type: 'boolean' } },
   });
   if (values.help) {
     console.log(HELP);
@@ -148,6 +173,7 @@ async function main() {
   // by default: getting ready (`--timeout`), settling, and a margin for the page to go blank and the answers to come back
   const itemDeadlineSec = Number(values['item-deadline'] ?? (timeout * 1000 + SETTLE_MS + ITEM_MARGIN_MS) / 1000);
   if (!(itemDeadlineSec > 0)) throw new Error(`--item-deadline must be a number of seconds, not "${values['item-deadline']}"`);
+  if (values.texts !== undefined) texts = {};
   const allowed = new Set((values['allow-crash'] ?? '').split(',').map((name) => name.trim()).filter((name) => name !== ''));
 
   /** @type {Array<() => Promise<void>>} */
@@ -192,6 +218,7 @@ async function main() {
   } finally {
     await stop();
   }
+  if (texts !== null && values.texts !== undefined) writeFileSync(values.texts, `${JSON.stringify(texts, null, 1)}\n`);
   console.log(sweepSummary(results));
   process.exit(sweepExitCode(results));
 }

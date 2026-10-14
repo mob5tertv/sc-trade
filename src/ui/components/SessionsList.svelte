@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { SessionRow } from '../vm/stats-rows';
+  import { tr } from '../../i18n';
 
   let { rows }: { rows: SessionRow[] } = $props();
 
@@ -7,14 +8,14 @@
 </script>
 
 {#if rows.length === 0}
-  <p class="empty">Сессий пока нет</p>
+  <p class="empty">{tr('Сессий пока нет')}</p>
 {:else}
-  <div class="table" role="table" aria-label="Сессии">
+  <div class="table" role="table" aria-label={tr('Сессии')}>
     <div class="row header sc-label" role="row">
-      <span role="columnheader">Начало</span>
-      <span role="columnheader" class="r">Длит.</span>
-      <span role="columnheader" class="r">Рейсов</span>
-      <span role="columnheader" class="r">Прибыль</span>
+      <span role="columnheader">{tr('Начало')}</span>
+      <span role="columnheader" class="r">{tr('Длит.')}</span>
+      <span role="columnheader" class="r">{tr('Рейсов')}</span>
+      <span role="columnheader" class="r">{tr('Прибыль')}</span>
     </div>
     {#each rows as row}
       <div class="row line" role="row">

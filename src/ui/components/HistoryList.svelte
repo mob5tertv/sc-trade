@@ -4,6 +4,7 @@
   import type { HistoryRow } from '../vm/stats-rows';
   import PieceLine from './PieceLine.svelte';
   import RunTrades from './RunTrades.svelte';
+  import { tr } from '../../i18n';
 
   interface Props {
     rows: HistoryRow[];
@@ -21,20 +22,20 @@
   const canOpen = $derived(tradesOf !== undefined && onEditTrade !== undefined);
   const toggleRow = (runId: number): void => { openId = openId === runId ? null : runId; };
 
-  const STATUS: Record<HistoryRow['status'], string> = { active: 'идёт', done: 'завершён', lost: 'потерян' };
+  const STATUS: Record<HistoryRow['status'], string> = { active: tr('идёт'), done: tr('завершён'), lost: tr('потерян') };
   const isLoss = (profit: string): boolean => profit.startsWith('-');
 </script>
 
 {#if rows.length === 0}
-  <p class="empty">Рейсов пока нет</p>
+  <p class="empty">{tr('Рейсов пока нет')}</p>
 {:else}
-  <div class="table" role="table" aria-label="История рейсов">
+  <div class="table" role="table" aria-label={tr('История рейсов')}>
     <div class="grid head sc-label" role="row">
-      <span role="columnheader">Когда</span>
-      <span role="columnheader">Рейс</span>
-      <span role="columnheader" class="r">Прибыль</span>
+      <span role="columnheader">{tr('Когда')}</span>
+      <span role="columnheader">{tr('Рейс')}</span>
+      <span role="columnheader" class="r">{tr('Прибыль')}</span>
       <span role="columnheader" class="r">ROI</span>
-      <span role="columnheader" class="r">Время</span>
+      <span role="columnheader" class="r">{tr('Время')}</span>
     </div>
     {#each rows as row (row.runId)}
       <div
@@ -44,15 +45,15 @@
         role="row"
         tabindex={canOpen ? 0 : undefined}
         onkeydown={(e) => { if (canOpen && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleRow(row.runId); } }}
-        title={canOpen ? `${STATUS[row.status]} · клик — сделки рейса: исправить цену или количество` : STATUS[row.status]}
+        title={canOpen ? tr('{v1} · клик — сделки рейса: исправить цену или количество', { v1: STATUS[row.status] }) : STATUS[row.status]}
         onclick={() => { if (canOpen) toggleRow(row.runId); }}
       >
         <span class="when sc-num">{row.when}</span>
         <!-- the ends of the route give way equally, each with its own ellipsis, and the arrow stays; a title without a route is cut at its end -->
         <span class="title {row.status}" title="{row.hint} · {STATUS[row.status]}"><PieceLine pieces={routePieces(row.title)} /></span>
-        <span class="sc-num profit" class:loss={isLoss(row.profit)} title="Прибыль">{row.profit}</span>
+        <span class="sc-num profit" class:loss={isLoss(row.profit)} title={tr('Прибыль')}>{row.profit}</span>
         <span class="sc-num" title="ROI">{row.roi}</span>
-        <span class="sc-num" title="Длительность">{row.duration}</span>
+        <span class="sc-num" title={tr('Длительность')}>{row.duration}</span>
       </div>
       {#if openId === row.runId && tradesOf && onEditTrade}
         <RunTrades

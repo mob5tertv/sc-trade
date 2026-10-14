@@ -4,6 +4,7 @@
   import { app } from './state.svelte';
   import { searchTerminals, terminalSearchItems } from './vm/header';
   import { terminalLabel } from './vm/terminal-name';
+  import { tr } from '../i18n';
 
   // «Маршрут» (the author's word of 13.10.2026): the two ends of a route of the player's own, typed in. "Where from" starts as the
   // place he stands at; "where to" is the station he wants to fly to. With both known the options below are the goods of that pair
@@ -24,15 +25,15 @@
   }
 </script>
 
-<div class="route-bar" role="group" aria-label="Свой маршрут: откуда и куда">
+<div class="route-bar" role="group" aria-label={tr('Свой маршрут: откуда и куда')}>
   <div class="end">
     <SearchBox
       {items}
       find={searchTerminals}
       value={name(fromId)}
-      placeholder="Откуда"
-      label="Откуда: три буквы и Enter"
-      title="Откуда везти. По умолчанию — место, где ты стоишь"
+      placeholder={tr('Откуда')}
+      label={tr('Откуда: три буквы и Enter')}
+      title={tr('Откуда везти. По умолчанию — место, где ты стоишь')}
       onPick={(id) => pickFrom(id)}
     />
   </div>
@@ -42,13 +43,13 @@
       {items}
       find={searchTerminals}
       value={name(toId)}
-      placeholder="Куда: три буквы и Enter"
-      label="Куда: три буквы и Enter"
-      title="Куда везти: станция станет целью, а «Варианты» покажут товары для этой пары"
+      placeholder={tr('Куда: три буквы и Enter')}
+      label={tr('Куда: три буквы и Enter')}
+      title={tr('Куда везти: станция станет целью, а «Варианты» покажут товары для этой пары')}
       onPick={(id) => pickTo(id)}
     />
   </div>
-  <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Скрыть строку маршрута" title="Скрыть строку. Цель при этом остаётся" onclick={() => app.toggleRouteBar()}>
+  <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label={tr('Скрыть строку маршрута')} title={tr('Скрыть строку. Цель при этом остаётся')} onclick={() => app.toggleRouteBar()}>
     <Icon name="cross" />
   </button>
 </div>

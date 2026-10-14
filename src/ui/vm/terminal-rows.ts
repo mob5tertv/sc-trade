@@ -7,6 +7,7 @@ import type { Estimate, Market, Reference, Side, StockEstimate, Temp } from '../
 import { LEGEND, RANGE_PERIOD } from './legend';
 import { priceTrend } from './price-trend';
 import type { PriceTrend } from './price-trend';
+import { tr } from '../../i18n';
 
 /**
  * What UEX says about how far the price of one side of a terminal moved: it moved between two numbers (`spread`), it did
@@ -44,7 +45,7 @@ export interface TerminalRow { commodityId: number; code: string; name: string; 
  * UEX may have no modification date for the row (`e.ageKnown` is false): there is no age to show, just 'UEX'.
  */
 export function badgeText(e: Estimate): { text: string; kind: Temp | 'uex' } {
-  if (e.source === 'own' && e.temp !== null) return { text: `моя · ${formatAge(e.ageSec)}`, kind: e.temp };
+  if (e.source === 'own' && e.temp !== null) return { text: tr('моя · {v1}', { v1: formatAge(e.ageSec) }), kind: e.temp };
   return { text: e.ageKnown ? `UEX · ${formatAge(e.ageSec)}` : 'UEX', kind: 'uex' };
 }
 
@@ -76,10 +77,10 @@ export function cellScu(cell: Cell | null, side: Side): CellScu | null {
   if (value === null) return null;
   const own = cell.ownScu !== null;
   const estimated = own && cell.ownScuBase !== null;
-  const where = side === 'buy' ? 'Остаток у продавца' : 'Склад у покупателя';
+  const where = side === 'buy' ? tr('Остаток у продавца') : tr('Склад у покупателя');
   return {
     text: formatUec(value), own, estimated,
-    title: estimated ? LEGEND.approxScu : `${where} по ${own ? 'твоему замеру' : 'данным UEX'}, SCU`,
+    title: estimated ? LEGEND.approxScu : own ? tr('{where} по твоему замеру, SCU', { where }) : tr('{where} по данным UEX, SCU', { where }),
   };
 }
 
@@ -89,7 +90,9 @@ export function cellScu(cell: Cell | null, side: Side): CellScu | null {
  * reading of mine that has gone cold (see `estimate` of the core), so a cold one leaves the dash as well.
  */
 export function unknownScuTitle(side: Side): string {
-  return `${side === 'buy' ? 'Запас' : 'Склад у покупателя'} неизвестен: нет свежего своего замера и нет данных UEX`;
+  return side === 'buy'
+    ? tr('Запас неизвестен: нет свежего своего замера и нет данных UEX')
+    : tr('Склад у покупателя неизвестен: нет свежего своего замера и нет данных UEX');
 }
 
 /**
@@ -138,10 +141,10 @@ export function uexRangeOf(m: Market, terminalId: number, commodityId: number, s
 }
 
 /**
- * The period the two numbers of the head «Мин–макс» are of: the text is the legend's (`RANGE_PERIOD`); the tooltip of the head is `LEGEND.range`, which
+ * The period the two numbers of the head «Мин–макс» are of: the text is the legend's (`RANGE_PERIOD()`); the tooltip of the head is `LEGEND.range`, which
  * goes on from it.
  */
-export const RANGE_HEAD_TITLE = RANGE_PERIOD;
+export const RANGE_HEAD_TITLE = RANGE_PERIOD();
 
 /** The «Мин–макс» cell as it is read: `3 900–4 300`, `= 5 500` or `—` (two kinds of it), and what the tooltip says about it. */
 export interface RangeView { kind: UexRange['kind']; text: string; title: string }
@@ -149,13 +152,13 @@ export interface RangeView { kind: UexRange['kind']; text: string; title: string
 export function rangeView(range: UexRange): RangeView {
   switch (range.kind) {
     case 'spread':
-      return { kind: 'spread', text: `${formatUec(range.low)}–${formatUec(range.high)}`, title: 'Диапазон цен по данным UEX' };
+      return { kind: 'spread', text: `${formatUec(range.low)}–${formatUec(range.high)}`, title: tr('Диапазон цен по данным UEX') };
     case 'flat':
-      return { kind: 'flat', text: `= ${formatUec(range.price)}`, title: 'UEX: одна цена за период, разброса нет' };
+      return { kind: 'flat', text: `= ${formatUec(range.price)}`, title: tr('UEX: одна цена за период, разброса нет') };
     case 'no-bounds':
-      return { kind: 'no-bounds', text: '—', title: 'UEX не даёт границ цены' };
+      return { kind: 'no-bounds', text: '—', title: tr('UEX не даёт границ цены') };
     case 'none':
-      return { kind: 'none', text: '—', title: 'UEX не знает цену' };
+      return { kind: 'none', text: '—', title: tr('UEX не знает цену') };
   }
 }
 
@@ -164,8 +167,8 @@ export function rangeView(range: UexRange): RangeView {
  * profit of the trip); the two numbers are in the hint of the price, and in plain sight in the opened row.
  */
 export function rangeHint(view: RangeView): string {
-  if (view.kind === 'spread') return `Мин–макс ${view.text}`;
-  if (view.kind === 'flat') return `Мин–макс: одна цена за период, ${view.text.replace(/^= /, '')}`;
+  if (view.kind === 'spread') return tr('Мин–макс {text}', { text: view.text });
+  if (view.kind === 'flat') return tr('Мин–макс: одна цена за период, {v1}', { v1: view.text.replace(/^= /, '') });
   return view.title;
 }
 

@@ -4,6 +4,7 @@
   import type { Side } from '../../core/types';
   import { resolveTrade } from '../vm/inputs';
   import { confirmStep, PRICE_CHECK_NOTE, STOCK_UNKNOWN_NOTE } from '../vm/trade-form';
+  import { tr } from '../../i18n';
 
   interface Props {
     /** What is being written, for the screen reader and the tooltip: 'Купил MEDS'. */
@@ -59,7 +60,7 @@
   // The price of somebody else stays muted until the player puts his hand to the field: from then on it is his number.
   let priceTouched = $state(false);
   const foreign = $derived(!defaultPriceIsOwn && !priceTouched && defaultPrice !== null);
-  const priceHint = $derived(foreign ? 'Цена за SCU, UEC: не твоя (UEX или давняя), поправь её, если видишь другую' : 'Цена за SCU, UEC');
+  const priceHint = $derived(foreign ? tr('Цена за SCU, UEC: не твоя (UEX или давняя), поправь её, если видишь другую') : tr('Цена за SCU, UEC'));
 
   // A double click on the button or a held Enter must not write the trade twice while the owner is still writing it. The
   // form takes a new confirmation when the owner says the write failed (`error` is a text again: after the `null` the owner
@@ -152,15 +153,15 @@
       autocomplete="off"
       data-select-on-focus
       data-entry-field="trade-scu"
-      aria-label="Количество, SCU"
-      title="Количество, SCU"
+      aria-label={tr('Количество, SCU')}
+      title={tr('Количество, SCU')}
       placeholder="SCU"
       aria-invalid={badScu ? 'true' : undefined}
       value={scuText}
       oninput={(e) => { scuText = e.currentTarget.value; badScu = false; confirmed = false; }}
       onkeydown={onKeydown}
     />
-    {#if stockUnknown}<span class="unsure" role="img" aria-label={STOCK_UNKNOWN_NOTE} title={STOCK_UNKNOWN_NOTE}>?</span>{/if}
+    {#if stockUnknown}<span class="unsure" role="img" aria-label={STOCK_UNKNOWN_NOTE()} title={STOCK_UNKNOWN_NOTE()}>?</span>{/if}
     <span class="unit">SCU ×</span>
     <input
       bind:this={priceInput}
@@ -171,7 +172,7 @@
       autocomplete="off"
       data-select-on-focus
       data-entry-field="trade-price"
-      aria-label="Цена за SCU, UEC"
+      aria-label={tr('Цена за SCU, UEC')}
       title={priceHint}
       placeholder="UEC"
       aria-invalid={badPrice ? 'true' : undefined}
@@ -180,27 +181,27 @@
       onkeydown={onKeydown}
     />
     <span class="unit">UEC</span>
-    <span class="total sc-num" title="Сумма сделки, UEC">{total === null ? '' : `= ${total}`}</span>
+    <span class="total sc-num" title={tr('Сумма сделки, UEC')}>{total === null ? '' : `= ${total}`}</span>
     <button
       type="submit"
       class="sc-btn sc-btn--primary"
-      title="Записать сделку (Enter)"
+      title={tr('Записать сделку (Enter)')}
       data-opens-entry={asksNext ? 'trade-price' : undefined}
       onclick={onSubmitClick}
-    >{side === 'buy' ? 'Купил' : 'Продал'}</button>
-    <button type="button" class="sc-btn" title="Не записывать (Esc)" onclick={() => onCancel()}>Отмена</button>
+    >{side === 'buy' ? tr('Купил') : tr('Продал')}</button>
+    <button type="button" class="sc-btn" title={tr('Не записывать (Esc)')} onclick={() => onCancel()}>{tr('Отмена')}</button>
   </div>
   {#if note}
     <p class="hint note">{note}</p>
   {/if}
   {#if stockUnknown}
-    <p class="hint note"><span class="unsure" aria-hidden="true">?</span> {STOCK_UNKNOWN_NOTE}</p>
+    <p class="hint note"><span class="unsure" aria-hidden="true">?</span> {STOCK_UNKNOWN_NOTE()}</p>
   {/if}
   {#if badScu || badPrice}
-    <p class="hint bad">Нужны целые числа: количество от 1, цена больше нуля.</p>
+    <p class="hint bad">{tr('Нужны целые числа: количество от 1, цена больше нуля.')}</p>
   {/if}
   {#if checkShown}
-    <p class="hint check" role="status">{PRICE_CHECK_NOTE}</p>
+    <p class="hint check" role="status">{PRICE_CHECK_NOTE()}</p>
   {/if}
   {#if error}
     <p class="hint bad" role="alert">{error}</p>

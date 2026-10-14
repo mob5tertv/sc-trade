@@ -1,4 +1,5 @@
 import type { SuggestProgress } from '../../data/suggest';
+import { tr } from '../../i18n';
 
 /** What the summary of the "Варианты" section is made of. */
 export interface OptionsSummaryInput {
@@ -17,6 +18,6 @@ export interface OptionsSummaryInput {
 export function optionsSummary({ title, preliminary, progress }: OptionsSummaryInput): string {
   if (title === '') return '';
   const mark = preliminary ? '≈ ' : '';
-  const count = progress !== null && progress.total > 0 ? ` · расстояния ${progress.done}/${progress.total}` : '';
+  const count = progress !== null && progress.total > 0 ? tr(' · расстояния {done}/{total}', { done: progress.done, total: progress.total }) : '';
   return `${mark}${title}${count}`;
 }

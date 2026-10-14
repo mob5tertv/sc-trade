@@ -321,12 +321,15 @@ async function writeObservations(db: Db, prices: UexPrice[], now: number): Promi
   }
 }
 
-/** The player's settings: the C2 Hercules in Stanton, standing at HUR-L1. */
+/**
+ * The player's settings: the C2 Hercules in Stanton, standing at HUR-L1, Russian chosen (a scene with settings is not a first start,
+ * which asks for the language: the dataset `empty` is; `lang=en` in the address switches a scene to English, see `entry.ts`).
+ */
 async function writeSettings(db: Db, extra: Partial<Settings> = {}): Promise<Settings> {
   const settings: Settings = {
-    ...DEFAULT_SETTINGS, vehicleId: C2_HERCULES, scuCapacity: 696, starSystemId: STANTON, currentTerminalId: 3, ...extra,
+    ...DEFAULT_SETTINGS, vehicleId: C2_HERCULES, scuCapacity: 696, starSystemId: STANTON, currentTerminalId: 3, language: 'ru', ...extra,
   };
-  for (const key of ['vehicleId', 'scuCapacity', 'starSystemId', 'currentTerminalId', 'targetTerminalId'] as const) {
+  for (const key of ['vehicleId', 'scuCapacity', 'starSystemId', 'currentTerminalId', 'targetTerminalId', 'language'] as const) {
     if (settings[key] !== DEFAULT_SETTINGS[key]) await saveSetting(db, log, key, settings[key]);
   }
   return settings;

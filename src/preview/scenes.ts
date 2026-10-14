@@ -289,6 +289,17 @@ export const SCENES: readonly Scene[] = [
   },
   { name: 'boot-failed', title: 'Ошибка запуска: пустая база, UEX недоступен (окно развернулось само)', dataset: 'empty' },
   {
+    // version 1.3: the first start, and the first one after an update from 1.2, asks for the language (`language` is '' in the
+    // settings); the language of Windows comes first and is marked. The data of the scene has a language, so the view is opened here.
+    name: 'choose-language',
+    title: 'Первый запуск 1.3: выбор языка',
+    dataset: 'default',
+    act: async (app) => {
+      app.view = 'language';
+      await app.expand('preview');
+    },
+  },
+  {
     // The database was written by a newer version of the application: the start stops at the check of the schema, before
     // it backs anything up or migrates, and the screen says so in the words of the error itself, not in the general sentence.
     name: 'boot-newer-database',

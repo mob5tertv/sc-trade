@@ -4,6 +4,7 @@
   import { favouriteKey, type FavouriteRoute } from '../vm/favourites';
   import { favouriteOf, type RouteRow } from '../vm/stats-rows';
   import PieceLine from './PieceLine.svelte';
+  import { tr } from '../../i18n';
 
   interface Props {
     /** The rows in the order they are to be shown: the owner sorts them (`sortRoutes`). */
@@ -37,17 +38,17 @@
 {/snippet}
 
 {#if rows.length === 0}
-  <p class="empty">Заверши первый рейс — здесь появится рейтинг маршрутов</p>
+  <p class="empty">{tr('Заверши первый рейс — здесь появится рейтинг маршрутов')}</p>
 {:else}
-  <div class="table" role="table" aria-label="Мои маршруты">
+  <div class="table" role="table" aria-label={tr('Мои маршруты')}>
     <div class="grid head sc-label" role="row">
-      <span role="columnheader">Маршрут</span>
-      <span role="columnheader">Товар</span>
-      {@render head('perRun', 'За рейс', 'Сколько в среднем приносит один рейс по маршруту. Нажми, чтобы отсортировать')}
-      {@render head('runs', 'Рейс', 'Сортировать по числу завершённых рейсов')}
-      {@render head('time', 'Время', 'Сортировать по медианному времени: быстрые сверху')}
-      {@render head('profit', 'Прибыль', 'Сортировать по суммарной прибыли')}
-      {@render head('roi', 'ROI', 'Сортировать по среднему ROI')}
+      <span role="columnheader">{tr('Маршрут')}</span>
+      <span role="columnheader">{tr('Товар')}</span>
+      {@render head('perRun', tr('За рейс'), tr('Сколько в среднем приносит один рейс по маршруту. Нажми, чтобы отсортировать'))}
+      {@render head('runs', tr('Рейс'), tr('Сортировать по числу завершённых рейсов'))}
+      {@render head('time', tr('Время'), tr('Сортировать по медианному времени: быстрые сверху'))}
+      {@render head('profit', tr('Прибыль'), tr('Сортировать по суммарной прибыли'))}
+      {@render head('roi', 'ROI', tr('Сортировать по среднему ROI'))}
     </div>
     {#each rows as row (row.key)}
       <div class="grid line" role="row">
@@ -64,12 +65,12 @@
                 class:on
                 class:ready={full !== undefined}
                 aria-pressed={on}
-                aria-label="Избранный маршрут"
-                title={full !== undefined ? `${full}\nКлик — убрать из избранного` : on ? 'Избранный маршрут: окно скажет, когда запас в точке закупки дорастёт до полного трюма. Клик — убрать' : 'В избранное: окно скажет со звуком, когда запас в точке закупки дорастёт до полного трюма'}
+                aria-label={tr('Избранный маршрут')}
+                title={full !== undefined ? tr('{full}\nКлик — убрать из избранного', { full }) : on ? tr('Избранный маршрут: окно скажет, когда запас в точке закупки дорастёт до полного трюма. Клик — убрать') : tr('В избранное: окно скажет со звуком, когда запас в точке закупки дорастёт до полного трюма')}
                 onclick={() => onFavourite?.(fav)}
               >{on ? '★' : '☆'}</button>
             {:else}
-              <span class="star none" title="Маршрут со смешанным грузом в избранное не ставится">☆</span>
+              <span class="star none" title={tr('Маршрут со смешанным грузом в избранное не ставится')}>☆</span>
             {/if}
           {/if}
           <PieceLine pieces={routePieces(row.route)} />
@@ -77,9 +78,9 @@
         <span class="code" title={row.commodityHint ?? undefined}>{row.commodity}</span>
         <span class="sc-num strong" class:loss={row.perRunValue < 0} title={row.perRunTitle}>{row.perRun}</span>
         <span class="sc-num" title={row.runsTitle}>{row.runsText}</span>
-        <span class="sc-num" title={row.phases ? `Медианное время: погрузка · полёт · разгрузка ${row.phases}` : 'Медианное время рейса'}>{row.time}</span>
+        <span class="sc-num" title={row.phases ? tr('Медианное время: погрузка · полёт · разгрузка {phases}', { phases: row.phases }) : tr('Медианное время рейса')}>{row.time}</span>
         <span class="sc-num" class:loss={isLoss(row.profit)} title={row.profitTitle}>{row.profit}</span>
-        <span class="sc-num" title="Средний ROI">{row.roi}</span>
+        <span class="sc-num" title={tr('Средний ROI')}>{row.roi}</span>
       </div>
     {/each}
   </div>

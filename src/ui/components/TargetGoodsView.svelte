@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { HoldSet, TargetGoodsRow } from '../vm/target-goods';
   import TempBadge from './TempBadge.svelte';
+  import { tr } from '../../i18n';
 
   interface Props {
     /** The goods of the pair, the best first. */
@@ -17,22 +18,22 @@
   <p class="empty">{emptyText}</p>
 {:else}
   {#if set !== null}
-    <div class="set" title="Товары разложены по вместимости, запасу на станции и бюджету: сначала тот, что приносит больше с одного SCU">
+    <div class="set" title={tr('Товары разложены по вместимости, запасу на станции и бюджету: сначала тот, что приносит больше с одного SCU')}>
       <span class="caption">{set.caption}</span>
-      <span class="item"><span class="sc-label">Вложить</span><span class="sc-num">{set.invested}</span></span>
-      <span class="item"><span class="sc-label">Прибыль</span><span class="sc-num good">{set.profit}</span></span>
+      <span class="item"><span class="sc-label">{tr('Вложить')}</span><span class="sc-num">{set.invested}</span></span>
+      <span class="item"><span class="sc-label">{tr('Прибыль')}</span><span class="sc-num good">{set.profit}</span></span>
       <span class="item"><span class="sc-label">ROI</span><span class="sc-num">{set.roi}</span></span>
     </div>
     {#if set.note !== null}<p class="note">{set.note}</p>{/if}
   {/if}
-  <div class="table" role="table" aria-label="Товары к цели">
+  <div class="table" role="table" aria-label={tr('Товары к цели')}>
     <div class="grid head sc-label" role="row">
-      <span role="columnheader">Товар</span>
-      <span role="columnheader" class="r" title="Цена закупки на этой станции">Купить</span>
-      <span role="columnheader" class="r" title="Цена продажи в точке цели">Продать</span>
+      <span role="columnheader">{tr('Товар')}</span>
+      <span role="columnheader" class="r" title={tr('Цена закупки на этой станции')}>{tr('Купить')}</span>
+      <span role="columnheader" class="r" title={tr('Цена продажи в точке цели')}>{tr('Продать')}</span>
       <span role="columnheader" class="r">ROI</span>
-      <span role="columnheader" class="r" title="Сколько взять в этот набор, SCU">Взять</span>
-      <span role="columnheader" class="r" title="Ожидаемая прибыль с этой части набора">Прибыль</span>
+      <span role="columnheader" class="r" title={tr('Сколько взять в этот набор, SCU')}>{tr('Взять')}</span>
+      <span role="columnheader" class="r" title={tr('Ожидаемая прибыль с этой части набора')}>{tr('Прибыль')}</span>
     </div>
     {#each rows as row (row.key)}
       <div class="grid line tier-{row.tier}" class:out={row.take === '—'} role="row">
@@ -40,7 +41,7 @@
         <span class="cell sc-num"><span>{row.buy.price}</span><TempBadge compact text={row.buy.badge.text} kind={row.buy.badge.kind} /></span>
         <span class="cell sc-num"><span>{row.sell.price}</span><TempBadge compact text={row.sell.badge.text} kind={row.sell.badge.kind} /></span>
         <span class="sc-num roi">{row.roi}</span>
-        <span class="sc-num take" title={row.takeTitle}>{row.take}{#if row.unsure}<span class="unsure" role="img" aria-label="Запас неизвестен">?</span>{/if}</span>
+        <span class="sc-num take" title={row.takeTitle}>{row.take}{#if row.unsure}<span class="unsure" role="img" aria-label={tr('Запас неизвестен')}>?</span>{/if}</span>
         <span class="sc-num">{row.profit}</span>
       </div>
     {/each}

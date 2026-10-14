@@ -16,6 +16,7 @@
   import { noGoodsText, targetGoods } from '../vm/target-goods';
   import { terminalLabel } from '../vm/terminal-name';
   import { uexRangeOf } from '../vm/terminal-rows';
+  import { tr } from '../../i18n';
 
   const SECTION = 'options';
   // When the window has no height to spare the table above gives up its rows first: the answer the player asked for
@@ -76,28 +77,28 @@
 {#snippet actions()}
   {#if open && request !== null}
     {#if pairOffered}
-      <div class="sc-seg" role="group" aria-label="Куда везти">
-        <button type="button" aria-pressed={!toTarget} title="Лучшие рейсы отсюда в любую точку" onclick={() => setToTarget(false)}>Куда угодно</button>
-        <button type="button" aria-pressed={toTarget} title="Товары, которые стоит везти отсюда в точку цели, и набор на трюм" onclick={() => setToTarget(true)}>К цели</button>
+      <div class="sc-seg" role="group" aria-label={tr('Куда везти')}>
+        <button type="button" aria-pressed={!toTarget} title={tr('Лучшие рейсы отсюда в любую точку')} onclick={() => setToTarget(false)}>{tr('Куда угодно')}</button>
+        <button type="button" aria-pressed={toTarget} title={tr('Товары, которые стоит везти отсюда в точку цели, и набор на трюм')} onclick={() => setToTarget(true)}>{tr('К цели')}</button>
       </div>
     {/if}
   {/if}
   {#if open && request !== null && !toTarget}
     {#if request.commodityId !== null}
-      <button type="button" class="sc-btn sc-btn--act" title="Искать по всем товарам точки" onclick={showAllCommodities}>все товары</button>
+      <button type="button" class="sc-btn sc-btn--act" title={tr('Искать по всем товарам точки')} onclick={showAllCommodities}>{tr('все товары')}</button>
     {/if}
-    <div class="sc-seg" role="group" aria-label="Сортировка">
-      <button type="button" aria-pressed={app.settings.sort !== 'roi'} title={legendTitle('Сначала то, что приносит больше за рейс', LEGEND.profitTrip)} onclick={() => setSort('profit')}>Прибыль</button>
-      <button type="button" aria-pressed={app.settings.sort === 'roi'} title="Сначала то, что выгоднее по отношению прибыли к вложенному" onclick={() => setSort('roi')}>ROI</button>
+    <div class="sc-seg" role="group" aria-label={tr('Сортировка')}>
+      <button type="button" aria-pressed={app.settings.sort !== 'roi'} title={legendTitle(tr('Сначала то, что приносит больше за рейс'), LEGEND.profitTrip)} onclick={() => setSort('profit')}>{tr('Прибыль')}</button>
+      <button type="button" aria-pressed={app.settings.sort === 'roi'} title={tr('Сначала то, что выгоднее по отношению прибыли к вложенному')} onclick={() => setSort('roi')}>ROI</button>
     </div>
     {#if request.kind === 'from'}
-      <div class="sc-seg" role="group" aria-label="Где искать">
+      <div class="sc-seg" role="group" aria-label={tr('Где искать')}>
         <button
           type="button"
           aria-pressed={app.settings.nearby}
-          title="Показать и варианты, где закупка рядом, в другом месте, приносит больше за рейс. Как далеко искать — «Закупка рядом» в настройках"
+          title={tr('Показать и варианты, где закупка рядом, в другом месте, приносит больше за рейс. Как далеко искать — «Закупка рядом» в настройках')}
           onclick={setNearby}
-        >выгоднее</button>
+        >{tr('выгоднее')}</button>
       </div>
     {/if}
   {/if}
@@ -106,10 +107,10 @@
 {#if request !== null}
   {@const asked = request}
   <Section
-    title="Варианты"
+    title={tr('Варианты')}
     summary={pair === null ? summary : pair.title}
     summaryPieces={pair === null ? summaryPieces : undefined}
-    summaryTitle={pair === null && lookup.preliminary ? legendTitle(`Варианты: ${summary}`, LEGEND.approxOptions) : undefined}
+    summaryTitle={pair === null && lookup.preliminary ? legendTitle(tr('Варианты: {summary}', { summary }), LEGEND.approxOptions) : undefined}
     {open}
     onToggle={() => void app.toggleSection(SECTION)}
     onClose={() => app.closeLookup()}
@@ -119,15 +120,15 @@
   >
     {#if needsCapacity}
       <div class="note">
-        <span>Укажи корабль в настройках</span>
-        <button type="button" class="sc-btn sc-btn--act" onclick={() => app.openSettings()}>Открыть настройки</button>
+        <span>{tr('Укажи корабль в настройках')}</span>
+        <button type="button" class="sc-btn sc-btn--act" onclick={() => app.openSettings()}>{tr('Открыть настройки')}</button>
       </div>
     {:else if pair !== null}
       <TargetGoodsView rows={pair.rows} set={pair.set} emptyText={pair.emptyText} />
     {:else if lookup.error !== null}
       <p class="line failure" role="alert">{lookup.error}</p>
     {:else if lookup.loading && lookup.options.length === 0}
-      <p class="line" role="status">Ищу варианты…</p>
+      <p class="line" role="status">{tr('Ищу варианты…')}</p>
     {:else}
       <RouteList
         options={lookup.options}

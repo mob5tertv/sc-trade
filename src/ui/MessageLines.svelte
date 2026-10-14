@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from './components/Icon.svelte';
   import { app } from './state.svelte';
+  import { tr } from '../i18n';
 </script>
 
 <!--
@@ -10,11 +11,11 @@
 -->
 {#if app.confirm !== null}
   <!-- the one question of the window: a line with two buttons, no dialog; it takes no keyboard and goes away with the answer -->
-  <div class="ask" role="group" aria-label="Подтверждение">
+  <div class="ask" role="group" aria-label={tr('Подтверждение')}>
     <span class="question">{app.confirm.text}</span>
     <span class="answers">
       <button class="sc-btn sc-btn--act yes" type="button" onclick={() => app.answer(true)}>{app.confirm.yes}</button>
-      <button class="sc-btn sc-btn--act" type="button" onclick={() => app.answer(false)}>Отмена</button>
+      <button class="sc-btn sc-btn--act" type="button" onclick={() => app.answer(false)}>{tr('Отмена')}</button>
     </span>
   </div>
 {/if}
@@ -26,7 +27,7 @@
       {@const action = app.notice.action}
       <button class="sc-btn sc-btn--act action" type="button" onclick={() => action.run()}>{action.label}</button>
     {/if}
-    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Скрыть сообщение" title="Скрыть" onclick={() => app.closeNotice()}>
+    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label={tr('Скрыть сообщение')} title={tr('Скрыть')} onclick={() => app.closeNotice()}>
       <Icon name="cross" size={12} />
     </button>
   </div>

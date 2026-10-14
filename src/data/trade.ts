@@ -9,6 +9,7 @@ import {
   removeFinishedRun, removeFinishedRunEvents, removeFinishedRuns, removeOrphanRunTargets, removeRunEventsOf, reopenRun, runOfEvent, setRunTarget, startRun,
   updateTradeEvent,
 } from './repo/runs';
+import { tr } from '../i18n';
 
 // The trade service: records a purchase, a sale, a sale of goods that were never bought here (income), a depart or arrive
 // mark or a lost cargo.
@@ -59,7 +60,7 @@ export type RepairDeps = Pick<TradeDeps, 'db' | 'log'>;
 /** `knownScu` is the quantity the player saw at the terminal before the trade: the stock to buy from (when buying) or what the buyer already holds (when selling). */
 export interface TradeInput { terminalId: number; commodityId: number; scu: number; price: number; knownScu?: number | null }
 
-const noActiveRun = (): TradeError => new TradeError('no_active_run', 'Нет активного рейса');
+const noActiveRun = (): TradeError => new TradeError('no_active_run', tr('Нет активного рейса'));
 
 // One queue per database: a call starts after the previous one has finished, whether it succeeded or not.
 const queues = new WeakMap<Db, Promise<void>>();
@@ -149,7 +150,7 @@ function serialized<T>(d: RepairDeps, job: () => Promise<T>): Promise<T> {
 
 function checkInput(t: TradeInput): void {
   if (!(Number.isFinite(t.scu) && t.scu > 0 && Number.isFinite(t.price) && t.price > 0)) {
-    throw new TradeError('bad_input', 'Количество и цена должны быть больше нуля');
+    throw new TradeError('bad_input', tr('Количество и цена должны быть больше нуля'));
   }
 }
 
@@ -203,7 +204,7 @@ export function recordBuy(d: TradeDeps, t: TradeInput): Promise<RunWithEvents> {
     const active = await getActiveRun(d.db);
     if (d.settings.scuCapacity > 0) {
       const free = d.settings.scuCapacity - holdScu(active?.events ?? []);
-      if (t.scu > free) throw new TradeError('no_space', `Свободно только ${Math.max(0, free)} SCU`);
+      if (t.scu > free) throw new TradeError('no_space', tr('Свободно только {v1} SCU', { v1: Math.max(0, free) }));
     }
 
     const ts = d.now();
@@ -230,7 +231,7 @@ export function recordSell(d: TradeDeps, t: TradeInput): Promise<{ run: RunWithE
     checkInput(t);
     const active = await requireActiveRun(d.db);
     const onBoard = cargoOf(active.events).find(line => line.commodityId === t.commodityId)?.scu ?? 0;
-    if (t.scu > onBoard) throw new TradeError('oversell', `В трюме только ${onBoard} SCU`);
+    if (t.scu > onBoard) throw new TradeError('oversell', tr('В трюме только {onBoard} SCU', { onBoard }));
 
     const runId = active.run.id;
     const ts = d.now();
@@ -260,7 +261,7 @@ export function recordIncome(d: TradeDeps, t: TradeInput): Promise<RunWithEvents
     checkInput(t);
     const active = await getActiveRun(d.db);
     if (cargoOf(active?.events ?? []).some(line => line.commodityId === t.commodityId)) {
-      throw new TradeError('on_board', 'Этот товар числится в трюме: продай его из рейса');
+      throw new TradeError('on_board', tr('Этот товар числится в трюме: продай его из рейса'));
     }
 
     const ts = d.now();
@@ -337,13 +338,13 @@ export interface TradeEdit { eventId: number; scu: number; price: number }
 export function editTrade(d: TradeDeps, edit: TradeEdit): Promise<RunWithEvents> {
   return serialized(d, async () => {
     if (!(Number.isFinite(edit.scu) && edit.scu > 0 && Number.isFinite(edit.price) && edit.price > 0)) {
-      throw new TradeError('bad_input', 'Количество и цена должны быть больше нуля');
+      throw new TradeError('bad_input', tr('Количество и цена должны быть больше нуля'));
     }
     const runId = await runOfEvent(d.db, edit.eventId);
     const before = runId === null ? null : await getRun(d.db, runId);
     const event = before?.events.find(e => e.id === edit.eventId);
     if (before === null || event === undefined || (event.type !== 'buy' && event.type !== 'sell') || event.commodityId === null || event.scu === null || event.price === null) {
-      throw new TradeError('no_trade', 'Такой сделки нет: она уже удалена или изменена');
+      throw new TradeError('no_trade', tr('Такой сделки нет: она уже удалена или изменена'));
     }
 
     const after = before.events.map(e => (e.id === edit.eventId ? { ...e, scu: edit.scu, price: edit.price } : e));
@@ -352,18 +353,18 @@ export function editTrade(d: TradeDeps, edit: TradeEdit): Promise<RunWithEvents>
       .reduce((sum, e) => sum + (e.scu ?? 0), 0);
     const income = isIncomeRun(before.events);
     if (!income && traded('sell') > traded('buy')) {
-      throw new TradeError('oversell', `Так выйдет, что продано ${traded('sell')} SCU, а куплено только ${traded('buy')}`);
+      throw new TradeError('oversell', tr('Так выйдет, что продано {v1} SCU, а куплено только {v2}', { v1: traded('sell'), v2: traded('buy') }));
     }
     // only a purchase that GROWS is asked whether it fits, and by the hold the run started with: a corrected price, or a ship
     // changed in the settings since, is no reason to refuse
     const capacity = before.run.scuCapacity;
     if (before.run.status === 'active' && event.type === 'buy' && edit.scu > event.scu && capacity > 0 && holdScu(after) > capacity) {
-      throw new TradeError('no_space', `В трюм не поместится: вместимость ${capacity} SCU`);
+      throw new TradeError('no_space', tr('В трюм не поместится: вместимость {capacity} SCU', { capacity }));
     }
     // a finished run that would have cargo aboard is the run that is going again; that cannot be while another one goes
     const reopens = before.run.status === 'done' && !income && cargoOf(after).length > 0;
     if (reopens && (await getActiveRun(d.db)) !== null) {
-      throw new TradeError('run_active', 'Так в этом рейсе останется непроданный груз, а другой рейс уже идёт. Сначала заверши его.');
+      throw new TradeError('run_active', tr('Так в этом рейсе останется непроданный груз, а другой рейс уже идёт. Сначала заверши его.'));
     }
 
     if (reopens) {
@@ -401,8 +402,8 @@ export function editTrade(d: TradeDeps, edit: TradeEdit): Promise<RunWithEvents>
 export function removeRunRecord(d: RepairDeps, runId: number): Promise<{ events: number }> {
   return serialized(d, async () => {
     const run = await getRun(d.db, runId);
-    if (run === null) throw new TradeError('no_trade', 'Такого рейса в истории нет');
-    if (run.run.status === 'active') throw new TradeError('run_active', 'Идущий рейс удалить нельзя: сначала продай груз или отметь «Груз потерян»');
+    if (run === null) throw new TradeError('no_trade', tr('Такого рейса в истории нет'));
+    if (run.run.status === 'active') throw new TradeError('run_active', tr('Идущий рейс удалить нельзя: сначала продай груз или отметь «Груз потерян»'));
     const events = await removeRunEventsOf(d.db, runId);
     await removeFinishedRun(d.db, runId);
     await removeOrphanRunTargets(d.db).catch((err: unknown) => d.log.warn(LOG, 'cannot sweep the target of the removed run', { runId, err }));
@@ -425,8 +426,8 @@ export class ClearHistoryError extends Error {
 
   constructor(partial: boolean, events: number) {
     super(partial
-      ? 'История очищена не до конца: в списке остались пустые рейсы. Нажми кнопку ещё раз. Подробности в логе.'
-      : 'Не удалось очистить историю: ничего не удалено. Подробности в логе.');
+      ? tr('История очищена не до конца: в списке остались пустые рейсы. Нажми кнопку ещё раз. Подробности в логе.')
+      : tr('Не удалось очистить историю: ничего не удалено. Подробности в логе.'));
     this.name = 'ClearHistoryError';
     this.partial = partial;
     this.events = events;

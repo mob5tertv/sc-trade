@@ -4,6 +4,7 @@ import type { Settings } from '../../core/settings';
 import type { Reference, Side } from '../../core/types';
 import { terminalLabel } from './terminal-name';
 import type { TerminalRow } from './terminal-rows';
+import { tr } from '../../i18n';
 
 // The lookup of the Terminal tab (spec 14.2): where to buy a commodity the terminal wants, or where to sell
 // the one it sells. These are the pure parts: what the lookup is called and what its answers point at.
@@ -43,17 +44,17 @@ export function lookupTitle(request: LookupRequest, ref: Reference): string {
   const terminal = terminalLabel(ref, request.terminalId);
   const commodity = request.commodityId === null ? null : commodityLabel(ref, request.commodityId);
   const what = request.kind === 'to'
-    ? `Где купить${commodity === null ? '' : ` ${commodity}`} для ${terminal}`
-    : `Куда везти${commodity === null ? '' : ` ${commodity}`} с ${terminal}`;
+    ? tr('Где купить{v1} для {terminal}', { v1: commodity === null ? '' : ` ${commodity}`, terminal })
+    : tr('Куда везти{v1} с {terminal}', { v1: commodity === null ? '' : ` ${commodity}`, terminal });
   if (request.price === null) return what;
-  return `${what} · ${request.kind === 'to' ? 'продажа' : 'покупка'} ${formatUec(request.price)}`;
+  return `${what} · ${request.kind === 'to' ? tr('продажа') : tr('покупка')} ${formatUec(request.price)}`;
 }
 
 /** What the list says when the lookup found nothing. */
 export function lookupEmptyText(request: LookupRequest, ref: Reference): string {
   return request.commodityId === null
-    ? 'Выгодных маршрутов не нашлось.'
-    : `Выгодных вариантов для ${commodityLabel(ref, request.commodityId)} не нашлось.`;
+    ? tr('Выгодных маршрутов не нашлось.')
+    : tr('Выгодных вариантов для {v1} не нашлось.', { v1: commodityLabel(ref, request.commodityId) });
 }
 
 /** The terminal a "Цель" button picks: the other end of the trip (the destination from here, the origin to here). */
@@ -94,7 +95,7 @@ const AFFECTS_LOOKUP: Record<keyof Settings, 'always' | 'from' | 'never'> = {
   hotMin: 'always', warmMin: 'always', coolingMin: 'always', refillFullMin: 'always', serverChangedAt: 'always',
   quantumSpeedKkms: 'always', overheadMin: 'always', overheadEmptyMin: 'always', topN: 'always', sort: 'always',
   nearby: 'from', nearbyMaxMin: 'from', worsePricePct: 'never', detailedCalc: 'never', optionsToTarget: 'never', favouriteRoutes: 'never', favouriteSound: 'never', favouriteVolume: 'never', guideMySystem: 'never', guideOnlyStock: 'never', routesSince: 'always',
-  hotkeyPanel: 'never', hotkeyDepart: 'never', hotkeyArrive: 'never',
+  language: 'never', hotkeyPanel: 'never', hotkeyDepart: 'never', hotkeyArrive: 'never',
   panelWidth: 'never', stripCorner: 'never', opacity: 'never', showStrip: 'never', stripRangeTurns: 'never', logLevel: 'never',
   idleCollapseSec: 'never', openSections: 'never', windowDx: 'never', windowDy: 'never', windowLocked: 'never',
   uiScale: 'never',

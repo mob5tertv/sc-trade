@@ -5,6 +5,7 @@ import { headerModel } from './header';
 import { locationModel } from './location';
 import { terminalFullName, terminalName } from './terminal-name';
 import { terminalFullPlace } from './terminal-place';
+import { tr } from '../../i18n';
 
 /** What the one-line header of the expanded window shows. */
 export interface WindowHeader {
@@ -34,11 +35,11 @@ export interface PriceSync {
 
 export const PRICE_SYNC_IDLE: PriceSync = { running: false, done: 0, total: 0, unfetched: 0 };
 
-const EMPTY_FIELD_TITLE = 'Выбери локацию: три буквы и Enter';
-const REFRESH_HINT = 'Нажми, чтобы обновить цены сейчас';
+const EMPTY_FIELD_TITLE = (): string => tr('Выбери локацию: три буквы и Enter');
+const REFRESH_HINT = (): string => tr('Нажми, чтобы обновить цены сейчас');
 /** The click also repeats the reference sync that failed (`refreshPlan` in `sync-plan.ts`): the tooltip says so. */
-const REFERENCE_FAILED = 'Справочник UEX не обновился';
-const REFRESH_REFERENCE_HINT = 'Нажми, чтобы обновить справочник и цены сейчас';
+const REFERENCE_FAILED = (): string => tr('Справочник UEX не обновился');
+const REFRESH_REFERENCE_HINT = (): string => tr('Нажми, чтобы обновить справочник и цены сейчас');
 
 /**
  * 'UEX 12 мин': the age alone; the long form with 'назад' or the date of the cached data is the tooltip. When UEX does not
@@ -47,13 +48,13 @@ const REFRESH_REFERENCE_HINT = 'Нажми, чтобы обновить спра
  */
 function uexShort(pricesSyncedAt: number | null, uexOk: boolean, now: number): string {
   if (!uexOk) {
-    if (pricesSyncedAt === null) return 'UEX недоступен';
+    if (pricesSyncedAt === null) return tr('UEX недоступен');
     const age = Math.max(0, now - pricesSyncedAt);
-    return `UEX офлайн ${age < 60 ? '0 мин' : formatAge(age)}`;
+    return tr('UEX офлайн {age}', { age: age < 60 ? tr('0 мин') : formatAge(age) });
   }
-  if (pricesSyncedAt === null) return 'UEX не загружен';
+  if (pricesSyncedAt === null) return tr('UEX не загружен');
   const age = Math.max(0, now - pricesSyncedAt);
-  return age < 60 ? 'UEX сейчас' : `UEX ${formatAge(age)}`;
+  return age < 60 ? tr('UEX сейчас') : `UEX ${formatAge(age)}`;
 }
 
 /** The indicator while a refresh is going: 'UEX 23/57', or 'UEX …' until the sync has counted its batches. */
@@ -61,7 +62,7 @@ function uexProgress(sync: PriceSync): WindowHeader['uex'] {
   const counted = sync.total > 0;
   return {
     text: counted ? `UEX ${sync.done}/${sync.total}` : 'UEX …',
-    title: counted ? `Цены UEX обновляются: ${sync.done} из ${sync.total}` : 'Цены UEX обновляются: ждут своей очереди',
+    title: counted ? tr('Цены UEX обновляются: {done} из {total}', { done: sync.done, total: sync.total }) : tr('Цены UEX обновляются: ждут своей очереди'),
     stale: false,
     busy: true,
   };
@@ -80,12 +81,12 @@ export function windowHeader(
   const view = locationModel(ref, s, viewTerminalId, pricesSyncedAt, uexOk, now);
   const terminal = viewTerminalId === null ? undefined : ref.terminals.get(viewTerminalId);
   const title = terminal === undefined
-    ? EMPTY_FIELD_TITLE
-    : [terminalFullName(terminal), terminalFullPlace(terminal, ref.starSystems), view.currentLocation === null ? '' : `Сейчас: ${view.currentLocation}`]
+    ? EMPTY_FIELD_TITLE()
+    : [terminalFullName(terminal), terminalFullPlace(terminal, ref.starSystems), view.currentLocation === null ? '' : tr('Сейчас: {currentLocation}', { currentLocation: view.currentLocation })]
       .filter((line) => line !== '')
       .join('\n');
-  const referenceFailed = referenceOk ? [] : [REFERENCE_FAILED];
-  const unfetched = sync.unfetched > 0 ? [`Не обновилось терминалов: ${sync.unfetched}`] : [];
+  const referenceFailed = referenceOk ? [] : [REFERENCE_FAILED()];
+  const unfetched = sync.unfetched > 0 ? [tr('Не обновилось терминалов: {unfetched}', { unfetched: sync.unfetched })] : [];
   return {
     location: terminal === undefined ? null : terminalName(terminal),
     locationTitle: title,
@@ -95,7 +96,7 @@ export function windowHeader(
       : {
         text: uexShort(pricesSyncedAt, uexOk, now),
         title: [
-          headerModel(ref, s, pricesSyncedAt, uexOk, now).uex, ...referenceFailed, ...unfetched, referenceOk ? REFRESH_HINT : REFRESH_REFERENCE_HINT,
+          headerModel(ref, s, pricesSyncedAt, uexOk, now).uex, ...referenceFailed, ...unfetched, referenceOk ? REFRESH_HINT() : REFRESH_REFERENCE_HINT(),
         ].join('\n'),
         stale: !uexOk,
         busy: false,

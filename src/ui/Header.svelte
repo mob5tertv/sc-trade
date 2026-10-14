@@ -7,6 +7,7 @@
   import { locationFieldTitle, locationPlaceholder } from './vm/terminal-pick';
   import { windowHeader } from './vm/window-header';
   import WindowGrip from './WindowGrip.svelte';
+  import { tr } from '../i18n';
 
   const header = $derived(windowHeader(app.reference, app.settings, app.viewTerminalId, app.pricesSyncedAt, app.uexOk, app.now, app.priceSync, app.referenceOk));
   const items = $derived(terminalSearchItems(app.reference, app.settings.starSystemId));
@@ -27,12 +28,12 @@
     if (what === 'give-back') void app.giveKeyboardBack();
     else if (what === 'refresh') void app.refreshPrices();
     // an ignored click is silent on the screen: the log is where "UEX did not refresh when I clicked" is explained
-    else if (app.keyboardGoneSign) app.log.debug('ui', 'indicator click ignored: the sign «Клавиатура у игры» stands in the slot');
-    else app.log.debug('ui', 'indicator click ignored: the sign «Esc — в игру» went away just now', { agoMs: Math.round(now - app.keysSignGoneAt) });
+    else if (app.keyboardGoneSign) app.log.debug('ui', 'indicator click ignored: the sign "the keyboard is with the game" stands in the slot');
+    else app.log.debug('ui', 'indicator click ignored: the sign "Esc to the game" went away just now', { agoMs: Math.round(now - app.keysSignGoneAt) });
   }
 
   const locked = $derived(app.windowLocked);
-  const lockTitle = $derived(locked ? 'Открепить окно' : 'Закрепить окно');
+  const lockTitle = $derived(locked ? tr('Открепить окно') : tr('Закрепить окно'));
 
   // One misclick would make every price of mine cold, so the button asks, and in its own place (the author, 14.10.2026): the first
   // click turns the icon into «Точно?», the second one on the same button writes it; left alone for four seconds it is the icon again.
@@ -62,15 +63,15 @@
       value={asking ? undefined : header.location ?? '' /* never without a value: with no place viewed the box still drops an unpicked query when it is left */}
       title={locationTitle}
       placeholder={locationPlaceholder(asking)}
-      label="Локация: три буквы и Enter"
+      label={tr('Локация: три буквы и Enter')}
       {asking}
       onPick={(id, { ctrl }) => void app.pickTerminal(id, ctrl)}
     />
   </div>
   {#if header.hereTerminalId !== null}
     {@const here = header.hereTerminalId}
-    <button class="sc-btn sc-btn--act here" type="button" title="Корабль стоит здесь: сделать это место текущей локацией" onclick={() => app.setCurrentTerminal(here)}>
-      Я здесь
+    <button class="sc-btn sc-btn--act here" type="button" title={tr('Корабль стоит здесь: сделать это место текущей локацией')} onclick={() => app.setCurrentTerminal(here)}>
+      {tr('Я здесь')}
     </button>
   {/if}
   <!-- how fresh the prices of UEX are; a click refreshes them now, and while that goes the text is its progress. While the window holds
@@ -93,24 +94,24 @@
     <span class="face" class:ghost={face.sign}><span class="mark" aria-hidden="true"></span>{header.uex.text}</span>
     {#if face.sign}<span class="keys">{face.text}</span>{/if}
   </button>
-  <button class="sc-btn sc-btn--primary route" type="button" title="Лучшие рейсы из текущей локации" onclick={() => app.bestRoutes()}>
-    Лучшее
+  <button class="sc-btn sc-btn--primary route" type="button" title={tr('Лучшие рейсы из текущей локации')} onclick={() => app.bestRoutes()}>
+    {tr('Лучшее')}
   </button>
   <button
     class="sc-btn sc-btn--act plan"
     type="button"
     aria-pressed={app.routeBar}
-    title="Свой маршрут: введи, откуда и куда, — и «Варианты» покажут товары для этой пары"
+    title={tr('Свой маршрут: введи, откуда и куда, — и «Варианты» покажут товары для этой пары')}
     onclick={() => app.toggleRouteBar()}
   >
-    Маршрут
+    {tr('Маршрут')}
   </button>
   <div class="icons">
     <button
       class="sc-btn sc-btn--ghost sc-btn--icon"
       type="button"
-      aria-label="Справочная по товарам"
-      title="Справочная: десять лучших мест купить или продать товар"
+      aria-label={tr('Справочная по товарам')}
+      title={tr('Справочная: десять лучших мест купить или продать товар')}
       onclick={() => app.openGuide()}
     >
       <Icon name="book" />
@@ -120,11 +121,11 @@
       class:sc-btn--icon={!serverSure}
       class:sure={serverSure}
       type="button"
-      aria-label={serverSure ? 'Точно сменил сервер? Нажми ещё раз' : 'Сменил сервер'}
-      title={serverSure ? 'Нажми ещё раз: свои цены до этой минуты станут холодными. Не нажмёшь — кнопка вернётся сама' : 'Сменил сервер: свои цены до этого момента считаются холодными'}
+      aria-label={serverSure ? tr('Точно сменил сервер? Нажми ещё раз') : tr('Сменил сервер')}
+      title={serverSure ? tr('Нажми ещё раз: свои цены до этой минуты станут холодными. Не нажмёшь — кнопка вернётся сама') : tr('Сменил сервер: свои цены до этого момента считаются холодными')}
       onclick={serverClick}
     >
-      {#if serverSure}Точно?{:else}<Icon name="swap" />{/if}
+      {#if serverSure}{tr('Точно?')}{:else}<Icon name="swap" />{/if}
     </button>
     <button
       class="sc-btn sc-btn--ghost sc-btn--icon"
@@ -136,10 +137,10 @@
     >
       <Icon name={locked ? 'lock' : 'unlock'} />
     </button>
-    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Настройки" title="Настройки" onclick={() => app.openSettings()}>
+    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label={tr('Настройки')} title={tr('Настройки')} onclick={() => app.openSettings()}>
       <Icon name="gear" />
     </button>
-    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Свернуть" title="Свернуть" onclick={() => app.collapse('close button')}>
+    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label={tr('Свернуть')} title={tr('Свернуть')} onclick={() => app.collapse('close button')}>
       <Icon name="minus" />
     </button>
   </div>

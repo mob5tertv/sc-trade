@@ -970,9 +970,13 @@ describe('the pages-only preview of the installer (preview.nsi)', () => {
     expect(nsis?.installerIcon).toBe('icons/icon.ico');
   });
 
-  it('offers the same two languages as the installer, Russian first', () => {
+  // Version 1.3: the installer asks for its language at the start. The list marks the language of Windows when it is one of the two,
+  // and the first one, English, when it is neither: a player whose Windows is German reads English rather than Russian.
+  it('offers the same two languages as the installer, English first, and the installer asks which one at the start', () => {
     const languages = previewCode.filter((line) => /^!insertmacro MUI_LANGUAGE /.test(line)).map((line) => line.replace(/^.*MUI_LANGUAGE\s+"?(\w+)"?.*$/, '$1'));
-    expect(languages).toEqual(['Russian', 'English']);
-    expect((nsis as unknown as { languages?: string[] }).languages).toEqual(['Russian', 'English']);
+    expect(languages).toEqual(['English', 'Russian']);
+    const config = nsis as unknown as { languages?: string[]; displayLanguageSelector?: boolean };
+    expect(config.languages).toEqual(['English', 'Russian']);
+    expect(config.displayLanguageSelector).toBe(true);
   });
 });

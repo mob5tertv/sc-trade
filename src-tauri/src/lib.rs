@@ -48,7 +48,8 @@ pub fn run() {
             focus::take_foreground,
             focus::panel_is_foreground,
             place::place_window,
-            input_hook::set_trigger_keys
+            input_hook::set_trigger_keys,
+            tray::set_tray_labels
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

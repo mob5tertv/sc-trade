@@ -2,6 +2,7 @@ import { formatDuration, formatUec } from '../../core/format';
 import type { SellAlternative } from '../../core/sell';
 import type { Reference } from '../../core/types';
 import { terminalLabel } from './terminal-name';
+import { tr } from '../../i18n';
 
 // «Цена на месте хуже — куда лететь» (spec 14.19, item 8). The player arrives, types in what the terminal really pays, and it is
 // clearly less than was expected. He "often sells cheaper and never minds", so the window speaks only when the price is worse by
@@ -34,8 +35,8 @@ export function worsePrice(expected: number | null, actual: number, thresholdPct
 export function worsePriceText(w: WorsePrice, ref: Reference): string {
   const time = w.best.extraSec === null ? null : `${w.best.extraSource === 'estimate' ? '≈ ' : ''}${formatDuration(w.best.extraSec)}`;
   const better = [terminalLabel(ref, w.best.destId), `+${formatUec(w.best.extraProfit)}`, time].filter((part) => part !== null).join(', ');
-  return `Цена ниже ожидаемой на ${w.pct} % · лучше: ${better}`;
+  return tr('Цена ниже ожидаемой на {pct} % · лучше: {better}', { pct: w.pct, better });
 }
 
 /** The button of the notice: it opens the reference on this commodity, on the side of the sale. */
-export const WORSE_PRICE_ACTION = 'Куда ещё?';
+export const WORSE_PRICE_ACTION = (): string => tr('Куда ещё?');

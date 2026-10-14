@@ -1,6 +1,7 @@
 <script lang="ts">
   import { search } from '../../core/search';
   import type { SearchItem } from '../vm/header';
+  import { tr } from '../../i18n';
 
   interface Props {
     /** What is found; an item may say `place` (muted, after the name) and `title` (the tooltip of its row). */
@@ -33,7 +34,7 @@
     asking?: boolean;
   }
 
-  let { items, boostIds, find = search, placeholder = 'Поиск…', value, onPick, label = placeholder, invalid = false, title, asking = false }: Props = $props();
+  let { items, boostIds, find = search, placeholder = tr('Поиск…'), value, onPick, label = placeholder, invalid = false, title, asking = false }: Props = $props();
 
   const MAX_RESULTS = 8;
   const listId = `search-${Math.random().toString(36).slice(2, 8)}`;
