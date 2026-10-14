@@ -4,7 +4,8 @@
   import GuideView from './GuideView.svelte';
   import Header from './Header.svelte';
   import LanguageView from './LanguageView.svelte';
-  import { bootStatusText } from './vm/boot-status';
+  import LoadingLine from './components/LoadingLine.svelte';
+  import { bootStatusText, referenceLoadText } from './vm/boot-status';
   import MessageLines from './MessageLines.svelte';
   import OptionsSection from './sections/OptionsSection.svelte';
   import RouteBar from './RouteBar.svelte';
@@ -43,7 +44,11 @@
     </div>
   {:else}
     <div class="boot">
-      <p class="message status" role="status">{bootStatusText(app.bootStage)}</p>
+      <div class="message status" role="status">
+        <p class="line">{bootStatusText(app.bootStage)}</p>
+        <!-- the download of the reference moves: its stage, its count, its time, and the dots (the author: «дать понять, что он не завис») -->
+        {#if app.referenceLoad !== null}<LoadingLine text={referenceLoadText(app.referenceLoad, app.now)} />{/if}
+      </div>
     </div>
   {/if}
 {:else if app.view === 'settings'}
@@ -101,6 +106,10 @@
 
   .error {
     color: var(--sc-bad);
+  }
+
+  .status .line {
+    margin: 0;
   }
 
   .status {

@@ -5,7 +5,7 @@ import { createLogger, memorySink } from '../../src/data/logger';
 import { getMeta, loadDistances, loadReference, loadUexPrices, saveReference, upsertPrices } from '../../src/data/repo/uex-cache';
 import {
   countDistanceRequests, ensureDistances, pricesAreStale, referenceIsStale, syncPrices, syncReference,
-  type DistanceProgress, type PriceProgress, type SyncDeps,
+  type DistanceProgress, type PriceProgress, type ReferenceProgress, type SyncDeps,
 } from '../../src/data/sync';
 import { UexError, createUexClient } from '../../src/data/uex-client';
 import { px, seedTerminals, term, veh } from '../helpers/factories';
@@ -541,6 +541,19 @@ describe('syncReference', () => {
     expect(uex.manufacturerCalls).toBe(1);
     expect(uex.vehicleCalls).toEqual([195, 196]);
     expect(uex.maxInFlight).toBe(1);
+  });
+
+  // version 1.3: the window says how far the download is, so the player sees that it has not hung
+  it('reports its stages as it goes: the systems, the terminals system by system, the commodities, the ships manufacturer by manufacturer, the writing', async () => {
+    const seen: ReferenceProgress[] = [];
+    await syncReference(deps, (p) => { seen.push({ ...p }); });
+    expect(seen).toEqual([
+      { stage: 'systems', done: 0, total: 1 },
+      { stage: 'terminals', done: 0, total: 3 }, { stage: 'terminals', done: 1, total: 3 }, { stage: 'terminals', done: 2, total: 3 },
+      { stage: 'commodities', done: 0, total: 1 },
+      { stage: 'ships', done: 0, total: 0 }, { stage: 'ships', done: 0, total: 2 }, { stage: 'ships', done: 1, total: 2 },
+      { stage: 'saving', done: 0, total: 1 },
+    ]);
   });
 
   it('saves all four lists, drops rows that vanished and marks the reference fresh', async () => {

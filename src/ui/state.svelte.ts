@@ -79,7 +79,7 @@ import { effectiveScalePct, scaleNoticeStep, scaleNoticeText } from './vm/ui-sca
 import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 import { langOf, setLang, tr, type Lang } from '../i18n';
 import { setTrayLabels } from '../platform/tray';
-import type { BootStage } from './vm/boot-status';
+import type { BootStage, ReferenceLoad } from './vm/boot-status';
 import type { Coach } from './vm/coach';
 import { opensDemoByItself } from './vm/demo';
 import { emptyDb, keptChanges, OFFLINE_UEX, prepareDemoDb } from '../demo/session';
@@ -384,6 +384,8 @@ class AppState {
   referenceBusy = $state(false);
   /** The reference of UEX is being downloaded, by whatever asked for it (the first start, the button, the background sync). */
   referenceLoading = $state(false);
+  /** How far that download is (`vm/boot-status.ts`), `null` when none goes. */
+  referenceLoad = $state.raw<ReferenceLoad | null>(null);
 
   // ---- internals --------------------------------------------------------------------------------
   /** The queue of everything that can touch UEX; reached only through `withUex`. */
@@ -718,14 +720,18 @@ class AppState {
    */
   async syncReferenceNow(deps: SyncDeps = this.#syncDeps()): Promise<string | null> {
     this.referenceLoading = true;
+    const startedAt = deps.now();
     try {
-      await this.withUex(() => syncReference(deps));
+      await this.withUex(() => syncReference(deps, (progress) => {
+        this.referenceLoad = { ...progress, startedAt };
+      }));
     } catch (err) {
       this.referenceOk = false;
       this.#log.warn('ui', 'reference sync failed', { err });
       return uexErrorText(err);
     } finally {
       this.referenceLoading = false;
+      this.referenceLoad = null;
     }
     this.referenceOk = true;
     try {

@@ -69,6 +69,24 @@ export const DEMO_SCENES: readonly Scene[] = [
   demoScene('demo-10-sell-form', 'Демо-рейс, 10: «Продал»', 'sell-expanded'),
   demoScene('demo-11-done', 'Демо-рейс, 11: рейс закрыт', 'done'),
   {
+    // the player types the station: the list of stations opens under the field, and the hint stands under the list, not over it
+    // (the author: «дроп-даун находится под подсказкой обучения, выбрать невозможно»)
+    name: 'demo-02-typing',
+    title: 'Демо-рейс, 2: набрано «HUR», список станций открыт над подсказкой',
+    dataset: 'default',
+    act: async (app) => {
+      await app.startDemo('preview');
+      await pause(400);
+      await press('.coach .sc-btn--primary');
+      const field = document.querySelector<HTMLInputElement>('[data-tour="location"] input');
+      if (field === null) throw new Error('the demo scene wants the field of the location, and there is none');
+      field.focus();
+      field.value = 'HUR';
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      await pause(500);
+    },
+  },
+  {
     // leaving the demo at a step: the player's own data comes back (the preview dataset: HUR-L1, two finished runs)
     name: 'demo-left',
     title: 'Демо-рейс: вышли на шаге 4 — свои данные вернулись',

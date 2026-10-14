@@ -82,7 +82,20 @@ function note(outage: Outage, result: Attempt<unknown>): void {
  * failure (a manufacturer that answered, even with no vehicle, starts the count again), or at once on the answer "too many
  * requests": the manufacturers that were not asked count as failed.
  */
-async function fetchVehicles(d: SyncDeps): Promise<{ list: Vehicle[]; complete: boolean }> {
+/**
+ * How far the download of the reference is (version 1.3, the author: «при загрузке справочника нужно дать понять, что он не завис»):
+ * the stage, and of a stage of many requests how many are answered of how many. The ships are the long stage: one request per
+ * manufacturer.
+ */
+export interface ReferenceProgress {
+  stage: 'systems' | 'terminals' | 'commodities' | 'ships' | 'saving';
+  done: number;
+  total: number;
+}
+export type ReferenceProgressFn = (progress: ReferenceProgress) => void;
+
+async function fetchVehicles(d: SyncDeps, progress: ReferenceProgressFn): Promise<{ list: Vehicle[]; complete: boolean }> {
+  progress({ stage: 'ships', done: 0, total: 0 });
   const manufacturers = await attempt(d, 'vehicle manufacturers request', {}, () => d.uex.vehicleManufacturers());
   if (!manufacturers.ok) return { list: [], complete: false };
 
@@ -92,6 +105,7 @@ async function fetchVehicles(d: SyncDeps): Promise<{ list: Vehicle[]; complete: 
   let asked = 0;
   for (const companyId of manufacturers.value) {
     if (outage.over) break;
+    progress({ stage: 'ships', done: asked, total: manufacturers.value.length });
     const vehicles = await attempt(d, 'vehicles request', { companyId }, () => d.uex.vehicles(companyId));
     asked++;
     note(outage, vehicles);
@@ -119,16 +133,23 @@ async function fetchVehicles(d: SyncDeps): Promise<{ list: Vehicle[]; complete: 
  * answer where data must exist (no star system, no live one, no terminal at all, no commodity) is
  * a failure too: written as it is, it would wipe the stored reference.
  */
-async function fetchCoreLists(d: SyncDeps): Promise<{ starSystems: StarSystem[]; terminals: Terminal[]; commodities: Commodity[] }> {
+async function fetchCoreLists(
+  d: SyncDeps, progress: ReferenceProgressFn,
+): Promise<{ starSystems: StarSystem[]; terminals: Terminal[]; commodities: Commodity[] }> {
+  progress({ stage: 'systems', done: 0, total: 1 });
   const starSystems = await d.uex.starSystems();
   if (starSystems.length === 0) throw new UexError('shape', 'UEX returned no star systems');
   const liveSystems = starSystems.filter((s) => s.isAvailableLive);
   if (liveSystems.length === 0) throw new UexError('shape', 'UEX returned no live star system');
 
   const terminals: Terminal[] = [];
-  for (const system of liveSystems) terminals.push(...(await d.uex.terminals(system.id)));
+  for (const [i, system] of liveSystems.entries()) {
+    progress({ stage: 'terminals', done: i, total: liveSystems.length });
+    terminals.push(...(await d.uex.terminals(system.id)));
+  }
   if (terminals.length === 0) throw new UexError('shape', 'UEX returned no terminals for the live star systems');
 
+  progress({ stage: 'commodities', done: 0, total: 1 });
   const commodities = await d.uex.commodities();
   if (commodities.length === 0) throw new UexError('shape', 'UEX returned no commodities');
   return { starSystems, terminals, commodities };
@@ -139,21 +160,22 @@ async function fetchCoreLists(d: SyncDeps): Promise<{ starSystems: StarSystem[];
  * then writes. A failure of the first three throws the `UexError` and writes nothing; a failure of the
  * vehicles is a warning: what arrived is saved and no stored vehicle is deleted.
  */
-export async function syncReference(d: SyncDeps): Promise<void> {
+export async function syncReference(d: SyncDeps, progress: ReferenceProgressFn = () => {}): Promise<void> {
   const { db, log } = d;
   const syncedAt = d.now();
   log.info('sync', 'reference sync started');
 
   let core: Awaited<ReturnType<typeof fetchCoreLists>>;
   try {
-    core = await fetchCoreLists(d);
+    core = await fetchCoreLists(d, progress);
   } catch (err) {
     log.error('sync', 'reference sync failed, nothing was written', { reason: reason(err) });
     throw err;
   }
   const { starSystems, terminals, commodities } = core;
-  const vehicles = await fetchVehicles(d);
+  const vehicles = await fetchVehicles(d, progress);
 
+  progress({ stage: 'saving', done: 0, total: 1 });
   await saveReference(db, { ...core, ...(vehicles.complete ? { vehicles: vehicles.list } : {}) });
   if (!vehicles.complete) await upsertVehicles(db, vehicles.list);
   await setMeta(db, META_REFERENCE, String(syncedAt));

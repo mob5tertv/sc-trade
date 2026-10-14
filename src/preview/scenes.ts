@@ -313,6 +313,18 @@ export const SCENES: readonly Scene[] = [
   },
   { name: 'boot-failed', title: 'Ошибка запуска: пустая база, UEX недоступен (окно развернулось само)', dataset: 'empty' },
   {
+    // version 1.3: the first start downloads the reference of UEX; the window says the stage, the count and the time, and the dots move
+    name: 'boot-reference-progress',
+    title: 'Первый запуск: загрузка справочника UEX с прогрессом',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      app.phase = 'booting';
+      app.bootStage = 'reference';
+      app.referenceLoad = { stage: 'ships', done: 12, total: 40, startedAt: app.now - 23 };
+    },
+  },
+  {
     // version 1.3: the first start, and the first one after an update from 1.2, asks for the language (`language` is '' in the
     // settings); the language of Windows comes first and is marked. The data of the scene has a language, so the view is opened here.
     name: 'choose-language',

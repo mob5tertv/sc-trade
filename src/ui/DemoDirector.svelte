@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { app } from './state.svelte';
-  import { demoAdvance, demoCoach, type DemoView } from './vm/demo';
+  import { DEMO_STEPS, demoAdvance, demoCoach, type DemoView } from './vm/demo';
   import { terminalLabel } from './vm/terminal-name';
 
   // The demo trip of version 1.3 as it goes: five times a second the window is read into a `DemoView` (the state, and what the
@@ -9,6 +9,8 @@
   // the step is put on the screen (`demoCoach`, drawn by `CoachBubble.svelte`). Nothing is drawn here.
 
   let hadRun = false;
+  /** Once the target is chosen the list of options has done its work: it is closed, and the window is the shorter for it. */
+  const TARGET_STEP = DEMO_STEPS.findIndex((step) => step.id === 'target');
   let shown = '';
 
   const exists = (selector: string): boolean => document.querySelector(selector) !== null;
@@ -43,7 +45,10 @@
     if (demo === null) return;
     const v = view();
     const step = demoAdvance(demo.step, v);
-    if (step !== demo.step) app.demoGo(step);
+    if (step !== demo.step) {
+      if (demo.step <= TARGET_STEP && step > TARGET_STEP && app.lookup.request !== null) app.closeLookup();
+      app.demoGo(step);
+    }
     const coach = demoCoach(step, v, exists, { ...actions, newPlayer: demo.newPlayer });
     // only a hint that changed is put on the screen again: the frame of its element would restart its breathing five times a second
     const key = JSON.stringify([coach.target, coach.title, coach.text, coach.doing, coach.step, app.language]);

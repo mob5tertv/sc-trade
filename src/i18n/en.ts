@@ -344,7 +344,6 @@ export const EN: Readonly<Record<string, string>> = {
   'Что везти сюда: лучшие варианты по всем товарам, которые здесь покупают': 'What to haul here: the best options over all the goods bought here',
   'Куда отсюда: лучшие варианты по всем товарам, которые можно купить здесь': 'Where to from here: the best options over all the goods you can buy here',
   // src/ui/SettingsView.svelte
-  'Загружаю список кораблей из UEX': 'Loading the list of ships from UEX',
   'не выбран': 'not chosen',
   'Список кораблей не загружен: введи вместимость вручную.': 'The list of ships has not loaded: type in the capacity by hand.',
   'Вместимость, SCU': 'Capacity, SCU',
@@ -453,6 +452,14 @@ export const EN: Readonly<Record<string, string>> = {
   // src/ui/vm/boot-status.ts
   'Загрузка справочника UEX…': 'Loading UEX reference data…',
   'Запуск…': 'Starting…',
+  'звёздные системы · {took}': 'star systems · {took}',
+  'терминалы: {done} из {total} систем · {took}': 'terminals: {done} of {total} systems · {took}',
+  'товары · {took}': 'commodities · {took}',
+  'корабли: {done} из {total} производителей · {took}': 'ships: {done} of {total} manufacturers · {took}',
+  'корабли · {took}': 'ships · {took}',
+  'запись в базу · {took}': 'writing to the database · {took}',
+  'Загружаю список кораблей из UEX: {done} из {total}': 'Loading the list of ships from UEX: {done} of {total}',
+  'Загружаю список кораблей из UEX': 'Loading the list of ships from UEX',
   // src/ui/vm/demo.ts
   'Пройдём один рейс на учебных данных: от станции до продажи. Нажимаешь ты сам — подсказка со стрелкой покажет куда. Твои цены, рейсы и настройки не трогаются: после демо всё вернётся как было.': 'Let\'s make one trip on demo data: from a station to the sale. You press yourself; a hint with an arrow shows where. Your prices, trips and settings are not touched: after the demo everything is as it was.',
   'Где ты': 'Where you are',

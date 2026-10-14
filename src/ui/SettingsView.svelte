@@ -19,6 +19,7 @@
   import { LANG_NAMES, LANGS, tr, type Lang } from '../i18n';
   import LoadingLine from './components/LoadingLine.svelte';
   import { shipListState } from './vm/ship-list';
+  import { shipLoadText } from './vm/boot-status';
 
   type NumberKey =
     | 'scuCapacity' | 'budget' | 'hotMin' | 'warmMin' | 'coolingMin' | 'quantumSpeedKkms'
@@ -218,7 +219,7 @@
   {#if shipList === 'loading'}
     <div class="row">
       <span class="label-like">{tr('Корабль')}</span>
-      <LoadingLine text={tr('Загружаю список кораблей из UEX')} />
+      <LoadingLine text={shipLoadText(app.referenceLoad)} />
     </div>
   {:else if shipList === 'ready'}
     <div class="row">
