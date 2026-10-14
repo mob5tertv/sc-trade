@@ -1,4 +1,5 @@
 import { recordBuy, recordSell } from '../data/trade';
+import { tr } from '../i18n';
 import type { Scene, SceneApp } from './scenes';
 
 // The scenes of the "Мои маршруты" section. They run on the `window` dataset (the two runs of the default history), on
@@ -7,9 +8,13 @@ import type { Scene, SceneApp } from './scenes';
 
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** A click on what is on the screen, the way a button handler sees it; a scene that names something that is not there fails. */
+/**
+ * A click on what is on the screen, the way a button handler sees it; a scene that names something that is not there fails.
+ * The scene names the Russian words; in an English window the button carries their translation (`tr`), so that is what is sought.
+ */
 async function click(selector: string, text?: string): Promise<void> {
-  const found = [...document.querySelectorAll<HTMLElement>(selector)].find((el) => text === undefined || (el.textContent ?? '').includes(text));
+  const shown = text === undefined ? undefined : tr(text);
+  const found = [...document.querySelectorAll<HTMLElement>(selector)].find((el) => shown === undefined || (el.textContent ?? '').includes(shown));
   if (found === undefined) throw new Error(`the scene wants to click "${selector}"${text === undefined ? '' : ` with "${text}"`}, and there is none`);
   found.click();
   await pause(60);

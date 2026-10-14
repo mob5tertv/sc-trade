@@ -101,6 +101,7 @@ describe('the upload', () => {
       '-mkdir "/var/www/sc-trade.space/assets/css"',
       '-mkdir "/var/www/sc-trade.space/assets/js"',
       '-mkdir "/var/www/sc-trade.space/assets/shots"',
+      '-mkdir "/var/www/sc-trade.space/assets/shots/en"',
     ]);
     expect(lines.slice(0, folders.length)).toEqual(folders);
     const puts = lines.slice(folders.length);

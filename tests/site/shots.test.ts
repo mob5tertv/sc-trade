@@ -24,8 +24,15 @@ describe('the list of pictures of the application', () => {
     for (const name of names) expect(name).toMatch(/^[a-z][a-z-]*$/);
   });
 
-  it('is exactly the pictures that lie in site/assets/shots', () => {
-    expect(readdirSync(shotsDir).sort()).toEqual(names.map((name) => `${name}.png`).sort());
+  it('is exactly the pictures that lie in site/assets/shots, and the English window of some of them in its folder en', () => {
+    expect(readdirSync(shotsDir).filter((file) => file !== 'en').sort()).toEqual(names.map((name) => `${name}.png`).sort());
+    // the English pages show the English picture where there is one, the Russian one where there is not
+    for (const file of readdirSync(join(shotsDir, 'en'))) expect(names.map((name) => `${name}.png`), file).toContain(file);
+  });
+
+  it('takes the English window with the language of the preview, and the Russian one as before', () => {
+    expect(shotArguments(SHOTS[0], 'out.png', 'en')).toEqual(expect.arrayContaining(['--lang', 'en']));
+    expect(shotArguments(SHOTS[0], 'out.png')).not.toContain('--lang');
   });
 
   it.each(['ru', 'en'] as const)('has a caption and a description of every picture in the %s dictionary, and of nothing else', (lang) => {
@@ -101,13 +108,17 @@ describe('the pictures on the page', () => {
   it.each(['index.html', 'en/index.html'])('%s shows every picture of the list, each with its size and a description', (page) => {
     const html = site.read(page);
     for (const name of names) {
-      const tag = new RegExp(`<img src="[^"]*assets/shots/${name}\\.png\\?v=[0-9a-f]+" width="(\\d+)" height="(\\d+)" alt="([^"]+)"`).exec(html);
+      // the English page shows the English window where there is one (site/assets/shots/en)
+      const english = page.startsWith('en/') && existsSync(join(shotsDir, 'en', `${name}.png`));
+      const path = english ? `en/${name}` : name;
+      const tag = new RegExp(`<img src="[^"]*assets/shots/${path}\\.png\\?v=[0-9a-f]+" width="(\\d+)" height="(\\d+)" alt="([^"]+)"`).exec(html);
       expect(tag, name).not.toBeNull();
-      const image = decodePng(readFileSync(join(shotsDir, `${name}.png`)));
+      const image = decodePng(readFileSync(join(shotsDir, `${path}.png`)));
       // shown at half its pixels: sharp on a dense screen
       expect([Number(tag![1]), Number(tag![2])]).toEqual([Math.round(image.width / 2), Math.round(image.height / 2)]);
     }
-    expect(site.result.pictures).toBe(names.length);
+    // the pictures of the site: the Russian set and the English ones beside it
+    expect(site.result.pictures).toBe(names.length + readdirSync(join(shotsDir, 'en')).length);
   });
 
   it('puts the mini line and a window on the first screen, three pictures next to the features and the rest in the gallery', () => {

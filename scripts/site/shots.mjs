@@ -42,17 +42,19 @@ export const SHOTS = [
 export const BACKDROP = '#07121b';
 
 /**
- * The arguments of `node` that take one picture into `out`.
+ * The arguments of `node` that take one picture into `out`, with the window in `lang`.
  * @param {{ scene: string }} shot
  * @param {string} out
+ * @param {'ru' | 'en'} [lang]
  * @returns {string[]}
  */
-export function shotArguments(shot, out) {
+export function shotArguments(shot, out, lang = 'ru') {
   return [
     join(projectRoot, 'scripts', 'preview', 'shot.mjs'),
     '--scene', shot.scene,
     '--scale', '2',
     '--out', out,
+    ...(lang === 'en' ? ['--lang', 'en'] : []),
     // the step runs in the page of the application; the field around the window belongs to the page above it
     '--do', `eval:parent.document.getElementById('field').style.background='${BACKDROP}'`,
   ];
@@ -77,13 +79,16 @@ export function shotEnvironment(env, emptyDir) {
 }
 
 function main() {
-  const { values } = parseArgs({ options: { only: { type: 'string' }, help: { type: 'boolean' } } });
+  const { values } = parseArgs({ options: { only: { type: 'string' }, lang: { type: 'string' }, help: { type: 'boolean' } } });
+  const lang = values.lang ?? 'ru';
+  if (lang !== 'ru' && lang !== 'en') throw new Error(`--lang must be ru or en, not "${lang}"`);
   if (values.help) return console.log(`usage: npm run site:shots [-- --only <name>[,<name>]]\npictures: ${SHOTS.map((shot) => shot.name).join(', ')}`);
   const only = values.only?.split(',').map((name) => name.trim());
   const unknown = (only ?? []).filter((name) => !SHOTS.some((shot) => shot.name === name));
   if (unknown.length > 0) throw new Error(`no such picture: ${unknown.join(', ')} (there are: ${SHOTS.map((shot) => shot.name).join(', ')})`);
 
-  const outDir = join(siteDir, 'assets', 'shots');
+  // the English window goes into a folder of its own: the English pages show it, the Russian ones the Russian window
+  const outDir = lang === 'en' ? join(siteDir, 'assets', 'shots', 'en') : join(siteDir, 'assets', 'shots');
   mkdirSync(outDir, { recursive: true });
   const work = mkdtempSync(join(tmpdir(), 'sc-trade-shots-'));
   const emptyDir = join(work, 'no-backdrop');
@@ -91,7 +96,7 @@ function main() {
   try {
     for (const shot of SHOTS.filter((one) => only === undefined || only.includes(one.name))) {
       const raw = join(work, `${shot.name}.png`);
-      const run = spawnSync(process.execPath, shotArguments(shot, raw), { cwd: projectRoot, env: shotEnvironment(process.env, emptyDir), encoding: 'utf8' });
+      const run = spawnSync(process.execPath, shotArguments(shot, raw, lang), { cwd: projectRoot, env: shotEnvironment(process.env, emptyDir), encoding: 'utf8' });
       if (run.status !== 0 || !existsSync(raw)) throw new Error(`the scene "${shot.scene}" was not taken (exit code ${run.status}):\n${run.stdout}${run.stderr}`);
       const window = cutWindow(decodePng(readFileSync(raw)));
       const file = join(outDir, `${shot.name}.png`);

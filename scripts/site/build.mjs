@@ -178,6 +178,9 @@ export function buildSite(options) {
     /** The pictures of the application: twice as many pixels as the size they are shown at. */
     const shotFiles = [...hashes.keys()].filter((file) => /^assets\/shots\/[\w-]+\.png$/.test(file));
     const shotSizes = Object.fromEntries(shotFiles.map((file) => [posix.basename(file, '.png'), pngSize(join(work, file))]));
+    /** The same pictures with the English window (site/assets/shots/en): the English pages show them where they exist. */
+    const shotFilesEn = [...hashes.keys()].filter((file) => /^assets\/shots\/en\/[\w-]+\.png$/.test(file));
+    const shotSizesEn = Object.fromEntries(shotFilesEn.map((file) => [posix.basename(file, '.png'), pngSize(join(work, file))]));
 
     const isoDay = now.toISOString().slice(0, 10);
 
@@ -196,9 +199,12 @@ export function buildSite(options) {
           return `${to(target)}?v=${hash}`;
         };
         const shots = Object.fromEntries(
-          Object.entries(shotSizes).map(([name, size]) => {
+          Object.entries(shotSizes).map(([name, ruSize]) => {
             if (captions[name] === undefined) throw new Error(`the picture site/assets/shots/${name}.png has no texts: add "shots.${name}" to the dictionaries`);
-            return [name, { name, src: asset(`assets/shots/${name}.png`), width: Math.round(size.width / 2), height: Math.round(size.height / 2), fullWidth: size.width, fullHeight: size.height, ...captions[name] }];
+            const english = lang === 'en' && shotSizesEn[name] !== undefined;
+            const size = english ? shotSizesEn[name] : ruSize;
+            const src = asset(english ? `assets/shots/en/${name}.png` : `assets/shots/${name}.png`);
+            return [name, { name, src, width: Math.round(size.width / 2), height: Math.round(size.height / 2), fullWidth: size.width, fullHeight: size.height, ...captions[name] }];
           }),
         );
         const pick = (/** @type {string[]} */ names) => names.filter((name) => shots[name] !== undefined).map((name) => shots[name]);

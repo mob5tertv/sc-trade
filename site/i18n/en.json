@@ -89,45 +89,45 @@
   "shots": {
     "hero-strip": {
       "caption": "Folded — the mini line in flight",
-      "alt": "The SC Trade mini line in flight: the timer of the phase, the cargo with its purchase price, the target of the trip, the expected profit and the «Прилетел» (arrived) button. The interface is in Russian."
+      "alt": "The SC Trade mini line in flight: the timer of the phase, the cargo with its purchase prices, the target of the trip, the expected profit and the Arrived button."
     },
     "hero-window": {
       "caption": "Unfolded — the terminal table",
-      "alt": "The unfolded SC Trade window: the terminal table on its «Продать» (sell) side — commodities, prices, stock, and the profit and ROI of the best trip for each. The interface is in Russian."
+      "alt": "The unfolded SC Trade window: the terminal table on its Sell side — commodities, prices, stock, and the profit and ROI of the best trip for each."
     },
     "mini-run": {
       "caption": "The mini line on a trip: phase and timer, cargo, target, expected profit and the mark button",
-      "alt": "The SC Trade mini line while loading: a timer, two commodities in the hold with their purchase prices, the target, the expected profit and the «Взлетел» (departed) button. The interface is in Russian."
+      "alt": "The SC Trade mini line while loading: a timer, two commodities in the hold with their purchase prices, the target, the expected profit and the Departed button."
     },
     "terminal-options": {
       "caption": "The unfolded window: the terminal table and the options of where to haul",
-      "alt": "The unfolded SC Trade window: a table of the terminal's commodities with prices and ROI, and under it the «Варианты» (options) section — five destinations with price, trip time, profit and ROI. The interface is in Russian."
+      "alt": "The unfolded SC Trade window: a table of the terminal's commodities with prices and ROI, and under it the Options section — five destinations with price, trip time, profit and ROI."
     },
     "my-routes": {
       "caption": "«Мои маршруты» (my routes): what one trip brings",
       "alt": "The «Мои маршруты» section: a table of routes with the commodity, profit per trip, number of trips, time, profit and ROI. The interface is in Russian."
     },
     "price-entry": {
-      "caption": "A commodity row opened: price, quantity, «Где продать» (where to sell) and «Купил» (bought)",
-      "alt": "The terminal table with a commodity row opened: the price and quantity fields, the «Где продать» and «Купил» buttons, and the mark «моя · 7 мин» (mine, 7 minutes old). The interface is in Russian."
+      "caption": "A commodity row opened: price, quantity, Where to sell and Bought",
+      "alt": "The terminal table with a commodity row opened: the price and quantity fields, the Where to sell and Bought buttons, and the mark “mine · 7 min”."
     },
     "sell-or-fly": {
       "caption": "A trip: phases, cargo, totals and the “sell here or fly on” comparison",
-      "alt": "The «Рейс» (trip) section: phases and timer, cargo, money invested, the expected profit and ROI; below, the «Здесь» (here) line and a table of other buyers. The interface is in Russian."
+      "alt": "The Trip section: phases and timer, cargo, money spent, the expected profit and ROI; below, the Here line and the Fly on table of other buyers."
     },
     "history": {
-      "caption": "«Мои маршруты», the «История» (history) tab: every trip, the newest first",
-      "alt": "The «История» tab: trips with date, route, profit, ROI and time; the trip under way and a trip with lost cargo are marked in colour. The interface is in Russian."
+      "caption": "My routes, the History tab: every trip, the newest first",
+      "alt": "The History tab: trips with date, route, profit, ROI and time; the trip under way and a trip with lost cargo are marked in colour."
     },
     "settings": {
       "caption": "Settings: six groups, from the ship to the data",
-      "alt": "The SC Trade settings: the «Корабль и поиск» (ship and search) group is open; below it, folded, are price freshness, route calculation, keys, window and data. The interface is in Russian."
+      "alt": "The SC Trade settings: the Ship and search group is open; below it, folded, are price freshness, route calculation, keys, window and data."
     }
   },
   "gallery": {
     "label": "How it looks",
     "title": "The app's window",
-    "intro": "The pictures were taken from the app itself on demo data. The app's interface is in Russian only; commodity and terminal names are in English, as in UEX.",
+    "intro": "The pictures were taken from the app itself on demo data. The app speaks English or Russian; commodity and terminal names are in English, as in UEX.",
     "open": "Open larger",
     "close": "Close",
     "prev": "Previous picture",
@@ -189,7 +189,7 @@
       "WebView2: Windows 11 already has it. If it is missing, the installer downloads it itself.",
       "The game in borderless window mode.",
       "It installs for the current user; no administrator rights are needed.",
-      "The installer is in Russian and English; the app's interface is in Russian only."
+      "The installer and the app are in English and Russian; the language is chosen at the first start."
     ],
     "sha_title": "SHA-256 of the file",
     "sha_missing": "none: built without the installer",
@@ -213,10 +213,6 @@
     "title": "What comes next",
     "intro": "These are plans, not promises: the order and the contents of the versions may change.",
     "items": [
-      {
-        "title": "1.3 — English",
-        "text": "The interface in English. A choice of language at the first start and a short tutorial, where the ship is chosen right away."
-      },
       {
         "title": "1.4 — Prices at one key press",
         "text": "Reading prices from the terminal on your key: one screenshot, recognised on your own computer. Sending your prices to UEX. All of it optional and off by default."
