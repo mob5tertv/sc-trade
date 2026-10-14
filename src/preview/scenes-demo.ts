@@ -55,6 +55,26 @@ function demoScene(name: string, title: string, upTo: string | null): Scene {
 }
 
 export const DEMO_SCENES: readonly Scene[] = [
+  {
+    // version 1.3: a price (with its stock) written while «Варианты» are open counts them again (the author at Deakins: Foam 71 SCU,
+    // 1050 in fact, corrected, and «Куда» kept 71 SCU and its small profit). The scene fails when «Взять» does not follow the stock.
+    name: 'options-recount-after-price',
+    title: 'Варианты считаются заново после своей записи: запас Stims 120 → «Взять» 120 SCU',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      app.setViewTerminal(3);
+      await pause(100);
+      await press('[data-tour-row="STIM"]');
+      await press('[data-tour-open="STIM"] [data-tour="lookup"]');
+      await pause(600);
+      const before = app.lookup.options.find((o) => o.originId === 3 && o.commodityId === 8);
+      await app.recordPrice({ terminalId: 3, commodityId: 8, side: 'buy', price: 2860, scu: 120 });
+      await pause(1500);
+      const after = app.lookup.options.find((o) => o.originId === 3 && o.commodityId === 8);
+      if (after?.qty !== 120) throw new Error(`«Взять» did not follow the stock written: ${before?.qty} before, ${after?.qty} after`);
+    },
+  },
   demoScene('demo-01-start', 'Демо-рейс, 1: начало', null),
   demoScene('demo-02-location', 'Демо-рейс, 2: станция', 'location'),
   demoScene('demo-03-row', 'Демо-рейс, 3: строка товара', 'row'),

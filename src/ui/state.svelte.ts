@@ -1688,10 +1688,29 @@ class AppState {
   // ---- the Terminal and the Options sections -----------------------------------------------------
 
   /**
+   * After a price of the player's own was written, taken out or corrected, the «Варианты» on the screen are counted again, half a
+   * second after the last of such records (version 1.3; the author: «прилетел на Deakins — Foam 71 SCU, по факту 1050 — я исправил,
+   * но в разделе „Куда“ не изменилось количество… и минимальная из этого прибыль»). Spec 14.8 had them left as they were, so that a
+   * list would not jump while prices are typed one after another; one recount after the last of them keeps that, and the answer
+   * stays on the screen until the new one comes (`runLookup` of the same request).
+   */
+  #recountLookupSoon(): void {
+    if (this.lookup.request === null) return;
+    if (this.#recountTimer !== null) clearTimeout(this.#recountTimer);
+    this.#recountTimer = setTimeout(() => {
+      this.#recountTimer = null;
+      if (this.lookup.request !== null) void this.rerunLookup();
+    }, AppState.#RECOUNT_AFTER_MS);
+  }
+
+  #recountTimer: ReturnType<typeof setTimeout> | null = null;
+  static readonly #RECOUNT_AFTER_MS = 500;
+
+  /**
    * Writes a price the player saw (own observation, with the quantity only when typed), reloads the market (and, in the
    * background, the statistics: a price is a record of the session) and
-   * makes that terminal the VIEWED one (the current location stays where it is). It asks no lookup: prices are
-   * entered quietly, one after another, and the "Варианты" on screen are not recounted nor closed (spec 14.8).
+   * makes that terminal the VIEWED one (the current location stays where it is). The "Варианты" on screen are not closed; they are
+   * counted again once the player stops typing prices (`#recountLookupSoon`).
    * Returns the sentence to show when the price was not saved, `null` when it was. The market is reloaded in
    * either case, so the table shows what is stored.
    */
@@ -1718,6 +1737,7 @@ class AppState {
     void stats.reload('price recorded');
     this.#showTerminal(input.terminalId);
     this.#warnWorsePrice(input, expected);
+    this.#recountLookupSoon();
     return null;
   }
 
@@ -1741,6 +1761,7 @@ class AppState {
     await this.reloadMarket();
     this.rowsNow = nowSec();
     void stats.reload('price removed');
+    this.#recountLookupSoon();
     return failure;
   }
 
@@ -1765,6 +1786,7 @@ class AppState {
     await this.reloadMarket();
     this.rowsNow = nowSec();
     void stats.reload('price corrected');
+    this.#recountLookupSoon();
     return failure;
   }
 
