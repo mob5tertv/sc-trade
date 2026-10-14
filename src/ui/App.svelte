@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { boot } from './boot';
+  import CoachBubble from './CoachBubble.svelte';
   import { installDrag } from './drag';
   import { installKeyboard } from './keyboard';
   import Panel from './Panel.svelte';
@@ -107,6 +108,7 @@
     {:else}
       <Panel />
     {/if}
+    {#if app.coach !== null}<CoachBubble />{/if}
   {/key}
 </div>
 
@@ -123,7 +125,8 @@
     --own-max-h: calc(var(--sc-max-h) / var(--sc-ui-scale, 1));
     max-width: var(--own-max-w, none);
     max-height: var(--own-max-h, none);
-    min-height: var(--sc-float-min-h, 0);
+    /* a list that opens from a field (`--sc-float-min-h`) and the hint of the demo (`--sc-coach-min-h`) make the window tall enough for them */
+    min-height: max(var(--sc-float-min-h, 0px), var(--sc-coach-min-h, 0px));
   }
 
   .sc-root[data-corner^='top'] {

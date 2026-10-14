@@ -8,6 +8,7 @@ import { KEYBOARD_SCENES } from './scenes-keyboard';
 import { ROI_SCENES } from './scenes-roi';
 import { POLISH_SCENES } from './scenes-polish';
 import { REPAIR_SCENES } from './scenes-repairs';
+import { DEMO_SCENES } from './scenes-demo';
 import { RUN_SCENES } from './scenes-run';
 import { SCALE_SCENES } from './scenes-scale';
 import { STATS_SCENES } from './scenes-stats';
@@ -52,6 +53,7 @@ export const SCENES: readonly Scene[] = [
   ...TRADER_SCENES,
   ...ROI_SCENES,
   ...RUN_SCENES,
+  ...DEMO_SCENES,
   ...SCALE_SCENES,
   { name: 'mini', title: 'Мини-строка, без рейса', dataset: 'default' },
   { name: 'mini-run', title: 'Мини-строка в рейсе', dataset: 'run' },

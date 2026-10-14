@@ -80,6 +80,7 @@ import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 import { langOf, setLang, tr, type Lang } from '../i18n';
 import { setTrayLabels } from '../platform/tray';
 import type { BootStage } from './vm/boot-status';
+import type { Coach } from './vm/coach';
 import { nextTutorialStep as tutorialAfter, opensTutorialByItself } from './vm/tutorial';
 
 // The one application state. Everything the screens show lives here, and every action of the player
@@ -364,6 +365,8 @@ class AppState {
   language = $state<Lang>('ru');
   /** The step of the tutorial on the screen (version 1.3, `vm/tutorial.ts`), `null` when there is none. */
   tutorialStep = $state<number | null>(null);
+  /** The hint of the demo trip on the screen (`vm/coach.ts`), `null` when there is none. */
+  coach = $state<Coach | null>(null);
   bootError = $state<string | null>(null);
   notice = $state<Notice | null>(null);
   /** The reference is being downloaded by the button. */

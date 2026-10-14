@@ -6,6 +6,8 @@ export const EN: Readonly<Record<string, string>> = {
   // src/ui/boot.ts
   'Не удалось открыть локальную базу данных. Подробности в логе.': 'Could not open the local database. Details are in the log.',
   'Не удалось прочитать данные из локальной базы. Подробности в логе.': 'Could not read data from the local database. Details are in the log.',
+  // src/ui/CoachBubble.svelte
+  'Выйти из демо': 'Leave the demo',
   // src/ui/components/ConfirmButton.svelte
   'Нажми ещё раз, чтобы подтвердить. Не нажмёшь — кнопка вернётся сама': 'Click again to confirm. If you don\'t, the button resets by itself',
   // src/ui/components/HistoryList.svelte
