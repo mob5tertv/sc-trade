@@ -22,12 +22,13 @@ export interface History {
 export const EMPTY_HISTORY: History = { runs: [], recordTs: [] };
 
 /** The lists the section shows, one at a time. */
-export type StatsView = 'routes' | 'history' | 'sessions';
+export type StatsView = 'routes' | 'history' | 'sessions' | 'records';
 
 export const STATS_VIEWS: ReadonlyArray<{ id: StatsView; label: string; title: string }> = [
-  { id: 'routes', label: 'Маршруты', title: 'Мои маршруты по UEC в час' },
+  { id: 'routes', label: 'Маршруты', title: 'Мои маршруты: сначала тот, чей рейс приносит больше' },
   { id: 'history', label: 'История', title: 'Все рейсы, новые сверху' },
   { id: 'sessions', label: 'Сессии', title: 'Пауза между записями дольше двух часов начинает новую сессию' },
+  { id: 'records', label: 'Записи', title: 'Твои записи цен, новые сверху: то, по чему считает программа. Запись можно исправить или убрать' },
 ];
 
 /** How many rows a list of the section (routes, history, sessions) shows before it scrolls: older ones are reached with the wheel. The one place of the number. */

@@ -143,8 +143,9 @@ describe('sessionFigure', () => {
 });
 
 describe('the lists of the section', () => {
-  it('are three, in the order the switch shows them, with Russian names', () => {
-    expect(STATS_VIEWS.map((v) => [v.id, v.label])).toEqual([['routes', 'Маршруты'], ['history', 'История'], ['sessions', 'Сессии']]);
+  it('are four, in the order the switch shows them, with Russian names', () => {
+    expect(STATS_VIEWS.map((v) => [v.id, v.label])).toEqual([['routes', 'Маршруты'], ['history', 'История'], ['sessions', 'Сессии'], ['records', 'Записи']]);
+    expect(STATS_VIEWS.map((v) => v.title).join(' ')).not.toMatch(/UEC в час/);
   });
 
   it('show eight rows before they scroll: the body is the line of heads and eight rows of the height of a row, and no taller', () => {

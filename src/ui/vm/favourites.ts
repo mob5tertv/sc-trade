@@ -34,29 +34,36 @@ export interface FavouriteAlert { key: string; text: string }
  * the next check: a route speaks ONCE per filling, and again only after its stock was seen below a full hold).
  *
  * "Full" is: the stock at the loading place, counted by the refill timer from a reading of the PLAYER'S OWN that is not cold, is
- * at least `capacity`. A quantity of UEX does not count (it does not grow, and it is not this server's), and after «Сменил
- * сервер» the player's readings are cold until he takes a new one, so the routes are silent until then. No capacity, no alert.
+ * at least `capacity`, OR has reached the most that was ever seen there when that is less than a hold (a small outpost never
+ * holds a hold of a big ship: its route would never speak; found on 14.10.2026, Deakins holds about 420 SCU of foam and the
+ * ship 512). A quantity of UEX does not count (it does not grow, and it is not this server's), and after «Сменил сервер» the
+ * player's readings are cold until he takes a new one, so the routes are silent until then. No capacity, no alert.
+ *
+ * `ready` is every favourite that is full now, with its words: the state that stays on the screen after the alert has gone.
  */
 export function favouriteAlerts(
   list: readonly FavouriteRoute[], m: Market, ref: Reference, ctx: EstimateCtx, capacity: number, alerted: ReadonlySet<string>,
-): { alerts: FavouriteAlert[]; alerted: Set<string> } {
+): { alerts: FavouriteAlert[]; alerted: Set<string>; ready: FavouriteAlert[] } {
   const alerts: FavouriteAlert[] = [];
+  const ready: FavouriteAlert[] = [];
   const full = new Set<string>();
   for (const f of list) {
     const buy = capacity > 0 ? estimate(m, f.originId, f.commodityId, 'buy', ctx) : null;
-    if (buy === null || buy.scuOrigin !== 'own' || buy.scu === null || buy.scu < capacity) continue;
+    if (buy === null || buy.scuOrigin !== 'own' || buy.scu === null) continue;
+    // the most the store was ever seen to hold, when that is less than a hold: it will not grow beyond it
+    const ceiling = buy.stock !== null && buy.stock.maxScu !== null && buy.stock.maxScu > 0 && buy.stock.maxScu < capacity ? buy.stock.maxScu : null;
+    if (buy.scu < (ceiling ?? capacity)) continue;
     const key = favouriteKey(f);
     full.add(key);
-    if (alerted.has(key)) continue;
     const sell = estimate(m, f.destId, f.commodityId, 'sell', ctx);
     const roi = sell !== null && buy.price > 0 ? ` · ROI ${formatRoi((sell.price - buy.price) / buy.price)}` : '';
     const code = ref.commodities.get(f.commodityId)?.code || `#${f.commodityId}`;
-    alerts.push({
-      key,
-      text: `★ ${terminalLabel(ref, f.originId)} → ${terminalLabel(ref, f.destId)}: ${code} ≈ ${Math.round(buy.scu)} SCU, на полный трюм${roi}`,
-    });
+    const how = ceiling === null ? 'на полный трюм' : `больше там не видели (трюм ${capacity})`;
+    const alert = { key, text: `★ ${terminalLabel(ref, f.originId)} → ${terminalLabel(ref, f.destId)}: ${code} ≈ ${Math.round(buy.scu)} SCU, ${how}${roi}` };
+    ready.push(alert);
+    if (!alerted.has(key)) alerts.push(alert);
   }
-  return { alerts, alerted: full };
+  return { alerts, alerted: full, ready };
 }
 
 /** What the window says when a star could not be added. */

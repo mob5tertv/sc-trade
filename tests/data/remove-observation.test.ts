@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createLogger, memorySink } from '../../src/data/logger';
-import { addObservation, latestObservations, removeLatestObservation } from '../../src/data/repo/diary';
+import { addObservation, editObservation, latestObservations, removeLatestObservation } from '../../src/data/repo/diary';
 import { migratedDb } from '../helpers/test-db';
 
 // Spec 14.19: a price typed in at the wrong terminal (the quick entry takes any commodity for the terminal that is viewed) can be

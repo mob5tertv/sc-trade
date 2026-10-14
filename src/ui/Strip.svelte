@@ -26,6 +26,7 @@
     onDepart={next === 'depart' ? () => void app.mark('depart') : undefined}
     onArrive={next === 'arrive' ? () => void app.mark('arrive') : undefined}
     rangeStill={!app.settings.stripRangeTurns}
+    favourites={app.favouritesReady.map((alert) => alert.text)}
   />
 </div>
 

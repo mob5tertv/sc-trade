@@ -152,7 +152,7 @@ describe('routeOptionRow', () => {
       invested: nb('587 520'), profit: nb('74 880'), profitLoss: false, trend: null, priceIsOwn: false,
       buy: { price: nb('6 120'), range: NO_PRICE, badge: { text: 'моя · 40 мин', kind: 'hot' } },
       sell: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
-      stockNote: UNKNOWN_STOCK_NOTE, stockLimit: null,
+      stockNote: UNKNOWN_STOCK_NOTE, stockLimit: null, soleNote: null,
     });
   });
 
@@ -600,5 +600,27 @@ describe('priceHint: the spread of a price is its hint now that the lists have n
     expect(priceHint(view({ kind: 'flat', price: 5500 }))).toBe(`Мин–макс: одна цена за период, ${nb('5 500')} · UEX · 2 д`);
     expect(priceHint(view({ kind: 'no-bounds' }))).toBe('UEX не даёт границ цены · UEX · 2 д');
     expect(priceHint(view({ kind: 'none' }))).toBe('UEX не знает цену · UEX · 2 д');
+  });
+});
+
+describe('routeOptionRow: a price that only the player knows at a terminal', () => {
+  // the row asks UEX for its range of a side of a terminal; 'none' is "UEX does not know the commodity there"
+  const nothingAt = (...unknown: number[]) => (terminalId: number): UexRange => (unknown.includes(terminalId) ? { kind: 'none' } : { kind: 'spread', low: 6400, high: 7100 });
+  const mine = estimate({ price: 2222, low: 2222, high: 2222, source: 'own', temp: 'cooling' });
+
+  it('says so when UEX knows nothing of the commodity where my price stands: nothing checks the number', () => {
+    const row = routeOptionRow(option({ buy: mine }), ref, 'to', new Map(), { uexRange: nothingAt(1) });
+    expect(row.soleNote).toBe('Цена на ARC-L1 только твоя: UEX этого товара там не знает. Проверь её во вкладке «Записи»');
+  });
+
+  it('says nothing where UEX has a price for that place too, for a price of UEX, and when the ranges are not given', () => {
+    expect(routeOptionRow(option({ buy: mine }), ref, 'to', new Map(), { uexRange: nothingAt() }).soleNote).toBeNull();
+    expect(routeOptionRow(option(), ref, 'from', new Map(), { uexRange: nothingAt(2) }).soleNote).toBeNull();      // the sale price is UEX's own
+    expect(routeOptionRow(option({ buy: mine }), ref, 'to', new Map()).soleNote).toBeNull();
+  });
+
+  it('names both ends when both prices are mine alone', () => {
+    const row = routeOptionRow(option({ buy: mine, sell: estimate({ price: 6900, low: 6900, high: 6900, source: 'own', temp: 'hot' }) }), ref, 'from', new Map(), { uexRange: nothingAt(1, 2) });
+    expect(row.soleNote).toContain('ARC-L1 и TDD Area 18');
   });
 });

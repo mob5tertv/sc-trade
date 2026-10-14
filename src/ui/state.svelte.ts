@@ -12,7 +12,7 @@ import { DEFAULT_SETTINGS, type Settings } from '../core/settings';
 import type { Market, Reference, RunWithEvents, Side } from '../core/types';
 import type { Db } from '../data/db';
 import { createLogger, type Logger } from '../data/logger';
-import { addObservation, removeLatestObservation } from '../data/repo/diary';
+import { addObservation, editObservation, removeLatestObservation } from '../data/repo/diary';
 import { getActiveRun } from '../data/repo/runs';
 import { saveSetting } from '../data/repo/settings';
 import { getMeta, loadDistances, loadReference } from '../data/repo/uex-cache';
@@ -50,7 +50,7 @@ import { arrivalView, landingView, type ArrivalView } from './vm/arrival-view';
 import { clearedText, clearQuestion, countFor, oldRunsBefore, type ClearScope } from './vm/history-clearing';
 import { shouldCollapse } from './vm/idle';
 import { playChime } from '../platform/sound';
-import { favouriteAlerts, FAVOURITES_FULL, toggledFavourites, type FavouriteRoute } from './vm/favourites';
+import { favouriteAlerts, FAVOURITES_FULL, toggledFavourites, type FavouriteAlert, type FavouriteRoute } from './vm/favourites';
 import type { GuideState } from './vm/guide';
 import { createKeyboardHolds, type KeyboardHolds } from './vm/keyboard-holds';
 import { createLatestRequest } from './vm/latest-request';
@@ -894,6 +894,12 @@ class AppState {
     this.#touch();
   }
 
+  /**
+   * The favourite routes whose stock is full NOW, with what the alert said of each. The alert is a moment (a sound, a line for some
+   * seconds) and is easily missed in a flight; this is what stays: the mini line wears «★N» and the star of the route is lit
+   * for as long as it is true (the author, 14.10.2026: "if we miss it, show that an alert was missed").
+   */
+  favouritesReady = $state.raw<readonly FavouriteAlert[]>([]);
   /** The favourite routes that have already said their hold is full: each speaks once per filling (`favouriteAlerts`). */
   #favouritesFull: ReadonlySet<string> = new Set();
   /** How long the alert of a favourite route stays: the mini line, the notice line. */
@@ -908,6 +914,8 @@ class AppState {
       return;
     }
     await this.updateSetting('favouriteRoutes', list);
+    // a route that is full already says so now, not at the next look of the clock; one that lost its star leaves the full ones
+    this.#checkFavourites();
   }
 
   /**
@@ -916,13 +924,18 @@ class AppState {
    */
   #checkFavourites(): void {
     try {
-      if (this.phase !== 'ready' || this.settings.favouriteRoutes.length === 0) return;
+      if (this.phase !== 'ready' || this.settings.favouriteRoutes.length === 0) {
+        if (this.favouritesReady.length > 0) this.favouritesReady = [];
+        return;
+      }
+      const { alerts, alerted, ready } = favouriteAlerts(
+        this.settings.favouriteRoutes, this.market, this.reference, this.routeCtx(undefined, this.rowsNow), this.settings.scuCapacity, this.#favouritesFull,
+      );
+      // what is full now is shown whatever happens to the alert itself
+      if (ready.length > 0 || this.favouritesReady.length > 0) this.favouritesReady = ready;
       // a notice with a button to press (the worse price, the hint of the keys) and an error are not pushed away by the clock:
       // the alert waits for the next look, the filling is not counted as said
       if (this.mode === 'expanded' && this.notice !== null && (this.notice.action !== undefined || this.notice.kind === 'error')) return;
-      const { alerts, alerted } = favouriteAlerts(
-        this.settings.favouriteRoutes, this.market, this.reference, this.routeCtx(undefined, this.rowsNow), this.settings.scuCapacity, this.#favouritesFull,
-      );
       this.#favouritesFull = alerted;
       if (alerts.length === 0) return;
       for (const alert of alerts) this.#log.info('ui', 'favourite route: a full hold is waiting', { key: alert.key });
@@ -1536,6 +1549,30 @@ class AppState {
     await this.reloadMarket();
     this.rowsNow = nowSec();
     void stats.reload('price removed');
+    return failure;
+  }
+
+  /**
+   * The player corrects a record of his own in «Записи»: its price and its quantity, in place (the moment of the reading stays).
+   * The market and the statistics are read again, as after a record that was taken out. Returns the sentence to show when it
+   * failed, `null` when it was written.
+   */
+  async editRecord(edit: { id: number; price: number; scu: number | null }): Promise<string | null> {
+    this.#log.info('ui', 'edit record', { ...edit });
+    let failure: string | null = null;
+    try {
+      if (!(Number.isFinite(edit.price) && edit.price > 0) || (edit.scu !== null && !(Number.isFinite(edit.scu) && edit.scu >= 0))) {
+        return 'Цена — целое число больше нуля, количество — от нуля';
+      }
+      const { db, log } = this.#syncDeps();
+      if ((await editObservation(db, log, edit.id, edit.price, edit.scu)) === 0) failure = 'Такой записи уже нет';
+    } catch (err) {
+      this.#log.error('ui', 'cannot correct the record', { ...edit, err });
+      failure = 'Не удалось исправить запись. Подробности в логе.';
+    }
+    await this.reloadMarket();
+    this.rowsNow = nowSec();
+    void stats.reload('price corrected');
     return failure;
   }
 

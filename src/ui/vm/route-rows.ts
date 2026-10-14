@@ -135,6 +135,10 @@ function priceView(e: Estimate, uexRange: () => UexRange = () => NO_RANGE): Pric
   return { price: formatUec(e.price), range: rangeView(range), badge: badgeText(e) };
 }
 
+/** What an option says when a price of it is the player's alone (`RouteOptionRow.soleNote`). */
+export const soleNote = (terminals: string[]): string =>
+  `Цена на ${terminals.join(' и ')} только твоя: UEX этого товара там не знает. Проверь её во вкладке «Записи»`;
+
 /** The hint of a price in a list: its spread by UEX (or why there is none), then whose price it is and how old. */
 export function priceHint(view: PriceView): string {
   return `${rangeHint(view.range)} · ${view.badge.text}`;
@@ -197,6 +201,12 @@ export interface RouteOptionRow {
   stockNote: string | null;
   /** Set when what is taken is everything the purchase terminal has (`stockLimitNote`): the line of the expanded row says why it is less than the hold; `null` otherwise. */
   stockLimit: string | null;
+  /**
+   * Set when a price of the trip is ONLY the player's: UEX does not know the commodity at that terminal, so nothing checks the
+   * number and nothing ever replaces it (a price typed in at the wrong station gave a trip of 161 % that way, 14.10.2026). The
+   * mark «!» of the row and a line of the opened row say it; `null` otherwise, and when the ranges of UEX are not given.
+   */
+  soleNote: string | null;
   /** For the expanded row: the money put in, the profit expected, and the prices at both ends. */
   invested: string; profit: string; profitLoss: boolean;
   buy: PriceView; sell: PriceView;
@@ -236,6 +246,11 @@ export function routeOptionRow(
   const buyView = priceView(o.buy, () => uexRange?.(o.originId, o.commodityId, 'buy') ?? NO_RANGE);
   const sellView = priceView(o.sell, () => uexRange?.(o.destId, o.commodityId, 'sell') ?? NO_RANGE);
   const bothEnds = anchorTerminalId === null || ownEndId !== anchorTerminalId;
+  // the ends whose price is the player's alone: UEX has nothing for the commodity there
+  const sole = uexRange === undefined ? [] : [
+    o.buy.source === 'own' && uexRange(o.originId, o.commodityId, 'buy').kind === 'none' ? o.originId : null,
+    o.sell.source === 'own' && uexRange(o.destId, o.commodityId, 'sell').kind === 'none' ? o.destId : null,
+  ].filter((id): id is number => id !== null);
   return {
     key: `${pairKey(o.originId, o.destId)}:${o.commodityId}`,
     terminal: terminalLabel(ref, from ? o.destId : o.originId),
@@ -263,6 +278,7 @@ export function routeOptionRow(
     qty: `${o.qty} SCU`,
     stockNote: stockKnown(o) ? null : UNKNOWN_STOCK_NOTE,
     stockLimit: o.buy.scu !== null && o.qty >= Math.floor(o.buy.scu) ? stockLimitNote(o.qty) : null,
+    soleNote: sole.length === 0 ? null : soleNote(sole.map((id) => terminalLabel(ref, id))),
     invested: formatUec(o.qty * o.buy.price), profit: formatUec(o.profit), profitLoss: o.profit < 0,
     buy: buyView, sell: sellView,
   };

@@ -16,7 +16,7 @@ async function click(selector: string, text?: string): Promise<void> {
 }
 
 /** The window expanded with only the "Мои маршруты" section open (the terminal folded) on its list `view`. */
-async function openStats(app: SceneApp, view: 'Маршруты' | 'История' | 'Сессии'): Promise<void> {
+async function openStats(app: SceneApp, view: 'Маршруты' | 'История' | 'Сессии' | 'Записи'): Promise<void> {
   await app.expand('preview');
   await app.toggleSection('terminal');
   await app.toggleSection('routes');
@@ -92,6 +92,27 @@ export const STATS_SCENES: readonly Scene[] = [
     title: 'Мои маршруты: рейтинг маршрутов по UEC/ч',
     dataset: 'stats',
     act: (app) => openStats(app, 'Маршруты'),
+  },
+  {
+    name: 'stats-records',
+    title: 'Мои маршруты: «Записи» — свои цены, новые сверху; клик по строке даёт исправить или убрать',
+    dataset: 'stats',
+    act: (app) => openStats(app, 'Записи'),
+  },
+  {
+    // the hold is made small so that the stock of Medical Supplies at HUR-L1 (my reading, a few minutes old) is a full one;
+    // the alert itself is a moment (ten seconds in the mini line): the scene waits it out, what stays is the mark «★1»
+    name: 'favourite-ready',
+    title: 'Избранный маршрут с полным складом: сигнал прошёл, в мини-строке осталось «★1»',
+    dataset: 'default',
+    act: async (app) => {
+      const meds = [...app.reference.commodities.values()].find((c) => c.code === 'MEDS');
+      if (meds === undefined) throw new Error('the dataset has no Medical Supplies');
+      await app.updateSetting('favouriteSound', false);
+      await app.updateSetting('scuCapacity', 300);
+      await app.toggleFavourite({ originId: 3, destId: 5, commodityId: meds.id });
+      await pause(10_500);
+    },
   },
   {
     name: 'stats-history',

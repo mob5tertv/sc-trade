@@ -109,6 +109,7 @@
             {#if row.bothEnds}<span class="arrow">→</span><span class="end">{row.dest}</span>{/if}
             {#if row.isTarget}<span class="goal" title="Цель рейса">цель</span>{/if}
             {#if row.stockNote}<span class="unsure" role="img" aria-label={row.stockNote} title={row.stockNote}>?</span>{/if}
+            {#if row.soleNote}<span class="unsure" role="img" aria-label={row.soleNote} title={row.soleNote}>!</span>{/if}
             {#if row.loadBar}<span class="bar" title="Твой корабль здесь не загрузится: в точке закупки {row.loadBar}">док</span>{/if}
           </span>
           <span class="cell sc-num" class:hint={!row.priceIsOwn} title={priceTitle(row)}>
@@ -132,6 +133,7 @@
             </div>
             {#if row.stockNote}<p class="stock-note"><span class="unsure" aria-hidden="true">?</span> {row.stockNote}</p>{/if}
             {#if row.stockLimit}<p class="stock-note">{row.stockLimit}</p>{/if}
+            {#if row.soleNote}<p class="stock-note"><span class="unsure" aria-hidden="true">!</span> {row.soleNote}</p>{/if}
             {#if row.loadBar}<p class="stock-note bar-note">Твой корабль в точке закупки не загрузится: {row.loadBar}</p>{/if}
             {#if row.boxes}<p class="stock-note" title="По размерам ящиков, которые продаёт терминал закупки и которые берёт твой корабль">{row.boxes}</p>{/if}
             <div class="prices">

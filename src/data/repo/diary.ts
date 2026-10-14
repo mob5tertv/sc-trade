@@ -38,6 +38,17 @@ export async function removeLatestObservation(db: Db, log: Logger, cell: Pick<Ob
   return result.rowsAffected;
 }
 
+/**
+ * Corrects one observation in place («Записи», the author 14.10.2026): its price and its quantity (`null`: no quantity was read).
+ * The moment of the reading stays: a record that is corrected is not a record that was taken again, and must not turn hot.
+ * Returns how many rows were changed (0: the record is gone).
+ */
+export async function editObservation(db: Db, log: Logger, id: number, price: number, scu: number | null): Promise<number> {
+  const result = await db.execute('UPDATE observation SET price = ?, scu = ? WHERE id = ?', [price, scu, id]);
+  log.info('diary', 'observation corrected', { id, price, scu, rows: result.rowsAffected });
+  return result.rowsAffected;
+}
+
 /** The observation a trade wrote: the moment, the place, the commodity, the side and the price of that trade. */
 export type TradeObservation = Pick<Observation, 'ts' | 'terminalId' | 'commodityId' | 'side' | 'price'>;
 

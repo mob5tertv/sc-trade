@@ -14,8 +14,10 @@
     onArrive?: () => void;
     /** The two ends of the range take turns (the default), or stand side by side as 'мин–макс' (the setting; also what a system that asks for less motion gets). */
     rangeStill?: boolean;
+    /** The favourite routes whose stock is full now, in the words of their alerts: the line wears «★N» while there are any. */
+    favourites?: readonly string[];
   }
-  let { model, flash, flashKind = 'info', onOpen, onDepart, onArrive, rangeStill = false }: Props = $props();
+  let { model, flash, flashKind = 'info', onOpen, onDepart, onArrive, rangeStill = false, favourites = [] }: Props = $props();
 
   const lot = $derived(model.kind === 'run' ? model.lot ?? null : null);
 
@@ -33,11 +35,13 @@
     {#if flash !== null}
       <span class="part flash" class:error={flashKind === 'error'} aria-live="polite">{flash}</span>
     {:else if model.kind === 'idle'}
+      {#if favourites.length > 0}<span class="part fav" title={favourites.join('\n')}>★{favourites.length}</span>{/if}
       <span class="part location">{model.location}{#if model.target !== null}<span class="to">→</span>{#if model.then}<span class="step">закупка</span>{/if}<span class="goal">{model.target}</span>{#if model.then}<span class="step then">потом {model.then}</span>{/if}{/if}</span>
       {#if model.session !== null}
         <span class="part session {model.session.tone}"><span class="caption">сессия</span>{model.session.short}</span>
       {/if}
     {:else}
+      {#if favourites.length > 0}<span class="part fav" title={favourites.join('\n')}>★{favourites.length}</span>{/if}
       <span class="part timer" title="Всего: {model.timer}"><span class="phase">{model.phaseLabel}</span>{model.phaseTimer}</span>
       {#if lot !== null}
         <span class="part lot" title={model.cargoTitle || undefined}>
@@ -277,6 +281,12 @@
   /* what the session that is going has earned: the colour of a profit, of a loss, or none for an even one */
   .session {
     gap: 6px;
+    font-weight: 600;
+  }
+
+  /* «★N»: so many favourite routes have a full stock now; it stays while that is true, the alert itself is a moment */
+  .fav {
+    color: var(--sc-good);
     font-weight: 600;
   }
 

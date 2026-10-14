@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildMarket } from '../../src/core/market';
 import { FAVOURITES_FULL, FAVOURITES_MAX, favouriteAlerts, favouriteKey, isFavourite, toggledFavourites } from '../../src/ui/vm/favourites';
 import { favouriteOf } from '../../src/ui/vm/stats-rows';
+import { obsKey } from '../../src/core/types';
 import { obs, ref } from '../helpers/factories';
 import { ctx, GOLD, market, NOW, withBuy } from '../helpers/route-fixtures';
 import { stat } from '../helpers/stats-rows-fixtures';
@@ -49,7 +50,7 @@ describe('favouriteAlerts', () => {
   });
 
   it('is silent while the stock is below the hold', () => {
-    expect(favouriteAlerts([route], market, ref, ctx, 5000, none)).toEqual({ alerts: [], alerted: new Set() });
+    expect(favouriteAlerts([route], market, ref, ctx, 5000, none)).toEqual({ alerts: [], alerted: new Set(), ready: [] });
   });
 
   it('speaks once per filling: silent while it stays full, and again after it was seen below the hold', () => {
@@ -60,7 +61,7 @@ describe('favouriteAlerts', () => {
     // the player bought: a new reading of 20 SCU, the stock is below the hold, the route may speak again when it refills
     const bought = buildMarket([...market.uex.values()], [...market.own.values(), obs({ id: 50, ts: NOW - 30, terminalId: 1, commodityId: GOLD, side: 'buy', price: 6120, scu: 20 })]);
     const emptied = favouriteAlerts([route], bought, ref, ctx, 300, second.alerted);
-    expect(emptied).toEqual({ alerts: [], alerted: new Set() });
+    expect(emptied).toEqual({ alerts: [], alerted: new Set(), ready: [] });
     expect(favouriteAlerts([route], market, ref, ctx, 300, emptied.alerted).alerts).toHaveLength(1);
   });
 
@@ -79,5 +80,34 @@ describe('favouriteAlerts', () => {
   it('is silent without a capacity, and for a route nobody has a reading of', () => {
     expect(favouriteAlerts([route], market, ref, ctx, 0, none).alerts).toEqual([]);
     expect(favouriteAlerts([{ originId: 6, destId: 2, commodityId: GOLD }], market, ref, ctx, 300, none).alerts).toEqual([]);
+  });
+});
+
+// Found in the author's flight of 14.10.2026: Deakins holds about 420 SCU of foam, his ship 512. "A full hold is waiting" could
+// never be said of that route. And an alert that is missed in a flight left no trace.
+describe('favouriteAlerts: a store that never holds a hold, and what stays after the alert', () => {
+  // the most ever seen at A is 340 SCU, and the refill timer has brought the stock back to it
+  const small = buildMarket([...market.uex.values()], [...market.own.values()], new Map([[obsKey(1, GOLD, 'buy'), { maxScu: 340, ratePerMin: 10 }]]));
+
+  it('speaks when the stock has reached the most that was ever seen there, and says that it is not a hold', () => {
+    const { alerts, alerted } = favouriteAlerts([route], small, ref, ctx, 512, none);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].text).toMatch(/^★ ARC-L1 → TDD Area 18: GOLD ≈ 340 SCU, больше там не видели \(трюм 512\) · ROI 13%$/);
+    expect(alerted.has('1>2:10')).toBe(true);
+  });
+
+  it('still asks for a whole hold where the store is known to hold one', () => {
+    const big = buildMarket([...market.uex.values()], [...market.own.values()], new Map([[obsKey(1, GOLD, 'buy'), { maxScu: 2000, ratePerMin: 10 }]]));
+    // 340 SCU ten minutes ago and 10 a minute: 440 now, the hold is 512
+    expect(favouriteAlerts([route], big, ref, ctx, 512, none).alerts).toEqual([]);
+    expect(favouriteAlerts([route], big, ref, ctx, 400, none).alerts[0].text).toContain('на полный трюм');
+  });
+
+  it('keeps the route among those that are full NOW after it has spoken: the alert is a moment, this is what stays on the screen', () => {
+    const first = favouriteAlerts([route], small, ref, ctx, 512, none);
+    expect(first.ready).toEqual(first.alerts);
+    const later = favouriteAlerts([route], small, ref, ctx, 512, first.alerted);
+    expect(later.alerts).toEqual([]);                    // it does not speak twice
+    expect(later.ready).toEqual(first.alerts);           // and is still shown as full
   });
 });

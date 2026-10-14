@@ -15,8 +15,10 @@
     /** The favourite routes; with `onFavourite` every row of one commodity has a star. */
     favourites?: readonly FavouriteRoute[];
     onFavourite?: (route: FavouriteRoute) => void;
+    /** The favourites whose stock is full now (`favouriteKey` → what the alert said): their stars are lit. */
+    ready?: ReadonlyMap<string, string>;
   }
-  let { rows, sort, onSort, favourites = [], onFavourite }: Props = $props();
+  let { rows, sort, onSort, favourites = [], onFavourite, ready }: Props = $props();
 
   const starred = $derived(new Set(favourites.map(favouriteKey)));
 
@@ -55,13 +57,15 @@
             {@const fav = favouriteOf(row)}
             {#if fav !== null}
               {@const on = starred.has(favouriteKey(fav))}
+              {@const full = on ? ready?.get(favouriteKey(fav)) : undefined}
               <button
                 type="button"
                 class="star"
                 class:on
+                class:ready={full !== undefined}
                 aria-pressed={on}
                 aria-label="Избранный маршрут"
-                title={on ? 'Избранный маршрут: окно скажет, когда запас в точке закупки дорастёт до полного трюма. Клик — убрать' : 'В избранное: окно скажет со звуком, когда запас в точке закупки дорастёт до полного трюма'}
+                title={full !== undefined ? `${full}\nКлик — убрать из избранного` : on ? 'Избранный маршрут: окно скажет, когда запас в точке закупки дорастёт до полного трюма. Клик — убрать' : 'В избранное: окно скажет со звуком, когда запас в точке закупки дорастёт до полного трюма'}
                 onclick={() => onFavourite?.(fav)}
               >{on ? '★' : '☆'}</button>
             {:else}
@@ -128,6 +132,11 @@
 
   .star.on {
     color: var(--sc-warn);
+  }
+
+  /* the stock of the route is full now: the star says so for as long as it is true, whether or not the alert was seen */
+  .star.ready {
+    color: var(--sc-good);
   }
 
   .star:hover:not(.none) {
