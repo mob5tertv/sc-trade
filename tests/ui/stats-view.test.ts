@@ -197,7 +197,7 @@ describe('figuresOf', () => {
 describe('«Обнулить маршруты» (spec 14.19)', () => {
   const history = { runs: [R6, R5, R4, R3, R2, R1], recordTs: [1000, 3400, 10000, 11800, 20000, 21000] };
 
-  it('counts the routes, my times, my run counts and my pace from the runs that ended since the reset', () => {
+  it('counts the routes, my times and my run counts from the runs that ended since the reset', () => {
     const all = figuresOf(history);
     const since = figuresOf(history, 12_000);                      // R1 and R2 ended before it
     expect(all.stats.map((s) => s.destId)).toEqual([2, 3]);
@@ -205,8 +205,6 @@ describe('«Обнулить маршруты» (spec 14.19)', () => {
     expect(since.ownMedian.has(pairKey(1, 2))).toBe(false);
     expect(since.runCounts.get(pairKey(1, 2))).toBeUndefined();
     expect(since.runCounts.get(pairKey(1, 3))).toBe(1);
-    expect(all.pace!.runs).toBe(5);
-    expect(since.pace!.runs).toBe(3);                              // R4, R3, R5
   });
 
   it('leaves the sessions as they were: what was earned is not taken back', () => {
@@ -217,7 +215,6 @@ describe('«Обнулить маршруты» (spec 14.19)', () => {
     const now = 60_000;
     const fresh = figuresOf(history, now);
     expect(fresh.stats).toEqual([]);
-    expect(fresh.pace).toBeNull();
     expect(fresh.ownMedian.size).toBe(0);
     expect(runsSince(history.runs, now)).toEqual([R6]);            // the run that goes on is kept: it will end after the reset
     const ended = { run: { ...R6.run, status: 'done' as const, endedAt: now + 500 }, events: R6.events };

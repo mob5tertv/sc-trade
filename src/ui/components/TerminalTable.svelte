@@ -4,7 +4,7 @@
   import type { CargoLine, Side } from '../../core/types';
   import { baseTexts, cellEditBase, resolveCellEdit } from '../vm/inputs';
   import type { CellFinish, EditBase } from '../vm/inputs';
-  import type { RoiCell } from '../vm/row-roi';
+  import { profitMark, type RoiCell } from '../vm/row-roi';
   import { DEFAULT_TERMINAL_SORT, heldPlaces, holdMark, holdOf, holdOrder, orderRows, resortedPlaces, terminalAriaSort } from '../vm/terminal-order';
   import type { TerminalSort, TerminalSortKey } from '../vm/terminal-order';
   import { LEGEND } from '../vm/legend';
@@ -271,6 +271,10 @@
     });
   });
 
+  // The bar at the edge of a row: by the ROI threshold while the table is sorted by the ROI, else by what the row brings against the best row
+  const byRoi = $derived(sort.key === 'roi');
+  const bestProfit = $derived(Math.max(0, ...[...roi.values()].map((cell) => cell.profit)));
+
   const roiTitle = $derived(`${noCapacity ? NO_CAPACITY_HINT : 'ROI лучшего рейса с этим товаром'}\nНажми, чтобы отсортировать по ROI`);
   const gainTitle = $derived(`${noCapacity ? NO_CAPACITY_HINT : LEGEND.profitTrip}\nНажми, чтобы отсортировать по прибыли`);
   // the hint of a price: its spread by UEX and whose price it is; under a spread, what the two numbers are (the legend of «Мин–макс»)
@@ -435,10 +439,11 @@
         {@const scu = cellScu(cell, side)}
         {@const span = rangeView(cell.range)}
         {@const best = roi.get(row.commodityId)}
+        {@const mark = best && !byRoi ? profitMark(best.profit, bestProfit) : null}
         {@const held = hold.get(row.commodityId)}
         <!-- the profit and the ROI of the best trip are one button of their own, beside the one of the row (a button inside a button
              is not allowed): a click on it asks for the options and does not open the row -->
-        <div class="row {best ? `tier-${best.tier}` : ''}" class:selected class:hot={best?.hot} class:pulse={pulse.has(row.commodityId)} role="row">
+        <div class="row {best ? `tier-${best.tier}` : ''} {mark ? `bar-${mark}` : ''}" class:selected class:hot={byRoi ? best?.hot : mark !== null} class:pulse={pulse.has(row.commodityId)} role="row">
           <div class="top">
             <button type="button" class="grid line" aria-expanded={selected} onclick={() => toggle(row.commodityId)}>
               <span class="name" title={row.name}>
@@ -614,6 +619,10 @@
   .tier-poor { --tier: var(--sc-roi-poor); }
   .tier-loss { --tier: var(--sc-roi-loss); }
 
+  /* the colour of the bar while the table is read by what the trips bring: the rows that bring the most, and those that bring half of that */
+  .bar-great { --bar: var(--sc-roi-great); }
+  .bar-good { --bar: var(--sc-roi-good); }
+
   .best {
     position: absolute;
     top: 0;
@@ -661,7 +670,8 @@
     bottom: 0;
     left: 0;
     width: 3px;
-    background: var(--tier);
+    /* by what the row brings while the table is not read by the ROI (`--bar`), else in the colour of its ROI tier */
+    background: var(--bar, var(--tier));
     content: '';
     pointer-events: none;
   }

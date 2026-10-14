@@ -1,6 +1,6 @@
 import { formatCompact, formatDuration, formatUec } from '../../core/format';
-import { DEFAULT_SESSION_GAP_SEC, ownLegIndex, ownMedianIndex, ownRunCounts, routeStats, sessions, usualPace } from '../../core/stats';
-import type { Pace, RouteStat, Session } from '../../core/stats';
+import { DEFAULT_SESSION_GAP_SEC, ownLegIndex, ownMedianIndex, ownRunCounts, routeStats, sessions } from '../../core/stats';
+import type { RouteStat, Session } from '../../core/stats';
 import type { RunWithEvents } from '../../core/types';
 import { NONE, formatStamp } from './stats-rows';
 import type { RouteRow } from './stats-rows';
@@ -106,11 +106,9 @@ export interface StatsFigures {
   /** Direction (`pairKey`) → how many finished runs I have there (the same runs `ownMedian` is made of). */
   runCounts: Map<string, number>;
   sessions: Session[];
-  /** What I usually earn per hour of a run, by my latest flights; `null` while there is none. */
-  pace: Pace | null;
 }
 
-export const EMPTY_FIGURES: StatsFigures = { stats: [], ownMedian: new Map(), ownLeg: new Map(), runCounts: new Map(), sessions: [], pace: null };
+export const EMPTY_FIGURES: StatsFigures = { stats: [], ownMedian: new Map(), ownLeg: new Map(), runCounts: new Map(), sessions: [] };
 
 /**
  * The runs the routes are counted from after «Обнулить маршруты»: those that ended at `since` or later, and the run that is still
@@ -133,7 +131,6 @@ export function figuresOf(history: History, routesSince: number | null = null): 
     ownLeg: ownLegIndex(counted),
     runCounts: ownRunCounts(counted),
     sessions: sessions(recordTs, runs),
-    pace: usualPace(counted),
   };
 }
 

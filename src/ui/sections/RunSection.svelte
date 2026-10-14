@@ -66,14 +66,8 @@
   let editing = $state(false);
   const trades = $derived(editing && active !== null ? tradeLines(active, app.reference) : []);
 
-  function askLost(): void {
-    app.ask(
-      { text: 'Рейс закроется как потерянный, груз спишется. Продолжить?', yes: 'Да, груз потерян' },
-      async () => {
-        await app.loseCargo();
-      },
-    );
-  }
+  // «Груз потерян» asks in its own place (the button of the card turns into the question): by the time this is called the player has said yes
+  const lost = (): void => void app.loseCargo();
 </script>
 
 {#snippet actions()}
@@ -105,7 +99,7 @@
     {#if kind === 'plan'}
       <p class="plan">Таймер пойдёт с первой покупки</p>
     {:else if active !== null && phases !== null && outlook !== null}
-      <RunCard {cargo} {phases} {outlook} {marks} onMark={(type) => void app.mark(type)} onLost={askLost} />
+      <RunCard {cargo} {phases} {outlook} {marks} onMark={(type) => void app.mark(type)} onLost={lost} />
       <p class="fix">
         <button
           type="button"
@@ -125,7 +119,6 @@
           alternatives={d.alternatives}
           reference={app.reference}
           detailed={app.settings.detailedCalc}
-          pace={stats.pace}
         />
       {/each}
     {/if}

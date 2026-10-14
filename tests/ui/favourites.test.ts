@@ -83,8 +83,8 @@ describe('favouriteAlerts', () => {
   });
 });
 
-// Found in the author's flight of 14.10.2026: Deakins holds about 420 SCU of foam, his ship 512. "A full hold is waiting" could
-// never be said of that route. And an alert that is missed in a flight left no trace.
+// A store whose largest stock (seen by the player or by UEX) is below the hold of the ship could never say "a full hold is
+// waiting". And an alert that is missed in a flight left no trace (the author, 14.10.2026).
 describe('favouriteAlerts: a store that never holds a hold, and what stays after the alert', () => {
   // the most ever seen at A is 340 SCU, and the refill timer has brought the stock back to it
   const small = buildMarket([...market.uex.values()], [...market.own.values()], new Map([[obsKey(1, GOLD, 'buy'), { maxScu: 340, ratePerMin: 10 }]]));

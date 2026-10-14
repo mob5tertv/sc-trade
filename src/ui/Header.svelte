@@ -34,9 +34,21 @@
   const locked = $derived(app.windowLocked);
   const lockTitle = $derived(locked ? 'Открепить окно' : 'Закрепить окно');
 
-  // One misclick would make every price of mine cold: only a "yes" under the header writes it.
-  const askServerChanged = (): void =>
-    app.ask({ text: 'Сервер сменился? Свои цены до этой минуты станут холодными.', yes: 'Да, сменился' }, () => app.serverChanged());
+  // One misclick would make every price of mine cold, so the button asks, and in its own place (the author, 14.10.2026): the first
+  // click turns the icon into «Точно?», the second one on the same button writes it; left alone for four seconds it is the icon again.
+  const SERVER_SURE_MS = 4000;
+  let serverSure = $state(false);
+  let serverTimer: ReturnType<typeof setTimeout> | undefined;
+  function serverClick(): void {
+    clearTimeout(serverTimer);
+    if (serverSure) {
+      serverSure = false;
+      void app.serverChanged();
+      return;
+    }
+    serverSure = true;
+    serverTimer = setTimeout(() => { serverSure = false; }, SERVER_SURE_MS);
+  }
 </script>
 
 <!-- One line: grip, the location (a search field that shows the viewed terminal), what the freshness of UEX is, the
@@ -103,8 +115,16 @@
     >
       <Icon name="book" />
     </button>
-    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label="Сменил сервер" title="Сменил сервер: свои цены до этого момента считаются холодными" onclick={askServerChanged}>
-      <Icon name="swap" />
+    <button
+      class="sc-btn sc-btn--ghost"
+      class:sc-btn--icon={!serverSure}
+      class:sure={serverSure}
+      type="button"
+      aria-label={serverSure ? 'Точно сменил сервер? Нажми ещё раз' : 'Сменил сервер'}
+      title={serverSure ? 'Нажми ещё раз: свои цены до этой минуты станут холодными. Не нажмёшь — кнопка вернётся сама' : 'Сменил сервер: свои цены до этого момента считаются холодными'}
+      onclick={serverClick}
+    >
+      {#if serverSure}Точно?{:else}<Icon name="swap" />{/if}
     </button>
     <button
       class="sc-btn sc-btn--ghost sc-btn--icon"
@@ -283,6 +303,15 @@
     flex: 0 1 auto;
     min-width: 16px;
     overflow: hidden;
+  }
+
+  /* «Сменил сервер» asked once more: the question stands in the place of the icon, in the colour of a thing that cannot be taken back */
+  .icons .sc-btn.sure,
+  .bar.compact .icons .sc-btn.sure {
+    width: auto;
+    padding: 0 6px;
+    border-color: var(--sc-bad);
+    color: var(--sc-bad);
   }
 
   .icons .sc-btn:hover:not(:disabled),

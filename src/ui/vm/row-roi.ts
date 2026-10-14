@@ -87,6 +87,19 @@ export function isHot(roi: number, thresholdPct: number): boolean {
   return shown !== null && shown >= thresholdPct;
 }
 
+/**
+ * How a row stands out while the table is NOT read by the ROI (the author, 14.10.2026: "the bar by the profit, or by what we are
+ * looking at"): by what its best trip brings against the best of the table. `great`: at least three quarters of it; `good`: at
+ * least half; `null`: less, or nothing in the table brings anything. Sorted by the ROI, the table keeps the threshold of the
+ * settings («Выделять ROI от»): the bar then says what the order says.
+ */
+export type ProfitMark = 'great' | 'good' | null;
+export function profitMark(profit: number, best: number): ProfitMark {
+  if (!(best > 0) || !(profit > 0)) return null;
+  const share = profit / best;
+  return share >= 0.75 ? 'great' : share >= 0.5 ? 'good' : null;
+}
+
 /** What a row of the table says about its best trip. */
 export interface RoiCell {
   /** '62%', '2,5%': the number as the list of options writes it. */

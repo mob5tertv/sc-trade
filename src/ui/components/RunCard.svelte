@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ConfirmButton from './ConfirmButton.svelte';
   import { formatUec } from '../../core/format';
   import { approxTitle, LEGEND } from '../vm/legend';
   import type { PhaseLine } from '../vm/run-phase';
@@ -13,7 +14,7 @@
     /** The marks of the body: the ones the header of the section does not offer (`cardMarks`). */
     marks: Array<'depart' | 'arrive'>;
     onMark: (type: 'depart' | 'arrive') => void;
-    /** Called when the player pressed "Груз потерян". The owner asks the question (a line under the header of the window). */
+    /** Called when the player pressed «Груз потерян» and then «Точно потерян?» on the same button: the question is asked here, in its own place. */
     onLost: () => void;
   }
   let { cargo, phases, outlook, marks, onMark, onLost }: Props = $props();
@@ -25,7 +26,13 @@
 </script>
 
 {#snippet lost()}
-  <button type="button" class="sc-btn sc-btn--act danger" onclick={() => onLost()}>Груз потерян</button>
+  <ConfirmButton
+    danger
+    label="Груз потерян"
+    sureLabel="Точно потерян?"
+    title="Рейс закроется как потерянный, груз спишется"
+    onConfirm={() => onLost()}
+  />
 {/snippet}
 
 <section class="card" aria-label="Текущий рейс">
@@ -201,8 +208,4 @@
     color: var(--sc-bad);
   }
 
-  .danger {
-    border-color: var(--sc-bad);
-    color: var(--sc-bad);
-  }
 </style>

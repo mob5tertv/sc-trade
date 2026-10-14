@@ -59,9 +59,6 @@ class StatsState {
   }
 
   /** What I usually earn per hour of a run; `null` while no flight is finished. */
-  get pace(): StatsFigures['pace'] {
-    return this.#figures.pace;
-  }
 
   /** Direction (`pairKey`) → how many finished runs I have there (the details of an option say it). */
   get runCounts(): Map<string, number> {

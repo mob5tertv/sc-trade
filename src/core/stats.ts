@@ -175,32 +175,6 @@ export function ownLegIndex(runs: RunWithEvents[]): Map<string, number> {
   return new Map([...legs].map(([key, list]) => [key, median(list)]));
 }
 
-/** How many of the latest flights make the usual pace: enough to smooth one lucky run, few enough to follow a change of ship. */
-export const PACE_RUNS = 20;
-
-/** The player's usual pace: UEC per hour over his latest flights, and how many of them it is made of. */
-export interface Pace { uecPerHour: number; runs: number }
-
-/**
- * What the player usually earns per hour of a run: the profit of his latest `limit` flights (finished or lost: a lost cargo is
- * part of the pace; a sale of goods that were never bought is no flight) over their time. `null` until there is a flight that
- * took any time. It is the yardstick of «лететь дальше»: a further leg that earns less per hour than this is not worth it.
- */
-export function usualPace(runs: RunWithEvents[], limit = PACE_RUNS): Pace | null {
-  const flights = runs
-    .filter(({ run, events }) => (run.status === 'done' || run.status === 'lost') && !isIncomeRun(events))
-    .sort((a, b) => b.run.startedAt - a.run.startedAt || b.run.id - a.run.id)
-    .slice(0, limit);
-  let profit = 0;
-  let sec = 0;
-  for (const { run, events } of flights) {
-    const totals = runTotals(run, events, run.startedAt);
-    profit += totals.profit;
-    sec += totals.durationSec;
-  }
-  return sec > 0 ? { uecPerHour: (profit * SEC_PER_HOUR) / sec, runs: flights.length } : null;
-}
-
 /** Direction (`pairKey`) → the number of my finished runs there, all commodities together (the same runs `ownMedianIndex` takes the time of). */
 export function ownRunCounts(runs: RunWithEvents[]): Map<string, number> {
   const counts = new Map<string, number>();

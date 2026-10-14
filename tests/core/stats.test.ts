@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ownLegIndex, ownMedianIndex, ownRunCounts, routeStats, sessions, usualPace, withLosses } from '../../src/core/stats';
+import { ownLegIndex, ownMedianIndex, ownRunCounts, routeStats, sessions, withLosses } from '../../src/core/stats';
 import { pairKey } from '../../src/core/types';
 import type { RunWithEvents } from '../../src/core/types';
 import { incomeRun } from '../helpers/income-fixtures';
@@ -297,23 +297,3 @@ describe('ownLegIndex', () => {
   });
 });
 
-describe('usualPace', () => {
-  const income = incomeRun(7, 2000, 120, 3700);
-
-  it('is the profit of the finished and the lost flights over their time; a run that goes on and an income are not in it', () => {
-    // R1 345 000 in 2400 s, R2 200 000 in 1800 s, R3 50 000 in 1000 s, R4 −100 000 in 500 s, R5 60 000 in 1000 s
-    const pace = usualPace([R1, R2, R3, R4, R5, R6, income])!;
-    expect(pace.runs).toBe(5);
-    expect(pace.uecPerHour).toBeCloseTo((555_000 * 3600) / 6700, 6);
-  });
-
-  it('takes only the latest flights when there are more than the limit', () => {
-    expect(usualPace([R1, R2, R3], 1)).toEqual({ runs: 1, uecPerHour: (50_000 * 3600) / 1000 });   // R3 is the latest
-  });
-
-  it('is nothing until a flight is over', () => {
-    expect(usualPace([])).toBeNull();
-    expect(usualPace([R6])).toBeNull();
-    expect(usualPace([income])).toBeNull();
-  });
-});

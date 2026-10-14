@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { routesFrom, routesTo } from '../../src/core/routes';
 import { roiTier } from '../../src/ui/vm/roi-tier';
-import { crossedRows, isHot, roiCell, roiCells, rowRoiMap } from '../../src/ui/vm/row-roi';
+import { crossedRows, isHot, roiCell, roiCells, rowRoiMap, profitMark } from '../../src/ui/vm/row-roi';
 import type { RowRoi, RoiSnapshot } from '../../src/ui/vm/row-roi';
 import { ref } from '../helpers/factories';
 import {
@@ -374,5 +374,24 @@ describe('crossedRows: which rows cross the threshold after a price was entered'
 
   it('is judged by the number that is shown, as the bar is', () => {
     expect(crossedRows(snap([[GOLD, 0.4949]]), snap([[GOLD, 0.4996]]), 50)).toEqual([GOLD]);
+  });
+});
+
+describe('profitMark: the bar of a row while the table is not read by the ROI', () => {
+  it('marks the rows that bring the most: three quarters of the best and more, then half of it and more', () => {
+    expect(profitMark(438_000, 438_000)).toBe('great');
+    expect(profitMark(383_000, 438_000)).toBe('great');          // 87 %
+    expect(profitMark(328_500, 438_000)).toBe('great');          // exactly three quarters
+    expect(profitMark(250_000, 438_000)).toBe('good');
+    expect(profitMark(219_000, 438_000)).toBe('good');           // exactly half
+    expect(profitMark(100_000, 438_000)).toBeNull();
+  });
+
+  it('marks nothing that brings nothing, and nothing in a table where nothing brings anything', () => {
+    expect(profitMark(0, 438_000)).toBeNull();
+    expect(profitMark(-5_000, 438_000)).toBeNull();
+    expect(profitMark(0, 0)).toBeNull();
+    expect(profitMark(10, 0)).toBeNull();
+    expect(profitMark(Number.NaN, 100)).toBeNull();
   });
 });

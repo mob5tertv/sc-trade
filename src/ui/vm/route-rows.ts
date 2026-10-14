@@ -60,13 +60,6 @@ function whereTitle(ref: Reference, bothEnds: boolean, otherId: number, originId
   return lines.filter((line) => line !== '').join('\n');
 }
 
-/**
- * '518k/ч'; the dash when there is no rate. Only the card of "sell here or fly on" says a rate now, and only with «Подробные
- * расчёты» (plan item 17 took the rate per hour out of every list); the number is written as the lists write their money
- * (`narrowCompact`, below), with its unit, because the card has no column caption that would say it.
- */
-const perHour = (uec: number | null): string => (uec === null ? NONE : `${narrowCompact(uec)}/ч`);
-
 const TEN_MILLIONS = 10_000_000;
 
 /**
@@ -284,11 +277,11 @@ export function routeOptionRow(
   };
 }
 
-export interface SellHereRow { qty: string; profit: string; loss: boolean; roi: string; rate: string }
+export interface SellHereRow { qty: string; profit: string; loss: boolean; roi: string }
 
 /** Selling the whole cargo line at the terminal where the player stands. The ROI is written as the lists write it (`formatRoi`). */
 export function sellHereRow(h: SellHere): SellHereRow {
-  return { qty: `${h.qty} SCU`, profit: formatUec(h.profit), loss: h.profit < 0, roi: formatRoi(h.roi), rate: perHour(h.uecPerHour) };
+  return { qty: `${h.qty} SCU`, profit: formatUec(h.profit), loss: h.profit < 0, roi: formatRoi(h.roi) };
 }
 
 /** '+136 000' for a gain, '-34 000' for a loss, '0' for neither: a difference says which way it goes. */
@@ -306,17 +299,16 @@ export interface SellAlternativeRow {
   extra: string; loss: boolean;
   /** The same at the low end of the price range there; the dash when the price there has no range (a price of my own). */
   extraLow: string; extraLowLoss: boolean;
-  /** What the further leg earns per hour ('518k/ч'); the dash without a time. */
-  rate: string;
-  /** How that rate stands to the player's usual pace; `null` when either is unknown. */
-  rateTone: 'above' | 'below' | null;
   /** The way there: '12:50' by my own runs, '≈ 12:50' by the distance; the dash when it is unknown. */
   time: string;
   timeTitle: string | null;
 }
 
-/** `paceUecPerHour` is the player's usual pace (`usualPace` of the core), `null` while there is none. */
-export function sellAlternativeRow(a: SellAlternative, ref: Reference, paceUecPerHour: number | null = null): SellAlternativeRow {
+/**
+ * A place to fly on to: what it adds and how long the way is. No rate per hour is written, in «Подробные расчёты» neither (the
+ * author, 14.10.2026); the core still ORDERS the places by what the way earns per hour (`byGain` of core/sell.ts).
+ */
+export function sellAlternativeRow(a: SellAlternative, ref: Reference): SellAlternativeRow {
   const time = a.extraSec === null ? NONE : formatDuration(a.extraSec);
   return {
     key: String(a.destId),
@@ -325,15 +317,9 @@ export function sellAlternativeRow(a: SellAlternative, ref: Reference, paceUecPe
     extra: signedUec(a.extraProfit), loss: Math.round(a.extraProfit) <= 0,
     extraLow: a.extraProfitLow === null ? NONE : signedUec(a.extraProfitLow),
     extraLowLoss: a.extraProfitLow !== null && Math.round(a.extraProfitLow) <= 0,
-    rate: perHour(a.extraUecPerHour),
-    rateTone: a.extraUecPerHour === null || paceUecPerHour === null ? null : a.extraUecPerHour > paceUecPerHour ? 'above' : 'below',
     time: a.extraSource === 'estimate' ? `≈ ${time}` : time,
     timeTitle: a.extraSource === null ? null : LEG_SOURCE[a.extraSource],
   };
 }
 
-/** 'Обычный темп 85k/ч · по 12 рейсам'; without a pace it says why there is none. */
-export function paceLine(pace: { uecPerHour: number; runs: number } | null): string {
-  if (pace === null) return 'Обычного темпа пока нет: он считается по законченным рейсам';
-  return `Твой обычный темп ${perHour(pace.uecPerHour)} · рейсов в расчёте: ${pace.runs}`;
-}
+

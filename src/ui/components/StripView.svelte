@@ -203,24 +203,39 @@
     font-size: var(--sc-font-sm);
   }
 
-  /* the two ends take turns in ONE place: both lie in the same cell (it is as wide as the wider one), and each is seen for three seconds */
+  /* The two ends take turns in ONE place: both lie in the same cell (it is as wide as the wider one), and each is seen for three
+     seconds. They SCROLL (the author, 14.10.2026): the upper price lies above the lower one, the line goes up to the upper price
+     (it comes down from above) and down to the lower one (it comes up from below). `clip-path` cuts what is outside the cell and,
+     unlike `overflow`, leaves the line of the text where it was. */
   .range.turn {
     display: inline-grid;
+    clip-path: inset(0);
   }
 
   .range.turn > * {
     grid-area: 1 / 1;
-    animation: sc-turn 6s ease-in-out infinite;
+  }
+
+  .range.turn > .low {
+    animation: sc-turn-low 6s ease-in-out infinite;
   }
 
   .range.turn > .high {
-    animation-delay: -3s;
+    animation: sc-turn-high 6s ease-in-out infinite;
   }
 
-  @keyframes sc-turn {
-    0%, 42% { opacity: 1; }
-    50%, 92% { opacity: 0; }
-    100% { opacity: 1; }
+  /* the lower price: in place for the first half, then away downwards, and back from below */
+  @keyframes sc-turn-low {
+    0%, 44% { transform: translateY(0); }
+    50%, 94% { transform: translateY(110%); }
+    100% { transform: translateY(0); }
+  }
+
+  /* the upper price: above the cell for the first half, then down into it, and away upwards */
+  @keyframes sc-turn-high {
+    0%, 44% { transform: translateY(-110%); }
+    50%, 94% { transform: translateY(0); }
+    100% { transform: translateY(-110%); }
   }
 
   /* a system that asks for less motion gets the two ends side by side, the low one first */

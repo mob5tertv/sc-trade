@@ -149,7 +149,7 @@ export const RUN_SCENES: readonly Scene[] = [
   },
   {
     name: 'run-lost-confirm',
-    title: '«Груз потерян»: вопрос строкой под шапкой, без всплывающих окон',
+    title: '«Груз потерян»: кнопка спрашивает на своём месте — «Точно потерян?»',
     dataset: 'run',
     act: async (app) => {
       await app.expand('preview');

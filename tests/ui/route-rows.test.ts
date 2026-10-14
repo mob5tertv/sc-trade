@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatCompact } from '../../src/core/format';
 import {
-  UNKNOWN_STOCK_NOTE, priceHint, formatDistance, formatRoi, paceLine, narrowCompact, routeOptionRow, sellAlternativeRow, sellHereRow,
+  UNKNOWN_STOCK_NOTE, priceHint, formatDistance, formatRoi, narrowCompact, routeOptionRow, sellAlternativeRow, sellHereRow,
 } from '../../src/ui/vm/route-rows';
 import type { RouteOption } from '../../src/core/routes';
 import type { SellAlternative, SellHere } from '../../src/core/sell';
@@ -465,10 +465,11 @@ const alternative = (partial: Partial<SellAlternative> = {}): SellAlternative =>
 
 describe('sellHereRow', () => {
   it('formats the sale on the spot', () => {
-    expect(sellHereRow(here)).toEqual({ qty: '96 SCU', profit: nb('74 880'), loss: false, roi: '13%', rate: '310k/ч' });
+    expect(sellHereRow(here)).toEqual({ qty: '96 SCU', profit: nb('74 880'), loss: false, roi: '13%' });
   });
-  it('shows a dash without a rate and marks a loss', () => {
-    expect(sellHereRow({ ...here, profit: -1200, roi: -0.01, uecPerHour: null })).toMatchObject({ profit: nb('-1 200'), loss: true, rate: '—' });
+  it('marks a loss, and writes no rate per hour (the author took it out of «Подробные расчёты» too, 14.10.2026)', () => {
+    expect(sellHereRow({ ...here, profit: -1200, roi: -0.01, uecPerHour: null })).toMatchObject({ profit: nb('-1 200'), loss: true });
+    expect(sellHereRow(here)).not.toHaveProperty('rate');
   });
   it('writes the ROI the way the table and the list of options do: whole percents, one decimal below 10', () => {
     for (const roi of [0.1275, 0.0904, 0.0251, 0.0996, 0, -0.0123, 4.2, Number.NaN]) {
@@ -476,19 +477,6 @@ describe('sellHereRow', () => {
     }
     expect(sellHereRow({ ...here, roi: 0.0904 }).roi).toBe('9%');
     expect(sellHereRow({ ...here, roi: 0.0251 }).roi).toBe('2,5%');
-  });
-  it('writes the rate with the number of the list of options, and its own unit (the card has no «UEC/ч» caption)', () => {
-    for (const uec of [0, 950, 310_000, 9_270_000, 12_534_000, 123_400_000, -12_534_000]) {
-      expect(sellHereRow({ ...here, uecPerHour: uec }).rate).toBe(`${narrowCompact(uec)}/ч`);
-    }
-    expect(sellHereRow({ ...here, uecPerHour: 12_534_000 }).rate).toBe('12,5M/ч');
-  });
-});
-
-describe('paceLine', () => {
-  it('says the pace and how many runs it is made of, or why there is none', () => {
-    expect(paceLine({ uecPerHour: 85_000, runs: 12 })).toBe(`Твой обычный темп ${narrowCompact(85_000)}/ч · рейсов в расчёте: 12`);
-    expect(paceLine(null)).toBe('Обычного темпа пока нет: он считается по законченным рейсам');
   });
 });
 
@@ -506,7 +494,7 @@ describe('sellAlternativeRow', () => {
       key: '2', terminal: 'TDD Area 18',
       price: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
       extra: nb('+5 760'), loss: false, extraLow: nb('-42 240'), extraLowLoss: true,
-      rate: `${narrowCompact(19_655)}/ч`, rateTone: null, time: '≈ 17:35', timeTitle: 'Оценка по расстоянию',
+      time: '≈ 17:35', timeTitle: 'Оценка по расстоянию',
     });
   });
   it('labels an alternative priced by UEX at an unknown age with a plain UEX badge', () => {
@@ -515,7 +503,7 @@ describe('sellAlternativeRow', () => {
   });
   it('shows dashes when no time is known, and marks a place that adds nothing', () => {
     const row = sellAlternativeRow(alternative({ extraSec: null, extraSource: null, extraUecPerHour: null, extraProfit: -300 }), ref);
-    expect(row).toMatchObject({ time: '—', timeTitle: null, rate: '—', extra: nb('-300'), loss: true });
+    expect(row).toMatchObject({ time: '—', timeTitle: null, extra: nb('-300'), loss: true });
     expect(sellAlternativeRow(alternative({ extraProfit: 0 }), ref)).toMatchObject({ extra: '0', loss: true });
   });
   it('writes my own time without the mark of an estimate', () => {
@@ -524,13 +512,9 @@ describe('sellAlternativeRow', () => {
   it('has no low end for a price that is one number (a price of my own)', () => {
     expect(sellAlternativeRow(alternative({ extraProfitLow: null }), ref)).toMatchObject({ extraLow: '—', extraLowLoss: false });
   });
-  it('says how the rate of the further leg stands to the usual pace, when both are known', () => {
-    expect(sellAlternativeRow(alternative(), ref, 10_000).rateTone).toBe('above');
-    expect(sellAlternativeRow(alternative(), ref, 50_000).rateTone).toBe('below');
-    expect(sellAlternativeRow(alternative({ extraUecPerHour: null }), ref, 10_000).rateTone).toBeNull();
-  });
-  it('writes the rate with the number of the list of options', () => {
-    expect(sellAlternativeRow(alternative({ extraUecPerHour: 12_534_000 }), ref).rate).toBe('12,5M/ч');
+  it('writes no rate per hour of the further leg, and takes no pace to compare with: what it adds and how long the way is', () => {
+    expect(sellAlternativeRow(alternative(), ref)).not.toHaveProperty('rate');
+    expect(sellAlternativeRow(alternative(), ref)).not.toHaveProperty('rateTone');
   });
   it('falls back to the id for an unknown terminal', () => {
     expect(sellAlternativeRow(alternative({ destId: 777 }), ref).terminal).toBe('#777');

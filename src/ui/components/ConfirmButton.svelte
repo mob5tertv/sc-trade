@@ -11,8 +11,10 @@
     onConfirm: () => void;
     /** How long the question waits for the second click, ms. */
     ms?: number;
+    /** The button is one of the quiet ones of a card (`sc-btn--act`), in the colour of a thing that cannot be taken back. */
+    danger?: boolean;
   }
-  let { label, sureLabel, title, onConfirm, ms = 4000 }: Props = $props();
+  let { label, sureLabel, title, onConfirm, ms = 4000, danger = false }: Props = $props();
 
   let sure = $state(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -32,6 +34,8 @@
 <button
   type="button"
   class="sc-btn"
+  class:sc-btn--act={danger}
+  class:danger
   class:sure
   title={sure ? 'Нажми ещё раз, чтобы подтвердить. Не нажмёшь — кнопка вернётся сама' : title}
   onclick={click}
@@ -40,6 +44,11 @@
 <style>
   /* asked once more: the colour of a thing that cannot be taken back */
   .sure {
+    border-color: var(--sc-bad);
+    color: var(--sc-bad);
+  }
+
+  .danger {
     border-color: var(--sc-bad);
     color: var(--sc-bad);
   }
