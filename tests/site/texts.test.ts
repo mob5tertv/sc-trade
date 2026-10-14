@@ -42,24 +42,28 @@ describe('the section about the game says what README says, no more', () => {
     ]);
   });
 
-  it('says in the seventh where the code is, under which licence, and that a test pins the list of permissions of the window: what README says, and the files are there', () => {
+  it('says in the seventh where the code is, under which licence, that tests pin the permissions of the window and its ban on foreign addresses, and where the details are: what README says, and the files are there', () => {
     // whose permissions: the test pins what the WINDOW of the program is allowed (its Tauri capability), not a limit on the whole program
     expect(items('ru')[6]).toEqual({
       title: 'Код открыт',
-      text: 'Исходный код программы и этого сайта лежит на GitHub под лицензией MIT. Сказанное выше можно проверить по коду; список разрешений окна программы закреплён тестом.',
+      text: 'Исходный код программы и этого сайта лежит на GitHub под лицензией MIT. Сказанное выше можно проверить по коду; список разрешений окна программы и запрет загружать что-либо с чужих адресов закреплены тестами. Подробности — в файле SECURITY.md репозитория.',
       github_link: 'Репозиторий на GitHub',
     });
     expect(items('en')[6]).toEqual({
       title: 'The code is open',
-      text: "The source code of the application and of this site is on GitHub under the MIT licence. What is said above can be checked against the code; the list of permissions of the application's window is pinned by a test.",
+      text: "The source code of the application and of this site is on GitHub under the MIT licence. What is said above can be checked against the code; the list of permissions of the application's window and the ban on loading anything from a foreign address are pinned by tests. More in SECURITY.md of the repository.",
       github_link: 'The repository on GitHub',
     });
-    // the source of each of the three statements: README («Источник данных и права», «Чего программа не делает»), the licence, the test
+    // the source of each statement: README («Источник данных и права», «Чего программа не делает»), the licence, the two tests, SECURITY.md
     const readme = readFileSync(join(projectRoot, 'README.md'), 'utf8');
     expect(readme).toContain(`Исходный код программы и сайта открыт: ${loadConfig(siteDir).links.github}. Лицензия — MIT (файл \`LICENSE\`).`);
     expect(readme).toContain('Список разрешений закреплён тестом (`tests/release/permissions.test.ts`).');
     expect(readFileSync(join(projectRoot, 'LICENSE'), 'utf8')).toMatch(/^MIT License\r?\n/);
     expect(existsSync(join(projectRoot, 'tests', 'release', 'permissions.test.ts'))).toBe(true);
+    expect(readme).toContain('это тоже закреплено тестом (`tests/release/csp.test.ts`)');
+    expect(existsSync(join(projectRoot, 'tests', 'release', 'csp.test.ts'))).toBe(true);
+    expect(readme).toContain('[SECURITY.md](SECURITY.md)');
+    expect(existsSync(join(projectRoot, 'SECURITY.md'))).toBe(true);
   });
 
   it('gives a link to the one fact that speaks of the code, and keeps the address of the repository out of the texts: it is in the settings', () => {

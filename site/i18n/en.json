@@ -43,6 +43,10 @@
           {
             "title": "Your prices come first",
             "text": "UEX reference prices fill in where you have none of your own yet. Until your own price has gone cold, it is the one the numbers use."
+          },
+          {
+            "title": "Records and a reference",
+            "text": "All your prices in one list: correct or remove them, doubtful ones are marked. The commodity reference names the ten best places to buy or sell."
           }
         ]
       },
@@ -56,6 +60,10 @@
           {
             "title": "Sell here or fly on",
             "text": "When you have a price of your own here that has not gone cold, the app compares selling here with other buyers: how much more they pay and how long the flight is."
+          },
+          {
+            "title": "Correcting a trade",
+            "text": "Typed a wrong price or quantity? Correct the trade instead of writing the cargo off. The profit of the trip, the routes and what the session earned follow by themselves."
           }
         ]
       },
@@ -69,6 +77,10 @@
           {
             "title": "My routes",
             "text": "Your trips add up to a ranking of routes by profit per trip, a history of trips and what a session earned."
+          },
+          {
+            "title": "Favourite routes",
+            "text": "Star a route, and the window tells you with a sound when the stock at its purchase terminal is full, and leaves a mark in the mini line."
           }
         ]
       }
@@ -81,7 +93,7 @@
     },
     "hero-window": {
       "caption": "Unfolded — the terminal table",
-      "alt": "The unfolded SC Trade window: the terminal table on its «Продать» (sell) side — commodities, prices, stock and the best ROI for each. The interface is in Russian."
+      "alt": "The unfolded SC Trade window: the terminal table on its «Продать» (sell) side — commodities, prices, stock, and the profit and ROI of the best trip for each. The interface is in Russian."
     },
     "mini-run": {
       "caption": "The mini line on a trip: phase and timer, cargo, target, expected profit and the mark button",
@@ -153,7 +165,7 @@
       },
       {
         "title": "The code is open",
-        "text": "The source code of the application and of this site is on GitHub under the MIT licence. What is said above can be checked against the code; the list of permissions of the application's window is pinned by a test.",
+        "text": "The source code of the application and of this site is on GitHub under the MIT licence. What is said above can be checked against the code; the list of permissions of the application's window and the ban on loading anything from a foreign address are pinned by tests. More in SECURITY.md of the repository.",
         "github_link": "The repository on GitHub"
       }
     ],
@@ -202,12 +214,8 @@
     "intro": "These are plans, not promises: the order and the contents of the versions may change.",
     "items": [
       {
-        "title": "1.2 — More exact, more convenient",
-        "text": "An honest “sell here or fly on” calculation. A commodity reference: where to buy cheaper and sell dearer. Editing of trades. Favourite routes with a notification. A new run line in the mini strip."
-      },
-      {
         "title": "1.3 — English",
-        "text": "The interface in English."
+        "text": "The interface in English. A choice of language at the first start and a short tutorial, where the ship is chosen right away."
       },
       {
         "title": "1.4 — Prices at one key press",
