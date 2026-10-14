@@ -35,7 +35,7 @@ use crate::keys::{KeyCombo, parse_key};
 /// Event the webview listens to. The payload is `{ "name": "panel" | "depart" | "arrive" }`.
 pub const TRIGGER_EVENT: &str = "input://trigger";
 
-const TRIGGER_COUNT: usize = 3;
+const TRIGGER_COUNT: usize = 4;
 
 // Window messages as plain numbers, so that the logic below is ordinary testable code.
 const WM_KEYDOWN: u32 = 0x0100;
@@ -48,17 +48,20 @@ pub enum Trigger {
     Panel,
     Depart,
     Arrive,
+    /// Opens and closes the commodity reference (version 1.3).
+    Guide,
 }
 
 impl Trigger {
     /// In the order of the `set_trigger_keys` arguments.
-    const ALL: [Trigger; TRIGGER_COUNT] = [Trigger::Panel, Trigger::Depart, Trigger::Arrive];
+    const ALL: [Trigger; TRIGGER_COUNT] = [Trigger::Panel, Trigger::Depart, Trigger::Arrive, Trigger::Guide];
 
     pub fn name(self) -> &'static str {
         match self {
             Trigger::Panel => "panel",
             Trigger::Depart => "depart",
             Trigger::Arrive => "arrive",
+            Trigger::Guide => "guide",
         }
     }
 }
@@ -588,7 +591,7 @@ fn refresh_hook(
 }
 
 /// Assigns the trigger keys and installs or removes the keyboard hook to match. An empty string
-/// means "not assigned". Returns, for panel / depart / arrive, `None` or the reason the text
+/// means "not assigned". Returns, for panel / depart / arrive / guide, `None` or the reason the text
 /// could not be used. Safe to call again with the same keys (a reloaded webview does): the hook is
 /// then installed afresh.
 #[tauri::command]
@@ -598,8 +601,9 @@ pub fn set_trigger_keys(
     panel: String,
     depart: String,
     arrive: String,
+    guide: String,
 ) -> Result<Vec<Option<String>>, String> {
-    apply(&app, &controller, [panel, depart, arrive])
+    apply(&app, &controller, [panel, depart, arrive, guide])
 }
 
 #[cfg(test)]
@@ -626,12 +630,12 @@ mod tests {
     fn tracker_with(panel: &str, depart: &str, arrive: &str) -> Tracker {
         let mut t = Tracker::new();
         let parse = |s: &str| if s.is_empty() { None } else { combo(s) };
-        t.assign([parse(panel), parse(depart), parse(arrive)]);
+        t.assign([parse(panel), parse(depart), parse(arrive), None]);
         t
     }
 
     fn texts(panel: &str, depart: &str, arrive: &str) -> [String; TRIGGER_COUNT] {
-        [panel.to_string(), depart.to_string(), arrive.to_string()]
+        [panel.to_string(), depart.to_string(), arrive.to_string(), String::new()]
     }
 
     #[test]
@@ -768,7 +772,7 @@ mod tests {
             press(&mut t, WM_KEYDOWN, 0x77, 0, NONE),
             fired(Trigger::Panel)
         );
-        t.assign([combo("F9"), None, None]);
+        t.assign([combo("F9"), None, None, None]);
         assert_eq!(press(&mut t, WM_KEYDOWN, 0x77, 10, NONE), None); // F8 is not assigned any more
         assert_eq!(
             press(&mut t, WM_KEYDOWN, 0x78, 20, NONE),
@@ -784,7 +788,7 @@ mod tests {
             fired(Trigger::Panel)
         );
         // The key-up never came; the keys are replaced a moment later (a reloaded webview).
-        t.assign([combo("F8"), None, None]);
+        t.assign([combo("F8"), None, None, None]);
         assert!(nothing_held(&t));
         assert_eq!(
             press(&mut t, WM_KEYDOWN, 0x77, 10, NONE),
@@ -1238,7 +1242,7 @@ mod tests {
     fn blank_texts_are_not_assigned_and_not_errors() {
         let (combos, outcome) = parse_assignments(&texts("", "   ", ""));
         assert_eq!(combos, [None; TRIGGER_COUNT]);
-        assert_eq!(outcome, vec![None, None, None]);
+        assert_eq!(outcome, vec![None, None, None, None]);
     }
 
     #[test]
@@ -1259,7 +1263,7 @@ mod tests {
     #[test]
     fn triggers_have_stable_names_and_a_payload_with_only_the_name() {
         let names: Vec<&str> = Trigger::ALL.iter().map(|t| t.name()).collect();
-        assert_eq!(names, ["panel", "depart", "arrive"]);
+        assert_eq!(names, ["panel", "depart", "arrive", "guide"]);
         let json = serde_json::to_string(&TriggerPayload {
             name: Trigger::Arrive.name(),
         })

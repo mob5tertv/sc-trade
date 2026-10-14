@@ -52,6 +52,8 @@ export interface Settings {
   language: '' | 'ru' | 'en';
   /** Optional trigger keys, e.g. 'F8' or 'Ctrl+Alt+T'; '' means not assigned. */
   hotkeyPanel: string; hotkeyDepart: string; hotkeyArrive: string;
+  /** The key that opens and closes the commodity reference (spec 14.19, item 9; version 1.3); '' means not assigned. */
+  hotkeyGuide: string;
   /** Width of the expanded window in px; its height follows its content. */
   panelWidth: number;
   /**
@@ -103,7 +105,7 @@ export const DEFAULT_SETTINGS: Settings = {
   quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, nearbyMaxMin: 10, worsePricePct: 15, topN: 5, roiHighlightPct: 50,
   sort: 'profit', nearby: false, detailedCalc: false, optionsToTarget: false, favouriteRoutes: [], favouriteSound: true, favouriteVolume: 0.5, guideMySystem: true, guideOnlyStock: false, routesSince: null,
   language: '',
-  hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '',
+  hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '', hotkeyGuide: '',
   panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
   uiScale: 0,
   idleCollapseSec: 40, openSections: 'terminal,options,settings:ship',

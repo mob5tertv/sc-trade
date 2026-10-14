@@ -95,7 +95,7 @@ const AFFECTS_LOOKUP: Record<keyof Settings, 'always' | 'from' | 'never'> = {
   hotMin: 'always', warmMin: 'always', coolingMin: 'always', refillFullMin: 'always', serverChangedAt: 'always',
   quantumSpeedKkms: 'always', overheadMin: 'always', overheadEmptyMin: 'always', topN: 'always', sort: 'always',
   nearby: 'from', nearbyMaxMin: 'from', worsePricePct: 'never', detailedCalc: 'never', optionsToTarget: 'never', favouriteRoutes: 'never', favouriteSound: 'never', favouriteVolume: 'never', guideMySystem: 'never', guideOnlyStock: 'never', routesSince: 'always',
-  language: 'never', tutorialShown: 'never', hotkeyPanel: 'never', hotkeyDepart: 'never', hotkeyArrive: 'never',
+  language: 'never', tutorialShown: 'never', hotkeyPanel: 'never', hotkeyDepart: 'never', hotkeyArrive: 'never', hotkeyGuide: 'never',
   panelWidth: 'never', stripCorner: 'never', opacity: 'never', showStrip: 'never', stripRangeTurns: 'never', logLevel: 'never',
   idleCollapseSec: 'never', openSections: 'never', windowDx: 'never', windowDy: 'never', windowLocked: 'never',
   uiScale: 'never',

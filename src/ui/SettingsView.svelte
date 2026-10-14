@@ -21,7 +21,7 @@
   type NumberKey =
     | 'scuCapacity' | 'budget' | 'hotMin' | 'warmMin' | 'coolingMin' | 'quantumSpeedKkms'
     | 'overheadMin' | 'overheadEmptyMin' | 'nearbyMaxMin' | 'worsePricePct' | 'topN' | 'refillFullMin' | 'roiHighlightPct' | 'panelWidth' | 'idleCollapseSec';
-  type TriggerKey = 'hotkeyPanel' | 'hotkeyDepart' | 'hotkeyArrive';
+  type TriggerKey = 'hotkeyPanel' | 'hotkeyDepart' | 'hotkeyArrive' | 'hotkeyGuide';
 
   // What the field says in its tooltip: how it is filled, what the key does, and that the press still reaches the game (the hook that
   // catches the keys never swallows one).
@@ -38,6 +38,10 @@
     {
       key: 'hotkeyArrive', name: 'arrive', label: tr('Отметка «Прилетел»'),
       title: tr('{HOW_TO_FILL} Клавиша ставит в идущем рейсе отметку «Прилетел», как одноимённая кнопка (с целью окно покажет её терминал); игра её тоже получает.', { HOW_TO_FILL }),
+    },
+    {
+      key: 'hotkeyGuide', name: 'guide', label: tr('Справочная по товарам'),
+      title: tr('{HOW_TO_FILL} Клавиша открывает справочную по товарам (свёрнутое окно разворачивается) и закрывает её; игра её тоже получает.', { HOW_TO_FILL }),
     },
   ];
 
@@ -168,7 +172,7 @@
     ship: headerModel(app.reference, s, app.pricesSyncedAt, app.uexOk, app.now).ship,
     fresh: tr('{hotMin} / {warmMin} / {coolingMin} мин', { hotMin: s.hotMin, warmMin: s.warmMin, coolingMin: s.coolingMin }),
     routes: tr('вариантов: {topN} · ROI от {pct}%', { topN: s.topN, pct: s.roiHighlightPct }) + (s.detailedCalc ? tr(' · подробно') : ''),
-    keys: [s.hotkeyPanel, s.hotkeyDepart, s.hotkeyArrive].filter((key) => key !== '').join(', ') || tr('не назначены'),
+    keys: [s.hotkeyPanel, s.hotkeyDepart, s.hotkeyArrive, s.hotkeyGuide].filter((key) => key !== '').join(', ') || tr('не назначены'),
     window: `${LANG_NAMES[app.language]} · ${uiScaleLabel(s.uiScale, app.scaleMonitor)} · ${s.panelWidth} px · ${Math.round(s.opacity * 100)}%`,
     data: tr('журнал: {logLevel}', { logLevel: s.logLevel }),
   });

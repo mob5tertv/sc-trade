@@ -261,7 +261,7 @@ export function createIpcHandler(deps: IpcDeps): IpcHandler {
         // every key is accepted and there is no keyboard hook, unless a scene says otherwise (`__previewTriggerKeys`)
         const fate = (globalThis as { __previewTriggerKeys?: TriggerKeysFate }).__previewTriggerKeys ?? {};
         if (fate.fail) throw new Error('[preview] set_trigger_keys fails on purpose (a scene asked for it)');
-        return (['panel', 'depart', 'arrive'] as const).map((name) => {
+        return (['panel', 'depart', 'arrive', 'guide'] as const).map((name) => {
           const key = String(args[name] ?? '');
           return key !== '' && fate.rejected?.includes(key) ? `неизвестная клавиша: ${key}` : null; // the Russian reason of the check of the keys
         });

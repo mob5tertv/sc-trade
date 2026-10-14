@@ -571,8 +571,8 @@ describe('the rest of the boundary', () => {
     await applyLogLevel(log, 'info');
     expect(logged.some((line) => line.includes('info'))).toBe(true);
     expect(await invoke('backup_db')).toBeNull();
-    const outcome = await bindTriggers({ panel: 'F8', depart: '', arrive: '' }, { panel: () => {}, depart: () => {}, arrive: () => {} }, log);
-    expect(outcome).toEqual({ panel: null, depart: null, arrive: null });
+    const outcome = await bindTriggers({ panel: 'F8', depart: '', arrive: '', guide: '' }, { panel: () => {}, depart: () => {}, arrive: () => {}, guide: () => {} }, log);
+    expect(outcome).toEqual({ panel: null, depart: null, arrive: null, guide: null });
   });
 
   it('says the app is the preview, and gives harmless paths', async () => {

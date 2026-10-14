@@ -406,6 +406,7 @@ export const EN: Readonly<Record<string, string>> = {
   '{HOW_TO_FILL} Клавиша ставит в идущем рейсе отметку «Взлетел», как одноимённая кнопка; игра её тоже получает.': '{HOW_TO_FILL} The key sets the "Departed" mark in a trip in progress, like the button of that name; the game gets it too.',
   'Отметка «Прилетел»': '"Arrived" mark',
   '{HOW_TO_FILL} Клавиша ставит в идущем рейсе отметку «Прилетел», как одноимённая кнопка (с целью окно покажет её терминал); игра её тоже получает.': '{HOW_TO_FILL} The key sets the "Arrived" mark in a trip in progress, like the button of that name (with a target, the window shows its terminal); the game gets it too.',
+  '{HOW_TO_FILL} Клавиша открывает справочную по товарам (свёрнутое окно разворачивается) и закрывает её; игра её тоже получает.': '{HOW_TO_FILL} The key opens the commodity reference (a folded window unfolds) and closes it; the game gets it too.',
   'Сверху слева': 'Top left',
   'Сверху справа': 'Top right',
   'Снизу слева': 'Bottom left',

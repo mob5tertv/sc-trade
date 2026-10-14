@@ -2,10 +2,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Logger } from '../data/logger';
 
-export type TriggerName = 'panel' | 'depart' | 'arrive';
+export type TriggerName = 'panel' | 'depart' | 'arrive' | 'guide';
 
 // The order of the arguments and of the results of the Rust command `set_trigger_keys`.
-const NAMES: readonly TriggerName[] = ['panel', 'depart', 'arrive'];
+const NAMES: readonly TriggerName[] = ['panel', 'depart', 'arrive', 'guide'];
 
 const TRIGGER_EVENT = 'input://trigger';
 
@@ -31,7 +31,7 @@ export async function bindTriggers(
   handlers: Record<TriggerName, () => void>,
   log: Logger,
 ): Promise<Record<TriggerName, string | null>> {
-  const outcome: Record<TriggerName, string | null> = { panel: null, depart: null, arrive: null };
+  const outcome: Record<TriggerName, string | null> = { panel: null, depart: null, arrive: null, guide: null };
   const assigned = NAMES.filter((name) => keys[name].trim() !== '');
 
   stopListening?.();
@@ -59,6 +59,7 @@ export async function bindTriggers(
       panel: keys.panel,
       depart: keys.depart,
       arrive: keys.arrive,
+      guide: keys.guide,
     });
     NAMES.forEach((name, i) => {
       outcome[name] = results[i] ?? null;

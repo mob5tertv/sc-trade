@@ -342,7 +342,7 @@ class AppState {
     },
     { settleMs: FOCUS_SETTLE_MS },
   );
-  triggerErrors = $state<Record<TriggerName, string | null>>({ panel: null, depart: null, arrive: null });
+  triggerErrors = $state<Record<TriggerName, string | null>>({ panel: null, depart: null, arrive: null, guide: null });
   /**
    * What the Terminal section shows (spec 14.2); not persisted. The current location is `settings.currentTerminalId`.
    * Change it through `#showTerminal`, which also settles the side of the table.
@@ -927,7 +927,7 @@ class AppState {
     return this.#changeMode(() => 'expanded', reason, () => {
       // no key assigned (by far the usual case): no hook to bring back, and no line in the log and call into Rust at every click
       const s = this.settings;
-      if ([s.hotkeyPanel, s.hotkeyDepart, s.hotkeyArrive].every((key) => key.trim() === '')) return;
+      if ([s.hotkeyPanel, s.hotkeyDepart, s.hotkeyArrive, s.hotkeyGuide].every((key) => key.trim() === '')) return;
       this.#log.info('ui', 'apply trigger keys again', { why: reason });
       void this.applyTriggers().catch(() => undefined);
     });
@@ -1018,6 +1018,19 @@ class AppState {
     this.guide = { commodityId, side };
     this.view = 'guide';
     this.#touch();
+  }
+
+  /**
+   * The key of the reference (version 1.3): it opens the reference where it was left, unfolding the window when it is folded, and closes
+   * it when it is what the unfolded window shows. The game gets the press too, as with every key of the window.
+   */
+  toggleGuideByKey(): void {
+    if (this.mode === 'expanded' && this.view === 'guide') {
+      this.closeGuide();
+      return;
+    }
+    this.openGuide();
+    if (this.mode !== 'expanded') void this.expand('reference key');
   }
 
   closeGuide(): void {
@@ -1352,7 +1365,7 @@ class AppState {
     return this.#triggerQueue(async () => {
       if (this.#triggersSuspended) return;
       const s = this.settings;
-      const keys = { panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive };
+      const keys = { panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive, guide: s.hotkeyGuide };
       if (!bindNeeded(keys, this.#triggersBound)) {
         // no key saved and nothing bound: "no keys" has nothing to change, so no call. The errors of keys that are gone must not stay
         // under their empty fields, and this is the one place that would reset them (a key refused by the Rust side, taken off in its field)
@@ -1365,12 +1378,14 @@ class AppState {
         panel: () => void this.toggleMode(),
         depart: () => void this.mark('depart'),
         arrive: () => void this.mark('arrive'),
+        guide: () => this.toggleGuideByKey(),
       });
       this.#triggersBound = boundAfter(keys, wasBound, reached);
       const shown: Record<TriggerName, string | null> = {
         panel: triggerErrorText(outcome.panel),
         depart: triggerErrorText(outcome.depart),
         arrive: triggerErrorText(outcome.arrive),
+        guide: triggerErrorText(outcome.guide),
       };
       for (const name of Object.keys(outcome) as TriggerName[]) {
         if (outcome[name] !== shown[name]) {
@@ -1417,10 +1432,10 @@ class AppState {
     this.#triggersSuspended = true;
     return this.#triggerQueue(async () => {
       const s = this.settings;
-      if (!bindNeeded({ panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive }, this.#triggersBound)) return;
-      const empty = { panel: '', depart: '', arrive: '' };
+      if (!bindNeeded({ panel: s.hotkeyPanel, depart: s.hotkeyDepart, arrive: s.hotkeyArrive, guide: s.hotkeyGuide }, this.#triggersBound)) return;
+      const empty = { panel: '', depart: '', arrive: '', guide: '' };
       const none = () => undefined;
-      const { reached } = await this.#sendTriggers(empty, { panel: none, depart: none, arrive: none });
+      const { reached } = await this.#sendTriggers(empty, { panel: none, depart: none, arrive: none, guide: none });
       this.#triggersBound = boundAfter(empty, this.#triggersBound, reached); // down only if the empty set got there
     });
   }
@@ -2274,6 +2289,7 @@ class AppState {
       case 'hotkeyPanel':
       case 'hotkeyDepart':
       case 'hotkeyArrive':
+      case 'hotkeyGuide':
         await this.applyTriggers();
         break;
       case 'stripCorner':

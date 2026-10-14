@@ -54,7 +54,7 @@ function normalizeKey(text: string): string {
   return [...modifiers, key].join('+');
 }
 
-const TRIGGER_KEYS = ['hotkeyPanel', 'hotkeyDepart', 'hotkeyArrive'] as const;
+const TRIGGER_KEYS = ['hotkeyPanel', 'hotkeyDepart', 'hotkeyArrive', 'hotkeyGuide'] as const;
 
 function validateThresholds(next: Settings): string | null {
   const { hotMin, warmMin, coolingMin } = next;
@@ -118,7 +118,8 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
 
     case 'hotkeyPanel':
     case 'hotkeyDepart':
-    case 'hotkeyArrive': {
+    case 'hotkeyArrive':
+    case 'hotkeyGuide': {
       if (typeof v !== 'string') return tr('Клавиша — это текст');
       const wanted = normalizeKey(v);
       if (wanted === '') return null;
