@@ -376,8 +376,11 @@ Function PageLeaveReinstall
       ExecWait '$R1' $0
     ${Else}
       ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""
-; SC TRADE PUBLISHER: the version that is removed first may be one of the old publisher: its folder is under the old key
+; SC TRADE PUBLISHER: the version that is removed first may be one of the old publisher: its folder is under the old key.
+; The read of the new key above has SET THE ERROR FLAG (the key is not there yet), and the template takes a set flag for a
+; failure of ExecWait below ("unable to uninstall", though the old version was removed): the flag is cleared before the old key is read.
       ${If} $4 == ""
+        ClearErrors
         ReadRegStr $4 SHCTX "${OLDMANUPRODUCTKEY}" ""
       ${EndIf}
 ; SC TRADE PUBLISHER: end

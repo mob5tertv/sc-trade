@@ -477,7 +477,8 @@ describe('the template of the installer', () => {
       expect(code).toEqual([
         '!define OLDMANUKEY "Software\\mob5terdisk"',
         '!define OLDMANUPRODUCTKEY "${OLDMANUKEY}\\${PRODUCTNAME}"',
-        ...read,
+        // before the old version is removed: the error flag is cleared first (see the test of the flag below)
+        read[0], 'ClearErrors', read[1], read[2],
         'DeleteRegKey SHCTX "${OLDMANUPRODUCTKEY}"',
         'DeleteRegKey /ifempty SHCTX "${OLDMANUKEY}"',
         ...read,
@@ -491,6 +492,20 @@ describe('the template of the installer', () => {
         expect(lines[index + 1], 'a block of the publisher follows the read').toMatch(/^; SC TRADE PUBLISHER:/);
         expect(nextCode(index)).toBe('${If} $4 == ""');
       }
+    });
+
+    // Found by the author's own run of the candidate of 14.10.2026 over an installed 1.1.1: the old version was removed, and the
+    // installer said "unable to uninstall" and went no further. `ReadRegStr` of a key that is not there sets the error flag; the
+    // template clears the flag BEFORE that read and, after `ExecWait`, takes a set flag for a failure of the uninstaller.
+    it('does not let the failed read of the new key pass for a failure of the old uninstaller: the error flag is cleared before the old key is read', () => {
+      const all = codeLines(whole);
+      const newRead = all.findIndex((line, i) => line === 'ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""' && all.slice(i, i + 12).some((next) => next.startsWith('ExecWait')));
+      expect(newRead, 'the read of the installed folder before the old version is removed').toBeGreaterThan(0);
+      const run = all.findIndex((line, i) => i > newRead && line.startsWith('ExecWait'));
+      const between = all.slice(newRead + 1, run);
+      expect(between.slice(0, 3)).toEqual(['${If} $4 == ""', 'ClearErrors', 'ReadRegStr $4 SHCTX "${OLDMANUPRODUCTKEY}" ""']);
+      // and the template still reads the flag right after the uninstaller has run
+      expect(all.slice(run + 1, run + 4).some((line) => line.includes('${Errors}'))).toBe(true);
     });
 
     it('removes the old key only after the new one is written: the folder is never left without a key', () => {
@@ -511,7 +526,7 @@ describe('the template of the installer', () => {
 
     it('does nothing else that has an effect: no file, no process, no other key', () => {
       const commands = new Set(code.map(commandOf));
-      expect([...commands].sort()).toEqual(['!define', '${EndIf}', '${If}', 'DeleteRegKey', 'ReadRegStr'].sort());
+      expect([...commands].sort()).toEqual(['!define', '${EndIf}', '${If}', 'ClearErrors', 'DeleteRegKey', 'ReadRegStr'].sort());
     });
   });
 
