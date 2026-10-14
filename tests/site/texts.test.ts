@@ -5,7 +5,7 @@ import { loadConfig, loadDictionaries, projectRoot, siteDir } from '../../script
 import { readSettings } from '../../site/server/src/config.mjs';
 import { hashPassword } from '../../site/server/src/password.mjs';
 
-// What the site says about the application must not be worded more strongly than its source (README.md, the part
+// What the site says about the application must not be worded more strongly than its source (README.ru.md, the part
 // «Чего программа не делает»), and must not leave out what that part discloses.
 
 const dictionaries = loadDictionaries(siteDir);
@@ -55,7 +55,7 @@ describe('the section about the game says what README says, no more', () => {
       github_link: 'The repository on GitHub',
     });
     // the source of each statement: README («Источник данных и права», «Чего программа не делает»), the licence, the two tests, SECURITY.md
-    const readme = readFileSync(join(projectRoot, 'README.md'), 'utf8');
+    const readme = readFileSync(join(projectRoot, 'README.ru.md'), 'utf8');
     expect(readme).toContain(`Исходный код программы и сайта открыт: ${loadConfig(siteDir).links.github}. Лицензия — MIT (файл \`LICENSE\`).`);
     expect(readme).toContain('Список разрешений закреплён тестом (`tests/release/permissions.test.ts`).');
     expect(readFileSync(join(projectRoot, 'LICENSE'), 'utf8')).toMatch(/^MIT License\r?\n/);
