@@ -44,6 +44,31 @@ describe('clickedTerminalSort: what a click on a header does', () => {
   });
 });
 
+describe('«Прибыль»: the third header (plan item 17)', () => {
+  const PROFIT_DESC: TerminalSort = { key: 'profit', dir: 'desc' };
+  const rowsOf = (...ids: number[]) => ids.map((commodityId) => ({ commodityId }));
+  const profit = new Map<number, number | null>([[1, 35_000], [2, 438_000], [3, null], [4, 100_000]]);
+  const options = (sort: TerminalSort) => ({ side: 'buy' as const, sort, cargo: [], percentOf: () => 10, profitOf: (id: number) => profit.get(id) ?? null });
+
+  it('puts the trip that brings the most on top at the first click, turns round at the next, and gives way to another header', () => {
+    expect(clickedTerminalSort(DEFAULT, 'profit')).toEqual(PROFIT_DESC);
+    expect(clickedTerminalSort(PROFIT_DESC, 'profit')).toEqual({ key: 'profit', dir: 'asc' });
+    expect(clickedTerminalSort(PROFIT_DESC, 'roi')).toEqual(ROI_DESC);
+    expect(clickedTerminalSort(ROI_ASC, 'profit')).toEqual(PROFIT_DESC);
+    expect(terminalAriaSort(PROFIT_DESC, 'profit')).toBe('descending');
+    expect(terminalAriaSort(PROFIT_DESC, 'roi')).toBeUndefined();
+  });
+
+  it('orders the rows by what the best trip brings, a row without a trip last whichever way it goes', () => {
+    expect(orderRows(rowsOf(1, 2, 3, 4), options(PROFIT_DESC)).map((row) => row.commodityId)).toEqual([2, 4, 1, 3]);
+    expect(orderRows(rowsOf(1, 2, 3, 4), options({ key: 'profit', dir: 'asc' })).map((row) => row.commodityId)).toEqual([1, 4, 2, 3]);
+  });
+
+  it('is not the order of the ROI: every row has the same percentage here', () => {
+    expect(orderRows(rowsOf(1, 2, 3, 4), options(ROI_DESC)).map((row) => row.commodityId)).toEqual([1, 2, 3, 4]);
+  });
+});
+
 describe('terminalAriaSort: the aria-sort of a header', () => {
   it('names the direction of the header that is active and nothing for the other one', () => {
     expect(terminalAriaSort(DEFAULT, 'name')).toBe('ascending');

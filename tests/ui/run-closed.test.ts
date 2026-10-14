@@ -23,9 +23,9 @@ function flight(scu: number, buy: number, sell: number, sec: number, status: 'do
 }
 
 describe('closedRunNotice, a run that was sold out', () => {
-  it('says the profit with its sign, the income per hour and the ROI, as the row of the history does', () => {
-    // R1: 345 000 over 40 minutes, 518k an hour, 14 %
-    expect(closedRunNotice(R1)).toMatchObject({ text: nb('Рейс закрыт: +345 000 · 518k/ч · ROI 14%'), kind: 'info' });
+  it('says the profit with its sign, the time the run took and the ROI, as the row of the history does', () => {
+    // R1: 345 000 over 40 minutes, 14 %
+    expect(closedRunNotice(R1)).toMatchObject({ text: nb('Рейс закрыт: +345 000 за 40:00 · ROI 14%'), kind: 'info' });
   });
 
   it('takes its numbers from the very row the history will show (one function, not a second count)', () => {
@@ -33,27 +33,27 @@ describe('closedRunNotice, a run that was sold out', () => {
       const row = historyRows([r], ref, NOW)[0];
       const { text } = closedRunNotice(r);
       expect(text).toContain(row.profit.replace(/^-/, ''));
-      expect(text).toContain(`${row.rate}/ч`);
+      expect(text).toContain(`за ${row.duration}`);
       expect(text).toContain(`ROI ${row.roi}`);
     }
   });
 
   it('is a loss with a minus, in the colour of an error, when the cargo sold for less than it cost', () => {
-    // 200 SCU bought at 5 000, sold at 4 900: -20 000 in half an hour, -40k an hour, -2 %
-    expect(closedRunNotice(flight(200, 5000, 4900, 1800))).toMatchObject({ text: nb('Рейс закрыт: -20 000 · -40k/ч · ROI -2%'), kind: 'error' });
+    // 200 SCU bought at 5 000, sold at 4 900: -20 000 in half an hour, -2 %
+    expect(closedRunNotice(flight(200, 5000, 4900, 1800))).toMatchObject({ text: nb('Рейс закрыт: -20 000 за 30:00 · ROI -2%'), kind: 'error' });
   });
 
   it('is not a loss, and has no sign, when nothing was earned', () => {
-    expect(closedRunNotice(flight(10, 1000, 1000, 600))).toMatchObject({ text: 'Рейс закрыт: 0 · 0/ч · ROI 0%', kind: 'info' });
+    expect(closedRunNotice(flight(10, 1000, 1000, 600))).toMatchObject({ text: 'Рейс закрыт: 0 за 10:00 · ROI 0%', kind: 'info' });
   });
 
-  it('leaves the income per hour out when the run took no time', () => {
+  it('leaves the time out when the run took none', () => {
     expect(closedRunNotice(flight(100, 1000, 1025, 0))).toMatchObject({ text: nb('Рейс закрыт: +2 500 · ROI 2,5%'), kind: 'info' });
   });
 
   it('leaves the ROI out when nothing was invested', () => {
     // bought for nothing (a price of 0 is a price): the profit is the whole revenue, and a ratio to nothing says nothing
-    expect(closedRunNotice(flight(100, 0, 25, 600))).toMatchObject({ text: nb('Рейс закрыт: +2 500 · 15k/ч'), kind: 'info' });
+    expect(closedRunNotice(flight(100, 0, 25, 600))).toMatchObject({ text: nb('Рейс закрыт: +2 500 за 10:00'), kind: 'info' });
   });
 
   it('has no NaN and no infinity whatever the run is', () => {

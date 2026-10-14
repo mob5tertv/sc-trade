@@ -22,21 +22,16 @@ describe('routesSummary', () => {
     expect(routesSummary([])).toBe('пока нет завершённых рейсов');
   });
 
-  it('names the best route and its rate', () => {
+  it('names the best route and what one run of it brings', () => {
     const rows = routeRows(routeStats([R1, R2, R3]), ref);
-    expect(routesSummary(rows)).toBe('ARC-L1 → TDD Area 18 · 467k/ч');
+    expect(routesSummary(rows)).toBe('ARC-L1 → TDD Area 18 · 273k за рейс');      // 545 000 over two runs
   });
 
-  it('names the row with the best rate that is shown, wherever it stands', () => {
-    const rows = routeRows([{ ...stat, destId: 3, uecPerHour: 310_000 }, { ...stat, uecPerHour: 120_000 }], ref);
-    expect(routesSummary(rows)).toBe('ARC-L1 → CRU-L1 · 310k/ч');
+  it('names the row whose run brings the most, wherever it stands', () => {
+    const rows = routeRows([{ ...stat, destId: 3, totalProfit: 620_000 }, { ...stat, totalProfit: 240_000 }], ref);
+    expect(routesSummary(rows)).toBe('ARC-L1 → CRU-L1 · 310k за рейс');
     // «Подробные расчёты» count the lost runs into a row: the route that was first by the runs that ended well may not be the best
-    expect(routesSummary([rows[1], rows[0]])).toBe('ARC-L1 → CRU-L1 · 310k/ч');
-  });
-
-  it('names only the route when it has no rate', () => {
-    const rows = routeRows([{ ...stat, uecPerHour: null }], ref);
-    expect(routesSummary(rows)).toBe('ARC-L1 → TDD Area 18');
+    expect(routesSummary([rows[1], rows[0]])).toBe('ARC-L1 → CRU-L1 · 310k за рейс');
   });
 
   describe('with the session that is going', () => {
@@ -44,15 +39,15 @@ describe('routesSummary', () => {
     const rows = routeRows(routeStats([R1, R2, R3]), ref);
 
     it('says the session first, then the best route', () => {
-      expect(routesSummary(rows, session)).toBe(`сессия +1${NBSP}240${NBSP}000 · 413k/ч · ARC-L1 → TDD Area 18 · 467k/ч`);
+      expect(routesSummary(rows, session)).toBe(`сессия +1${NBSP}240${NBSP}000 за 3:00:00 · ARC-L1 → TDD Area 18 · 273k за рейс`);
     });
 
     it('says only the session when there is no route to name (the runs were lost or mixed)', () => {
-      expect(routesSummary([], session)).toBe(`сессия +1${NBSP}240${NBSP}000 · 413k/ч`);
+      expect(routesSummary([], session)).toBe(`сессия +1${NBSP}240${NBSP}000 за 3:00:00`);
     });
 
     it('is what it was without a session', () => {
-      expect(routesSummary(rows, null)).toBe('ARC-L1 → TDD Area 18 · 467k/ч');
+      expect(routesSummary(rows, null)).toBe('ARC-L1 → TDD Area 18 · 273k за рейс');
       expect(routesSummary([], null)).toBe('пока нет завершённых рейсов');
     });
   });
@@ -96,13 +91,13 @@ describe('currentSession', () => {
 describe('sessionFigure', () => {
   const figure = (profit: number, lastAgoSec = 0) => sessionFigure(currentSession(sessionEndedAgo(lastAgoSec, profit), CLOCK));
 
-  it('is the profit in the short form of the mini line and in full with the rate for the tooltip and the summary', () => {
-    expect(figure(1_240_000)).toEqual({ short: '+1,24M', line: `сессия +1${NBSP}240${NBSP}000 · 413k/ч`, tone: 'gain' });
+  it('is the profit in the short form of the mini line, and in full with how long the session has lasted for the tooltip and the summary', () => {
+    expect(figure(1_240_000)).toEqual({ short: '+1,24M', line: `сессия +1${NBSP}240${NBSP}000 за 3:00:00`, tone: 'gain' });
     expect(figure(312_000)).toMatchObject({ short: '+312k', tone: 'gain' });
   });
 
   it('shows a loss with its sign and its tone', () => {
-    expect(figure(-174_000)).toEqual({ short: '-174k', line: `сессия -174${NBSP}000 · -58k/ч`, tone: 'loss' });
+    expect(figure(-174_000)).toEqual({ short: '-174k', line: `сессия -174${NBSP}000 за 3:00:00`, tone: 'loss' });
   });
 
   it('has a tone of its own for a session that came out even', () => {

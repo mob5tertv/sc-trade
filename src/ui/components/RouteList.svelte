@@ -37,8 +37,8 @@
     onFavourite?: (option: RouteOption) => void;
     isFavourite?: (option: RouteOption) => boolean;
     /**
-     * The range UEX knows for a side of a terminal. It stands in «Мин–макс» beside a price of mine, as a reference;
-     * without it such a price has no range.
+     * The range UEX knows for a side of a terminal. It stands in the hint of a price of mine and beside it in the opened row,
+     * as a reference; without it such a price has no range.
      */
     uexRange?: UexRangeOf;
   }
@@ -52,14 +52,17 @@
   );
   // the trips bought at another terminal follow the ones bought here (the core orders them so): a line says where they begin
   const firstElsewhere = $derived(rows.find(({ row }) => row.emptyLeg !== null)?.row.key ?? null);
-  // the best rate is the one number of the list that is told apart by colour on its own, apart from the ROI tiers
-  const bestRate = $derived.by(() => {
-    let best: { key: string; rate: number } | null = null;
+  // the biggest profit is the one number of the list that is told apart by colour on its own, apart from the ROI tiers
+  const bestGain = $derived.by(() => {
+    let best: { key: string; profit: number } | null = null;
     for (const { option, row } of rows) {
-      if (option.uecPerHour !== null && (best === null || option.uecPerHour > best.rate)) best = { key: row.key, rate: option.uecPerHour };
+      if (best === null || option.profit > best.profit) best = { key: row.key, profit: option.profit };
     }
     return best?.key ?? null;
   });
+  // the hint of a price: its spread first, and under it what the two numbers are (the legend of «Мин–макс»)
+  const priceTitle = (row: RouteOptionRow): string =>
+    row.price.range.kind === 'spread' || row.price.range.kind === 'flat' ? `${row.priceTitle}\n${LEGEND.range}` : row.priceTitle;
 
   // One row is expanded at a time; the click on it again takes it back.
   let expandedKey = $state<string | null>(null);
@@ -75,7 +78,7 @@
     <span class="sc-label">{label}</span>
     <span class="inline">
       <span class="sc-num">{view.price}</span>
-      {#if view.range.kind === 'spread' || view.range.kind === 'flat'}<span class="muted sc-num" title={view.range.title}>{view.range.text}</span>{/if}
+      {#if view.range.kind === 'spread' || view.range.kind === 'flat'}<span class="muted sc-num" title={legendTitle(LEGEND.range, view.range.title)}>{view.range.text}</span>{/if}
       <TempBadge text={view.badge.text} kind={view.badge.kind} />
     </span>
   </div>
@@ -87,15 +90,15 @@
   <div class="list" role="table" aria-label="Варианты">
     <div class="grid head sc-label" role="row">
       <span role="columnheader">{mode === 'to' ? 'Откуда' : 'Куда'}</span>
-      <span role="columnheader" class="r price-head">Цена</span>
-      <span role="columnheader" class="r" title={LEGEND.range}>Мин–макс</span>
+      <span role="columnheader" class="r price-head" title="Наведи на цену — увидишь её минимум и максимум по UEX">Цена</span>
+      <span role="columnheader" class="r" title={LEGEND.time}>Время</span>
+      <span role="columnheader" class="r" title={LEGEND.profitTrip}>Прибыль</span>
       <span role="columnheader" class="r">ROI</span>
-      <span role="columnheader" class="r" title={LEGEND.rateOptions}>UEC/ч</span>
     </div>
     {#each rows as { option, row } (row.key)}
       {@const expanded = expandedKey === row.key}
       {#if row.key === firstElsewhere}
-        <p class="elsewhere" title="Закупка на другом терминале рядом: выгоднее по ROI, чем здесь. «Цель» у такого варианта ведёт сначала на закупку, потом на продажу">Выгоднее: закупка рядом</p>
+        <p class="elsewhere" title="Закупка на другом терминале рядом: рейс приносит больше, чем отсюда. «Цель» у такого варианта ведёт сначала на закупку, потом на продажу">Выгоднее: закупка рядом</p>
       {/if}
       <div class="row tier-{row.tier}" class:expanded role="row">
         <button type="button" class="grid line" aria-expanded={expanded} onclick={() => toggle(row.key, option)}>
@@ -108,14 +111,14 @@
             {#if row.stockNote}<span class="unsure" role="img" aria-label={row.stockNote} title={row.stockNote}>?</span>{/if}
             {#if row.loadBar}<span class="bar" title="Твой корабль здесь не загрузится: в точке закупки {row.loadBar}">док</span>{/if}
           </span>
-          <span class="cell sc-num" class:hint={!row.priceIsOwn}>
+          <span class="cell sc-num" class:hint={!row.priceIsOwn} title={priceTitle(row)}>
             <TrendMark trend={row.trend} />
             <span class="digits">{row.price.price}</span>
             <TempBadge compact text={row.price.badge.text} kind={row.price.badge.kind} />
           </span>
-          <span class="range sc-num" data-range={row.price.range.kind} title={row.price.range.title}>{row.price.range.text}</span>
+          <span class="time sc-num" title={legendTitle(LEGEND.time, row.timeTitle)}>{row.time}</span>
+          <span class="gain sc-num" class:best={row.key === bestGain} class:loss={row.profitLoss} title="Прибыль за рейс: {row.profit} · взять {row.qty}">{row.gain}</span>
           <span class="roi sc-num" title="Прибыль к вложенному">{row.roi}</span>
-          <span class="rate sc-num" class:best={row.key === bestRate} title="UEC в час">{row.rate}</span>
         </button>
         {#if expanded}
           <div class="detail sc-reveal">
@@ -167,9 +170,10 @@
   .grid {
     display: grid;
     /* the price column holds a seven-digit number and its 6 px mark (62 px, as in the table of the terminal) and the slot of
-       the triangle with the gap before the number. The 14 px it needed come from the numbers that had room to spare (ROI
-       `42%` is 22 px of 36, UEC/ч `2,33M` 28 px of 40) and from the gaps, so that the names keep the room they had */
-    grid-template-columns: minmax(0, 1fr) calc(62px + var(--sc-trend-w) + 4px) 64px 32px 34px;
+       the triangle with the gap before the number. After it: the time of the trip ('15:34', '1:04:32' is 40 px), what it brings
+       in the short form ('438k', '-12,5M' is 34 px) and the ROI ('42%' is 22 px of 32). The column «Мин–макс» (64 px) is gone:
+       the two numbers are the hint of the price, and stand in the opened row */
+    grid-template-columns: minmax(0, 1fr) calc(62px + var(--sc-trend-w) + 4px) 42px 50px 32px;
     column-gap: 3px;
     align-items: center;
     padding: 0 var(--sc-pad-x);
@@ -311,17 +315,21 @@
   }
 
   .digits,
-  .range,
+  .time,
   .roi,
-  .rate {
+  .gain {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .range {
+  .time {
     color: var(--sc-muted);
-    font-size: var(--sc-font-sm);
+  }
+
+  /* the mark of the source is a part of the price: hovering it says what hovering the price says (the spread), not its own two words */
+  .cell :global(.mark) {
+    pointer-events: none;
   }
 
   .roi {
@@ -329,8 +337,16 @@
     font-weight: 600;
   }
 
-  .rate.best {
+  .gain {
+    font-weight: 600;
+  }
+
+  .gain.best {
     color: var(--sc-good);
+  }
+
+  .gain.loss {
+    color: var(--sc-bad);
   }
 
   /* what a click on a row opens under it */

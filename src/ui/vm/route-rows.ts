@@ -12,7 +12,7 @@ import { roiTier } from './roi-tier';
 import type { RoiTier } from './roi-tier';
 import { terminalLabel } from './terminal-name';
 import { terminalFullPlace } from './terminal-place';
-import { NO_RANGE, badgeText, isOwnPrice, rangeOfEstimate, rangeView } from './terminal-rows';
+import { NO_RANGE, badgeText, isOwnPrice, rangeHint, rangeOfEstimate, rangeView } from './terminal-rows';
 import type { RangeView, UexRange } from './terminal-rows';
 
 // Display rows of the route suggestions and of the "sell here or fly on" block. Every number is already formatted.
@@ -61,24 +61,21 @@ function whereTitle(ref: Reference, bothEnds: boolean, otherId: number, originId
 }
 
 /**
- * '518k/ч'; the dash when there is no rate. The number is the one of the list of options (`perHourNarrow`, below), so that the
- * card of "sell here or fly on" and the list never write the same rate two ways; the unit stays, because the card has no column
- * caption "UEC/ч" that would say it.
+ * '518k/ч'; the dash when there is no rate. Only the card of "sell here or fly on" says a rate now, and only with «Подробные
+ * расчёты» (plan item 17 took the rate per hour out of every list); the number is written as the lists write their money
+ * (`narrowCompact`, below), with its unit, because the card has no column caption that would say it.
  */
-const perHour = (uec: number | null): string => (uec === null ? NONE : `${perHourNarrow(uec)}/ч`);
-
-/** '518k' for the column of a list whose caption says "UEC/ч"; the dash when there is no rate. */
-export const perHourBare = (uec: number | null): string => (uec === null ? NONE : formatCompact(uec));
+const perHour = (uec: number | null): string => (uec === null ? NONE : `${narrowCompact(uec)}/ч`);
 
 const TEN_MILLIONS = 10_000_000;
 
 /**
- * The rate in the 34 px column of the list of options. Below 10M it is the compact format as it is ('9,27M'); from 10M on
- * it has one decimal ('12,5M', not the six characters of '12,53M' that the column cuts), and from 100M none ('123M'); the
- * minus of a loss stays ('-12,5M' is 33,5 px, as wide as the '-1,25M' that fits today). The other lists keep `perHourBare`,
- * their columns are wider and the two decimals are information there.
+ * A sum of money in a narrow column: what a trip brings in the list of options and in the table of the terminal (it was the
+ * rate per hour of an option before plan item 17). Below 10M it is the compact format as it is ('9,27M'); from 10M on it has
+ * one decimal ('12,5M', not the six characters of '12,53M' that the column cuts), and from 100M none ('123M'); the minus of
+ * a loss stays ('-12,5M' is 33,5 px, as wide as '-1,25M').
  */
-export function perHourNarrow(uec: number | null): string {
+export function narrowCompact(uec: number | null): string {
   if (uec === null) return NONE;
   const abs = Math.abs(uec);
   if (abs < TEN_MILLIONS) return formatCompact(uec);
@@ -138,6 +135,11 @@ function priceView(e: Estimate, uexRange: () => UexRange = () => NO_RANGE): Pric
   return { price: formatUec(e.price), range: rangeView(range), badge: badgeText(e) };
 }
 
+/** The hint of a price in a list: its spread by UEX (or why there is none), then whose price it is and how old. */
+export function priceHint(view: PriceView): string {
+  return `${rangeHint(view.range)} · ${view.badge.text}`;
+}
+
 export interface RouteOptionRow {
   key: string;
   /** The other end of the trip, by `mode`. */
@@ -184,8 +186,10 @@ export interface RouteOptionRow {
   trend: PriceTrend | null;
   /** That price is mine and not cold: drawn in normal text; a UEX price or a cold one of mine is muted, as in the table. */
   priceIsOwn: boolean;
-  /** `roi` in whole percents (`formatRoi`); `rate` without its unit, the caption of the column says "UEC/ч". */
-  roi: string; rate: string;
+  /** `roi` in whole percents (`formatRoi`); `gain` is the profit of the trip as the narrow column writes it ('438k', '1,99M'; the whole number is `profit`). */
+  roi: string; gain: string;
+  /** What hovering the price of the row says: the range of UEX and whose price it is (`rangeHint`). */
+  priceTitle: string;
   /** The profit at the unfavourable end of both price ranges, and whether it is a loss; the dash when neither price has a range (both are mine). */
   worst: string; worstLoss: boolean;
   qty: string;
@@ -252,7 +256,8 @@ export function routeOptionRow(
     price: from ? sellView : buyView,
     trend: from ? priceTrend(o.sell, 'sell') : priceTrend(o.buy, 'buy'),
     priceIsOwn: isOwnPrice(from ? o.sell : o.buy),
-    roi: formatRoi(o.roi), rate: perHourNarrow(o.uecPerHour),
+    roi: formatRoi(o.roi), gain: narrowCompact(o.profit),
+    priceTitle: priceHint(from ? sellView : buyView),
     worst: hasRange(o.buy) || hasRange(o.sell) ? formatUec(o.worstProfit) : NONE,
     worstLoss: o.worstProfit < 0,
     qty: `${o.qty} SCU`,

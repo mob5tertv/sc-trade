@@ -43,7 +43,7 @@ describe('stripModel', () => {
     it('is a segment of the line after the location', () => {
       expect(stripModel(null, market, ref, idleAt1, ctx, gain)).toEqual({
         kind: 'idle', location: 'ARC-L1', target: null,
-        session: { short: '+1,24M', line: `сессия +1${NBSP}240${NBSP}000 · 413k/ч`, tone: 'gain' },
+        session: { short: '+1,24M', line: `сессия +1${NBSP}240${NBSP}000 за 3:00:00`, tone: 'gain' },
       });
     });
     it('comes with the target too, and says a loss as a loss', () => {
@@ -61,7 +61,7 @@ describe('stripModel', () => {
     });
   });
 
-  it('shows timer, cargo with what it is expected to bring, target, the profit expected and the rate', () => {
+  it('shows timer, cargo with what it is expected to bring, target and the profit expected', () => {
     // 96 SCU Gold bought at 6120 at terminal 1, 872 s ago; target 2: UEX 6900 (6400–7100); 1–2: 59 Gm
     expect(stripModel(active, market, ref, toTarget2, ctx)).toEqual({
       kind: 'run', timer: '14:32', phase: 'loading', phaseLabel: 'ПОГРУЗКА', phaseTimer: '14:32', next: 'depart',
@@ -69,7 +69,7 @@ describe('stripModel', () => {
       cargoTitle: `GOLD 96 SCU · куплено по 6${NBSP}120 · ждём 6${NBSP}900`, target: 'TDD Area 18',
       // the one commodity in parts (spec 14.19): only UEX knows the target, so the two ends of its range and nothing in a frame
       lot: { code: 'GOLD', qty: '96 SCU', buy: `6${NBSP}120`, person: null, range: { low: `6${NBSP}400`, high: `7${NBSP}100` }, single: null },
-      profit: `≈ +74${NBSP}880`, profitLoss: false, rate: '266k/ч',     // 96×780 = 74 880 per max(872, 1015) s
+      profit: `≈ +74${NBSP}880`, profitLoss: false,     // 96×780 = 74 880 per max(872, 1015) s
     });
   });
 
@@ -85,16 +85,16 @@ describe('stripModel', () => {
       expect(stripModel(active, market, ref, toTarget2, ctx)).toMatchObject({ cargo: `GOLD 96 SCU по 6${NBSP}120` });
     });
     it('is not there without a target, with a target the reference does not know, or where the market has no price', () => {
-      const bare = { cargo: `GOLD 96 SCU по 6${NBSP}120`, cargoLine: `GOLD 96 SCU по 6${NBSP}120`, profit: null, rate: null };
+      const bare = { cargo: `GOLD 96 SCU по 6${NBSP}120`, cargoLine: `GOLD 96 SCU по 6${NBSP}120`, profit: null };
       expect(stripModel(active, market, ref, { ...s, targetTerminalId: null }, ctx)).toMatchObject({ target: null, ...bare });
       expect(stripModel(active, market, ref, { ...s, targetTerminalId: 777 }, ctx)).toMatchObject({ target: null, ...bare });
       expect(stripModel(active, withUexSell(market, 777, GOLD, 9000), ref, { ...s, targetTerminalId: 777 }, ctx)).toMatchObject({ target: null, ...bare });
       expect(stripModel(active, market, ref, { ...s, targetTerminalId: 3 }, ctx)).toMatchObject({ target: 'CRU-L1', ...bare });
     });
-    it('does not let the inventory recorded at the target change the expectation, the profit or the rate', () => {
+    it('does not let the inventory recorded at the target change the expectation or the profit', () => {
       // 96 SCU Gold; the target's own price 6840 with "0 SCU, out of stock" is the best buyer, not a reason to sell less
       const [empty, stocked, unknown] = [0, 5000, null].map(scu => stripModel(active, withOwnSell(market, 2, 10, 6840, NOW - 60, scu), ref, toTarget2, ctx));
-      expect(empty).toMatchObject({ cargoLine: `GOLD 96 SCU по 6${NBSP}120, ждём 6${NBSP}840`, profit: `≈ +69${NBSP}120`, rate: '245k/ч' });      // 96×720 = 69 120 per max(872, 1015) s
+      expect(empty).toMatchObject({ cargoLine: `GOLD 96 SCU по 6${NBSP}120, ждём 6${NBSP}840`, profit: `≈ +69${NBSP}120` });      // 96×720 = 69 120 per max(872, 1015) s
       expect(stocked).toEqual(empty);
       expect(unknown).toEqual(empty);
     });
@@ -107,20 +107,20 @@ describe('stripModel', () => {
     expect(stripModel(mixedRun, market, ref, s, ctx)).toMatchObject({ cargo: `GOLD 96 по 6${NBSP}120, TITA 40 по 2${NBSP}500` });
   });
 
-  describe('the profit the run is expected to bring (the number of the card of the run), before the rate', () => {
+  describe('the profit the run is expected to bring (the number of the card of the run)', () => {
     it('is the whole run at the prices of the target, with a plus: "≈ +74 880"', () => {
       expect(stripModel(active, market, ref, toTarget2, ctx)).toMatchObject({ profit: `≈ +74${NBSP}880`, profitLoss: false });
     });
     it('is a loss with the minus of its number, and says so', () => {
       // 96×(6000−6120) = −11 520
-      expect(stripModel(active, withUexSell(market, 2, GOLD, 6000), ref, toTarget2, ctx)).toMatchObject({ profit: `≈ -11${NBSP}520`, profitLoss: true, rate: '-41k/ч' });
+      expect(stripModel(active, withUexSell(market, 2, GOLD, 6000), ref, toTarget2, ctx)).toMatchObject({ profit: `≈ -11${NBSP}520`, profitLoss: true });
     });
     it('is a zero without a sign when the target pays what the cargo cost', () => {
       expect(stripModel(active, withUexSell(market, 2, GOLD, 6120), ref, toTarget2, ctx)).toMatchObject({ profit: '≈ 0', profitLoss: false });
     });
-    it('is there without a rate while the time of the run is not known: the profit needs no time', () => {
+    it('is there while nothing is known of the flight: the profit needs no time', () => {
       const unknown = { ...ctx, distances: new Map<string, number | null>() };
-      expect(stripModel(active, market, ref, toTarget2, unknown)).toMatchObject({ profit: `≈ +74${NBSP}880`, rate: null });
+      expect(stripModel(active, market, ref, toTarget2, unknown)).toMatchObject({ profit: `≈ +74${NBSP}880` });
     });
     it('is the number of the card of the run, whatever has been sold', () => {
       const sale = ev({ id: 5, runId: 1, ts: NOW - 300, type: 'sell', terminalId: 2, commodityId: GOLD, scu: 40, price: 6800 });
@@ -133,11 +133,17 @@ describe('stripModel', () => {
         expect(strip.profit?.replace('+', '')).toBe(card?.profit);
       }
     });
-    it('is one line with the rate: "≈ +94 880 · 337k/ч"', () => {
+    it('is all the line says after the target, "≈ +94 880": no rate per hour follows it (plan item 17)', () => {
       const both = withUexSell(market, 2, TITA, 3000);
-      expect(outlookText(stripModel(mixedRun, both, ref, toTarget2, ctx))).toBe(`≈ +94${NBSP}880 · 337k/ч`);
+      expect(outlookText(stripModel(mixedRun, both, ref, toTarget2, ctx))).toBe(`≈ +94${NBSP}880`);
       expect(outlookText(stripModel(active, market, ref, toTarget2, { ...ctx, distances: new Map() }))).toBe(`≈ +74${NBSP}880`);
       expect(outlookText(stripModel(active, market, ref, { ...s, targetTerminalId: null }, ctx))).toBeNull();
+      expect(stripModel(active, market, ref, toTarget2, ctx)).not.toHaveProperty('rate');
+    });
+    it('counts what is already sold too, not only what is aboard', () => {
+      // 40 SCU sold at 6800 (272 000), 56 SCU aboard at 6900, 587 520 put in: 70 880. The hold alone is 56×780 = 43 680.
+      const sold = ev({ id: 5, runId: 1, ts: NOW - 300, type: 'sell', terminalId: 2, commodityId: GOLD, scu: 40, price: 6800 });
+      expect(stripModel(withEvents(active, sold), market, ref, toTarget2, ctx)).toMatchObject({ profit: `≈ +70${NBSP}880` });
     });
   });
 
@@ -150,85 +156,12 @@ describe('stripModel', () => {
     });
     it('sums the profit of every commodity with an estimate', () => {
       // 96×(6900−6120) + 40×(3000−2500) = 94 880 per 1015 s
-      expect(stripModel(mixedRun, both, ref, toTarget2, ctx)).toMatchObject({ profit: `≈ +94${NBSP}880`, rate: '337k/ч' });
+      expect(stripModel(mixedRun, both, ref, toTarget2, ctx)).toMatchObject({ profit: `≈ +94${NBSP}880` });
     });
-    it('leaves the profit out when only a later commodity has an estimate, and the rate with it: a part of the hold is not the run', () => {
+    it('leaves the profit out when only a later commodity has an estimate: a part of the hold is not the run', () => {
       const titaOnly = withUexSell(withUexSell(market, 2, GOLD, 0), 2, TITA, 3000);
       // GOLD has no usable price (zero average means "no data"): the result of the whole run is not known, as the card of the run says
-      expect(stripModel(mixedRun, titaOnly, ref, toTarget2, ctx)).toMatchObject({ profit: null, rate: null });
-    });
-  });
-
-  describe('the rate of the whole run, as the card of the run counts it', () => {
-    const sale = (id: number, scu: number, price: number): RunEvent => ev({ id, runId: 1, ts: NOW - 300, type: 'sell', terminalId: 2, commodityId: GOLD, scu, price });
-
-    it('counts what is already sold too, not only what is aboard', () => {
-      // 40 SCU sold at 6800 (272 000), 56 SCU aboard at 6900, 587 520 put in: 70 880 over max(872, 1015) s. The hold alone is 56×780 = 43 680.
-      expect(stripModel(withEvents(active, sale(5, 40, 6800)), market, ref, toTarget2, ctx)).toMatchObject({ rate: '251k/ч' });
-    });
-    it('is the number of the card of the run, whatever has been sold', () => {
-      for (const run of [active, withEvents(active, sale(5, 40, 6800)), mixedRun]) {
-        const strip = stripModel(run, withUexSell(market, 2, TITA, 3000), ref, toTarget2, ctx);
-        const outlook = runOutlook(run, withUexSell(market, 2, TITA, 3000), ref, toTarget2, ctx);
-        if (strip.kind !== 'run') throw new Error('a run was expected');
-        // the card says '≈ 266k', the line '266k/ч' (its '≈' stands before the profit)
-        expect(`${outlook.expected?.rate.replace('≈ ', '')}/ч`).toBe(strip.rate);
-      }
-    });
-  });
-
-  describe('time of the rate', () => {
-    it('is the estimate of the whole route when it is longer than the elapsed time', () => {
-      expect(stripModel(active, market, ref, toTarget2, ctx)).toMatchObject({ rate: '266k/ч' });   // 1015 s
-    });
-    it('is my own median for the pair rather than the distance estimate', () => {
-      const own = { ...ctx, ownMedian: new Map([[pairKey(1, 2), 1200]]) };
-      expect(stripModel(active, market, ref, toTarget2, own)).toMatchObject({ rate: '225k/ч' });   // 74 880 per 1200 s
-    });
-    it('is the elapsed time when it exceeds the route estimate', () => {
-      const own = { ...ctx, ownMedian: new Map([[pairKey(1, 2), 600]]) };
-      expect(stripModel(active, market, ref, toTarget2, own)).toMatchObject({ rate: '309k/ч' });   // 74 880 per 872 s
-    });
-    it('is not known when neither a median nor a distance is known: no number rather than one counted by the seconds so far', () => {
-      // the time of the whole run is not known; the price expected and the profit are still shown
-      const unknown = { ...ctx, distances: new Map<string, number | null>() };
-      expect(stripModel(active, market, ref, toTarget2, unknown)).toMatchObject({ cargoLine: expect.stringContaining('ждём'), profit: expect.stringContaining('≈ +'), rate: null });
-      // a distance that is stored as unknown is as good as none
-      expect(stripModel(active, market, ref, toTarget2, { ...ctx, distances: new Map([[distKey(1, 2), null]]) })).toMatchObject({ rate: null });
-    });
-    it('is the elapsed time once the arrival is marked: the flight is over, so the time that has passed is the time of the run', () => {
-      const unknown = { ...ctx, distances: new Map<string, number | null>() };
-      const arrived = withEvents(active, ev({ id: 5, runId: 1, ts: NOW - 600, type: 'depart' }), ev({ id: 6, runId: 1, ts: NOW - 125, type: 'arrive' }));
-      expect(stripModel(arrived, market, ref, toTarget2, unknown)).toMatchObject({ rate: '309k/ч' });   // 74 880 per 872 s
-      // a flight that was shorter than the estimate does not stretch the time of the run
-      expect(stripModel(arrived, market, ref, toTarget2, ctx)).toMatchObject({ rate: '309k/ч' });
-    });
-    it('is not known again when the ship takes off again after the arrival: that flight has no time yet', () => {
-      const unknown = { ...ctx, distances: new Map<string, number | null>() };
-      const again = withEvents(active,
-        ev({ id: 5, runId: 1, ts: NOW - 600, type: 'depart' }), ev({ id: 6, runId: 1, ts: NOW - 400, type: 'arrive' }), ev({ id: 7, runId: 1, ts: NOW - 100, type: 'depart' }));
-      expect(stripModel(again, market, ref, toTarget2, unknown)).toMatchObject({ rate: null });
-    });
-    it('is the result in hand over the elapsed time when nothing is left aboard to fly', () => {
-      const soldAll = withEvents(mixedRun,
-        ev({ id: 3, runId: 1, ts: NOW - 100, type: 'sell', terminalId: 2, commodityId: GOLD, scu: 96, price: 6900 }),
-        ev({ id: 4, runId: 1, ts: NOW - 90, type: 'sell', terminalId: 2, commodityId: TITA, scu: 40, price: 3000 }));
-      // 96×780 + 40×500 = 94 880 per 872 s, without the flight to the target
-      expect(stripModel(soldAll, market, ref, toTarget2, ctx)).toMatchObject({ cargo: '', cargoTitle: '', rate: '392k/ч' });
-    });
-    it('measures the route from the first purchase', () => {
-      const laterBuy = ev({ id: 3, runId: 1, ts: NOW - 300, type: 'buy', terminalId: 3, commodityId: GOLD, scu: 4, price: 6120 });
-      // an own median from terminal 3 must not count: the run began at terminal 1
-      const own = { ...ctx, ownMedian: new Map([[pairKey(3, 2), 5000]]) };
-      expect(stripModel(withEvents(active, laterBuy), market, ref, toTarget2, own)).toMatchObject({ rate: '277k/ч' });   // 100×780 per 1015 s
-    });
-    it('does not guess a rate before any time has passed', () => {
-      const justStarted: RunWithEvents = { run: { ...active.run, startedAt: NOW }, events: active.events };
-      expect(stripModel(justStarted, market, ref, toTarget2, { ...ctx, distances: new Map() })).toMatchObject({ timer: '0:00', rate: null });
-      expect(stripModel(justStarted, market, ref, toTarget2, ctx)).toMatchObject({ timer: '0:00', rate: '266k/ч' });
-    });
-    it('shows a loss with its sign', () => {
-      expect(stripModel(active, withUexSell(market, 2, GOLD, 6000), ref, toTarget2, ctx)).toMatchObject({ rate: '-41k/ч' });   // 96×(−120) per 1015 s
+      expect(stripModel(mixedRun, titaOnly, ref, toTarget2, ctx)).toMatchObject({ profit: null });
     });
   });
 
@@ -355,14 +288,14 @@ describe('stripModel', () => {
   });
 
   describe('the tooltip of the whole line: everything the line knows, the cargo cut or not', () => {
-    it('says the phase, the whole time, the target, the profit and the rate, then a line for each commodity of the hold', () => {
+    it('says the phase, the whole time, the target and the profit, then a line for each commodity of the hold', () => {
       expect(stripTitle(stripModel(active, market, ref, toTarget2, ctx)))
-        .toBe(`ПОГРУЗКА 14:32 · всего 14:32 · → TDD Area 18 · ≈ +74${NBSP}880 · 266k/ч\nGOLD 96 SCU · куплено по 6${NBSP}120 · ждём 6${NBSP}900`);
+        .toBe(`ПОГРУЗКА 14:32 · всего 14:32 · → TDD Area 18 · ≈ +74${NBSP}880\nGOLD 96 SCU · куплено по 6${NBSP}120 · ждём 6${NBSP}900`);
     });
     it('with several commodities carries the expected price of every one, so that it is under the cursor anywhere on the line, not only over the cargo', () => {
       const both = withUexSell(market, 2, TITA, 3000);
       expect(stripTitle(stripModel(mixedRun, both, ref, toTarget2, ctx))).toBe([
-        `ПОГРУЗКА 14:32 · всего 14:32 · → TDD Area 18 · ≈ +94${NBSP}880 · 337k/ч`,
+        `ПОГРУЗКА 14:32 · всего 14:32 · → TDD Area 18 · ≈ +94${NBSP}880`,
         `GOLD 96 SCU · куплено по 6${NBSP}120 · ждём 6${NBSP}900`,
         `TITA 40 SCU · куплено по 2${NBSP}500 · ждём 3${NBSP}000`,
       ].join('\n'));
@@ -385,7 +318,7 @@ describe('stripModel', () => {
       const gain = sessionFigure(currentSession(sessionEndedAgo(10 * MINUTE, 1_240_000), CLOCK));
       expect(stripTitle(stripModel(null, market, ref, { ...s, currentTerminalId: 1 }, ctx))).toBe('ARC-L1');
       expect(stripTitle(stripModel(null, market, ref, { ...s, currentTerminalId: 1, targetTerminalId: 2 }, ctx, gain)))
-        .toBe(`ARC-L1 → TDD Area 18 · сессия +1${NBSP}240${NBSP}000 · 413k/ч`);
+        .toBe(`ARC-L1 → TDD Area 18 · сессия +1${NBSP}240${NBSP}000 за 3:00:00`);
     });
   });
 });

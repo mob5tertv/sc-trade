@@ -164,7 +164,7 @@ describe('suggestFrom', () => {
 
   it('uses my own median time for a pair', async () => {
     const o = await suggestFrom({ ...deps, ownMedian: new Map([['1>3', 600]]) }, 1, 696);
-    expect(o[0]).toMatchObject({ destId: 3, timeSec: 600, timeSource: 'own' });
+    expect(o.find(option => option.destId === 3)).toMatchObject({ timeSec: 600, timeSource: 'own' });
   });
 
   it('measures the distances of the 20 best options by ROI, however few are shown', async () => {
@@ -254,7 +254,7 @@ describe('suggestFrom', () => {
     const ctx = JSON.parse(line.slice(line.indexOf('{')));
     expect(ctx).toMatchObject({
       now: NOW, currentTerminalId: 1, origins: [1], freeScu: 696,
-      filters: { commodityId: GOLD, starSystemId: 68, budget: null, nearby: false, sort: 'uecPerHour', topN: 5 },
+      filters: { commodityId: GOLD, starSystemId: 68, budget: null, nearby: false, sort: 'profit', topN: 5 },
       trace: { considered: 3, kept: 2, dropped: { unknownTerminal: 0, systemFilter: 1, nonPositiveProfit: 0, zeroQty: 0 } },
     });
     expect(ctx.options).toHaveLength(2);
@@ -408,7 +408,7 @@ describe('suggestTo', () => {
     const ctx = JSON.parse(lines[0].line.slice(lines[0].line.indexOf('{')));
     expect(ctx).toMatchObject({
       now: NOW, destId: 2, freeScu: 696,
-      filters: { commodityId: GOLD, starSystemId: 68, budget: null, sort: 'uecPerHour', topN: 5 },
+      filters: { commodityId: GOLD, starSystemId: 68, budget: null, sort: 'profit', topN: 5 },
       trace: { considered: 1, kept: 1 },
     });
     expect(ctx.options[0]).toMatchObject({

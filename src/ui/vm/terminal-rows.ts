@@ -159,6 +159,16 @@ export function rangeView(range: UexRange): RangeView {
   }
 }
 
+/**
+ * What hovering a price says of its spread. The lists have no column «Мин–макс» any more (plan item 17: its room went to the
+ * profit of the trip); the two numbers are in the hint of the price, and in plain sight in the opened row.
+ */
+export function rangeHint(view: RangeView): string {
+  if (view.kind === 'spread') return `Мин–макс ${view.text}`;
+  if (view.kind === 'flat') return `Мин–макс: одна цена за период, ${view.text.replace(/^= /, '')}`;
+  return view.title;
+}
+
 function cell(m: Market, terminalId: number, commodityId: number, side: Side, ctx: EstimateCtx): Cell | null {
   const e = estimate(m, terminalId, commodityId, side, ctx);
   if (!e) return null;

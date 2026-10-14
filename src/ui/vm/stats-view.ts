@@ -1,4 +1,4 @@
-import { formatCompact, formatUec } from '../../core/format';
+import { formatCompact, formatDuration, formatUec } from '../../core/format';
 import { DEFAULT_SESSION_GAP_SEC, ownLegIndex, ownMedianIndex, ownRunCounts, routeStats, sessions, usualPace } from '../../core/stats';
 import type { Pace, RouteStat, Session } from '../../core/stats';
 import type { RunWithEvents } from '../../core/types';
@@ -55,7 +55,7 @@ export function currentSession(sessionList: Session[], now: number): Session | n
 export interface SessionFigure {
   /** '+1,24M': the profit in the short form of the mini line. */
   short: string;
-  /** 'сессия +1 240 000 · 413k/ч': the exact profit and the rate; the summary of the section and the tooltip of the mini line. */
+  /** 'сессия +1 240 000 за 3:00:00': the exact profit and how long the session has lasted; the summary of the section and the tooltip of the mini line. */
   line: string;
   /** What colour the profit is: the colour of a profit, of a loss, or neither. */
   tone: 'gain' | 'loss' | 'even';
@@ -70,28 +70,26 @@ const signed = (text: string, value: number): string => (Math.round(value) > 0 ?
  */
 export function sessionFigure(session: Session | null): SessionFigure | null {
   if (session === null || session.runIds.length === 0) return null;
-  const { profit, uecPerHour } = session;
-  const rate = uecPerHour === null ? '' : ` · ${formatCompact(uecPerHour)}/ч`;
+  const { profit } = session;
+  const lasted = session.endTs > session.startTs ? ` за ${formatDuration(session.endTs - session.startTs)}` : '';
   const rounded = Math.round(profit);
   return {
     short: signed(formatCompact(profit), profit),
-    line: `сессия ${signed(formatUec(profit), profit)}${rate}`,
+    line: `сессия ${signed(formatUec(profit), profit)}${lasted}`,
     tone: rounded > 0 ? 'gain' : rounded < 0 ? 'loss' : 'even',
   };
 }
 
 /**
  * The summary of the section header: the session that is going (when it has earned anything to say) and the best route
- * with its rate ('сессия +1 240 000 · 413k/ч · HUR-L1 → ARC-L1 · 310k/ч'), or that there are no routes yet. The header
- * cuts a long summary with an ellipsis, so the session, which comes first, is what stays. The rows carry the rate
- * without its unit (their column has a caption); the header has none, so the unit is added here.
+ * with what one run of it brings ('сессия +1 240 000 за 3:00:00 · HUR-L1 → ARC-L1 · 310k за рейс'), or that there are no
+ * routes yet. The header cuts a long summary with an ellipsis, so the session, which comes first, is what stays. The rows
+ * carry the number without words (their column has the caption «За рейс»); the header has none, so the words are added here.
  */
 export function routesSummary(rows: RouteRow[], session: SessionFigure | null = null): string {
-  // the rows come best rate first by the numbers WITHOUT the lost runs; with «Подробные расчёты» a row carries its losses, and the
-  // best one is then looked for among the numbers that are shown
-  const rateOf = (row: RouteRow): number => row.stat.uecPerHour ?? Number.NEGATIVE_INFINITY;
-  const best = rows.reduce<RouteRow | undefined>((top, row) => (top === undefined || rateOf(row) > rateOf(top) ? row : top), undefined);
-  const route = best === undefined ? null : best.rate === NONE ? best.route : `${best.route} · ${best.rate}/ч`;
+  // the best route is looked for among the numbers that are shown: with «Подробные расчёты» a row carries its losses
+  const best = rows.reduce<RouteRow | undefined>((top, row) => (top === undefined || row.perRunValue > top.perRunValue ? row : top), undefined);
+  const route = best === undefined ? null : `${best.route} · ${best.perRun} за рейс`;
   const parts = [session?.line ?? null, route].filter((part): part is string => part !== null);
   return parts.length === 0 ? NO_FINISHED_RUNS : parts.join(' · ');
 }

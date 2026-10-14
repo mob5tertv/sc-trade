@@ -87,7 +87,7 @@
       <button type="button" class="sc-btn sc-btn--act" title="Искать по всем товарам точки" onclick={showAllCommodities}>все товары</button>
     {/if}
     <div class="sc-seg" role="group" aria-label="Сортировка">
-      <button type="button" aria-pressed={app.settings.sort === 'uecPerHour'} title={legendTitle(LEGEND.rateOptions, 'Сначала то, что приносит больше UEC в час')} onclick={() => setSort('uecPerHour')}>UEC/ч</button>
+      <button type="button" aria-pressed={app.settings.sort !== 'roi'} title={legendTitle('Сначала то, что приносит больше за рейс', LEGEND.profitTrip)} onclick={() => setSort('profit')}>Прибыль</button>
       <button type="button" aria-pressed={app.settings.sort === 'roi'} title="Сначала то, что выгоднее по отношению прибыли к вложенному" onclick={() => setSort('roi')}>ROI</button>
     </div>
     {#if request.kind === 'from'}
@@ -95,7 +95,7 @@
         <button
           type="button"
           aria-pressed={app.settings.nearby}
-          title="Показать и варианты, где закупка рядом, в другом месте, выгоднее по ROI. Как далеко искать — «Закупка рядом» в настройках"
+          title="Показать и варианты, где закупка рядом, в другом месте, приносит больше за рейс. Как далеко искать — «Закупка рядом» в настройках"
           onclick={setNearby}
         >выгоднее</button>
       </div>

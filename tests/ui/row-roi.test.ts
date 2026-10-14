@@ -130,20 +130,20 @@ describe('rowRoiMap: what the table shows next to a commodity', () => {
 });
 
 describe('rowRoiMap: the best ROI of a commodity, whatever the options are ranked by', () => {
-  it('sell here: the options are ranked by UEC per hour, the nearer origin first, and the row still has the higher ROI of the farther one', () => {
+  it('sell here: the row has the higher ROI of the farther origin, whatever the one option that is shown', () => {
     const market = marketOf(quotes);
-    const ranked = withDistances(withSettings({ sort: 'uecPerHour' }));
-    // the premise: by UEC per hour the near origin (ROI 25 %) comes before the far one (ROI 33 %), so "the first option" would be wrong
-    expect(routesTo(market, HERE, ranked, GOLD).options.map((o) => o.originId)).toEqual([NEAR]);
+    const ranked = withDistances(withSettings({ sort: 'profit' }));
+    // the premise: the list is cut to one option; the row is counted from all of them
+    expect(routesTo(market, HERE, ranked, GOLD).options).toHaveLength(1);
     const best = rowRoiMap(market, HERE, 'sell', ranked).get(GOLD);
     expect(best).toMatchObject({ otherId: FAR, buyPrice: 6000, sellPrice: 8000 });
     expect(best?.roi).toBeCloseTo(8000 / 6000 - 1, 10);
   });
 
-  it('buy here: the near buyer (ROI 17 %) is ranked before the far one (ROI 25 %) by UEC per hour, and the row still has the far one', () => {
+  it('buy here: the row has the far buyer (ROI 25 %), which is the trip that brings the most as well', () => {
     const market = marketOf(quotes);
-    const ranked = withDistances(withSettings({ sort: 'uecPerHour' }));
-    expect(routesFrom(market, [HERE], HERE, ranked, GOLD).options.map((o) => o.destId)).toEqual([NEAR]);
+    const ranked = withDistances(withSettings({ sort: 'profit' }));
+    expect(routesFrom(market, [HERE], HERE, ranked, GOLD).options.map((o) => o.destId)).toEqual([FAR]);
     const best = rowRoiMap(market, HERE, 'buy', ranked).get(GOLD);
     expect(best).toMatchObject({ otherId: FAR, buyPrice: 6000, sellPrice: 7500 });
     expect(best?.roi).toBeCloseTo(0.25, 10);
@@ -151,9 +151,41 @@ describe('rowRoiMap: the best ROI of a commodity, whatever the options are ranke
 
   it('the same row whichever way the options are ranked', () => {
     const market = marketOf(quotes);
-    const byRate = rowRoiMap(market, HERE, 'sell', withDistances(withSettings({ sort: 'uecPerHour' })));
+    const byRate = rowRoiMap(market, HERE, 'sell', withDistances(withSettings({ sort: 'profit' })));
     const byRoi = rowRoiMap(market, HERE, 'sell', withDistances(withSettings({ sort: 'roi' })));
     expect(byRate).toEqual(byRoi);
+  });
+
+  describe('the most a trip brings is counted apart from the best ROI (plan item 17)', () => {
+    // Gold is sold here at 8000. Terminal 2 sells it at 5000 but has 20 SCU; terminal 3 sells it at 6000 and has 500.
+    const market = marketOf([
+      { terminalId: HERE, commodityId: GOLD, sell: 8000 },
+      { terminalId: 2, commodityId: GOLD, buy: 5000, scuBuy: 20 },
+      { terminalId: 3, commodityId: GOLD, buy: 6000, scuBuy: 500 },
+    ]);
+
+    it('sell here: the ROI is the one of the cheap seller with little stock, the profit the one of the seller that fills the hold', () => {
+      const row = rowRoiMap(market, HERE, 'sell', ctx).get(GOLD)!;
+      expect(row).toMatchObject({ otherId: 2, buyPrice: 5000, profitOtherId: 3 });
+      expect(row.roi).toBeCloseTo(0.6, 10);                                 // 3000 on 5000
+      expect(row.qty).toBe(Math.min(500, ctx.freeScu));
+      expect(row.profit).toBe(row.qty * 2000);                              // far more than the 20 × 3000 of the best ROI
+      expect(row.profit).toBeGreaterThan(20 * 3000);
+    });
+
+    it('says in the hint of the cell which trip brings the most when it is another one', () => {
+      const cell = roiCell(rowRoiMap(market, HERE, 'sell', ctx).get(GOLD)!, 'sell', ref, 50);
+      expect(cell).toMatchObject({ text: '60%', hot: true });
+      expect(cell.profit).toBe(Math.min(500, ctx.freeScu) * 2000);
+      expect(cell.title).toContain('Больше всего за рейс');
+      expect(cell.title).toMatch(/SCU, из /);
+    });
+
+    it('names no second trip when the best ROI and the biggest profit are one trip', () => {
+      const cell = roiCell(best({ profit: 532_440, qty: 696, profitOtherId: 3, otherId: 3 }), 'buy', ref, 50);
+      expect(cell.gain).toBe('532k');
+      expect(cell.title).toMatch(/Больше всего за рейс: 532.440 \(696 SCU\)\n/);
+    });
   });
 
   describe('a tie', () => {
@@ -214,7 +246,9 @@ describe('isHot: a row stands out from the threshold', () => {
   });
 });
 
-const best = (over: Partial<RowRoi> = {}): RowRoi => ({ commodityId: GOLD, roi: 0.62, otherId: 3, buyPrice: 1995, sellPrice: 2760, ...over });
+const best = (over: Partial<RowRoi> = {}): RowRoi => ({
+  commodityId: GOLD, roi: 0.62, otherId: 3, buyPrice: 1995, sellPrice: 2760, profit: 532_440, qty: 696, profitOtherId: 3, ...over,
+});
 
 describe('roiCell: how a row says it', () => {
   it('is the number as the options list writes it, in the tier of that number', () => {

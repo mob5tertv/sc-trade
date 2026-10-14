@@ -17,6 +17,15 @@ describe('settings repository', () => {
     expect(await loadSettings(await migratedDb(), log)).toEqual(DEFAULT_SETTINGS);
   });
 
+  it('reads the order of the options that 1.1.1 stored as its heir: "uecPerHour" is "profit" now (plan item 17)', async () => {
+    const db = await migratedDb();
+    await db.execute('INSERT INTO setting (key, value) VALUES (?, ?)', ['sort', JSON.stringify('uecPerHour')]);
+    expect((await loadSettings(db, log)).sort).toBe('profit');
+    await saveSetting(db, log, 'sort', 'roi');
+    expect((await loadSettings(db, log)).sort).toBe('roi');
+    expect(DEFAULT_SETTINGS.sort).toBe('profit');
+  });
+
   it('defaults: no key is assigned, the strip is in the top-right corner, the panel side is not a setting', async () => {
     const settings = await loadSettings(await migratedDb(), log);
     expect([settings.hotkeyPanel, settings.hotkeyDepart, settings.hotkeyArrive]).toEqual(['', '', '']);

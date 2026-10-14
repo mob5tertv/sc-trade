@@ -1,15 +1,15 @@
-import { formatDuration, formatUec } from '../../core/format';
+import { formatCompact, formatDuration, formatUec } from '../../core/format';
 import { isIncomeRun, runTotals, simpleRoute } from '../../core/run';
 import { withLosses } from '../../core/stats';
 import type { RouteStat, Session } from '../../core/stats';
 import { pairKey } from '../../core/types';
 import type { Reference, Run, RunEvent, RunWithEvents } from '../../core/types';
-import { formatRoi, perHourBare } from './route-rows';
+import { formatRoi } from './route-rows';
 import { terminalLabel } from './terminal-name';
 
 // Display rows of the "Мои маршруты" section: the routes, the run history and the session list. Every number is already
-// formatted, the way the list of options formats it: the ROI in `formatRoi`, the rate without its unit (the caption of the
-// column says "UEC/ч"; where there is no caption the owner adds the unit, see `routesSummary`).
+// formatted, the way the list of options formats it: the ROI in `formatRoi`, the profit of one run in the short form ('467k').
+// No list shows a rate per hour any more (plan item 17): a route says what one run of it brings and how long it takes.
 
 /** Shown instead of a value that does not exist. */
 export const NONE = '—';
@@ -42,10 +42,12 @@ export interface RouteRow {
   /** The finished runs as the cell writes them: '5', or with «Подробные расчёты» and lost runs '5/6' (finished of attempted). */
   runsText: string;
   /** What the three numbers of the row are, for their tooltips: with lost runs counted in, they say so. */
-  runsTitle: string; profitTitle: string; rateTitle: string;
+  runsTitle: string; profitTitle: string; perRunTitle: string;
   /** Loading · flight · unloading, or `null` when no run of the route has both marks. */
   phases: string | null;
-  profit: string; roi: string; rate: string;
+  profit: string; roi: string;
+  /** What one run of the route brings on average ('467k'), and the number behind it, which the table is sorted by. With lost runs counted in it is per attempt. */
+  perRun: string; perRunValue: number;
   /** The statistic the row was made of: the numbers behind the text, which the table is sorted by (`route-sort.ts`). */
   stat: RouteStat;
 }
@@ -58,16 +60,16 @@ export function favouriteOf(row: Pick<RouteRow, 'stat'>): { originId: number; de
 
 const RUNS_TITLE = 'Число завершённых рейсов';
 const PROFIT_TITLE = 'Суммарная прибыль';
-const RATE_TITLE = 'UEC в час';
+const PER_RUN_TITLE = 'Средняя прибыль за рейс';
 
 /** The tooltips of a route that has lost runs counted into its numbers. */
-function lossTitles(s: RouteStat): Pick<RouteRow, 'runsTitle' | 'profitTitle' | 'rateTitle'> {
+function lossTitles(s: RouteStat): Pick<RouteRow, 'runsTitle' | 'profitTitle' | 'perRunTitle'> {
   const attempts = s.runs + s.lostRuns;
   const lost = formatUec(s.lostProfit);
   return {
     runsTitle: `Удачных рейсов ${s.runs} из ${attempts} (${Math.round((s.runs / attempts) * 100)} %): потерянных ${s.lostRuns}`,
     profitTitle: `Прибыль с потерями: потерянный груз ${lost}`,
-    rateTitle: `UEC в час с потерями: потерянный груз ${lost}, время потерянных рейсов входит`,
+    perRunTitle: `Средняя прибыль за попытку, с потерями: потерянный груз ${lost}, потерянные рейсы входят в счёт`,
   };
 }
 
@@ -77,12 +79,14 @@ function mixedGoods(ref: Reference, commodityIds: number[]): string {
 }
 
 /**
- * One row per route statistic, in the given order (`routeStats` sorts them, best rate first). A route of mixed cargo (task 51) says "смеш." for its goods.
- * `detailed` («Подробные расчёты», spec 14.19) counts the lost runs of a route into its row: the profit and the rate are the ones with the losses
- * (`withLosses`: the table then sorts by them too) and the runs read 'finished/attempted'. Without it, and for a route that lost nothing, the row is as ever.
+ * One row per route statistic, in the given order (the table orders them itself, `sortRoutes`). A route of mixed cargo (task 51) says "смеш." for its goods.
+ * `detailed` («Подробные расчёты», spec 14.19) counts the lost runs of a route into its row: the profit is the one with the losses (`withLosses`), what a
+ * run brings is counted per ATTEMPT, and the runs read 'finished/attempted'. Without it, and for a route that lost nothing, the row is as ever.
  */
 export function routeRows(stats: RouteStat[], ref: Reference, detailed = false): RouteRow[] {
   return stats.map(base => (detailed && base.lostRuns > 0 ? { s: withLosses(base), lossy: true } : { s: base, lossy: false })).map(({ s, lossy }) => ({
+    s, lossy, perRunValue: s.totalProfit / Math.max(1, lossy ? s.runs + s.lostRuns : s.runs),
+  })).map(({ s, lossy, perRunValue }) => ({
     stat: s,
     key: `${pairKey(s.originId, s.destId)}:${s.commodityIds.join(',')}`,
     route: routeName(ref, s.originId, s.destId),
@@ -90,12 +94,12 @@ export function routeRows(stats: RouteStat[], ref: Reference, detailed = false):
     commodityHint: s.commodityIds.length === 1 ? null : mixedGoods(ref, s.commodityIds),
     runs: s.runs,
     runsText: lossy ? `${s.runs}/${s.runs + s.lostRuns}` : String(s.runs),
-    ...(lossy ? lossTitles(s) : { runsTitle: RUNS_TITLE, profitTitle: PROFIT_TITLE, rateTitle: RATE_TITLE }),
+    ...(lossy ? lossTitles(s) : { runsTitle: RUNS_TITLE, profitTitle: PROFIT_TITLE, perRunTitle: PER_RUN_TITLE }),
     time: formatDuration(s.medianDurationSec),
     phases: s.medianPhases && [s.medianPhases.loadingSec, s.medianPhases.flightSec, s.medianPhases.unloadingSec].map(formatDuration).join(' · '),
     profit: formatUec(s.totalProfit),
     roi: formatRoi(s.avgRoi),
-    rate: perHourBare(s.uecPerHour),
+    perRun: formatCompact(perRunValue), perRunValue,
   }));
 }
 
@@ -106,7 +110,7 @@ export interface HistoryRow {
   /** The same in full, for the tooltip: it lists every commodity of a run whose title says only "смеш.". */
   hint: string;
   status: 'active' | 'done' | 'lost';
-  profit: string; roi: string; duration: string; rate: string;
+  profit: string; roi: string; duration: string;
 }
 
 /** A buy or a sell that names a commodity, a quantity and a price: the same trades `simpleRoute` looks at. */
@@ -163,15 +167,13 @@ export interface RunFigures {
   /** The dash when nothing was invested. */
   roi: string;
   duration: string;
-  /** The dash when the run took no time. */
-  rate: string;
   /** What the profit is, to the rounded UEC: a gain, a loss or neither. */
   tone: 'gain' | 'loss' | 'even';
 }
 
 /**
  * The figures of a run as of `now` (a run that has an end lasts until it). A sale of goods that were never bought (`isIncomeRun`)
- * is not a flight: it has no time and no rate, only its profit. Whether the run is over is not decided here: a run that goes on
+ * is not a flight: it has no time, only its profit. Whether the run is over is not decided here: a run that goes on
  * has these figures too, and the row of the history blanks them (`historyRow`).
  */
 export function runFigures(run: Run, events: RunEvent[], now: number): RunFigures {
@@ -182,13 +184,12 @@ export function runFigures(run: Run, events: RunEvent[], now: number): RunFigure
     profit: formatUec(totals.profit),
     roi: totals.roi === null ? NONE : formatRoi(totals.roi),
     duration: income ? NONE : formatDuration(totals.durationSec),
-    rate: income ? NONE : perHourBare(totals.uecPerHour),
     tone: rounded > 0 ? 'gain' : rounded < 0 ? 'loss' : 'even',
   };
 }
 
 /**
- * The row of one run. An active run lasts until `now`; its profit, ROI and rate are dashes: it has not finished, so the
+ * The row of one run. An active run lasts until `now`; its profit and ROI are dashes: it has not finished, so the
  * money in the hold is not a loss (the profit the run has so far is only what the cargo card shows). A lost run keeps its loss.
  */
 function historyRow({ run, events }: RunWithEvents, ref: Reference, now: number): HistoryRow {
@@ -204,7 +205,6 @@ function historyRow({ run, events }: RunWithEvents, ref: Reference, now: number)
     profit: going ? NONE : figures.profit,
     roi: going ? NONE : figures.roi,
     duration: figures.duration,
-    rate: going ? NONE : figures.rate,
   };
 }
 
@@ -223,7 +223,7 @@ export function liveRows(rows: HistoryRow[], runs: RunWithEvents[], ref: Referen
   return rows.map((row, i) => (runs[i]?.run.status === 'active' ? historyRow(runs[i], ref, now) : row));
 }
 
-export interface SessionRow { when: string; duration: string; runs: number; profit: string; rate: string }
+export interface SessionRow { when: string; duration: string; runs: number; profit: string }
 
 /**
  * A session of nothing: no run ended in it and it earned nothing (the player only wrote prices, or the history was cleared).
@@ -241,6 +241,5 @@ export function sessionRows(list: Session[]): SessionRow[] {
     duration: formatDuration(s.endTs - s.startTs),
     runs: s.runCount,                                  // the runs of the session; its incomes are in the profit only
     profit: formatUec(s.profit),
-    rate: perHourBare(s.uecPerHour),
   }));
 }

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { LEGEND, legendTitle } from '../vm/legend';
   import { routePieces } from '../vm/route-pieces';
   import { ariaSortOf, type RouteSort, type RouteSortKey } from '../vm/route-sort';
   import { favouriteKey, type FavouriteRoute } from '../vm/favourites';
@@ -42,7 +41,7 @@
     <div class="grid head sc-label" role="row">
       <span role="columnheader">Маршрут</span>
       <span role="columnheader">Товар</span>
-      {@render head('rate', 'UEC/ч', legendTitle(LEGEND.rateRoutes, 'Сортировать по UEC в час'))}
+      {@render head('perRun', 'За рейс', 'Сколько в среднем приносит один рейс по маршруту. Нажми, чтобы отсортировать')}
       {@render head('runs', 'Рейс', 'Сортировать по числу завершённых рейсов')}
       {@render head('time', 'Время', 'Сортировать по медианному времени: быстрые сверху')}
       {@render head('profit', 'Прибыль', 'Сортировать по суммарной прибыли')}
@@ -72,7 +71,7 @@
           <PieceLine pieces={routePieces(row.route)} />
         </span>
         <span class="code" title={row.commodityHint ?? undefined}>{row.commodity}</span>
-        <span class="sc-num strong" title={row.rateTitle}>{row.rate}</span>
+        <span class="sc-num strong" class:loss={row.perRunValue < 0} title={row.perRunTitle}>{row.perRun}</span>
         <span class="sc-num" title={row.runsTitle}>{row.runsText}</span>
         <span class="sc-num" title={row.phases ? `Медианное время: погрузка · полёт · разгрузка ${row.phases}` : 'Медианное время рейса'}>{row.time}</span>
         <span class="sc-num" class:loss={isLoss(row.profit)} title={row.profitTitle}>{row.profit}</span>

@@ -28,6 +28,9 @@ export async function loadSettings(db: Db, log: Logger): Promise<Settings> {
       log.warn('settings', 'corrupt value, using default', { key, value });
     }
   }
+  // A value that was given another name is read as its heir: until 1.2 the options were ordered by 'uecPerHour', now by the
+  // profit of the trip (plan item 17). The row is rewritten when the player next picks an order.
+  if (settings.sort === 'uecPerHour') settings.sort = 'profit';
   // Values are trusted to be of the declared type: only this module writes them.
   return settings as unknown as Settings;
 }

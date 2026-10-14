@@ -1,5 +1,5 @@
 // The tooltips of the words that the README explains in «Обозначения» (version 1.1.1): «Худший», «Время» of an option, «скорость выучена» /
-// «скорость запасная», «Мин–макс», every «≈» and every «UEC/ч». The player does not open the README in a flight, so the screen says the same, in
+// «скорость запасная», «Мин–макс», every «≈» and «Прибыль» of a trip. The player does not open the README in a flight, so the screen says the same, in
 // one or two short sentences. The texts live HERE and nowhere else: the components take them from `LEGEND` (a second copy would drift from the
 // README again), and `tests/ui/legend.test.ts` checks that every word has its tooltip and that a component really hangs it.
 
@@ -7,12 +7,12 @@
 export type LegendTerm =
   | 'worst' | 'time' | 'rateLearned' | 'rateDefault' | 'range'
   | 'approxScu' | 'approxRun' | 'approxStrip' | 'approxOptions'
-  | 'rateOptions' | 'rateRun' | 'rateRoutes' | 'rateSessions';
+  | 'profitTrip';
 
 /**
  * The word as the screen shows it, for each text of the legend. The three «≈» of the README are the column «SCU», the section «Рейс» with the mini line
- * (two places, two texts: the mini line has the profit and the rate only) and the title of «Варианты»; the four «UEC/ч» are the options, the running
- * run, the finished runs («Маршруты» and «История») and the sessions.
+ * (two places, two texts: the mini line has the profit only) and the title of «Варианты»; «Прибыль» is the profit of a trip in the list of options and
+ * in the table of the terminal. The four «UEC/ч» are gone with the rate per hour itself (plan item 17).
  */
 export const LEGEND_WORDS: Readonly<Record<LegendTerm, string>> = {
   worst: 'Худший',
@@ -24,10 +24,7 @@ export const LEGEND_WORDS: Readonly<Record<LegendTerm, string>> = {
   approxRun: '≈ (секция «Рейс»)',
   approxStrip: '≈ (мини-строка)',
   approxOptions: '≈ (заголовок «Варианты»)',
-  rateOptions: 'UEC/ч (варианты)',
-  rateRun: 'UEC/ч (рейс)',
-  rateRoutes: 'UEC/ч (маршруты, история)',
-  rateSessions: 'UEC/ч (сессии)',
+  profitTrip: 'Прибыль (варианты, таблица терминала)',
 };
 
 /**
@@ -49,14 +46,12 @@ export const LEGEND: Readonly<Record<LegendTerm, string>> = {
     + 'По ней считается оценка «≈».',
   range: `${RANGE_PERIOD}. «= 5 500» — цена за период не менялась.`,
   approxScu: '≈ — оценка запаса по таймеру пополнения: сколько там, по расчёту, сейчас. «было …» в раскрытой строке говорит, от какого твоего замера считалось.',
-  approxRun: '≈ — ожидаемый результат идущего рейса (прибыль, ROI, UEC/ч): так будет, если груз продастся в точке цели по ожидаемым ценам.',
-  approxStrip: '≈ — ожидаемые прибыль и UEC в час идущего рейса: так будет, если груз продастся в точке цели по ожидаемым ценам.',
+  approxRun: '≈ — ожидаемый результат идущего рейса (прибыль, ROI): так будет, если груз продастся в точке цели по ожидаемым ценам.',
+  approxStrip: '≈ — ожидаемая прибыль идущего рейса: так будет, если груз продастся в точке цели по ожидаемым ценам.',
   approxOptions: '≈ — список предварительный: он построен по тем расстояниям, что уже известны, остальные догружаются (рядом «расстояния 7/15»). '
-    + 'Пока у вариантов без расстояния нет ни времени, ни UEC/ч.',
-  rateOptions: 'UEC/ч варианта — ожидание: прибыль по ожидаемым ценам, делённая на «Время» варианта.',
-  rateRun: 'UEC/ч идущего рейса — оценка: ожидаемая прибыль всего рейса за время всего рейса (не меньше прошедшего и не меньше, чем лететь до цели).',
-  rateRoutes: 'UEC/ч по завершённым рейсам: прибыль, делённая на время рейсов.',
-  rateSessions: 'UEC/ч сессии — заработок сессии: прибыль, делённая на всё время сессии от первой записи до последней, простои между записями входят.',
+    + 'Пока у вариантов без расстояния нет времени.',
+  profitTrip: 'Прибыль за рейс по ожидаемым ценам: сколько берёшь (меньшее из свободного места в трюме, запаса на станции и бюджета), '
+    + 'умноженное на разницу цен.',
 };
 
 /**

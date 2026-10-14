@@ -18,7 +18,7 @@ export interface Settings {
    * when it crosses the threshold after a price was entered). 0 marks every row that pays at all.
    */
   roiHighlightPct: number;
-  sort: 'uecPerHour' | 'roi'; nearby: boolean;
+  sort: 'profit' | 'roi'; nearby: boolean;
   /**
    * «Подробные расчёты» (spec 14.19): the extra numbers of the calculations. Off, «лететь дальше» says what it adds and how long it
    * takes; on, it also says the low end of the range and the rate of the further leg against the player's usual pace, and «Мои
@@ -94,7 +94,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hotMin: 60, warmMin: 180, coolingMin: 240,
   refillFullMin: DEFAULT_REFILL_FULL_MIN,
   quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, nearbyMaxMin: 10, worsePricePct: 15, topN: 5, roiHighlightPct: 50,
-  sort: 'uecPerHour', nearby: false, detailedCalc: false, optionsToTarget: false, favouriteRoutes: [], favouriteSound: true, favouriteVolume: 0.5, guideMySystem: true, guideOnlyStock: false, routesSince: null,
+  sort: 'profit', nearby: false, detailedCalc: false, optionsToTarget: false, favouriteRoutes: [], favouriteSound: true, favouriteVolume: 0.5, guideMySystem: true, guideOnlyStock: false, routesSince: null,
   hotkeyPanel: '', hotkeyDepart: '', hotkeyArrive: '',
   panelWidth: 440, stripCorner: 'top-right', windowDx: 16, windowDy: 16, windowLocked: false,
   uiScale: 0,

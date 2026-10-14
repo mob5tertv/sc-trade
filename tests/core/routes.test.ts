@@ -51,7 +51,7 @@ describe('routesFrom', () => {
 
   it('prefers my own median time over the estimate', () => {
     const { options } = routesFrom(market, [1], 1, { ...ctx, ownMedian: new Map([[pairKey(1, 3), 600]]) });
-    expect(options[0]).toMatchObject({ destId: 3, timeSec: 600, timeSource: 'own', uecPerHour: 1468800 });
+    expect(options.find(o => o.destId === 3)).toMatchObject({ timeSec: 600, timeSource: 'own', uecPerHour: 1468800 });
   });
 
   it('sorts by ROI on request', () => {
@@ -59,10 +59,10 @@ describe('routesFrom', () => {
     expect(routesFrom(market, [1], 1, c).options.map(o => o.destId)).toEqual([2, 3]);
   });
 
-  it('puts routes with unknown distance last and leaves UEC per hour empty', () => {
+  it('orders by what the trip brings whether or not its distance is known, and leaves the time of such a trip empty', () => {
     const { options } = routesFrom(market, [1], 1, { ...ctx, distances: new Map([[distKey(1, 3), 61]]) });
-    expect(options.map(o => o.destId)).toEqual([3, 2]);
-    expect(options[1]).toMatchObject({ timeSec: null, uecPerHour: null, timeSource: null });
+    expect(options.map(o => o.destId)).toEqual([2, 3]);                 // 265 200 and 244 800: the time is the player's to weigh
+    expect(options[0]).toMatchObject({ timeSec: null, uecPerHour: null, timeSource: null });
   });
 
   it('allows cross-system routes when the filter is off', () => {
@@ -156,11 +156,11 @@ describe('routesFrom edge cases', () => {
     expect(r).toEqual({ options: [], trace: { considered: 0, kept: 0, dropped: { unknownTerminal: 0, systemFilter: 0, nonPositiveProfit: 0, zeroQty: 0, tooFar: 0, notBetter: 0 } } });
   });
 
-  it('ranks routes without time by ROI after the routes with time', () => {
+  it('ranks by the profit, the trips with a time and those without one alike', () => {
     const m2 = withSell(withSell(market, 6, 7000), 5, 7200);
     const c = { ...ctx, distances: new Map([[distKey(1, 3), 61]]) };   // 2, 5 and 6 have no distance
     const { options } = routesFrom(m2, [1], 1, c);
-    expect(options.map(o => o.destId)).toEqual([3, 5, 6, 2]);
+    expect(options.map(o => o.destId)).toEqual([5, 6, 2, 3]);
   });
 
   it('ties are broken by ids so the order is stable', () => {
@@ -216,46 +216,47 @@ describe('routesTo', () => {
 describe('trips that rest on an unknown stock stand after the known ones', () => {
   const unknownStock = withBuy(market, 5, { avgWeek: 6000, minWeek: 5900, maxWeek: 6200 });
   const near = { ...ctx, distances: new Map([...ctx.distances, [distKey(1, 5), 2], [distKey(5, 2), 60], [distKey(5, 3), 62]]) };
-  const sortedBy = (sort: 'uecPerHour' | 'roi', topN = 5) => ({ ...near, settings: { ...near.settings, sort, topN } });
+  const sortedBy = (sort: 'profit' | 'roi', topN = 5) => ({ ...near, settings: { ...near.settings, sort, topN } });
   const ends = (options: Array<{ originId: number; destId: number }>) => options.map(o => [o.originId, o.destId]);
 
   it('would stand first without that rule: the unknown stock buys the most and is the cheapest', () => {
     // the premise of the tests below, by the numbers: origin 5 beats origin 1 on both metrics
-    const all = routesFrom(unknownStock, [1, 5], 1, sortedBy('uecPerHour', 99)).options;
-    const best = (originId: number, key: 'uecPerHour' | 'roi') => Math.max(...all.filter(o => o.originId === originId).map(o => o[key] ?? 0));
-    expect(best(5, 'uecPerHour')).toBeGreaterThan(best(1, 'uecPerHour'));
+    const all = routesFrom(unknownStock, [1, 5], 1, sortedBy('profit', 99)).options;
+    const best = (originId: number, key: 'profit' | 'roi') => Math.max(...all.filter(o => o.originId === originId).map(o => o[key] ?? 0));
+    expect(best(5, 'profit')).toBeGreaterThan(best(1, 'profit'));
     expect(best(5, 'roi')).toBeGreaterThan(best(1, 'roi'));
     expect(all.find(o => o.originId === 5)!.buy.scu).toBeNull();
     expect(all.find(o => o.originId === 1)!.buy.scu).toBe(340);
   });
 
-  it.each(['uecPerHour', 'roi'] as const)('puts them after the known ones when sorted by %s, each group by that sort', (sort) => {
+  it.each(['profit', 'roi'] as const)('puts them after the known ones when sorted by %s, each group by that sort', (sort) => {
     const { options } = routesFrom(unknownStock, [1, 5], 1, sortedBy(sort));
     expect(ends(options)).toEqual([[1, 2], [1, 3], [5, 2], [5, 3]]);
   });
 
   it('chooses the best N of the trips bought here, and the trips bought elsewhere follow them: neither pushes the other out (spec 14.19)', () => {
-    const { options, trace } = routesFrom(unknownStock, [1, 5], 1, sortedBy('uecPerHour', 1));
+    const { options, trace } = routesFrom(unknownStock, [1, 5], 1, sortedBy('profit', 1));
     expect(ends(options)).toEqual([[1, 2], [5, 2]]);   // the best one bought here, then the best one bought elsewhere
     expect(trace.kept).toBe(4);   // `kept` is counted before the cut, as it was
-    expect(ends(routesFrom(unknownStock, [1, 5], 1, sortedBy('uecPerHour', 2)).options)).toEqual([[1, 2], [1, 3], [5, 2], [5, 3]]);
+    expect(ends(routesFrom(unknownStock, [1, 5], 1, sortedBy('profit', 2)).options)).toEqual([[1, 2], [1, 3], [5, 2], [5, 3]]);
   });
 
   it('orders the trips that END at a terminal the same way (the origin with an unknown stock is the cheaper one)', () => {
-    expect(ends(routesTo(unknownStock, 2, sortedBy('uecPerHour')).options)).toEqual([[1, 2], [5, 2]]);
+    expect(ends(routesTo(unknownStock, 2, sortedBy('profit')).options)).toEqual([[1, 2], [5, 2]]);
     expect(ends(routesTo(unknownStock, 2, sortedBy('roi')).options)).toEqual([[1, 2], [5, 2]]);
   });
 
   it('counts a stock estimated by the timer from my own reading as known', () => {
-    // terminal 5: my reading of 100 SCU half an hour ago, the refill timer brings it up to date; terminal 6: no reading, UEX does not say, and the cheapest of all
+    // terminal 5: my reading of 600 SCU half an hour ago (enough to bring more than the trip from here), the refill timer brings it up to date;
+    // terminal 6: no reading, UEX does not say, and the cheapest of all
     const cheapest = withBuy(unknownStock, 6, { avgWeek: 5000, minWeek: 4900, maxWeek: 5200 });
-    const reading = obs({ id: 9, ts: NOW - 30 * 60, terminalId: 5, commodityId: GOLD, side: 'buy', price: 6000, scu: 100 });
+    const reading = obs({ id: 9, ts: NOW - 30 * 60, terminalId: 5, commodityId: GOLD, side: 'buy', price: 6000, scu: 600 });
     const m2 = buildMarket([...cheapest.uex.values()], [...cheapest.own.values(), reading]);
     const by = sortedBy('roi');
     const { options } = routesFrom(m2, [1, 5, 6], 1, { ...by, distances: new Map([...by.distances, [distKey(1, 6), 2]]) });
     const stockOf = (originId: number) => options.find(o => o.originId === originId)!.buy;
     expect(stockOf(5).stock).not.toBeNull();             // the timer made the estimate
-    expect(stockOf(5).scu).toBeGreaterThanOrEqual(100);
+    expect(stockOf(5).scu).toBeGreaterThanOrEqual(600);
     expect(stockOf(6).scu).toBeNull();
     // 6 is the best by ROI, and still all of its trips come after every trip of 1 and of 5
     const order = options.map(o => o.originId);
@@ -299,7 +300,19 @@ describe('«Выгоднее»: a purchase at another terminal is offered only w
     expect(origins(routesFrom(cheaper, [1, 5], 1, unknown).options)).toEqual([1, 1]);
   });
 
-  it('drops it when the same commodity bought here gives no worse a ROI', () => {
+  it('judges a stock that is KNOWN by what the trip brings: a big stock at a slightly worse price is offered, a small batch at a fine price is not', () => {
+    // from here: 340 SCU at 6120, 265 200 to B. A2 has 600 SCU by my reading at 6200 (ROI 11 %, less than the 12.7 % here): 600 × 700 = 420 000
+    const reading = (price: number, scu: number) => obs({ id: 9, ts: NOW - 60, terminalId: 5, commodityId: GOLD, side: 'buy', price, scu });
+    const withReading = (price: number, scu: number) => buildMarket([...market.uex.values()], [...market.own.values(), reading(price, scu)]);
+    const big = routesFrom(withReading(6200, 600), [1, 5], 1, within(10));
+    expect(origins(big.options)).toEqual([1, 1, 5, 5]);
+    // 40 SCU at 5000 is ROI 38 %, and 40 × 1900 = 76 000: the fine percentage of a small batch is not worth the empty flight
+    const small = routesFrom(withReading(5000, 40), [1, 5], 1, within(10));
+    expect(origins(small.options)).toEqual([1, 1]);
+    expect(small.trace.dropped).toMatchObject({ tooFar: 0, notBetter: 2 });
+  });
+
+  it('drops a stock nobody knows unless its ROI is higher too: the whole hold it is counted at is a guess', () => {
     const dearer = withBuy(market, 5, { avgWeek: 6200, minWeek: 6100, maxWeek: 6300 });
     const r = routesFrom(dearer, [1, 5], 1, within(10));
     expect(origins(r.options)).toEqual([1, 1]);

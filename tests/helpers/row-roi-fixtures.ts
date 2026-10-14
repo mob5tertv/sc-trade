@@ -35,7 +35,7 @@ export function ownPrice(terminalId: number, commodityId: number, side: 'buy' | 
 }
 
 const settings: RouteSettings = {
-  starSystemId: 68, budget: null, quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, topN: 1, sort: 'uecPerHour',
+  starSystemId: 68, budget: null, quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, topN: 1, sort: 'profit',
 };
 
 export const ctx: RouteCtx = {

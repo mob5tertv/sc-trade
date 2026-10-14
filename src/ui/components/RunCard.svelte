@@ -78,10 +78,6 @@
       <dt class="sc-label" title="Ожидаемое отношение прибыли ко вложенному">ROI</dt>
       <dd class="sc-num" title={approxTitle(expected?.roi ?? NONE, LEGEND.approxRun, dashTitle)}>{expected?.roi ?? NONE}</dd>
     </div>
-    <div>
-      <dt class="sc-label" title={LEGEND.rateRun}>UEC/ч</dt>
-      <dd class="sc-num" title={approxTitle(expected?.rate ?? NONE, LEGEND.approxRun, dashTitle)}>{expected?.rate ?? NONE}</dd>
-    </div>
   </dl>
 </section>
 
@@ -164,7 +160,7 @@
 
   .totals {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: var(--sc-gap);
     margin: 0;
     padding: 3px 0 4px;

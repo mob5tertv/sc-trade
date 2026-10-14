@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { formatCompact } from '../../src/core/format';
 import {
-  UNKNOWN_STOCK_NOTE, formatDistance, formatRoi, paceLine, perHourBare, perHourNarrow, routeOptionRow, sellAlternativeRow, sellHereRow,
+  UNKNOWN_STOCK_NOTE, priceHint, formatDistance, formatRoi, paceLine, narrowCompact, routeOptionRow, sellAlternativeRow, sellHereRow,
 } from '../../src/ui/vm/route-rows';
 import type { RouteOption } from '../../src/core/routes';
 import type { SellAlternative, SellHere } from '../../src/core/sell';
 import type { Estimate, Terminal } from '../../src/core/types';
 import { pairKey } from '../../src/core/types';
 import { ref, term } from '../helpers/factories';
+import { rangeView } from '../../src/ui/vm/terminal-rows';
 import type { UexRange } from '../../src/ui/vm/terminal-rows';
 
 // formatUec separates thousands with a non-breaking space
@@ -79,62 +80,62 @@ describe('formatRoi', () => {
   });
 });
 
-describe('perHourNarrow: the rate in the 34 px column of the list of options', () => {
+describe('narrowCompact: the rate in the 34 px column of the list of options', () => {
   it('is the compact rate as it is below 10M: two decimals, the dash for no rate', () => {
-    expect(perHourNarrow(null)).toBe('—');
-    expect(perHourNarrow(0)).toBe('0');
-    expect(perHourNarrow(255_545)).toBe('256k');
-    expect(perHourNarrow(2_010_000)).toBe('2,01M');
-    expect(perHourNarrow(9_270_000)).toBe('9,27M');
-    expect(perHourNarrow(7_690_000)).toBe('7,69M');
-    expect(perHourNarrow(4_970_000)).toBe('4,97M');
+    expect(narrowCompact(null)).toBe('—');
+    expect(narrowCompact(0)).toBe('0');
+    expect(narrowCompact(255_545)).toBe('256k');
+    expect(narrowCompact(2_010_000)).toBe('2,01M');
+    expect(narrowCompact(9_270_000)).toBe('9,27M');
+    expect(narrowCompact(7_690_000)).toBe('7,69M');
+    expect(narrowCompact(4_970_000)).toBe('4,97M');
   });
 
   it('is below 10M the very text of the shared compact format, up to the last number before 10M', () => {
-    for (const n of [999_999, 1_000_000, 5_555_555, 9_994_999]) expect(perHourNarrow(n), String(n)).toBe(formatCompact(n));
-    expect(perHourNarrow(9_994_999)).toBe('9,99M');
+    for (const n of [999_999, 1_000_000, 5_555_555, 9_994_999]) expect(narrowCompact(n), String(n)).toBe(formatCompact(n));
+    expect(narrowCompact(9_994_999)).toBe('9,99M');
   });
 
   it('rounds up to 10M the numbers that the two-decimal form rounds up to it', () => {
-    expect(perHourNarrow(9_995_000)).toBe('10M');
-    expect(perHourNarrow(9_999_999)).toBe('10M');
-    expect(perHourNarrow(10_000_000)).toBe('10M');
+    expect(narrowCompact(9_995_000)).toBe('10M');
+    expect(narrowCompact(9_999_999)).toBe('10M');
+    expect(narrowCompact(10_000_000)).toBe('10M');
   });
 
   it('has one decimal from 10M, so that it is five characters and not six', () => {
-    expect(perHourNarrow(10_049_999)).toBe('10M');
-    expect(perHourNarrow(10_050_000)).toBe('10,1M');
-    expect(perHourNarrow(12_530_000)).toBe('12,5M');
-    expect(perHourNarrow(12_549_999)).toBe('12,5M');
-    expect(perHourNarrow(12_550_000)).toBe('12,6M');
-    expect(perHourNarrow(99_949_999)).toBe('99,9M');
+    expect(narrowCompact(10_049_999)).toBe('10M');
+    expect(narrowCompact(10_050_000)).toBe('10,1M');
+    expect(narrowCompact(12_530_000)).toBe('12,5M');
+    expect(narrowCompact(12_549_999)).toBe('12,5M');
+    expect(narrowCompact(12_550_000)).toBe('12,6M');
+    expect(narrowCompact(99_949_999)).toBe('99,9M');
   });
 
   it('is whole millions from 100M, which the one decimal would make six characters again', () => {
-    expect(perHourNarrow(99_950_000)).toBe('100M');
-    expect(perHourNarrow(100_000_000)).toBe('100M');
-    expect(perHourNarrow(123_456_789)).toBe('123M');
-    expect(perHourNarrow(1_234_567_890)).toBe('1235M');
+    expect(narrowCompact(99_950_000)).toBe('100M');
+    expect(narrowCompact(100_000_000)).toBe('100M');
+    expect(narrowCompact(123_456_789)).toBe('123M');
+    expect(narrowCompact(1_234_567_890)).toBe('1235M');
   });
 
   it('keeps the minus and the same rules for a loss: -12,5M is as wide as the -1,25M of today (33,5 px of 34)', () => {
-    expect(perHourNarrow(-95_200)).toBe('-95k');
-    expect(perHourNarrow(-1_250_000)).toBe('-1,25M');
-    expect(perHourNarrow(-9_994_999)).toBe('-9,99M');
-    expect(perHourNarrow(-12_530_000)).toBe('-12,5M');
-    expect(perHourNarrow(-99_950_000)).toBe('-100M');
-    expect(perHourNarrow(-123_456_789)).toBe('-123M');
+    expect(narrowCompact(-95_200)).toBe('-95k');
+    expect(narrowCompact(-1_250_000)).toBe('-1,25M');
+    expect(narrowCompact(-9_994_999)).toBe('-9,99M');
+    expect(narrowCompact(-12_530_000)).toBe('-12,5M');
+    expect(narrowCompact(-99_950_000)).toBe('-100M');
+    expect(narrowCompact(-123_456_789)).toBe('-123M');
   });
 
-  it('is only for the list of options: the shared forms of the other lists keep their two decimals', () => {
-    expect(perHourBare(12_530_000)).toBe('12,53M');
+  it('is not the compact format of the wider lists, which keeps its two decimals', () => {
     expect(formatCompact(12_530_000)).toBe('12,53M');
   });
 
-  it('is what the row of an option shows as its rate', () => {
-    expect(routeOptionRow(option({ uecPerHour: 12_530_000 }), ref, 'from', new Map()).rate).toBe('12,5M');
-    expect(routeOptionRow(option({ uecPerHour: 2_010_000 }), ref, 'to', new Map()).rate).toBe('2,01M');
-    expect(routeOptionRow(option({ uecPerHour: null }), ref, 'from', new Map()).rate).toBe('—');
+  it('is what the row of an option shows as what the trip brings (plan item 17: the profit, not a rate per hour)', () => {
+    expect(routeOptionRow(option({ profit: 12_530_000 }), ref, 'from', new Map()).gain).toBe('12,5M');
+    expect(routeOptionRow(option({ profit: 2_010_000 }), ref, 'to', new Map()).gain).toBe('2,01M');
+    expect(routeOptionRow(option({ profit: -41_000 }), ref, 'from', new Map()).gain).toBe('-41k');
+    expect(routeOptionRow(option(), ref, 'from', new Map())).not.toHaveProperty('rate');
   });
 });
 
@@ -145,7 +146,7 @@ describe('routeOptionRow', () => {
       distance: '59 Гм', time: '17:35', timeTitle: 'оценка по расстоянию',
       runs: 0,
       price: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
-      roi: '13%', rate: '256k', worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
+      roi: '13%', gain: '75k', priceTitle: `Мин–макс ${SPREAD.text} · UEX · 2 д`, worst: nb('27 840'), worstLoss: false, qty: '96 SCU',
       origin: 'ARC-L1', dest: 'TDD Area 18', bothEnds: true, isTarget: false, emptyLeg: null, boxes: null, loadBar: null, tier: 'ok',
       whereTitle: 'ARC-L1 → TDD Area 18\nARC-L1: Stanton\nTDD Area 18: Stanton',
       invested: nb('587 520'), profit: nb('74 880'), profitLoss: false, trend: null, priceIsOwn: false,
@@ -298,7 +299,7 @@ describe('routeOptionRow', () => {
 
   it('shows dashes for what is not known', () => {
     const row = routeOptionRow(option({ distanceGm: null, timeSec: null, timeSource: null, uecPerHour: null }), ref, 'from', new Map());
-    expect(row).toMatchObject({ distance: '—', time: '—', timeTitle: null, rate: '—' });
+    expect(row).toMatchObject({ distance: '—', time: '—', timeTitle: null, gain: '75k' });      // the profit needs no time
   });
 
   it('says where the time comes from, and mentions an empty flight', () => {
@@ -478,7 +479,7 @@ describe('sellHereRow', () => {
   });
   it('writes the rate with the number of the list of options, and its own unit (the card has no «UEC/ч» caption)', () => {
     for (const uec of [0, 950, 310_000, 9_270_000, 12_534_000, 123_400_000, -12_534_000]) {
-      expect(sellHereRow({ ...here, uecPerHour: uec }).rate).toBe(`${perHourNarrow(uec)}/ч`);
+      expect(sellHereRow({ ...here, uecPerHour: uec }).rate).toBe(`${narrowCompact(uec)}/ч`);
     }
     expect(sellHereRow({ ...here, uecPerHour: 12_534_000 }).rate).toBe('12,5M/ч');
   });
@@ -486,7 +487,7 @@ describe('sellHereRow', () => {
 
 describe('paceLine', () => {
   it('says the pace and how many runs it is made of, or why there is none', () => {
-    expect(paceLine({ uecPerHour: 85_000, runs: 12 })).toBe(`Твой обычный темп ${perHourNarrow(85_000)}/ч · рейсов в расчёте: 12`);
+    expect(paceLine({ uecPerHour: 85_000, runs: 12 })).toBe(`Твой обычный темп ${narrowCompact(85_000)}/ч · рейсов в расчёте: 12`);
     expect(paceLine(null)).toBe('Обычного темпа пока нет: он считается по законченным рейсам');
   });
 });
@@ -505,7 +506,7 @@ describe('sellAlternativeRow', () => {
       key: '2', terminal: 'TDD Area 18',
       price: { price: nb('6 900'), range: SPREAD, badge: { text: 'UEX · 2 д', kind: 'uex' } },
       extra: nb('+5 760'), loss: false, extraLow: nb('-42 240'), extraLowLoss: true,
-      rate: `${perHourNarrow(19_655)}/ч`, rateTone: null, time: '≈ 17:35', timeTitle: 'Оценка по расстоянию',
+      rate: `${narrowCompact(19_655)}/ч`, rateTone: null, time: '≈ 17:35', timeTitle: 'Оценка по расстоянию',
     });
   });
   it('labels an alternative priced by UEX at an unknown age with a plain UEX badge', () => {
@@ -585,5 +586,19 @@ describe('routeOptionRow: the ship of the settings where the trip is loaded (spe
   it('says nothing without a ship of the reference, or where UEX says nothing of the terminal', () => {
     expect(routeOptionRow(option(), withBoxes, 'from', new Map())).toMatchObject({ boxes: null, loadBar: null });
     expect(routeOptionRow(option(), ref, 'from', new Map(), { vehicle: small }).boxes).toBeNull();
+  });
+});
+
+describe('priceHint: the spread of a price is its hint now that the lists have no column «Мин–макс»', () => {
+  const view = (range: UexRange) => ({ price: nb('6 900'), range: rangeView(range), badge: { text: 'UEX · 2 д', kind: 'uex' as const } });
+
+  it('says the two numbers of UEX, then whose price it is and how old', () => {
+    expect(priceHint(view({ kind: 'spread', low: 6400, high: 7100 }))).toBe(`Мин–макс ${nb('6 400')}–${nb('7 100')} · UEX · 2 д`);
+  });
+
+  it('says that the price did not move, or why there are no numbers', () => {
+    expect(priceHint(view({ kind: 'flat', price: 5500 }))).toBe(`Мин–макс: одна цена за период, ${nb('5 500')} · UEX · 2 д`);
+    expect(priceHint(view({ kind: 'no-bounds' }))).toBe('UEX не даёт границ цены · UEX · 2 д');
+    expect(priceHint(view({ kind: 'none' }))).toBe('UEX не знает цену · UEX · 2 д');
   });
 });

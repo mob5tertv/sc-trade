@@ -1,4 +1,4 @@
-import { formatAge, formatCompact, formatDuration, formatUec } from '../../core/format';
+import { formatAge, formatDuration, formatUec } from '../../core/format';
 import type { RouteCtx } from '../../core/routes';
 import { cargoOf } from '../../core/run';
 import type { Settings } from '../../core/settings';
@@ -63,10 +63,8 @@ export type StripModel =
      * `null` without a target, or without a price at it for everything aboard (a sum over part of the hold is not the result of the run).
      */
     profit: string | null;
-    /** The expected profit is a loss: the profit and the rate are in the colour of one. */
+    /** The expected profit is a loss: it is in the colour of one. */
     profitLoss: boolean;
-    /** The expected UEC per hour of the whole run, '337k/ч' (the card of the run says '≈ 337k'): `null` while the time of the run is not known. */
-    rate: string | null;
   };
 
 const NO_LOCATION = 'Локация не выбрана';
@@ -139,8 +137,8 @@ export function stripLot(
  * for one commodity, what it is expected to sell for), the target terminal, then the profit the run is expected to bring and the
  * expected UEC per hour (that line is full: no session in it). The tooltip of the cargo has every commodity with its own
  * expectation (`cargoTitle`).
- * The profit and the rate are the numbers of the card of the run, over the whole run (`expectedRun`): the profit is none while the
- * target pays for only a part of the hold, the rate is none besides while the time of the run is not known. A target that is unset
+ * The profit is the number of the card of the run, over the whole run (`expectedRun`): it is none while the target pays for only
+ * a part of the hold. A target that is unset
  * or missing from the reference leaves the last three out.
  */
 export function stripModel(
@@ -171,7 +169,7 @@ export function stripModel(
     const unpriced = cargo.map((line): PricedLine => ({ line, sell: null }));
     return {
       ...head, cargoLine: head.cargo, cargoTitle: cargoTitle(ref, unpriced), lot: stripLot(ref, cargo, null),
-      target: null, profit: null, profitLoss: false, rate: null,
+      target: null, profit: null, profitLoss: false,
     };
   }
 
@@ -185,14 +183,12 @@ export function stripModel(
     target: terminalName(target),
     profit: expected === null ? null : expectedProfitText(expected.profit, true),
     profitLoss: expected !== null && expected.profit < 0,
-    rate: expected === null || expected.rate === null ? null : `${formatCompact(expected.rate)}/ч`,
   };
 }
 
-/** The profit and the rate of a run as one text, '≈ +66 720 · 337k/ч' (the profit alone while the time of the run is not known); `null` when there is no profit. */
+/** What a run is expected to bring, as the mini line writes it after the target: '≈ +66 720'; `null` when there is no profit to say. */
 export function outlookText(model: StripModel): string | null {
-  if (model.kind !== 'run' || model.profit === null) return null;
-  return [model.profit, model.rate].filter((part) => part !== null).join(' · ');
+  return model.kind === 'run' ? model.profit : null;
 }
 
 /**

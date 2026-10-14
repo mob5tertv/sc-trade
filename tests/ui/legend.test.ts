@@ -12,7 +12,7 @@ const root = resolve(__dirname, '..', '..');
 const source = (path: string): string => readFileSync(resolve(root, path), 'utf8');
 
 /** The words the README explains and the screen shows (the brief of the task): each one of them must be among the words of the legend. */
-const README_WORDS = ['Худший', 'Время', 'скорость выучена', 'Мин–макс', '≈', 'UEC/ч'];
+const README_WORDS = ['Худший', 'Время', 'скорость выучена', 'Мин–макс', '≈', 'Прибыль'];
 
 const TERMS = Object.keys(LEGEND_WORDS) as LegendTerm[];
 
@@ -31,11 +31,13 @@ describe('the legend: the words of the screen and what their tooltips say', () =
     }
   });
 
-  it('has a tooltip for each of the three «≈» of the README (the column «SCU», the section «Рейс» and the mini line, the title of «Варианты») and each of the four «UEC/ч»', () => {
+  it('has a tooltip for each of the three «≈» of the README (the column «SCU», the section «Рейс» and the mini line, the title of «Варианты») and for «Прибыль» of a trip; no «UEC/ч» is left', () => {
     const approx = TERMS.filter((term) => LEGEND_WORDS[term].startsWith('≈'));
     expect(approx.sort()).toEqual(['approxOptions', 'approxRun', 'approxScu', 'approxStrip']);
-    const rate = TERMS.filter((term) => LEGEND_WORDS[term].startsWith('UEC/ч'));
-    expect(rate.sort()).toEqual(['rateOptions', 'rateRoutes', 'rateRun', 'rateSessions']);
+    expect(TERMS.filter((term) => LEGEND_WORDS[term].startsWith('Прибыль'))).toEqual(['profitTrip']);
+    // plan item 17: the rate per hour left every list, and its four tooltips with it
+    expect(TERMS.filter((term) => LEGEND_WORDS[term].startsWith('UEC/ч'))).toEqual([]);
+    expect(Object.values(LEGEND).some((text) => /UEC\/ч|UEC в час/.test(text))).toBe(false);
   });
 
   it('is short: one or two sentences, a tooltip and not a manual', () => {
@@ -63,19 +65,16 @@ describe('the legend: the words of the screen and what their tooltips say', () =
     expect(LEGEND.approxRun).toMatch(/в точке цели по ожидаемым ценам/);
     expect(LEGEND.approxStrip).toMatch(/в точке цели по ожидаемым ценам/);
     expect(LEGEND.approxOptions).toMatch(/предварительный/);
-    // the four «UEC/ч»
-    expect(LEGEND.rateOptions).toMatch(/делённая на «Время»/);
-    expect(LEGEND.rateRun).toMatch(/всего рейса за время всего рейса/);
-    expect(LEGEND.rateRoutes).toMatch(/завершённым рейсам/);
-    expect(LEGEND.rateSessions).toMatch(/всё время сессии/);
+    // «Прибыль» of a trip: how much is taken, times the difference of the prices
+    expect(LEGEND.profitTrip).toMatch(/меньшее из свободного места в трюме, запаса на станции и бюджета/);
+    expect(LEGEND.profitTrip).toMatch(/разницу цен/);
   });
 });
 
 describe('approxTitle: the legend of «≈» hangs only on a value that carries «≈»', () => {
-  it('is the legend for a number with «≈»: the profit, the ROI and the rate of a run that goes on', () => {
+  it('is the legend for a number with «≈»: the profit and the ROI of a run that goes on', () => {
     expect(approxTitle('≈ 74 880', LEGEND.approxRun)).toBe(LEGEND.approxRun);
     expect(approxTitle('≈ 13%', LEGEND.approxRun, 'выбери цель')).toBe(LEGEND.approxRun);
-    expect(approxTitle('≈ 266k', LEGEND.approxRun)).toBe(LEGEND.approxRun);
   });
 
   it('is no «≈» tooltip on a dash: only the reason of the dash, when the card has one, else nothing', () => {
@@ -108,10 +107,7 @@ describe('the components hang the legend on the words, and keep no text of their
     approxRun: ['src/ui/components/RunCard.svelte'],
     approxStrip: ['src/ui/components/StripView.svelte'],
     approxOptions: ['src/ui/sections/OptionsSection.svelte'],
-    rateOptions: ['src/ui/components/RouteList.svelte', 'src/ui/sections/OptionsSection.svelte'],
-    rateRun: ['src/ui/components/RunCard.svelte'],
-    rateRoutes: ['src/ui/components/RoutesTable.svelte', 'src/ui/components/HistoryList.svelte'],
-    rateSessions: ['src/ui/components/SessionsList.svelte'],
+    profitTrip: ['src/ui/components/RouteList.svelte', 'src/ui/components/TerminalTable.svelte', 'src/ui/sections/OptionsSection.svelte'],
   };
 
   it('every text of the legend is used where its word stands', () => {
@@ -122,9 +118,9 @@ describe('the components hang the legend on the words, and keep no text of their
     }
   });
 
-  it('the card of a run hangs «≈» on a value by what it says, never on a dash: the three values go through `approxTitle`', () => {
+  it('the card of a run hangs «≈» on a value by what it says, never on a dash: the two values go through `approxTitle`', () => {
     const card = source('src/ui/components/RunCard.svelte');
-    expect((card.match(/approxTitle\(/g) ?? []).length).toBe(3);
+    expect((card.match(/approxTitle\(/g) ?? []).length).toBe(2);
     expect(card).not.toMatch(/\?\s*dashTitle\s*:\s*LEGEND\.approxRun/);
   });
 

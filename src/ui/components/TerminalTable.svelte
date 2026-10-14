@@ -8,7 +8,7 @@
   import { DEFAULT_TERMINAL_SORT, heldPlaces, holdMark, holdOf, holdOrder, orderRows, resortedPlaces, terminalAriaSort } from '../vm/terminal-order';
   import type { TerminalSort, TerminalSortKey } from '../vm/terminal-order';
   import { LEGEND } from '../vm/legend';
-  import { cellScu, rangeView, unknownScuTitle } from '../vm/terminal-rows';
+  import { cellScu, rangeHint, rangeView, unknownScuTitle } from '../vm/terminal-rows';
   import type { Cell, TerminalRow } from '../vm/terminal-rows';
   import { tradeEntryField } from '../vm/trade-form';
   import TempBadge from './TempBadge.svelte';
@@ -213,6 +213,7 @@
   const hold = $derived(holdOf(side, cargo));
   const sorted = $derived(orderRows(rows.filter(row => row[side] !== null), {
     side, sort, cargo, percentOf: commodityId => roi.get(commodityId)?.percent ?? null,
+    profitOf: commodityId => roi.get(commodityId)?.profit ?? null,
   }));
 
   // While a field of the table has the focus, or a row of it is open, the places of the rows stay as they were when that began: a row that
@@ -270,7 +271,13 @@
     });
   });
 
-  const roiTitle = $derived(`${noCapacity ? NO_CAPACITY_HINT : 'Лучший ROI для этого товара'}\nНажми, чтобы отсортировать по ROI`);
+  const roiTitle = $derived(`${noCapacity ? NO_CAPACITY_HINT : 'ROI лучшего рейса с этим товаром'}\nНажми, чтобы отсортировать по ROI`);
+  const gainTitle = $derived(`${noCapacity ? NO_CAPACITY_HINT : LEGEND.profitTrip}\nНажми, чтобы отсортировать по прибыли`);
+  // the hint of a price: its spread by UEX and whose price it is; under a spread, what the two numbers are (the legend of «Мин–макс»)
+  const priceTitle = (span: ReturnType<typeof rangeView>, badge: { text: string } | null): string => {
+    const hint = badge === null ? rangeHint(span) : `${rangeHint(span)} · ${badge.text}`;
+    return span.kind === 'spread' || span.kind === 'flat' ? `${hint}\n${LEGEND.range}` : hint;
+  };
   const empty = $derived(rows.length === 0 ? 'Нет цен' : side === 'buy' ? 'Здесь ничего не продают' : 'Здесь ничего не покупают');
 </script>
 
@@ -386,10 +393,10 @@
 {/snippet}
 
 {#snippet head(key: TerminalSortKey, label: string, title: string)}
-  <span role="columnheader" class:r={key === 'roi'} aria-sort={terminalAriaSort(sort, key)}>
+  <span role="columnheader" class:r={key !== 'name'} aria-sort={terminalAriaSort(sort, key)}>
     {#if onSort}
       <button type="button" class="sort" class:on={sort.key === key} {title} onclick={() => sortClicked(key)}>
-        {#if sort.key === key && key === 'roi'}{@render arrow()}{/if}
+        {#if sort.key === key && key !== 'name'}{@render arrow()}{/if}
         {label}
         {#if sort.key === key && key === 'name'}{@render arrow()}{/if}
       </button>
@@ -416,9 +423,9 @@
   >
     <div class="grid head sc-label" role="row">
       {@render head('name', 'Товар', 'Порядок по умолчанию: по названию товара')}
-      <span role="columnheader" class="r price-head">Цена</span>
-      <span role="columnheader" class="r" title={LEGEND.range}>Мин–макс</span>
+      <span role="columnheader" class="r price-head" title="Наведи на цену — увидишь её минимум и максимум по UEX">Цена</span>
       <span role="columnheader" class="r">SCU</span>
+      {@render head('profit', 'Прибыль', gainTitle)}
       {@render head('roi', 'ROI', roiTitle)}
     </div>
     {#each shown as row (row.commodityId)}
@@ -429,8 +436,8 @@
         {@const span = rangeView(cell.range)}
         {@const best = roi.get(row.commodityId)}
         {@const held = hold.get(row.commodityId)}
-        <!-- the number of the ROI is a button of its own, beside the one of the row (a button inside a button is not allowed):
-             a click on it asks for the options and does not open the row -->
+        <!-- the profit and the ROI of the best trip are one button of their own, beside the one of the row (a button inside a button
+             is not allowed): a click on it asks for the options and does not open the row -->
         <div class="row {best ? `tier-${best.tier}` : ''}" class:selected class:hot={best?.hot} class:pulse={pulse.has(row.commodityId)} role="row">
           <div class="top">
             <button type="button" class="grid line" aria-expanded={selected} onclick={() => toggle(row.commodityId)}>
@@ -444,23 +451,22 @@
                   </span>
                 {/if}
               </span>
-              <span class="price sc-num" class:hint={cell.own === null}>
+              <span class="price sc-num" class:hint={cell.own === null} title={priceTitle(span, cell.badge)}>
                 {#if cell.warn}<span class="bang" title="Цена далеко от истории UEX: проверь цифру">!</span>{/if}
                 <TrendMark trend={cell.trend} />
                 <span class="digits">{cell.own === null && cell.hint === null ? '—' : formatUec(cell.own ?? cell.hint ?? 0)}</span>
                 {#if cell.badge}<TempBadge compact text={cell.badge.text} kind={cell.badge.kind} />{:else}<span class="nomark"></span>{/if}
               </span>
-              <span class="range sc-num" data-range={span.kind} title={span.title}>{span.text}</span>
               <span class="scu sc-num" class:hint={scu === null || !scu.own} title={scu === null ? unknownScuTitle(side) : scu.title}>{scu === null ? '—' : `${scu.estimated ? '≈' : ''}${scu.text}`}</span>
             </button>
             {#if best}
               <button
                 type="button"
-                class="roi sc-num"
-                aria-label="ROI {best.text}: варианты для {row.name}"
+                class="best sc-num"
+                aria-label="Прибыль {best.gain}, ROI {best.text}: варианты для {row.name}"
                 title={best.title}
                 onclick={() => onLookup({ commodityId: row.commodityId, side })}
-              >{best.text}</button>
+              ><span class="gain">{best.gain}</span><span class="roi">{best.text}</span></button>
             {/if}
           </div>
           {#if selected}{@render expanded(row, cell)}{/if}
@@ -473,13 +479,13 @@
 
 <style>
   /* The columns, named once for the head and for the rows. Measured on the real texts (the gallery state `roi-long`): a
-     seven-digit price is 47 px, a spread of four-digit numbers in «Мин–макс» 52 px (a six-digit one is about 73 by its
-     digits), a stock of four digits with its «≈» 35 px, the ROI «990%» 26 px. What is left goes to the names: 180 px, where
-     the longest there is, «RMC Recycled Material Composite», takes 168 */
+     seven-digit price is 47 px, a stock of four digits with its «≈» 35 px, the profit of the best trip in the short form
+     («-12,5M») 34 px under the head «Прибыль» (46 px with the arrow of the sort), the ROI «990%» 26 px. The column «Мин–макс»
+     (76 px) is gone: the two numbers are the hint of the price and stand in the opened row. What is left goes to the names */
   .table {
     /* the number and its 6 px mark (62 px) and the slot of the triangle with the gap before the number */
     --col-price: calc(62px + var(--sc-trend-w) + 4px);
-    --col-range: 76px;
+    --col-gain: 54px;
     --col-scu: 44px;
     --col-roi: 32px;
     --col-gap: 4px;
@@ -491,7 +497,7 @@
 
   .grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) var(--col-price) var(--col-range) var(--col-scu) var(--col-roi);
+    grid-template-columns: minmax(0, 1fr) var(--col-price) var(--col-scu) var(--col-gain) var(--col-roi);
     column-gap: var(--col-gap);
     align-items: center;
     padding: 0 var(--sc-pad-x);
@@ -583,11 +589,11 @@
   }
 
   .line {
-    /* the ROI column is not in this grid: its room is the padding */
-    grid-template-columns: minmax(0, 1fr) var(--col-price) var(--col-range) var(--col-scu);
+    /* the columns of the profit and of the ROI are not in this grid: their room is the padding */
+    grid-template-columns: minmax(0, 1fr) var(--col-price) var(--col-scu);
     width: 100%;
     height: calc(var(--sc-row-h) - 1px);
-    padding-right: calc(var(--sc-pad-x) + var(--col-roi) + var(--col-gap));
+    padding-right: calc(var(--sc-pad-x) + var(--col-roi) + var(--col-gain) + 2 * var(--col-gap));
     border: 0;
     background: transparent;
     color: var(--sc-text);
@@ -601,34 +607,50 @@
     background: var(--sc-surface-2);
   }
 
-  /* the colour of the tier of the best ROI: the number, the bar and the flash of a row */
+  /* the colour of the tier of the ROI of the best trip: the number, the bar and the flash of a row */
   .tier-great { --tier: var(--sc-roi-great); }
   .tier-good { --tier: var(--sc-roi-good); }
   .tier-ok { --tier: var(--sc-roi-ok); }
   .tier-poor { --tier: var(--sc-roi-poor); }
   .tier-loss { --tier: var(--sc-roi-loss); }
 
-  .roi {
+  .best {
     position: absolute;
     top: 0;
     right: var(--sc-pad-x);
     bottom: 0;
-    width: var(--col-roi);
+    display: grid;
+    grid-template-columns: var(--col-gain) var(--col-roi);
+    column-gap: var(--col-gap);
+    align-items: center;
     padding: 0;
-    overflow: hidden;
     border: 0;
     background: transparent;
-    color: var(--tier);
+    color: var(--sc-text);
     font: inherit;
     font-weight: 600;
     text-align: right;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     cursor: pointer;
   }
 
-  .roi:hover {
+  .best .gain,
+  .best .roi {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .best .roi {
+    color: var(--tier);
+  }
+
+  .best:hover {
     text-decoration: underline;
+  }
+
+  /* the mark of the source is a part of the price: hovering it says what hovering the price says (the spread) */
+  .price :global(.mark) {
+    pointer-events: none;
   }
 
   /* a row at or above the threshold stands out with a bar at its left edge, in the colour of its tier; the bar lies over
@@ -730,14 +752,6 @@
   .bang {
     color: var(--sc-warn);
     font-weight: 600;
-  }
-
-  .range {
-    overflow: hidden;
-    color: var(--sc-muted);
-    font-size: var(--sc-font-sm);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .scu {

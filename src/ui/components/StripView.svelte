@@ -21,7 +21,7 @@
 
   const showMarks = $derived(flash === null && model.kind === 'run' && (onDepart !== undefined || onArrive !== undefined));
 
-  // the profit the run is expected to bring and the rate after it: '≈ +66 720 · 337k/ч'
+  // the profit the run is expected to bring: '≈ +66 720'
   const outlook = $derived(outlookText(model));
 
   // Everything the strip knows, for the tooltip: the line cuts a long cargo.
@@ -66,7 +66,7 @@
         <span class="part cargo" title={model.cargoTitle || undefined}>{model.cargoLine}</span>
       {/if}
       <span class="part" class:muted={model.target === null}>{model.target === null ? 'цель не выбрана' : `→ ${model.target}`}</span>
-      {#if outlook}<span class="part rate" class:loss={model.profitLoss} title={LEGEND.approxStrip}>{outlook}</span>{/if}
+      {#if outlook}<span class="part outlook" class:loss={model.profitLoss} title={LEGEND.approxStrip}>{outlook}</span>{/if}
     {/if}
   </button>
   {#if showMarks}
@@ -265,12 +265,12 @@
     padding: 0 0 0 6px;
   }
 
-  .rate {
+  .outlook {
     color: var(--sc-good);
   }
 
   /* the run is expected to lose */
-  .rate.loss {
+  .outlook.loss {
     color: var(--sc-bad);
   }
 

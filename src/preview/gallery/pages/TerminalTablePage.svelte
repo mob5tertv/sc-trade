@@ -56,7 +56,7 @@
     return { ...row, code: long.code, name: long.name };
   });
   const longRoi = new Map<number, RowRoi>(longRows.map((row, i) => [
-    row.commodityId, { commodityId: row.commodityId, roi: LONG[i].roi, otherId: 3, buyPrice: 1995, sellPrice: 2760 },
+    row.commodityId, { commodityId: row.commodityId, roi: LONG[i].roi, profit: 696 * 765 * (i + 1), qty: 696, profitOtherId: 3, otherId: 3, buyPrice: 1995, sellPrice: 2760 },
   ]));
   const longCells = roiCells(longRoi, 'buy', data.reference, threshold);
 

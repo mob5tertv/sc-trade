@@ -246,17 +246,15 @@ describe('the gallery run, mini line and history', () => {
     expect(data.strip.run).toMatchObject({ kind: 'run', target: 'ARC-L1', cargo: nbsp('MEDS 120 по 2 115, STIM 80 по 2 810') });
     if (data.strip.run.kind !== 'run' || data.strip.long.kind !== 'run') throw new Error('expected runs');
     expect(data.strip.run.profit).not.toBeNull();
-    expect(data.strip.run.rate).not.toBeNull();
     expect(data.strip.long.cargo.length).toBeGreaterThan(60);
   });
 
-  it('has the line of one commodity at an ordinary price: what it cost, what it is expected to bring, the profit and the rate', () => {
+  it('has the line of one commodity at an ordinary price: what it cost, what it is expected to bring and the profit', () => {
     const { single } = data.strip.cargo;
     if (single.kind !== 'run') throw new Error('expected a run');
     expect(single.cargo).toBe(nbsp('MEDS 120 SCU по 2 115'));
     expect(single.cargoLine).toMatch(/^MEDS 120 SCU по 2.115, ждём \d/);
     expect(single.profit).toMatch(/^≈ [+-]\d/);
-    expect(single.rate).toMatch(/\/ч$/);
   });
 
   it('has the lines of one, two and three commodities bought for seven-digit prices, and the run without a target', () => {
@@ -264,13 +262,12 @@ describe('the gallery run, mini line and history', () => {
     expect(one).toMatchObject({ kind: 'run', cargo: nbsp('MEDS 600 SCU по 1 234 567') });
     expect(two).toMatchObject({ kind: 'run', cargo: nbsp('MEDS 120 по 1 234 567, STIM 80 по 2 345 678') });
     expect(three).toMatchObject({ kind: 'run', cargo: nbsp('MEDS 120 по 1 234 567, STIM 80 по 2 345 678, PFOO 50 по 1 456 789') });
-    // the target of the dataset pays for all three: the profit and the rate are there, and every one is expected in the tooltip (not in the line)
+    // the target of the dataset pays for all three: the profit is there, and every one is expected in the tooltip (not in the line)
     if (three.kind !== 'run') throw new Error('expected a run');
     expect(three.profit).not.toBeNull();
-    expect(three.rate).not.toBeNull();
     expect(three.cargoTitle.split('\n')).toHaveLength(3);
     if (data.strip.noTarget.kind !== 'run') throw new Error('expected a run');
-    expect(data.strip.noTarget).toMatchObject({ target: null, profit: null, rate: null });
+    expect(data.strip.noTarget).toMatchObject({ target: null, profit: null });
     expect(data.strip.noTarget.cargoTitle).not.toContain('ждём');
   });
 
@@ -279,11 +276,11 @@ describe('the gallery run, mini line and history', () => {
     const first = (sort: RouteSort): string => sortRoutes(data.routeStats, sort)[0].key;
     const firsts = new Set(ROUTE_SORT_KEYS.map((key) => first({ key, dir: FIRST_DIR[key] })));
     expect(firsts.size).toBeGreaterThanOrEqual(3);
-    // the time puts another route on top than the ROI does, and the rate another than the time
+    // the time puts another route on top than the ROI does, and «За рейс» another than the time
     expect(first({ key: 'time', dir: 'asc' })).not.toBe(first({ key: 'roi', dir: 'desc' }));
     expect(first({ key: 'time', dir: 'asc' })).not.toBe(first(DEFAULT_ROUTE_SORT));
-    // the order of the core is the order of the rate, best first
-    expect(sortRoutes(data.routeStats, DEFAULT_ROUTE_SORT).map((row) => row.key)).toEqual(data.routeStats.map((row) => row.key));
+    // the default order: the route whose run brings the most stands first
+    expect(sortRoutes(data.routeStats, DEFAULT_ROUTE_SORT)[0].perRunValue).toBe(Math.max(...data.routeStats.map((row) => row.perRunValue)));
     expect(data.routeStats.some((row) => row.stat.totalProfit < 0)).toBe(true);
   });
 

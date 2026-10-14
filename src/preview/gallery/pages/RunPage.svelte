@@ -11,7 +11,7 @@
   const noTarget = { ...runCard.outlook, expected: null, why: 'выбери цель' };
   const loss = runCard.outlook.expected === null
     ? runCard.outlook
-    : { ...runCard.outlook, expected: { ...runCard.outlook.expected, profit: '≈ -11 520', profitLoss: true, roi: '≈ -2%', rate: '≈ -41k' } };
+    : { ...runCard.outlook, expected: { ...runCard.outlook.expected, profit: '≈ -11 520', profitLoss: true, roi: '≈ -2%' } };
 </script>
 
 <Frame name="card" caption="the card of the run while loading: the phases of the leg, only «Груз потерян» (the header has the mark), cargo, put in / sold, the EXPECTED result with ≈">

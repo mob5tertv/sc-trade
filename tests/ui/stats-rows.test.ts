@@ -16,8 +16,8 @@ describe('routeRows', () => {
     const stats = routeStats([R1, withMarks(R2, 300, 1000, 500)]);
     expect(routeRows(stats, ref)[0]).toEqual({
       key: '1>2:10', route: 'ARC-L1 → TDD Area 18', commodity: 'GOLD', commodityHint: null, runs: 2, runsText: '2', time: '35:00',
-      runsTitle: 'Число завершённых рейсов', profitTitle: 'Суммарная прибыль', rateTitle: 'UEC в час',
-      phases: '5:00 · 16:40 · 8:20', profit: nb('545 000'), roi: '12%', rate: '467k', stat: stats[0],
+      runsTitle: 'Число завершённых рейсов', profitTitle: 'Суммарная прибыль', perRunTitle: 'Средняя прибыль за рейс',
+      phases: '5:00 · 16:40 · 8:20', profit: nb('545 000'), roi: '12%', perRun: '273k', perRunValue: 272_500, stat: stats[0],
     });
   });
 
@@ -25,18 +25,20 @@ describe('routeRows', () => {
     // one lost run of 100 000 that took 500 s was an attempt at this route
     const lossy = { ...stat, lostRuns: 1, lostProfit: -100_000, uecPerHourWithLosses: 340_851 };
 
-    it('counts the lost runs into the row: finished of attempted, the profit and the rate with the losses', () => {
+    it('counts the lost runs into the row: finished of attempted, the profit with the losses, and what one ATTEMPT brings', () => {
       const [row] = routeRows([lossy], ref, true);
-      expect(row).toMatchObject({ runs: 2, runsText: '2/3', profit: nb('445 000'), rate: '341k', roi: '12%' });
+      // 545 000 − 100 000 over three attempts: 148 333 each
+      expect(row).toMatchObject({ runs: 2, runsText: '2/3', profit: nb('445 000'), perRun: '148k', roi: '12%' });
+      expect(row.perRunValue).toBeCloseTo(445_000 / 3, 6);
       expect(row.runsTitle).toBe('Удачных рейсов 2 из 3 (67 %): потерянных 1');
       expect(row.profitTitle).toBe(`Прибыль с потерями: потерянный груз ${nb('-100 000')}`);
-      expect(row.rateTitle).toContain('с потерями');
+      expect(row.perRunTitle).toContain('с потерями');
       // the table sorts by the numbers of the statistic, so they are the ones with the losses too
       expect(row.stat).toMatchObject({ totalProfit: 445_000, uecPerHour: 340_851, runs: 2 });
     });
 
     it('leaves the row as ever without the setting, and for a route that lost nothing', () => {
-      expect(routeRows([lossy], ref)[0]).toMatchObject({ runs: 2, runsText: '2', profit: nb('545 000'), rate: '467k', runsTitle: 'Число завершённых рейсов' });
+      expect(routeRows([lossy], ref)[0]).toMatchObject({ runs: 2, runsText: '2', profit: nb('545 000'), perRun: '273k', runsTitle: 'Число завершённых рейсов' });
       expect(routeRows([lossy], ref)[0].stat).toBe(lossy);
       expect(routeRows([stat], ref, true)[0]).toEqual(routeRows([stat], ref)[0]);
     });
@@ -48,19 +50,19 @@ describe('routeRows', () => {
     expect(routeRows(stats, ref)[1].stat).toBe(stat);
   });
 
-  it('writes the ROI the way the list of options does and the rate without its unit (the caption says UEC/ч)', () => {
-    const row = (avgRoi: number, uecPerHour: number | null) => routeRows([{ ...stat, avgRoi, uecPerHour }], ref)[0];
-    expect(row(0.025, 740_000).roi).toBe('2,5%');
-    expect(row(0.2996, 740_000).roi).toBe('30%');
-    expect(row(0.2996, 740_000).rate).toBe('740k');
-    expect(row(0.2996, 1_890_000).rate).toBe(formatCompact(1_890_000));
-    expect(row(Number.NaN, null)).toMatchObject({ roi: '—', rate: '—' });
+  it('writes the ROI the way the list of options does, and what one run brings in the short form (the caption says «За рейс»)', () => {
+    const row = (avgRoi: number, totalProfit: number, runs = 2) => routeRows([{ ...stat, avgRoi, totalProfit, runs }], ref)[0];
+    expect(row(0.025, 545_000).roi).toBe('2,5%');
+    expect(row(0.2996, 545_000).roi).toBe('30%');
+    expect(row(0.2996, 1_480_000)).toMatchObject({ perRun: '740k', perRunValue: 740_000 });
+    expect(row(0.2996, 3_780_000).perRun).toBe(formatCompact(1_890_000));
+    expect(row(Number.NaN, -90_000, 3)).toMatchObject({ roi: '—', perRun: '-30k', perRunValue: -30_000 });
   });
 
-  it('shows missing phases as null and a missing rate as a dash', () => {
-    const row = routeRows([{ ...stat, medianPhases: null, uecPerHour: null }], ref)[0];
+  it('has no rate per hour at all (plan item 17), and shows missing phases as null', () => {
+    const row = routeRows([{ ...stat, medianPhases: null }], ref)[0];
     expect(row.phases).toBeNull();
-    expect(row.rate).toBe('—');
+    expect(row).not.toHaveProperty('rate');
   });
 
   it('keeps the given order, one row per route', () => {
@@ -92,7 +94,7 @@ describe('routeRows', () => {
 
     it('formats the numbers of the row as those of any route', () => {
       const [row] = routeRows([mixedStat], ref);
-      expect(row).toMatchObject({ time: '25:00', phases: null, roi: '9,4%', rate: '187k' });
+      expect(row).toMatchObject({ time: '25:00', phases: null, roi: '9,4%' });
     });
 
     it('lists the goods by their codes, in the order of the codes, and by number the ones the reference lacks', () => {
@@ -133,7 +135,7 @@ describe('routeRows', () => {
 describe('historyRows', () => {
   it('formats history, including mixed and lost runs', () => {
     const h = historyRows([R5, R4, R1], ref, NOW);
-    expect(h[2]).toMatchObject({ title: 'GOLD: ARC-L1 → TDD Area 18', status: 'done', profit: nb('345 000'), roi: '14%', duration: '40:00', rate: '518k' });
+    expect(h[2]).toMatchObject({ title: 'GOLD: ARC-L1 → TDD Area 18', status: 'done', profit: nb('345 000'), roi: '14%', duration: '40:00' });
     expect(h[1]).toMatchObject({ status: 'lost', profit: nb('-100 000'), roi: '-100%' });
     expect(h[0].title).toBe('GOLD: смешанный рейс');
   });
@@ -172,13 +174,13 @@ describe('historyRows', () => {
     it('is called by its code and "продажа без закупки", not a mixed run, with the revenue as the profit and dashes for ROI, time and rate', () => {
       expect(historyRows([income], ref, NOW)[0]).toEqual({
         runId: 21, when: expect.stringMatching(/^\d\d\.\d\d \d\d:\d\d$/), title: 'TITA: продажа без закупки', hint: 'TITA: продажа без закупки', status: 'done',
-        profit: nb('444 000'), roi: '—', duration: '—', rate: '—',
+        profit: nb('444 000'), roi: '—', duration: '—',
       });
     });
 
     it('has no duration even when the sale is written a moment after the start, and keeps the duration of every run that bought', () => {
       const slow = { run: { ...income.run, endedAt: 5300 }, events: income.events };                  // not what the service writes, but still no flight
-      expect(historyRows([slow], ref, NOW)[0]).toMatchObject({ title: 'TITA: продажа без закупки', duration: '—', rate: '—' });
+      expect(historyRows([slow], ref, NOW)[0]).toMatchObject({ title: 'TITA: продажа без закупки', duration: '—' });
       expect(historyRows([R1, R4], ref, NOW).map(r => r.duration)).toEqual(['40:00', '8:20']);
     });
 
@@ -217,14 +219,14 @@ describe('historyRows', () => {
     const bought = ev({ id: 121, runId: 12, ts: 1000, type: 'buy', terminalId: 1, commodityId: 10, scu: 100, price: 5000 });
     const soldPart = ev({ id: 122, runId: 12, ts: 1300, type: 'sell', terminalId: 2, commodityId: 10, scu: 40, price: 6000 });
 
-    it('is not a loss: with purchases only, profit, ROI and rate are dashes and the time is what has passed', () => {
+    it('is not a loss: with purchases only, profit and ROI are dashes and the time is what has passed', () => {
       const [row] = historyRows([going([bought])], ref, 1000 + 12 * 60 + 1);
-      expect(row).toMatchObject({ status: 'active', title: 'GOLD: идёт', profit: '—', roi: '—', duration: '12:01', rate: '—' });
+      expect(row).toMatchObject({ status: 'active', title: 'GOLD: идёт', profit: '—', roi: '—', duration: '12:01' });
     });
 
     it('shows no partial figure after it sold part of its cargo', () => {
       const [row] = historyRows([going([bought, soldPart])], ref, 1000 + 600);
-      expect(row).toMatchObject({ status: 'active', profit: '—', roi: '—', rate: '—', duration: '10:00' });
+      expect(row).toMatchObject({ status: 'active', profit: '—', roi: '—', duration: '10:00' });
     });
 
     it('keeps the loss of a lost run, and the figures of a done one', () => {
@@ -232,8 +234,8 @@ describe('historyRows', () => {
       const done = { run: run({ id: 14, startedAt: 1000, endedAt: 4400, status: 'done' }), events: [{ ...bought, id: 141, runId: 14 }, { ...soldPart, id: 142, runId: 14, ts: 4400, scu: 100 }] };
       const rows = historyRows([lost, done], ref, NOW);
       expect(rows[0]).toMatchObject({ status: 'lost', profit: nb('-500 000'), roi: '-100%', duration: '10:00' });
-      expect(rows[0].rate).toMatch(/^-/);
-      expect(rows[1]).toMatchObject({ status: 'done', profit: nb('100 000'), roi: '20%', duration: '56:40', rate: '106k' });
+      expect(rows[0].profit).toMatch(/^-/);
+      expect(rows[1]).toMatchObject({ status: 'done', profit: nb('100 000'), roi: '20%', duration: '56:40' });
     });
   });
 
@@ -318,9 +320,9 @@ describe('historyRows', () => {
 
   it('shows a dash for a run without trades', () => {
     const empty = { run: run({ id: 9, startedAt: 1000, endedAt: null, status: 'active' }), events: [] };
-    expect(historyRows([empty], ref, 1000)[0]).toMatchObject({ title: '—', profit: '—', roi: '—', duration: '0:00', rate: '—' });
+    expect(historyRows([empty], ref, 1000)[0]).toMatchObject({ title: '—', profit: '—', roi: '—', duration: '0:00' });
     const done = { run: run({ id: 10, startedAt: 1000, endedAt: 1000, status: 'done' }), events: [] };
-    expect(historyRows([done], ref, 1000)[0]).toMatchObject({ title: '—', profit: '0', roi: '—', duration: '0:00', rate: '—' });
+    expect(historyRows([done], ref, 1000)[0]).toMatchObject({ title: '—', profit: '0', roi: '—', duration: '0:00' });
   });
 
   it('prints the start in local time, zero-padded', () => {
@@ -335,8 +337,8 @@ describe('historyRows', () => {
 });
 
 describe('sessionRows', () => {
-  it('formats sessions and empty rates', () => {
-    expect(sessionRows([{ startTs: 30000, endTs: 30000, runIds: [3], runCount: 1, profit: 50_000, uecPerHour: null }])[0]).toMatchObject({ runs: 1, duration: '0:00', rate: '—' });
+  it('formats a session that took no time', () => {
+    expect(sessionRows([{ startTs: 30000, endTs: 30000, runIds: [3], runCount: 1, profit: 50_000, uecPerHour: null }])[0]).toMatchObject({ runs: 1, duration: '0:00' });
   });
 
   it('formats a session with runs, in the given order', () => {
@@ -345,8 +347,8 @@ describe('sessionRows', () => {
       { startTs: start, endTs: start + 5400, runIds: [3, 4], runCount: 2, profit: 345_000, uecPerHour: 230_000 },
       { startTs: 1000, endTs: 2000, runIds: [1], runCount: 1, profit: -100_000, uecPerHour: -360_000 },
     ]);
-    expect(rows[0]).toEqual({ when: '06.10 14:05', duration: '1:30:00', runs: 2, profit: nb('345 000'), rate: '230k' });
-    expect(rows[1]).toMatchObject({ runs: 1, profit: nb('-100 000'), rate: '-360k' });
+    expect(rows[0]).toEqual({ when: '06.10 14:05', duration: '1:30:00', runs: 2, profit: nb('345 000') });
+    expect(rows[1]).toMatchObject({ runs: 1, profit: nb('-100 000') });
   });
 
   it('shows the runs of a session, not its incomes: a session of incomes only has no run and still has its profit', () => {
@@ -355,7 +357,7 @@ describe('sessionRows', () => {
       { startTs: 5000, endTs: 5000, runIds: [9], runCount: 0, profit: 444_000, uecPerHour: null },               // one income
     ]);
     expect(rows[0]).toMatchObject({ runs: 2, profit: nb('800 000') });
-    expect(rows[1]).toMatchObject({ runs: 0, profit: nb('444 000'), rate: '—' });
+    expect(rows[1]).toMatchObject({ runs: 0, profit: nb('444 000') });
   });
 
   it('is empty without sessions', () => {

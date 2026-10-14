@@ -28,7 +28,7 @@ export function travelSec(distanceGm: number, speedKkms: number, overheadMin: nu
 export interface RouteSettings {
   starSystemId: number | null; budget: number | null;
   quantumSpeedKkms: number; overheadMin: number; overheadEmptyMin: number;
-  topN: number; sort: 'uecPerHour' | 'roi';
+  topN: number; sort: 'profit' | 'roi';
   /**
    * «Выгоднее» (spec 14.19, item 7): how many minutes of an EMPTY flight a purchase at another terminal may cost. A trip bought
    * farther than that is not offered. Absent: no limit (the search of trips from one terminal has no other purchase places anyway).
@@ -73,7 +73,7 @@ export interface RouteTrace {
     unknownTerminal: number; systemFilter: number; nonPositiveProfit: number; zeroQty: number;
     /** Bought at another terminal that is farther than the empty flight allowed (`nearbyMaxMin`), or whose distance is not known (to UEX, or yet). */
     tooFar: number;
-    /** Bought at another terminal and no better by ROI than what the player's own terminal gives (`betterElsewhere`). */
+    /** Bought at another terminal and bringing no more per trip than what the player's own terminal gives (`betterElsewhere`). */
     notBetter: number;
   };
 }
@@ -171,18 +171,18 @@ type Compare = (a: RouteOption, b: RouteOption) => number;
 const byKnownStock: Compare = (a, b) => Number(!stockKnown(a)) - Number(!stockKnown(b));
 
 const byRoi: Compare = (a, b) => b.roi - a.roi;
-/** Higher UEC per hour first, routes without a time after all the others. */
-const byUecPerHour: Compare = (a, b) => {
-  if (a.uecPerHour === null || b.uecPerHour === null) return Number(a.uecPerHour === null) - Number(b.uecPerHour === null);
-  return b.uecPerHour - a.uecPerHour;
-};
+/**
+ * What the trip brings first (plan item 17, the author 14.10.2026: "the profit and the time of the trip, not UEC per hour"). The
+ * time stands beside the profit in the list and is the player's to weigh: an estimate of it is too rough to divide by.
+ */
+const byProfit: Compare = (a, b) => b.profit - a.profit;
 
 /**
  * The trips with a known stock first, then those with an unknown one; inside each group best first by the chosen metric, then by the other
  * one; ids make a tie deterministic. The best N are taken from this order (`finish`), so an unknown stock fills only what the known ones leave.
  */
 function ranking(sort: RouteSettings['sort']): Compare {
-  const [first, second] = sort === 'roi' ? [byRoi, byUecPerHour] : [byUecPerHour, byRoi];
+  const [first, second] = sort === 'roi' ? [byRoi, byProfit] : [byProfit, byRoi];
   return (a, b) => byKnownStock(a, b) || first(a, b) || second(a, b) || a.originId - b.originId || a.destId - b.destId || a.commodityId - b.commodityId;
 }
 
@@ -210,19 +210,27 @@ function finish(found: RouteOption[], trace: RouteTrace, settings: RouteSettings
  *  - Near: the empty flight to the purchase is within `settings.nearbyMaxMin`. A distance UEX does not know is not near. A
  *    distance that is not in the table YET cannot be judged: the trip is not offered (a list cut to the best N is what the player
  *    sees), but it stays among the candidates of an uncut search (`topN` infinite), which is what the distances are asked for.
- *  - Better: its ROI is higher than the best ROI of the SAME commodity bought at `homeId`; when that commodity is not sold
- *    there (or does not pay), higher than the best ROI of anything bought at `homeId`. With nothing to buy at home every near
- *    trip is better.
+ *  - Better: it brings more per trip (its profit, counted with the stock there and the hold) than the best trip of the SAME
+ *    commodity bought at `homeId`; when that commodity is not sold there (or does not pay), more than the best trip of
+ *    anything bought at `homeId`. With nothing to buy at home every near trip is better. It was the ROI until plan item 17:
+ *    a small batch with a fine percentage is not what is worth an empty flight. A trip whose stock NOBODY knows is counted at
+ *    the whole free hold, and must not win by that guess alone: it has to have the higher ROI as well (a better price, not only
+ *    an assumed quantity).
  * The trips bought at `homeId` are all kept. What is dropped is counted in the trace.
  */
 function betterElsewhere(found: RouteOption[], homeId: number, ctx: RouteCtx, trace: RouteTrace): RouteOption[] {
   const limitSec = ctx.settings.nearbyMaxMin === undefined ? Number.POSITIVE_INFINITY : ctx.settings.nearbyMaxMin * SEC_PER_MIN;
-  let bestHome = Number.NEGATIVE_INFINITY;
+  const NONE = Number.NEGATIVE_INFINITY;
+  let bestHome = NONE;
+  let bestHomeRoi = NONE;
   const bestHomeBy = new Map<number, number>();
+  const bestHomeRoiBy = new Map<number, number>();
   for (const o of found) {
     if (o.originId !== homeId) continue;
-    bestHome = Math.max(bestHome, o.roi);
-    bestHomeBy.set(o.commodityId, Math.max(bestHomeBy.get(o.commodityId) ?? Number.NEGATIVE_INFINITY, o.roi));
+    bestHome = Math.max(bestHome, o.profit);
+    bestHomeRoi = Math.max(bestHomeRoi, o.roi);
+    bestHomeBy.set(o.commodityId, Math.max(bestHomeBy.get(o.commodityId) ?? NONE, o.profit));
+    bestHomeRoiBy.set(o.commodityId, Math.max(bestHomeRoiBy.get(o.commodityId) ?? NONE, o.roi));
   }
   return found.filter((o) => {
     if (o.originId === homeId) return true;
@@ -231,7 +239,9 @@ function betterElsewhere(found: RouteOption[], homeId: number, ctx: RouteCtx, tr
       ? ctx.distances.get(key) === null || o.emptyLegSec > limitSec
       : Number.isFinite(ctx.settings.topN);
     if (tooFar) { trace.dropped.tooFar++; return false; }
-    if (o.roi <= (bestHomeBy.get(o.commodityId) ?? bestHome)) { trace.dropped.notBetter++; return false; }
+    const brings = o.profit > (bestHomeBy.get(o.commodityId) ?? bestHome);
+    const pays = stockKnown(o) || o.roi > (bestHomeRoiBy.get(o.commodityId) ?? bestHomeRoi);
+    if (!brings || !pays) { trace.dropped.notBetter++; return false; }
     return true;
   });
 }

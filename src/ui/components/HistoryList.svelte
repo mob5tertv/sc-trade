@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { LEGEND } from '../vm/legend';
   import { routePieces } from '../vm/route-pieces';
   import type { TradeLine } from '../vm/run-trades';
   import type { HistoryRow } from '../vm/stats-rows';
@@ -36,7 +35,6 @@
       <span role="columnheader" class="r">Прибыль</span>
       <span role="columnheader" class="r">ROI</span>
       <span role="columnheader" class="r">Время</span>
-      <span role="columnheader" class="r" title={LEGEND.rateRoutes}>UEC/ч</span>
     </div>
     {#each rows as row (row.runId)}
       <div
@@ -55,7 +53,6 @@
         <span class="sc-num profit" class:loss={isLoss(row.profit)} title="Прибыль">{row.profit}</span>
         <span class="sc-num" title="ROI">{row.roi}</span>
         <span class="sc-num" title="Длительность">{row.duration}</span>
-        <span class="sc-num" title="UEC в час">{row.rate}</span>
       </div>
       {#if openId === row.runId && tradesOf && onEditTrade}
         <RunTrades
@@ -71,7 +68,7 @@
 <style>
   .grid {
     display: grid;
-    grid-template-columns: 60px minmax(0, 1fr) 58px 46px 44px 50px;
+    grid-template-columns: 60px minmax(0, 1fr) 62px 46px 50px;
     column-gap: 4px;
     align-items: center;
     padding: 0 var(--sc-pad-x);

@@ -7,7 +7,7 @@ import { UI_SCALES } from './ui-scale';
 
 const CORNERS: ReadonlyArray<Settings['stripCorner']> = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const LOG_LEVELS: ReadonlyArray<Settings['logLevel']> = ['debug', 'info', 'warn', 'error'];
-const SORTS: ReadonlyArray<Settings['sort']> = ['uecPerHour', 'roi'];
+const SORTS: ReadonlyArray<Settings['sort']> = ['profit', 'roi'];
 
 // Below 0.5 the text cannot be read over a bright scene. A value saved earlier below it is read as it is and is
 // replaced by the first change the player makes.

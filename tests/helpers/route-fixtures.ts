@@ -39,7 +39,7 @@ export const ctx: RouteCtx = {
   now: NOW,
   thresholds: { hotMin: 60, warmMin: 180, coolingMin: 240 },
   serverChangedAt: null,
-  settings: { starSystemId: 68, budget: null, quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, topN: 5, sort: 'uecPerHour' },
+  settings: { starSystemId: 68, budget: null, quantumSpeedKkms: 200, overheadMin: 12, overheadEmptyMin: 5, topN: 5, sort: 'profit' },
   freeScu: 696,
   terminals: ref.terminals,
   distances: new Map<string, number | null>([[distKey(1, 2), 59], [distKey(1, 3), 61]]),

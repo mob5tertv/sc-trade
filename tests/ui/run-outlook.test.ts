@@ -23,15 +23,15 @@ describe('runOutlook, nothing sold yet', () => {
     expect(o.invested).toBe(n('587 520'));
     expect(o.revenue).toBe('0');
   });
-  it('expects the whole run at the price of the target: profit, ROI and rate, each marked with ≈', () => {
-    // 96 × 6900 − 587 520 = 74 880; ROI 12.7 %; over max(872, 1015) s: 265 592 UEC/h
-    expect(o.expected).toEqual({ profit: `≈ ${n('74 880')}`, profitLoss: false, roi: '≈ 13%', rate: '≈ 266k' });
+  it('expects the whole run at the price of the target: profit and ROI, each marked with ≈ (no rate per hour: plan item 17)', () => {
+    // 96 × 6900 − 587 520 = 74 880; ROI 12.7 %
+    expect(o.expected).toEqual({ profit: `≈ ${n('74 880')}`, profitLoss: false, roi: '≈ 13%' });
     expect(o.why).toBeNull();
   });
-  it('gives the very rate the mini line gives (they share the arithmetic)', () => {
+  it('gives the very profit the mini line gives (they share the arithmetic)', () => {
     const strip = stripModel(active, market, ref, toTarget2, ctx);
     if (strip.kind !== 'run') throw new Error('a run was expected');
-    expect(`${o.expected?.rate.replace('≈ ', '')}/ч`).toBe(strip.rate);   // the line puts the '≈' before the profit
+    expect(strip.profit?.replace('+', '')).toBe(o.expected?.profit);   // the line adds the sign of a gain
   });
 });
 
@@ -74,7 +74,6 @@ describe('runOutlook, an expected loss', () => {
     // 96 × 6000 − 587 520 = −11 520
     const o = runOutlook(active, cheap, ref, toTarget2, ctx);
     expect(o.expected).toMatchObject({ profit: `≈ -${n('11 520')}`, profitLoss: true, roi: '≈ -2%' });
-    expect(o.expected?.rate).toBe('≈ -41k');
   });
   it('is not red for a run that is not a loss, whatever has been sold so far', () => {
     expect(runOutlook(active, market, ref, toTarget2, ctx).expected?.profitLoss).toBe(false);
@@ -82,28 +81,13 @@ describe('runOutlook, an expected loss', () => {
 });
 
 describe('runOutlook, the time of the run', () => {
-  const unknownFlight = { ...ctx, distances: new Map<string, number | null>() };
-
-  it('has no rate before any time is known, but still the profit and the ROI', () => {
+  it('changes nothing of what is expected: the profit and the ROI need no time, known or not', () => {
+    const unknownFlight = { ...ctx, distances: new Map<string, number | null>() };
     const justStarted: RunWithEvents = { run: { ...active.run, startedAt: NOW }, events: active.events };
-    expect(runOutlook(justStarted, market, ref, toTarget2, unknownFlight).expected)
-      .toEqual({ profit: `≈ ${n('74 880')}`, profitLoss: false, roi: '≈ 13%', rate: '—' });
-  });
-  it('has no rate while the flight to the target is not known, however much time has passed since the purchase', () => {
-    // 872 s have passed, and the rate of "74 880 per 872 s" would say the flight is over
-    expect(runOutlook(active, market, ref, toTarget2, unknownFlight).expected)
-      .toEqual({ profit: `≈ ${n('74 880')}`, profitLoss: false, roi: '≈ 13%', rate: '—' });
-  });
-  it('has the rate over the elapsed time once the arrival is marked, whatever is known of the flight', () => {
-    const arrived = withEvents(active, ev({ id: 5, runId: 1, ts: NOW - 600, type: 'depart' }), ev({ id: 6, runId: 1, ts: NOW - 125, type: 'arrive' }));
-    expect(runOutlook(arrived, market, ref, toTarget2, unknownFlight).expected?.rate).toBe('≈ 309k');   // 74 880 per 872 s
-  });
-  it('has the very rate the mini line gives for a run that is partly sold: the whole run counts, not the hold alone', () => {
-    const partly = withEvents(active, sale(5, 40, 6800));
-    const strip = stripModel(partly, market, ref, toTarget2, ctx);
-    if (strip.kind !== 'run') throw new Error('a run was expected');
-    expect(runOutlook(partly, market, ref, toTarget2, ctx).expected?.rate).toBe('≈ 251k');   // 70 880 per 1015 s
-    expect(strip.rate).toBe('251k/ч');   // the card says '≈ 251k', the line puts its '≈' before the profit
+    const expected = { profit: `≈ ${n('74 880')}`, profitLoss: false, roi: '≈ 13%' };
+    expect(runOutlook(justStarted, market, ref, toTarget2, unknownFlight).expected).toEqual(expected);
+    expect(runOutlook(active, market, ref, toTarget2, unknownFlight).expected).toEqual(expected);
+    expect(runOutlook(active, market, ref, toTarget2, ctx).expected).toEqual(expected);
   });
 });
 

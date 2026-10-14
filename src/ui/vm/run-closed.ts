@@ -41,7 +41,7 @@ const known = (text: string, say: (text: string) => string): string[] => (text =
 
 /**
  * The notice of a run that has just been closed, `closed` being the run as the trade service returned it (with its end and its events):
- *  - a sale that emptied the hold: 'Рейс закрыт: +73 400 · 369k/ч · ROI 15%' (no rate without a time, no ROI without an investment);
+ *  - a sale that emptied the hold: 'Рейс закрыт: +73 400 за 14:32 · ROI 15%' (no ROI without an investment);
  *  - the cargo lost: 'Рейс закрыт: груз потерян, -478 600';
  *  - a sale of goods that were never bought (a run of its own that is closed at once): 'Доход записан: +12 000', no run was closed.
  * A loss is an `error` (a run that lost its cargo but earned before it is not one).
@@ -52,6 +52,8 @@ export function closedRunNotice(closed: RunWithEvents): ClosedRunNotice {
   const kind = figures.tone === 'loss' ? 'error' : 'info';
   if (isIncomeRun(events)) return { text: `Доход записан: ${signed(figures)}`, kind, closesRun: false };
   if (run.status === 'lost') return { text: `Рейс закрыт: груз потерян, ${signed(figures)}`, kind, closesRun: true };
-  const parts = [signed(figures), ...known(figures.rate, (rate) => `${rate}/ч`), ...known(figures.roi, (roi) => `ROI ${roi}`)];
+  // a run that took no time at all (the sale was written in the second of the purchase) has no time to say
+  const took = figures.duration === NONE || figures.duration === '0:00' ? '' : ` за ${figures.duration}`;
+  const parts = [`${signed(figures)}${took}`, ...known(figures.roi, (roi) => `ROI ${roi}`)];
   return { text: `Рейс закрыт: ${parts.join(' · ')}`, kind, closesRun: true };
 }
