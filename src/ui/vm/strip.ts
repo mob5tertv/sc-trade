@@ -3,7 +3,7 @@ import type { RouteCtx } from '../../core/routes';
 import { cargoOf } from '../../core/run';
 import type { Settings } from '../../core/settings';
 import type { CargoLine, Market, Reference, RunWithEvents } from '../../core/types';
-import { expectedProfitText } from './run-outlook';
+import { expectedProfitText, saleTerminalId } from './run-outlook';
 import { nextMarkOf, phaseCaps, runPhases, type RunPhase } from './run-phase';
 import { expectedRun, priceAtTarget, type PricedLine } from './run-rate';
 import type { SessionFigure } from './stats-view';
@@ -174,13 +174,15 @@ export function stripModel(
     };
   }
 
-  const priced = priceAtTarget(cargo, m, target.id, ctx);
-  const expected = expectedRun(active, m, target.id, ctx);
+  // with a target in two steps the cargo aboard is priced where it is sold, the second step (`saleTerminalId`)
+  const saleId = saleTerminalId(s, ref) ?? target.id;
+  const priced = priceAtTarget(cargo, m, saleId, ctx);
+  const expected = expectedRun(active, m, saleId, ctx);
   return {
     ...head,
     cargoLine: cargoText(ref, cargo, priced.map(({ sell }) => sell?.price ?? null)),
     cargoTitle: cargoTitle(ref, priced),
-    lot: stripLot(ref, cargo, { priced, m, targetId: target.id, ctx }),
+    lot: stripLot(ref, cargo, { priced, m, targetId: saleId, ctx }),
     target: terminalName(target),
     profit: expected === null ? null : expectedProfitText(expected.profit, true),
     profitLoss: expected !== null && expected.profit < 0,

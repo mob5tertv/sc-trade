@@ -549,6 +549,7 @@ export const EN: Readonly<Record<string, string>> = {
   // src/ui/vm/route-rows.ts
   'Запас в точке закупки неизвестен: количество посчитано по трюму и бюджету': 'The stock at the purchase terminal is unknown: the quantity is counted by the hold and the budget',
   'На станции всего {scu} SCU: больше взять нечего': 'The station has only {scu} SCU: there is nothing more to take',
+  'Бюджета хватает на {scu} SCU': 'The budget buys {scu} SCU',
   '{v1} Гм': '{v1} Gm',
   'Цена на {terminals} только твоя: UEX этого товара там не знает. Проверь её во вкладке «Записи»': 'The price at {terminals} is only yours: UEX does not know this commodity there. Check it in the "Records" tab',
   ' и ': ' and ',

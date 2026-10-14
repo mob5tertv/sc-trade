@@ -48,6 +48,20 @@ describe('runOutlook, partly sold', () => {
   });
 });
 
+// Known limit of 1.2, fixed in 1.3: a target in two steps chosen with cargo aboard (buy at 1, then sell at 2). The cargo aboard goes to the
+// sale, the second step; it was priced at the purchase terminal until something was bought there.
+describe('runOutlook and the mini line, a target in two steps chosen with cargo aboard', () => {
+  const twoSteps = { ...s, targetTerminalId: 1, targetThenId: 2 };
+  it('price the cargo aboard where it is sold, the second step, the same as with that terminal for a target', () => {
+    expect(runOutlook(active, market, ref, twoSteps, ctx).expected).toEqual(runOutlook(active, market, ref, toTarget2, ctx).expected);
+    const strip = stripModel(active, market, ref, twoSteps, ctx);
+    const plain = stripModel(active, market, ref, toTarget2, ctx);
+    if (strip.kind !== 'run' || plain.kind !== 'run') throw new Error('a run was expected');
+    expect(strip.profit).toBe(plain.profit);
+    expect(strip.cargoLine).toBe(plain.cargoLine);
+  });
+});
+
 describe('runOutlook, no target', () => {
   it('has dashes and says to choose one; the facts stay', () => {
     const o = runOutlook(active, market, ref, { ...s, targetTerminalId: null }, ctx);

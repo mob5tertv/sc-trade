@@ -39,6 +39,18 @@ export const UNKNOWN_STOCK_NOTE = (): string => tr('Запас в точке з�
  */
 export const stockLimitNote = (scu: number): string => tr('На станции всего {scu} SCU: больше взять нечего', { scu });
 
+/**
+ * What an option says when the BUDGET of the settings is what limits it (known limit of 1.2, said in 1.3): «Взять» is then what the
+ * budget buys, less than the hold and than the stock. `null` when the budget is not what stops the volume.
+ */
+export function budgetLimitNote(o: Pick<RouteOption, 'qty' | 'buy'>, budget: number | null | undefined, freeScu: number | undefined): string | null {
+  if (budget === null || budget === undefined || o.buy.price <= 0) return null;
+  const byMoney = Math.floor(budget / o.buy.price);
+  const byStock = o.buy.scu === null ? Number.POSITIVE_INFINITY : Math.floor(o.buy.scu);
+  const bySpace = freeScu ?? Number.POSITIVE_INFINITY;
+  return o.qty === byMoney && byMoney < byStock && byMoney < bySpace ? tr('Бюджета хватает на {scu} SCU', { scu: o.qty }) : null;
+}
+
 /** Which end of a suggested trip is named: the destination for trips that start here, the origin for trips that end here. */
 export type RouteMode = 'from' | 'to';
 
@@ -193,7 +205,7 @@ export interface RouteOptionRow {
   qty: string;
   /** Set when the volume was counted with no stock at the purchase terminal to limit it (`UNKNOWN_STOCK_NOTE()`): the mark «?» and the line of the expanded row say it; `null` when the stock is known (zero is known). */
   stockNote: string | null;
-  /** Set when what is taken is everything the purchase terminal has (`stockLimitNote`): the line of the expanded row says why it is less than the hold; `null` otherwise. */
+  /** Set when what is taken is everything the purchase terminal has (`stockLimitNote`), or all the budget buys (`budgetLimitNote`): the line of the expanded row says why it is less than the hold; `null` otherwise. */
   stockLimit: string | null;
   /**
    * Set when a price of the trip is ONLY the player's: UEX does not know the commodity at that terminal, so nothing checks the
@@ -217,6 +229,8 @@ export interface RouteMarks {
   uexRange?: UexRangeOf;
   /** The ship of the settings as the reference describes it; absent: nothing is said of boxes or of loading. */
   vehicle?: Vehicle;
+  /** The budget of the settings and the free space of the hold the options were counted with: «Взять» says when the budget limits it. */
+  budget?: number | null; freeScu?: number;
 }
 
 /** 'по твоим рейсам', 'оценка по расстоянию · пустой перелёт 4:10'; `null` without a time. */
@@ -231,7 +245,7 @@ export function routeOptionRow(
   o: RouteOption, ref: Reference, mode: RouteMode, runCounts: Map<string, number>, marks: RouteMarks = {},
 ): RouteOptionRow {
   const from = mode === 'from';
-  const { anchorTerminalId = null, targetTerminalId = null, targetThenId = null, uexRange, vehicle } = marks;
+  const { anchorTerminalId = null, targetTerminalId = null, targetThenId = null, uexRange, vehicle, budget, freeScu } = marks;
   const loadedAt = ref.terminals.get(o.originId);
   // the target this option would set, and whether it is the one that is set: both steps must be the same
   const steps = lookupSteps(o, mode, from ? anchorTerminalId : null);
@@ -271,7 +285,7 @@ export function routeOptionRow(
     worstLoss: o.worstProfit < 0,
     qty: `${o.qty} SCU`,
     stockNote: stockKnown(o) ? null : UNKNOWN_STOCK_NOTE(),
-    stockLimit: o.buy.scu !== null && o.qty >= Math.floor(o.buy.scu) ? stockLimitNote(o.qty) : null,
+    stockLimit: o.buy.scu !== null && o.qty >= Math.floor(o.buy.scu) ? stockLimitNote(o.qty) : budgetLimitNote(o, budget, freeScu),
     soleNote: sole.length === 0 ? null : soleNote(sole.map((id) => terminalLabel(ref, id))),
     invested: formatUec(o.qty * o.buy.price), profit: formatUec(o.profit), profitLoss: o.profit < 0,
     buy: buyView, sell: sellView,

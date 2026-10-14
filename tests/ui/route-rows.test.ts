@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatCompact } from '../../src/core/format';
 import {
-  UNKNOWN_STOCK_NOTE, priceHint, formatDistance, formatRoi, narrowCompact, routeOptionRow, sellAlternativeRow, sellHereRow,
+  budgetLimitNote, UNKNOWN_STOCK_NOTE, priceHint, formatDistance, formatRoi, narrowCompact, routeOptionRow, sellAlternativeRow, sellHereRow,
 } from '../../src/ui/vm/route-rows';
 import type { RouteOption } from '../../src/core/routes';
 import type { SellAlternative, SellHere } from '../../src/core/sell';
@@ -606,5 +606,20 @@ describe('routeOptionRow: a price that only the player knows at a terminal', () 
   it('names both ends when both prices are mine alone', () => {
     const row = routeOptionRow(option({ buy: mine, sell: estimate({ price: 6900, low: 6900, high: 6900, source: 'own', temp: 'hot' }) }), ref, 'from', new Map(), { uexRange: nothingAt(1, 2) });
     expect(row.soleNote).toContain('ARC-L1 и TDD Area 18');
+  });
+});
+
+// Known limit of 1.2, said in 1.3: «Взять» named only the stock of the station as its limit; the budget limits it too.
+describe('budgetLimitNote', () => {
+  const at = (price: number, scu: number | null) => ({ price, scu }) as unknown as RouteOption['buy'];
+  it('says the budget when it, and not the hold or the stock, is what stops the volume', () => {
+    // 100 000 UEC at 2 000 buys 50 SCU; the hold takes 696, the station has 300
+    expect(budgetLimitNote({ qty: 50, buy: at(2000, 300) }, 100_000, 696)).toBe('Бюджета хватает на 50 SCU');
+    expect(budgetLimitNote({ qty: 50, buy: at(2000, null) }, 100_000, 696)).toBe('Бюджета хватает на 50 SCU');
+  });
+  it('says nothing without a budget, or when the hold or the stock stops the volume first', () => {
+    expect(budgetLimitNote({ qty: 300, buy: at(2000, 300) }, null, 696)).toBeNull();
+    expect(budgetLimitNote({ qty: 40, buy: at(2000, 40) }, 100_000, 696)).toBeNull(); // the stock is smaller
+    expect(budgetLimitNote({ qty: 32, buy: at(2000, null) }, 100_000, 32)).toBeNull(); // the hold is smaller
   });
 });

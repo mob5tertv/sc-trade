@@ -34,6 +34,9 @@
     targetThenId?: number | null;
     /** The ship of the settings: its boxes and how it is loaded stand in the rows; absent: nothing is said. */
     vehicle?: Vehicle;
+    /** The budget and the free space of the hold the options were counted with: a row says when the budget limits «Взять». */
+    budget?: number | null;
+    freeScu?: number;
     /** Set: the expanded row has a star that makes the trip a favourite route, or takes that back (`isFavourite` says which). */
     onFavourite?: (option: RouteOption) => void;
     isFavourite?: (option: RouteOption) => boolean;
@@ -45,11 +48,11 @@
   }
   let {
     options, reference, runCounts, mode, showCommodity, emptyText, onTarget, onClearTarget, onToggleRow, anchorTerminalId = null, targetTerminalId = null,
-    targetThenId = null, uexRange, vehicle, onFavourite, isFavourite,
+    targetThenId = null, uexRange, vehicle, budget = null, freeScu, onFavourite, isFavourite,
   }: Props = $props();
 
   const rows = $derived(
-    options.map(option => ({ option, row: routeOptionRow(option, reference, mode, runCounts, { anchorTerminalId, targetTerminalId, targetThenId, uexRange, vehicle }) })),
+    options.map(option => ({ option, row: routeOptionRow(option, reference, mode, runCounts, { anchorTerminalId, targetTerminalId, targetThenId, uexRange, vehicle, budget, freeScu }) })),
   );
   // the trips bought at another terminal follow the ones bought here (the core orders them so): a line says where they begin
   const firstElsewhere = $derived(rows.find(({ row }) => row.emptyLeg !== null)?.row.key ?? null);

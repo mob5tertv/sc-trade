@@ -46,6 +46,16 @@ export function expectedProfitText(profit: number, signed = false): string {
 }
 
 /**
+ * Where the cargo aboard is expected to be sold: the target, or, with a target in two steps (spec 14.19, item 7), its SECOND step. The
+ * first step is where the next cargo is bought; a cargo already aboard when such a target was chosen goes on to the sale (known limit of
+ * 1.2, fixed in 1.3: the mini line priced it at the place of the purchase until something was bought there).
+ */
+export function saleTerminalId(s: Settings, ref: Reference): number | null {
+  if (s.targetThenId !== null && ref.terminals.has(s.targetThenId)) return s.targetThenId;
+  return s.targetTerminalId !== null && ref.terminals.has(s.targetTerminalId) ? s.targetTerminalId : null;
+}
+
+/**
  * Expected profit = what is sold so far + what is aboard at the price the TARGET is expected to pay − what is put in
  * (`expectedRun`, which the mini line asks too). It needs a target and a price there for EVERYTHING aboard: a sum over
  * part of the hold is not the result of the run. With the hold empty nothing is left to price, and the result is the one
@@ -55,9 +65,9 @@ export function runOutlook(active: RunWithEvents, m: Market, ref: Reference, s: 
   const { invested, revenue } = runTotals(active.run, active.events, ctx.now);
   const facts = { invested: formatUec(invested), revenue: formatUec(revenue) };
 
-  const target = s.targetTerminalId === null ? undefined : ref.terminals.get(s.targetTerminalId);
-  if (!target && cargoOf(active.events).length > 0) return { ...facts, expected: null, why: NO_TARGET() };
-  const result = expectedRun(active, m, target?.id ?? null, ctx);
+  const saleId = saleTerminalId(s, ref);
+  if (saleId === null && cargoOf(active.events).length > 0) return { ...facts, expected: null, why: NO_TARGET() };
+  const result = expectedRun(active, m, saleId, ctx);
   if (result === null) return { ...facts, expected: null, why: NO_PRICE() };
 
   return {

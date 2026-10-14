@@ -141,6 +141,8 @@
         targetTerminalId={app.settings.targetTerminalId}
         targetThenId={app.settings.targetThenId}
         vehicle={app.vehicle}
+        budget={app.settings.budget}
+        freeScu={app.settings.scuCapacity}
         onFavourite={(option) => void app.toggleFavourite(option)}
         isFavourite={(option) => isFavourite(app.settings.favouriteRoutes, option)}
         uexRange={(terminalId, commodityId, side) => uexRangeOf(app.market, terminalId, commodityId, side, app.routeCtx(undefined, app.rowsNow))}
