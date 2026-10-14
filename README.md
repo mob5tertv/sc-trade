@@ -5,14 +5,14 @@
 **A personal price diary and trade-route helper for Star Citizen — a small window that stays on top of the game.**
 You type in the prices you see at the in-game terminals; SC Trade keeps them, shows how fresh they are and works out which run pays best. [UEX](https://uexcorp.space/) is the reference where you have no prices of your own yet.
 
-- **Download:** [sc-trade.space](https://sc-trade.space) or the [latest release](https://github.com/mob5tertv/sc-trade/releases/latest). Windows 10 / 11, 64-bit. The interface is in Russian.
+- **Download:** [sc-trade.space](https://sc-trade.space) or the [latest release](https://github.com/mob5tertv/sc-trade/releases/latest). Windows 10 / 11, 64-bit. The interface is in Russian or English, chosen at the first start.
 - **Next to the game, not inside it:** nothing is injected, the game's memory and files are not read, no key presses or clicks are sent. The only network address is `api.uexcorp.uk`, for the reference data. Hotkeys are optional and none is assigned by default; while one is assigned, Windows calls the program on every key press, and every press is passed on to the game. The window's list of permissions is pinned by a test: [`tests/release/permissions.test.ts`](tests/release/permissions.test.ts). The details, in Russian: [«Чего программа не делает»](#чего-программа-не-делает).
 - **Built with** Tauri 2, Svelte 5, TypeScript and SQLite. How to build it: [«Сборка из исходников»](#сборка-из-исходников).
 - **Licence:** [MIT](LICENSE). Author: mob5ter — [Twitch](https://www.twitch.tv/mob5tertv).
 
 SC Trade is an unofficial fan-made tool. It is not affiliated with Cloud Imperium Games or Roberts Space Industries and is not endorsed by them.
 
-The guide below is in Russian.
+The guide below is in Russian. A short guide in English: [README.en.md](README.en.md).
 
 ---
 
