@@ -273,7 +273,7 @@ export const EN: Readonly<Record<string, string>> = {
   'Открепить окно': 'Unlock the window',
   'Закрепить окно': 'Lock the window',
   // src/ui/KeyboardBadge.svelte
-  '{badge}: вернуть клавиатуру игре': '{badge}: give the keyboard back to the game',
+  '{badge}: вернуть клавиатуру игре': '{badge} (give the keyboard back to the game)',
   // src/ui/MessageLines.svelte
   'Подтверждение': 'Confirmation',
   'Скрыть сообщение': 'Hide the message',
@@ -496,9 +496,9 @@ export const EN: Readonly<Record<string, string>> = {
   'Pause с Ctrl Windows передаёт как другую клавишу, и запись не сработала бы. Pause подходит сама, с Alt или с Shift.': 'Windows passes Pause with Ctrl as another key, and the binding would not work. Pause suits alone, with Alt or with Shift.',
   'нужен Ctrl или Alt (буква или цифра сама по себе не подходит).': 'needs Ctrl or Alt (a letter or digit on its own does not suit).',
   // src/ui/vm/keyboard-badge.ts
-  'Esc — в игру': 'Esc: back to the game',
+  'Esc — в игру': 'Esc: to game',
   'Клавиатура у окна: Esc или клик сюда возвращают её игре': 'The keyboard is with the window: Esc or a click here gives it back to the game',
-  'Клавиатура у\u00a0игры': 'Game has\u00a0the keyboard',
+  'Клавиатура у\u00a0игры': 'Keyboard:\u00a0game',
   'Клавиатура вернулась игре сама: {v1} секунд не было ни одной клавиши. Чтобы печатать снова, кликни в поле': 'The keyboard went back to the game by itself: no key for {v1} seconds. To type again, click in the field',
   // src/ui/vm/keys-hint.ts
   'В полёте курсора нет: назначь клавиши «Взлетел» и «Прилетел»': 'There is no cursor in flight: assign the "Departed" and "Arrived" keys',
