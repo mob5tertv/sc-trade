@@ -270,6 +270,28 @@ export const SCENES: readonly Scene[] = [
       app.openSettings();
     },
   },
+  // version 1.3: the field of the ship while the list of ships of UEX is coming, and when it did not come (`vm/ship-list.ts`)
+  {
+    name: 'settings-ships-loading',
+    title: 'Настройки: список кораблей загружается',
+    dataset: 'default',
+    act: async (app) => {
+      app.reference = { ...app.reference, vehicles: [] };
+      app.referenceLoading = true;
+      await app.expand('preview');
+      app.openSettings();
+    },
+  },
+  {
+    name: 'settings-ships-missing',
+    title: 'Настройки: список кораблей не загрузился',
+    dataset: 'default',
+    act: async (app) => {
+      app.reference = { ...app.reference, vehicles: [] };
+      await app.expand('preview');
+      app.openSettings();
+    },
+  },
   {
     name: 'settings-open-all',
     title: 'Настройки: все группы открыты',

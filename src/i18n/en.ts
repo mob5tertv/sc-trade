@@ -344,6 +344,7 @@ export const EN: Readonly<Record<string, string>> = {
   'Что везти сюда: лучшие варианты по всем товарам, которые здесь покупают': 'What to haul here: the best options over all the goods bought here',
   'Куда отсюда: лучшие варианты по всем товарам, которые можно купить здесь': 'Where to from here: the best options over all the goods you can buy here',
   // src/ui/SettingsView.svelte
+  'Загружаю список кораблей из UEX': 'Loading the list of ships from UEX',
   'не выбран': 'not chosen',
   'Список кораблей не загружен: введи вместимость вручную.': 'The list of ships has not loaded: type in the capacity by hand.',
   'Вместимость, SCU': 'Capacity, SCU',

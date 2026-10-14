@@ -368,6 +368,8 @@ class AppState {
   notice = $state<Notice | null>(null);
   /** The reference is being downloaded by the button. */
   referenceBusy = $state(false);
+  /** The reference of UEX is being downloaded, by whatever asked for it (the first start, the button, the background sync). */
+  referenceLoading = $state(false);
 
   // ---- internals --------------------------------------------------------------------------------
   /** The queue of everything that can touch UEX; reached only through `withUex`. */
@@ -616,12 +618,15 @@ class AppState {
    * keep their own health.
    */
   async syncReferenceNow(): Promise<string | null> {
+    this.referenceLoading = true;
     try {
       await this.withUex(() => syncReference(this.#syncDeps()));
     } catch (err) {
       this.referenceOk = false;
       this.#log.warn('ui', 'reference sync failed', { err });
       return uexErrorText(err);
+    } finally {
+      this.referenceLoading = false;
     }
     this.referenceOk = true;
     try {

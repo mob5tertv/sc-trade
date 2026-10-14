@@ -17,6 +17,8 @@
   import { UI_SCALES, uiScaleChoice, uiScaleHint, uiScaleLabel } from './vm/ui-scale';
   import WindowGrip from './WindowGrip.svelte';
   import { LANG_NAMES, LANGS, tr, type Lang } from '../i18n';
+  import LoadingLine from './components/LoadingLine.svelte';
+  import { shipListState } from './vm/ship-list';
 
   type NumberKey =
     | 'scuCapacity' | 'budget' | 'hotMin' | 'warmMin' | 'coolingMin' | 'quantumSpeedKkms'
@@ -59,6 +61,7 @@
   let errors = $state<Record<string, string | null>>({});
 
   const vehicles = $derived([...app.reference.vehicles].sort((a, b) => a.name.localeCompare(b.name)));
+  const shipList = $derived(shipListState(vehicles.length, app.referenceLoading));
   // Systems the game runs; the chosen one stays in the list even if UEX dropped it.
   const systems = $derived(
     app.reference.starSystems.filter((s) => s.isAvailableLive || s.id === app.settings.starSystemId),
@@ -212,7 +215,12 @@
 {/snippet}
 
 {#snippet ship()}
-  {#if vehicles.length > 0}
+  {#if shipList === 'loading'}
+    <div class="row">
+      <span class="label-like">{tr('Корабль')}</span>
+      <LoadingLine text={tr('Загружаю список кораблей из UEX')} />
+    </div>
+  {:else if shipList === 'ready'}
     <div class="row">
       <label for="set-vehicle">{tr('Корабль')}</label>
       <select id="set-vehicle" class="sc-input field" value={app.settings.vehicleId ?? ''} onchange={(event) => chooseVehicle(event.currentTarget.value)}>
@@ -223,7 +231,10 @@
       </select>
     </div>
   {:else}
-    <p class="line">{tr('Список кораблей не загружен: введи вместимость вручную.')}</p>
+    <p class="line">
+      {tr('Список кораблей не загружен: введи вместимость вручную.')}
+      <button class="sc-btn retry" type="button" disabled={app.referenceBusy} onclick={() => app.refreshReference()}>{tr('Повторить')}</button>
+    </p>
   {/if}
   {@render numberField('scuCapacity', tr('Вместимость, SCU'), { title: SETTING_HINTS.scuCapacity })}
   <div class="row">
@@ -571,6 +582,11 @@
 
   .line {
     color: var(--sc-muted);
+  }
+
+  /* «Повторить» of a list of ships that did not come: in the line, after its words */
+  .retry {
+    margin-left: 6px;
   }
 
   /* a key the field did not write: not an error of the field (the key that was saved is fine), so the colour of a warning */

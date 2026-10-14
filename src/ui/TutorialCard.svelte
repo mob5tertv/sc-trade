@@ -1,6 +1,8 @@
 <script lang="ts">
   import { tr } from '../i18n';
   import { app } from './state.svelte';
+  import LoadingLine from './components/LoadingLine.svelte';
+  import { shipListState } from './vm/ship-list';
   import { nextTutorialStep, TUTORIAL_STEPS, tutorialCounter } from './vm/tutorial';
 
   // The card of the tutorial (version 1.3), at the top of the window, over the part it speaks of. The element of the window the
@@ -37,7 +39,9 @@
   <p class="text">{step.text()}</p>
   {#if step.id === 'ship'}
     <div class="ship">
-      {#if vehicles.length > 0}
+      {#if shipListState(vehicles.length, app.referenceLoading) === 'loading'}
+        <LoadingLine text={tr('Загружаю список кораблей из UEX')} />
+      {:else if vehicles.length > 0}
         <select class="sc-input" aria-label={tr('Корабль')} value={app.settings.vehicleId ?? ''} onchange={(event) => void chooseVehicle(event.currentTarget.value)}>
           <option value="">{tr('не выбран')}</option>
           {#each vehicles as vehicle (vehicle.id)}
