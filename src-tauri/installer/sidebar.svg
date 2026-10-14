@@ -15,8 +15,9 @@
 
   <g font-family="'Bahnschrift SemiCondensed', Bahnschrift, 'Segoe UI', sans-serif" text-anchor="middle">
     <text x="82" y="158" font-size="27" font-weight="700" letter-spacing="2.5"><tspan fill="#3fd0f0">SC</tspan><tspan fill="#d6eef5"> TRADE</tspan></text>
-    <text x="82" y="195" font-size="12.5" fill="#82a8b6">дневник цен и</text>
-    <text x="82" y="210" font-size="12.5" fill="#82a8b6">торговые маршруты</text>
+    <!-- One installer shows this picture in both of its languages (it asks which at the start): no word of either language here,
+         only the signs of the game that both read the same. -->
+    <text x="82" y="203" font-size="13" letter-spacing="1.5" fill="#82a8b6">UEC · SCU · ROI</text>
   </g>
 
   <!-- A hairline under the name, the accent at its start. -->

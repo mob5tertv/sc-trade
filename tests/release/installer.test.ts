@@ -606,6 +606,16 @@ describe('the template of the installer', () => {
     expect([...svg.matchAll(/>(v?\d+\.\d+\.\d+)</g)].map((match) => match[1])).toEqual([`v${packageVersion}`]);
   });
 
+  // Version 1.3: one installer shows its pictures in both of its languages (it asks which at the start), so they hold no word of
+  // either; the tagline of 1.2 was Russian and stood on the English pages too.
+  it('draws no word of a language on its pictures: they are shown whichever language the installer speaks', () => {
+    for (const name of ['sidebar.svg', 'header.svg']) {
+      const texts = [...readInstaller(name).replace(/<!--[\s\S]*?-->/g, '').matchAll(/<text\b[^>]*>([\s\S]*?)<\/text>/g)].map((match) => match[1].replace(/<[^>]+>/g, ''));
+      expect(texts.length, name).toBeGreaterThan(0);
+      expect(texts.filter((text) => /[А-Яа-яЁё]/.test(text)), name).toEqual([]);
+    }
+  });
+
   it('draws that version so that it can be read: tall enough, light on the panel, its six signs apart from one another (the dots must not fuse with the digits)', () => {
     const sidebar = readBmp(resolve(tauriDir, nsis?.sidebarImage ?? 'missing'));
     // the corner under the chart, inside the frame of the panel (x 6..157, y 7..307); the panel is --sc-surface there
