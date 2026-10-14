@@ -252,9 +252,10 @@ interface OwnObservation { terminal: number; code: string; side: 'buy' | 'sell';
 
 /** Hot, warm, cooling and cold; with a quantity, without one, and a known zero. `jitter` is against the UEX price. */
 const OWN_OBSERVATIONS: OwnObservation[] = [
-  // the stock of Medical Supplies at HUR-L1 over the last hours: the refill rate is learned from these
-  { terminal: 3, code: 'MEDS', side: 'buy', jitter: 1.0, scu: 120, age: ago.h(9) },
-  { terminal: 3, code: 'MEDS', side: 'buy', jitter: 1.01, scu: 260, age: ago.h(6) },
+  // the stock of Medical Supplies at HUR-L1, read three times in forty minutes a few hours ago: the refill rate is learned from
+  // these (readings farther apart than half an hour teach nothing: `MAX_LEARN_GAP_SEC`). 30 SCU in 40 minutes is 0.75 a minute
+  { terminal: 3, code: 'MEDS', side: 'buy', jitter: 1.0, scu: 300, age: ago.m(220) },
+  { terminal: 3, code: 'MEDS', side: 'buy', jitter: 1.01, scu: 315, age: ago.m(200) },
   { terminal: 3, code: 'MEDS', side: 'buy', jitter: 1.02, scu: 330, age: ago.h(3) },
   // hot
   { terminal: 3, code: 'MEDS', side: 'buy', jitter: 1.03, scu: 380, age: ago.m(7) },

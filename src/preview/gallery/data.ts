@@ -142,7 +142,7 @@ const PLAYER_PRICES: PlayerPrice[] = [
   // a five-digit price that moved, the estimate with its base, the learned rate and the warning
   {
     code: 'SCRA', side: 'buy', factor: 9, ageMin: 3, scu: null,
-    before: [{ factor: 1.0, ageMin: 600, scu: 80 }, { factor: 1.0, ageMin: 420, scu: 260 }, { factor: 1.02, ageMin: 200, scu: 150 }],
+    before: [{ factor: 1.0, ageMin: 600, scu: 80 }, { factor: 1.0, ageMin: 580, scu: 260 }, { factor: 1.02, ageMin: 200, scu: 150 }],
   },
   { code: 'GOLD', side: 'buy', factor: 0.85, ageMin: 11, scu: 80 }, // the terminal buys it, but its purchase price was seen too: a row with two sides
   { code: 'TUNG', side: 'sell', factor: 1.03, ageMin: 14, scu: 640, before: [{ factor: 0.95, ageMin: 190 }] }, // hot, with what the buyer already holds; sells dearer than before: the price rose

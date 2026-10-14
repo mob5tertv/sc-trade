@@ -296,12 +296,12 @@ describe('stockStats', () => {
     db, log, { ts, terminalId: o.terminalId ?? 1, commodityId: o.commodityId ?? 10, side: o.side ?? 'buy', price: 6000, scu },
   );
 
-  it('derives the largest quantity and the fastest refill per terminal, commodity and side', async () => {
+  it('derives the largest quantity and the average refill per terminal, commodity and side', async () => {
     for (const [ts, scu] of [[0, 40], [600, 140], [1200, 150]] as const)
       await addObservation(db, log, { ts, terminalId: 1, commodityId: 10, side: 'buy', price: 6000, scu });
     await addObservation(db, log, { ts: 0, terminalId: 1, commodityId: 10, side: 'sell', price: 5000, scu: null });
     const s = await stockStats(db);
-    expect(s.get(obsKey(1, 10, 'buy'))).toEqual({ maxScu: 150, ratePerMin: 10 });
+    expect(s.get(obsKey(1, 10, 'buy'))).toEqual({ maxScu: 150, ratePerMin: 5.5 });      // +110 in 20 minutes
     expect(s.has(obsKey(1, 10, 'sell'))).toBe(false);
   });
 
@@ -313,7 +313,7 @@ describe('stockStats', () => {
     await write(1200, 150);
     await write(0, 40);
     await write(600, 140);
-    expect((await stockStats(db)).get(obsKey(1, 10, 'buy'))).toEqual({ maxScu: 150, ratePerMin: 10 });
+    expect((await stockStats(db)).get(obsKey(1, 10, 'buy'))).toEqual({ maxScu: 150, ratePerMin: 5.5 });
   });
 
   it('keeps terminals, commodities and sides apart', async () => {

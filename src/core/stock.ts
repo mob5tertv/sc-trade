@@ -12,6 +12,12 @@ import type { StockEstimate } from './types';
  */
 export const MIN_LEARN_GAP_SEC = 120;
 
+/**
+ * Two neighbouring readings farther apart than this say nothing about the rate either: in that time the stock may have reached
+ * its ceiling and stood there, other players may have bought, the server may be another one.
+ */
+export const MAX_LEARN_GAP_SEC = 30 * 60;
+
 /** Minutes a stock needs to refill from empty to its maximum until a rate is learned; the setting `refillFullMin` overrides it. */
 export const DEFAULT_REFILL_FULL_MIN = 75;
 
@@ -27,24 +33,57 @@ export function maxSeenScu(history: Array<{ ts: number; scu: number | null }>): 
 }
 
 /**
- * The fastest refill seen in the readings, per minute. `history` is ordered by time, oldest first.
- * Only two neighbouring readings that both have a quantity count, at least `MIN_LEARN_GAP_SEC` apart,
- * with the quantity grown between them. Other buyers can only make the growth look smaller, so the
- * largest rate of all pairs is the best guess. `null` when no pair qualifies.
+ * The AVERAGE refill seen in the readings, per minute. `history` is ordered by time, oldest first.
+ *
+ * It was the FASTEST pair of neighbouring readings until 14.10.2026 ("other buyers can only make the growth look smaller").
+ * The author's measurement at an outpost showed why that is wrong: the game refills in steps, and a short pair that happens to
+ * hold a step reads three times the real rate (158 → 318 in five minutes is 35 a minute; over the whole half hour the terminal
+ * gave 12). So the rate is all the growth over all the time of the STRETCHES in which the stock only grew or stood:
+ *  - a reading closer than `MIN_LEARN_GAP_SEC` to the one before it is a correction of that reading: it replaces its quantity;
+ *  - a stretch ends where the quantity falls (somebody bought, the player among them), where a reading has no quantity, and
+ *    where two readings are farther apart than `MAX_LEARN_GAP_SEC`;
+ *  - the time of a stretch runs from its first reading to the LAST reading that grew: the readings that stand still after it
+ *    are a full store (or a wait for the next step that nobody saw end), and the stands between two steps are counted.
+ * `null` when nothing grew.
  */
 export function learnRatePerMin(history: Array<{ ts: number; scu: number | null }>): number | null {
-  let best: number | null = null;
-  for (let i = 1; i < history.length; i++) {
-    const before = history[i - 1];
-    const after = history[i];
-    if (before.scu === null || after.scu === null) continue;
-    const gapSec = after.ts - before.ts;
-    const grown = after.scu - before.scu;
-    if (gapSec < MIN_LEARN_GAP_SEC || grown <= 0) continue;
-    const rate = grown / (gapSec / SEC_PER_MIN);
-    if (best === null || rate > best) best = rate;
+  // corrections first: a reading that follows another within two minutes is that reading typed again
+  const readings: Array<{ ts: number; scu: number | null }> = [];
+  for (const reading of history) {
+    const last = readings[readings.length - 1];
+    if (last !== undefined && reading.ts - last.ts < MIN_LEARN_GAP_SEC) last.scu = reading.scu;
+    else readings.push({ ...reading });
   }
-  return best;
+
+  let grown = 0;
+  let sec = 0;
+  let start: { ts: number; scu: number } | null = null;   // the first reading of the stretch
+  let stretchGrown = 0;
+  let lastGrowthTs = 0;
+  const close = (): void => {
+    if (start !== null && stretchGrown > 0) {
+      grown += stretchGrown;
+      sec += lastGrowthTs - start.ts;
+    }
+    start = null;
+    stretchGrown = 0;
+  };
+  let before: { ts: number; scu: number | null } | null = null;
+  for (const after of readings) {
+    const goesOn = before !== null && before.scu !== null && after.scu !== null
+      && after.scu >= before.scu && after.ts - before.ts <= MAX_LEARN_GAP_SEC;
+    if (!goesOn) close();
+    if (after.scu !== null) {
+      if (start === null) start = { ts: after.ts, scu: after.scu };
+      else if (before !== null && before.scu !== null && after.scu > before.scu) {
+        stretchGrown += after.scu - before.scu;
+        lastGrowthTs = after.ts;
+      }
+    }
+    before = after;
+  }
+  close();
+  return grown > 0 && sec > 0 ? grown / (sec / SEC_PER_MIN) : null;
 }
 
 /**

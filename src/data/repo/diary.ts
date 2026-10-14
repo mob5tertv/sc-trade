@@ -139,8 +139,8 @@ export async function previousPrices(db: Db): Promise<PriceReading[]> {
 }
 
 /**
- * What the whole diary says about each stock: the largest quantity ever seen and the fastest refill between
- * two readings, per terminal, commodity and side (`obsKey`). Only readings with a quantity take part, so a
+ * What the whole diary says about each stock: the largest quantity ever seen and the average refill over the stretches where
+ * it grew (`learnRatePerMin`), per terminal, commodity and side (`obsKey`). Only readings with a quantity take part, so a
  * key whose readings all lack one is left out. Reads the whole history, oldest reading first.
  */
 export async function stockStats(db: Db): Promise<Map<string, StockStats>> {

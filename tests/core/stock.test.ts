@@ -1,11 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_REFILL_FULL_MIN, MIN_LEARN_GAP_SEC, estimateStock, learnRatePerMin, maxSeenScu } from '../../src/core/stock';
+import { DEFAULT_REFILL_FULL_MIN, MAX_LEARN_GAP_SEC, MIN_LEARN_GAP_SEC, estimateStock, learnRatePerMin, maxSeenScu } from '../../src/core/stock';
 
 const h = (...p: Array<[number, number | null]>) => p.map(([ts, scu]) => ({ ts, scu }));
 
 describe('learnRatePerMin', () => {
-  it('learns the fastest refill seen between neighbouring readings', () => {
-    expect(learnRatePerMin(h([0, 40], [600, 140], [1200, 150]))).toBe(10);       // +100 in 10 min and +10 in 10 min
+  it('learns the average refill over a stretch where the stock only grew, not its fastest pair', () => {
+    expect(learnRatePerMin(h([0, 40], [600, 140], [1200, 150]))).toBe(5.5);      // +110 in 20 min; the fastest pair alone would say 10
+  });
+
+  it('reads the measurement of 14.10.2026 as 14.7 a minute, not as the 35 of its first five minutes', () => {
+    // Deakins, Medical Supplies: 158 at 02:49:27, 318 at 02:54, 438 at 03:08:30, still 438 at 03:13:30
+    const rate = learnRatePerMin(h([0, 158], [273, 318], [1143, 438], [1443, 438]))!;
+    expect(rate).toBeCloseTo(280 / (1143 / 60), 6);                              // the stand after the last growth is a full store: not counted
+    expect(rate).toBeLessThan(15);
+  });
+
+  it('counts the stands between two steps of the refill: the game refills in steps', () => {
+    // +40 every four minutes, read every two minutes: 80 in eight minutes
+    expect(learnRatePerMin(h([0, 120], [120, 120], [240, 160], [360, 160], [480, 200]))).toBe(10);
+  });
+
+  it('ends a stretch where the stock fell (somebody bought) and joins what the stretches say', () => {
+    // 100 → 200 in ten minutes, then the stock is bought out; 0 → 60 in ten minutes
+    expect(learnRatePerMin(h([0, 100], [600, 200], [720, 0], [1320, 60]))).toBe(8);   // 160 in 20 min
+  });
+
+  it('takes two readings farther apart than half an hour for no measure: the store may have stood full', () => {
+    expect(learnRatePerMin(h([0, 100], [MAX_LEARN_GAP_SEC + 1, 400]))).toBeNull();
+    expect(learnRatePerMin(h([0, 100], [MAX_LEARN_GAP_SEC, 400]))).toBe(10);
+    // a day apart, then a real measure: only the measure counts
+    expect(learnRatePerMin(h([0, 100], [86_400, 300], [86_400 + 600, 350]))).toBe(5);
+  });
+
+  it('takes a reading typed again within two minutes for a correction of the one before it', () => {
+    expect(learnRatePerMin(h([0, 158], [5, 518], [600, 618]))).toBe(10);         // 518 was meant: 100 in ten minutes
+    expect(learnRatePerMin(h([0, 518], [5, 158], [600, 258]))).toBe(10);
   });
 
   it('ignores drops, unknown readings and readings closer than two minutes', () => {
@@ -25,8 +54,8 @@ describe('learnRatePerMin', () => {
     expect(learnRatePerMin(h([0, 0], [600, 50]))).toBe(5);
   });
 
-  it('keeps the fastest pair, not the first or the last', () => {
-    expect(learnRatePerMin(h([0, 0], [600, 20], [1200, 220], [1800, 230]))).toBe(20);
+  it('is one number for the whole stretch: 230 in half an hour, whatever its pairs say one by one', () => {
+    expect(learnRatePerMin(h([0, 0], [600, 20], [1200, 220], [1800, 230]))).toBeCloseTo(230 / 30, 6);
   });
 });
 
