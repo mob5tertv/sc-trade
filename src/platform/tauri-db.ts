@@ -44,8 +44,12 @@ export async function openTauriDb(log: Logger): Promise<Db> {
   return wrap(await load(DB_URL, log), log);
 }
 
-/** Opens the database of the demo trip; `close` lets its connections go when the demo is over. */
+/**
+ * Opens the database of the demo trip; `close` lets its connections go when the demo is over. It names the database: `close()` of
+ * the plugin without one closes EVERY database of the application (`commands.rs`: no name, all the pools), the player's own with it,
+ * and every write after the demo failed (build 1.3.0-d: «Не удалось сохранить настройку»).
+ */
 export async function openDemoDb(log: Logger): Promise<{ db: Db; close: () => Promise<void> }> {
   const raw = await load(DEMO_DB_URL, log);
-  return { db: wrap(raw, log), close: async () => void (await raw.close()) };
+  return { db: wrap(raw, log), close: async () => void (await raw.close(raw.path)) };
 }

@@ -99,7 +99,7 @@ export const DEMO_STEPS: readonly DemoStep[] = [
   {
     id: 'trade', targets: () => ['form.trade button[type="submit"]', `${OPEN} [data-tour="trade"]`, ROW],
     title: () => tr('Сделка'),
-    text: () => tr('Количество и цена уже подставлены. Если в игре вышло иначе — поправь, и запиши сделку.'),
+    text: () => tr('Количество мы берём исходя из полного размера трюма выбранного корабля. Если в игре вышло иначе — поправь и запиши сделку.'),
     doing: () => tr('Ждём: сделка записана'),
     done: bought,
   },

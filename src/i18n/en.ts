@@ -476,7 +476,7 @@ export const EN: Readonly<Record<string, string>> = {
   'Цель — {target}, она в шапке рейса. Покупаешь Stims в игре — отметь в строке Stims: «Купил».': 'The target is {target}, it is in the header of the trip. Buying Stims in the game? Mark it in the row of Stims: "Bought".',
   'Ждём: «Купил»': 'Waiting: "Bought"',
   'Сделка': 'Trade',
-  'Количество и цена уже подставлены. Если в игре вышло иначе — поправь, и запиши сделку.': 'The quantity and the price are filled in. If it went otherwise in the game, correct them, then record the trade.',
+  'Количество мы берём исходя из полного размера трюма выбранного корабля. Если в игре вышло иначе — поправь и запиши сделку.': 'We take the quantity from the full size of the hold of the chosen ship. If it went otherwise in the game, correct it and record the trade.',
   'Ждём: сделка записана': 'Waiting: the trade is recorded',
   'Рейс пошёл': 'The trip is on',
   'Первая покупка начала рейс: таймер, груз и ожидаемая прибыль в точке цели. Взлетаешь — нажми «Взлетел».': 'The first purchase started the trip: a timer, the cargo and the expected profit at the target. Taking off? Press "Departed".',

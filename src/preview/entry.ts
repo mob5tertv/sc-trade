@@ -75,8 +75,16 @@ function sqlTransport(scene: Scene): (op: SqlOp) => Promise<unknown> {
   // one database per address, as in the application: its own (the dataset of the scene) and the one of the demo trip (empty: the
   // demo writes its own world into it)
   const sids = new Map<string, string>();
+  // closed as the plugin closes: `close` with a database closes that one, without one every database of the page (until it is loaded again)
+  const closed = new Set<string>();
   return async (op) => {
+    if (op.op === 'close') {
+      for (const address of op.db === undefined ? sids.keys() : [op.db]) closed.add(address);
+      return true;
+    }
     const address = op.db ?? 'sqlite:sctrade.db';
+    if (op.op === 'load') closed.delete(address);
+    else if (closed.has(address)) throw new Error(`error returned from database: the database ${address} is closed`);
     let sid = sids.get(address);
     if (sid === undefined) {
       sid = crypto.randomUUID();

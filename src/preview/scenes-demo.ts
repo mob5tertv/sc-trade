@@ -100,6 +100,9 @@ export const DEMO_SCENES: readonly Scene[] = [
       }
       await press('.coach .sc-btn--ghost');
       await pause(500);
+      // the player's database still answers: a setting is saved (build 1.3.0-d closed every database when the demo ended)
+      const refused = await app.updateSetting('opacity', 0.9);
+      if (refused !== null) throw new Error(`after the demo a setting is not saved: ${refused}`);
     },
   },
 ];
