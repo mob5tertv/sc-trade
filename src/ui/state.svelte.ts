@@ -14,7 +14,7 @@ import type { Db } from '../data/db';
 import { createLogger, type Logger } from '../data/logger';
 import { addObservation, editObservation, removeLatestObservation } from '../data/repo/diary';
 import { getActiveRun } from '../data/repo/runs';
-import { saveSetting } from '../data/repo/settings';
+import { loadSettings, saveSetting } from '../data/repo/settings';
 import { getMeta, loadDistances, loadReference } from '../data/repo/uex-cache';
 import {
   loadMarket, suggestFromDetailed, suggestToDetailed, type SuggestDeps, type SuggestProgress, type SuggestRun,
@@ -81,7 +81,9 @@ import { langOf, setLang, tr, type Lang } from '../i18n';
 import { setTrayLabels } from '../platform/tray';
 import type { BootStage } from './vm/boot-status';
 import type { Coach } from './vm/coach';
-import { nextTutorialStep as tutorialAfter, opensTutorialByItself } from './vm/tutorial';
+import { opensDemoByItself } from './vm/demo';
+import { emptyDb, keptChanges, OFFLINE_UEX, prepareDemoDb } from '../demo/session';
+import { openDemoDb } from '../platform/tauri-db';
 
 // The one application state. Everything the screens show lives here, and every action of the player
 // goes through a method of `app`, which logs it under `ui`. Later tasks add their fields and methods
@@ -363,10 +365,17 @@ class AppState {
   bootStage = $state<BootStage>('start');
   /** The language the window speaks (version 1.3): `App.svelte` draws the window anew when it changes. */
   language = $state<Lang>('ru');
-  /** The step of the tutorial on the screen (version 1.3, `vm/tutorial.ts`), `null` when there is none. */
-  tutorialStep = $state<number | null>(null);
   /** The hint of the demo trip on the screen (`vm/coach.ts`), `null` when there is none. */
   coach = $state<Coach | null>(null);
+  /**
+   * The demo trip (version 1.3, `vm/demo.ts`): its step, and whether the player is new (the last card leads to his ship). While it is
+   * on, the window plays on the database of the demo; the player's own data and settings wait in `#player`.
+   */
+  demo = $state.raw<{ step: number; newPlayer: boolean } | null>(null);
+  #player: { data: DataDeps; settings: Settings } | null = null;
+  #demoDb: { db: Db; close: () => Promise<void> } | null = null;
+  /** The demo was asked for before the start was over (the language of the first start is chosen while the reference loads). */
+  #demoAfterStart = false;
   bootError = $state<string | null>(null);
   notice = $state<Notice | null>(null);
   /** The reference is being downloaded by the button. */
@@ -516,34 +525,116 @@ class AppState {
     await this.updateSetting('language', next);
     if (this.view === 'language') this.view = 'main';
     if (this.settings.tutorialShown) return;
-    // a new database (no ship yet) gets the tutorial by itself; a player who updated from 1.2 is told where it is, once
-    if (opensTutorialByItself(this.settings)) this.startTutorial('first start');
-    else {
+    // a new database (no ship yet) gets the demo trip by itself, once the start is over; a player who updated from 1.2 is told where it is, once
+    if (opensDemoByItself(this.settings)) {
+      if (this.phase === 'ready') void this.startDemo('first start');
+      else this.#demoAfterStart = true;
+    } else {
       await this.updateSetting('tutorialShown', true);
-      this.notify(tr('Новое в 1.3: короткое обучение — в настройках, раздел «Данные».'), 'info');
+      this.notify(tr('Новое в 1.3: демо-рейс с подсказками — в настройках, раздел «Данные».'), 'info');
     }
   }
 
-  /** Opens the tutorial at its first step, over the main view of the window. */
-  startTutorial(why: string): void {
-    this.#log.info('ui', 'tutorial started', { why });
+  /** `boot()` calls it when the start is over: the demo of a new player begins now if it was asked for meanwhile. */
+  afterStart(): void {
+    if (!this.#demoAfterStart) return;
+    this.#demoAfterStart = false;
+    void this.startDemo('first start');
+  }
+
+  /** Leaves whatever screen is up: the lookup, the reference, the route line, a question, a notice; the main view. */
+  #leaveScreens(): void {
+    if (this.confirm !== null) this.answer(false, 'demo');
+    this.closeLookup();
     this.view = 'main';
-    this.tutorialStep = 0;
-    void this.expand('tutorial');
+    this.routeBar = false;
+    this.targetUndo = null;
+    this.coach = null;
+    if (this.notice !== null) this.dismissNotice();
+    this.flash = null;
   }
 
-  nextTutorialStep(): void {
-    if (this.tutorialStep === null) return;
-    this.tutorialStep = tutorialAfter(this.tutorialStep);
-    if (this.tutorialStep === null) void this.endTutorial('done');
+  /**
+   * Starts the demo trip: the window plays on a database of its own, filled with the demo world (`src/demo`), with the player's
+   * settings for the window. His own data and settings are not touched and come back with `endDemo`. Only when the start is over.
+   */
+  async startDemo(why: string): Promise<void> {
+    if (this.demo !== null || this.#data === null || this.phase !== 'ready') return;
+    this.#log.info('ui', 'demo starts', { why });
+    const player = { data: this.#data, settings: this.settings };
+    let opened: { db: Db; close: () => Promise<void> } | null = null;
+    try {
+      opened = await openDemoDb(this.#log);
+      await prepareDemoDb(opened.db, this.#log, player.data.now(), player.settings);
+      this.#player = player;
+      this.#demoDb = opened;
+      this.#leaveScreens();
+      this.attach({ ...player.data, db: opened.db, uex: OFFLINE_UEX });
+      this.setSettings(await loadSettings(opened.db, this.#log));
+      await this.loadFromDb();
+    } catch (err) {
+      this.#log.error('ui', 'cannot start the demo', { err });
+      if (this.#player !== null) await this.#backToPlayer();
+      await opened?.close().catch(() => undefined);
+      this.#demoDb = null;
+      this.notify(tr('Не удалось начать демо-рейс. Подробности в логе.'), 'error');
+      return;
+    }
+    this.demo = { step: 0, newPlayer: player.settings.scuCapacity === 0 };
+    await this.expand('demo');
   }
 
-  /** The tutorial is over, gone through or left at a step: it does not open by itself again. */
-  async endTutorial(how: 'done' | 'skipped'): Promise<void> {
-    this.#log.info('ui', 'tutorial ended', { how, atStep: this.tutorialStep });
-    this.tutorialStep = null;
-    if (!this.settings.tutorialShown) await this.updateSetting('tutorialShown', true);
+  demoGo(step: number): void {
+    if (this.demo === null || step === this.demo.step) return;
+    this.#log.info('ui', 'demo step', { step });
+    this.demo = { ...this.demo, step };
   }
+
+  /** The player's own data again: his database, his settings (with what he changed of the window during the demo), his screens. */
+  async #backToPlayer(): Promise<void> {
+    const player = this.#player;
+    if (player === null) return;
+    const kept = keptChanges(player.settings, this.settings);
+    this.#player = null;
+    this.#leaveScreens();
+    this.attach(player.data);
+    const { db } = player.data;
+    for (const [key, value] of Object.entries(kept)) await saveSetting(db, this.#log, key as keyof Settings, value as never);
+    if (!player.settings.tutorialShown) await saveSetting(db, this.#log, 'tutorialShown', true);
+    this.setSettings(await loadSettings(db, this.#log));
+    await this.loadFromDb();
+  }
+
+  /** Ends the demo trip, at its last card or at any step: the player's data comes back, the database of the demo is emptied. */
+  async endDemo(how: 'done' | 'left'): Promise<void> {
+    const demo = this.demo;
+    if (demo === null) return;
+    this.#log.info('ui', 'demo ends', { how, atStep: demo.step });
+    this.demo = null;
+    this.coach = null;
+    try {
+      await this.#backToPlayer();
+    } catch (err) {
+      this.#log.error('ui', 'cannot bring the data back after the demo', { err });
+      this.notify(tr('Не удалось вернуть твои данные после демо. Перезапусти программу: они на месте.'), 'error');
+    }
+    const demoDb = this.#demoDb;
+    this.#demoDb = null;
+    if (demoDb !== null) {
+      // the file stays (the window may not delete files); what was in it goes, and so does its size
+      void emptyDb(demoDb.db)
+        .then(() => demoDb.db.execute('VACUUM'))
+        .catch((err: unknown) => this.#log.warn('ui', 'cannot empty the database of the demo', { err }))
+        .finally(() => void demoDb.close().catch(() => undefined));
+    }
+    // a new player goes on to his own ship (the list of ships may still be coming: the field says so)
+    if (how === 'done' && demo.newPlayer) {
+      this.openSettings();
+      void this.openSection('settings:ship');
+    }
+  }
+
+
 
   /**
    * The numbers the route services need, from the settings and the loaded data. `now` is the one-second clock unless the
@@ -620,10 +711,10 @@ class AppState {
    * sentence to show. A failed download marks the reference sync as failed (`referenceOk`); the prices
    * keep their own health.
    */
-  async syncReferenceNow(): Promise<string | null> {
+  async syncReferenceNow(deps: SyncDeps = this.#syncDeps()): Promise<string | null> {
     this.referenceLoading = true;
     try {
-      await this.withUex(() => syncReference(this.#syncDeps()));
+      await this.withUex(() => syncReference(deps));
     } catch (err) {
       this.referenceOk = false;
       this.#log.warn('ui', 'reference sync failed', { err });
@@ -652,7 +743,7 @@ class AppState {
    * reference sync failed (`refreshPlan`), it is repeated first, the way the start does the two, as a job of the UEX queue of its own
    * before the job of the prices (never inside it). A reference that fails again does not hold the prices back.
    */
-  async syncPricesNow(retryReference = false): Promise<void> {
+  async syncPricesNow(retryReference = false, deps: SyncDeps = this.#syncDeps()): Promise<void> {
     if (this.priceSync.running) {
       this.#log.debug('ui', 'price sync already running, skipped');
       return;
@@ -660,7 +751,7 @@ class AppState {
     this.priceSync = { ...PRICE_SYNC_IDLE, running: true, unfetched: this.priceSync.unfetched };
     if (retryReference && refreshPlan(this.referenceOk).reference) {
       this.#log.info('ui', 'repeating the reference sync that failed, before the prices');
-      await this.syncReferenceNow(); // never throws; its failure is logged there
+      await this.syncReferenceNow(deps); // never throws; its failure is logged there
     }
     let unfetched = 0;
     try {
@@ -668,7 +759,8 @@ class AppState {
         // The first launch: the cache has no price of UEX, and ~70 requests are before the first table. The market is read again
         // as the sync goes (a read of the database: nothing here asks the UEX queue, whose job this is).
         const startedEmpty = this.market.uex.size === 0;
-        return syncPrices(this.#syncDeps(), (progress) => {
+        // the deps of the call: a sync asked for before the demo began writes into the player's database, whenever its job runs
+        return syncPrices(deps, (progress) => {
           this.priceSync = { running: true, done: progress.done, total: progress.total, unfetched: this.priceSync.unfetched };
           if (reloadsMidSync(startedEmpty, progress)) void this.#reloadWhileSyncing();
         });
@@ -709,6 +801,7 @@ class AppState {
    * A click while a sync is going does nothing.
    */
   async refreshPrices(): Promise<void> {
+    if (this.demo !== null) return; // the demo has no network: its prices are its own
     const running = this.priceSync.running;
     this.#log.info('ui', 'refresh prices', { running });
     if (!running) await this.syncPricesNow(true);
@@ -722,9 +815,12 @@ class AppState {
   async startBackgroundSync(): Promise<void> {
     if (this.#backgroundStarted) return;
     this.#backgroundStarted = true;
-    setInterval(() => void this.syncPricesNow(true), PRICE_SYNC_INTERVAL_MS);
+    setInterval(() => {
+      if (this.demo === null) void this.syncPricesNow(true);
+    }, PRICE_SYNC_INTERVAL_MS);
 
-    const { db, now } = this.#syncDeps();
+    const deps = this.#syncDeps();
+    const { db, now } = deps;
     let plan = { reference: false, prices: false };
     try {
       plan = syncPlan(
@@ -736,13 +832,17 @@ class AppState {
       this.#log.error('ui', 'cannot read the sync marks', { err });
     }
     this.#log.info('ui', 'background sync', plan);
-    if (plan.reference) await this.syncReferenceNow();
-    if (plan.prices) await this.syncPricesNow();
+    if (plan.reference) await this.syncReferenceNow(deps);
+    if (plan.prices) await this.syncPricesNow(false, deps);
   }
 
   /** The "Обновить справочник" button. */
   async refreshReference(): Promise<void> {
     if (this.referenceBusy) return;
+    if (this.demo !== null) {
+      this.notify(tr('В демо-рейсе справочник не обновляется: данные учебные.'), 'info');
+      return;
+    }
     this.#log.info('ui', 'refresh reference');
     this.referenceBusy = true;
     try {
@@ -1727,7 +1827,7 @@ class AppState {
     };
     await answerLookup({
       suggest,
-      withUex: (job) => this.withUex(job),
+      withUex: (job) => (this.demo !== null ? job() : this.withUex(job)),
       isNewest,
       canRun: () => this.settings.scuCapacity > 0,
       distancesChanged: () => this.#reloadDistances(),

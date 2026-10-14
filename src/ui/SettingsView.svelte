@@ -447,7 +447,7 @@
     </div>
   {/if}
   <div class="buttons">
-    <button class="sc-btn" type="button" title={tr('Короткое обучение по окну: корабль, локация, цена, куда везти, рейс, мини-строка')} onclick={() => app.startTutorial('settings')}>{tr('Обучение')}</button>
+    <button class="sc-btn" type="button" title={tr('Один рейс на учебных данных, с подсказками: от станции до продажи. Твои данные не трогаются')} onclick={() => void app.startDemo('settings')}>{tr('Демо-рейс')}</button>
     <button class="sc-btn" type="button" onclick={() => app.openLogs()}>{tr('Открыть папку логов')}</button>
     <button class="sc-btn" type="button" disabled={app.referenceBusy} onclick={() => app.refreshReference()}>
       {app.referenceBusy ? tr('Обновление…') : tr('Обновить справочник')}

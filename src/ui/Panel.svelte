@@ -4,7 +4,6 @@
   import GuideView from './GuideView.svelte';
   import Header from './Header.svelte';
   import LanguageView from './LanguageView.svelte';
-  import TutorialCard from './TutorialCard.svelte';
   import { bootStatusText } from './vm/boot-status';
   import MessageLines from './MessageLines.svelte';
   import OptionsSection from './sections/OptionsSection.svelte';
@@ -46,8 +45,6 @@
     <div class="boot">
       <p class="message status" role="status">{bootStatusText(app.bootStage)}</p>
     </div>
-    <!-- the first start: the tutorial begins (with the ship) while the reference of UEX is still coming -->
-    {#if app.tutorialStep !== null}<TutorialCard />{/if}
   {/if}
 {:else if app.view === 'settings'}
   <SettingsView />
@@ -55,7 +52,6 @@
   <GuideView />
 {:else}
   <Header />
-  {#if app.tutorialStep !== null}<TutorialCard />{/if}
   {#if app.routeBar}<RouteBar />{/if}
   <MessageLines />
   <div class="sections">

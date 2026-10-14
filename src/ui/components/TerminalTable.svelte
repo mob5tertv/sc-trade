@@ -297,7 +297,7 @@
   <!-- `data-select-on-focus`: the number is selected whole when the field gets the cursor (ui/keyboard.ts). A selection is not typing:
        no draft is made by it, and a price that is not mine stays muted -->
   <!-- `data-cell` on both fields: the cell is saved whole at Enter and when the cursor leaves both; the keyboard rules read it too (ui/keyboard.ts) -->
-  <div class="expand sc-reveal">
+  <div class="expand sc-reveal" data-tour-open={row.code}>
     <div class="edit">
       <input
         class="sc-input sc-num in-price"
@@ -349,11 +349,11 @@
         >{tr('места')}</button>
       {/if}
       {#if side === 'buy'}
-        <button type="button" class="sc-btn sc-btn--act" aria-label={tr('Где продать {code}', { code: row.code })} onclick={() => onLookup({ commodityId: row.commodityId, side })}>{tr('Где продать')}</button>
-        <button type="button" class="sc-btn sc-btn--act" aria-label={tr('Купил {code}', { code: row.code })} data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>{tr('Купил')}</button>
+        <button type="button" class="sc-btn sc-btn--act" data-tour="lookup" aria-label={tr('Где продать {code}', { code: row.code })} onclick={() => onLookup({ commodityId: row.commodityId, side })}>{tr('Где продать')}</button>
+        <button type="button" class="sc-btn sc-btn--act" data-tour="trade" aria-label={tr('Купил {code}', { code: row.code })} data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>{tr('Купил')}</button>
       {:else}
-        <button type="button" class="sc-btn sc-btn--act" aria-label={tr('Где купить {code}', { code: row.code })} onclick={() => onLookup({ commodityId: row.commodityId, side })}>{tr('Где купить')}</button>
-        <button type="button" class="sc-btn sc-btn--act" aria-label={tr('Продал {code}', { code: row.code })} data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>{tr('Продал')}</button>
+        <button type="button" class="sc-btn sc-btn--act" data-tour="lookup" aria-label={tr('Где купить {code}', { code: row.code })} onclick={() => onLookup({ commodityId: row.commodityId, side })}>{tr('Где купить')}</button>
+        <button type="button" class="sc-btn sc-btn--act" data-tour="trade" aria-label={tr('Продал {code}', { code: row.code })} data-opens-entry={tradeEntryField(side, hold.has(row.commodityId))} onclick={() => onTrade({ commodityId: row.commodityId, side })}>{tr('Продал')}</button>
       {/if}
     </div>
     <!-- One line, never wrapped. The warning, the plaque and the rate mark keep their size; the texts between them give way
@@ -446,7 +446,7 @@
              is not allowed): a click on it asks for the options and does not open the row -->
         <div class="row {best ? `tier-${best.tier}` : ''} {mark ? `bar-${mark}` : ''}" class:selected class:hot={byRoi ? best?.hot : mark !== null} class:pulse={pulse.has(row.commodityId)} role="row">
           <div class="top">
-            <button type="button" class="grid line" aria-expanded={selected} onclick={() => toggle(row.commodityId)}>
+            <button type="button" class="grid line" data-tour-row={row.code} aria-expanded={selected} onclick={() => toggle(row.commodityId)}>
               <span class="name" title={row.name}>
                 <span class="code">{row.code}</span><span class="full">{row.name}</span>
                 {#if held}

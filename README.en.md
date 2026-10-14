@@ -12,7 +12,7 @@ Russian one is the reference.
 
 - It does not read the game's memory and injects nothing into other processes; it opens no handle of another process.
 - It does not read the game's files. The window has no permission for the file system; the program opens only its own
-  files (the database, its backups, the log). Its one network address is `api.uexcorp.uk`, for the reference data.
+  files (the database, its backups, the database of the demo trip, the log). Its one network address is `api.uexcorp.uk`, for the reference data.
   The window cannot load anything from another address (its CSP allows only the program's own files). Both are pinned
   by tests: `tests/release/permissions.test.ts`, `tests/release/csp.test.ts`. More in [SECURITY.md](SECURITY.md)
   (in Russian, with an English summary at the top).
@@ -36,10 +36,11 @@ Russian one is the reference.
 2. The file is not signed, so Windows SmartScreen may warn you. Whether to run it is your decision.
 3. At the first start the window asks "Язык · Language": one click picks it; you can change it later in
    Settings → Window → Language.
-4. A short tutorial follows on a new database: six steps over the real window (ship, location, your own price, where to
-   haul, trip, mini line). Skip it at any step; open it again in Settings → Data → Tutorial.
+4. A demo trip follows on a new database: one trip on demo data, from a station to the sale. You press yourself; a hint
+   with an arrow shows where, and the next step opens when you have pressed. The demo runs on its own database
+   (`demo.db`) and does not touch your data. Leave it at any step; repeat it in Settings → Data → Demo trip.
 5. Meanwhile the program loads the UEX reference and prices; the progress is in the header ("UEX 23/57").
-6. Pick your ship (the first step of the tutorial, or Settings → Ship and search). Without the capacity of the hold
+6. Pick your ship (the end of the demo opens that field, or Settings → Ship and search). Without the capacity of the hold
    there are no options and no ROI.
 
 To update: quit the program (tray menu → Quit) and run the new installer. To remove: Windows Settings → Apps; the
@@ -75,6 +76,7 @@ key. Suitable: `F1`–`F24` except `F5`, `F11` and `F12`, `ScrollLock`, `Pause`,
 
 - Database (settings, your prices, trips, the UEX reference): `%APPDATA%\com.sctrade.app\sctrade.db`; backups in
   `%APPDATA%\com.sctrade.app\backups` (one per start, five kept).
+- The demo trip: `%APPDATA%\com.sctrade.app\demo.db`, filled when a demo starts and emptied when it ends.
 - Logs: `%LOCALAPPDATA%\com.sctrade.app\logs\sctrade.log` (Settings → Data → Open the logs folder). An empty
   `portable.flag` next to `sc-trade.exe` writes a copy of the log next to the exe.
 

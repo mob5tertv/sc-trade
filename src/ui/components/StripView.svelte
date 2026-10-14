@@ -32,7 +32,7 @@
 </script>
 
 <div class="strip">
-  <button type="button" class="open" title={full} onclick={() => onOpen()}>
+  <button type="button" class="open" data-tour="strip" title={full} onclick={() => onOpen()}>
     {#if flash !== null}
       <span class="part flash" class:error={flashKind === 'error'} aria-live="polite">{flash}</span>
     {:else if model.kind === 'idle'}
@@ -76,8 +76,8 @@
   </button>
   {#if showMarks}
     <div class="marks">
-      {#if onDepart}<button type="button" class="sc-btn sc-btn--act" onclick={() => onDepart?.()}>{tr('Взлетел')}</button>{/if}
-      {#if onArrive}<button type="button" class="sc-btn sc-btn--act" onclick={() => onArrive?.()}>{tr('Прилетел')}</button>{/if}
+      {#if onDepart}<button type="button" class="sc-btn sc-btn--act" data-tour="mark" onclick={() => onDepart?.()}>{tr('Взлетел')}</button>{/if}
+      {#if onArrive}<button type="button" class="sc-btn sc-btn--act" data-tour="mark" onclick={() => onArrive?.()}>{tr('Прилетел')}</button>{/if}
     </div>
   {/if}
 </div>

@@ -198,5 +198,6 @@ export async function boot(): Promise<BootResult> {
 
   app.phase = 'ready';
   void app.startBackgroundSync();
+  app.afterStart(); // the demo trip of a new player, asked for while the start went on
   return { ok: true };
 }

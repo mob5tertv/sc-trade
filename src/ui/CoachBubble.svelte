@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { tr } from '../i18n';
   import { app } from './state.svelte';
 
   // The hint of the demo trip (version 1.3, the author: «подсказки должны быть со стрелками, показывающими элементы интерфейса»).
@@ -77,10 +76,12 @@
     </div>
     <p class="text">{coach.text}</p>
     {#if coach.doing}<p class="doing">{coach.doing}</p>{/if}
-    <div class="actions">
-      <button type="button" class="sc-btn sc-btn--ghost">{tr('Выйти из демо')}</button>
-      {#if coach.button}<button type="button" class="sc-btn sc-btn--primary">{coach.button}</button>{/if}
-    </div>
+    {#if coach.leave || coach.primary}
+      <div class="actions">
+        {#if coach.leave}<button type="button" class="sc-btn sc-btn--ghost" onclick={() => coach.leave?.run()}>{coach.leave.label}</button>{/if}
+        {#if coach.primary}<button type="button" class="sc-btn sc-btn--primary" onclick={() => coach.primary?.run()}>{coach.primary.label}</button>{/if}
+      </div>
+    {/if}
   </div>
 {/if}
 

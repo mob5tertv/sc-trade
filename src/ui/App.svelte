@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { boot } from './boot';
   import CoachBubble from './CoachBubble.svelte';
+  import DemoDirector from './DemoDirector.svelte';
   import { installDrag } from './drag';
   import { installKeyboard } from './keyboard';
   import Panel from './Panel.svelte';
@@ -110,6 +111,7 @@
     {/if}
     {#if app.coach !== null}<CoachBubble />{/if}
   {/key}
+  {#if app.demo !== null}<DemoDirector />{/if}
 </div>
 
 <style>

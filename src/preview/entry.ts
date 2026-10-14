@@ -72,12 +72,21 @@ function post(message: PreviewMessage): void {
 
 /** The SQL of the application goes to the dev server: a real SQLite database per page load, made from the dataset. */
 function sqlTransport(scene: Scene): (op: SqlOp) => Promise<unknown> {
-  const sid = crypto.randomUUID();
+  // one database per address, as in the application: its own (the dataset of the scene) and the one of the demo trip (empty: the
+  // demo writes its own world into it)
+  const sids = new Map<string, string>();
   return async (op) => {
+    const address = op.db ?? 'sqlite:sctrade.db';
+    let sid = sids.get(address);
+    if (sid === undefined) {
+      sid = crypto.randomUUID();
+      sids.set(address, sid);
+    }
+    const dataset = address.endsWith('demo.db') ? 'empty' : scene.dataset;
     const response = await fetch('/__preview/sql', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sid, dataset: scene.dataset, ...op }),
+      body: JSON.stringify({ sid, dataset, ...op }),
     });
     const body = (await response.json()) as { ok: true; result: unknown } | { ok: false; error: string };
     if (!body.ok) throw new Error(body.error);

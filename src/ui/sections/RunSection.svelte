@@ -80,7 +80,7 @@
       <span class="target" class:none={!hasTarget} title={hasTarget ? tr('Цель рейса') : tr('Цель выбирается в списке вариантов')}>{header.target}</span>
     {/if}
     {#if next !== null}
-      <button type="button" class="sc-btn sc-btn--act" onclick={() => void app.mark(next)}>{next === 'depart' ? tr('Взлетел') : tr('Прилетел')}</button>
+      <button type="button" class="sc-btn sc-btn--act" data-tour="mark" onclick={() => void app.mark(next)}>{next === 'depart' ? tr('Взлетел') : tr('Прилетел')}</button>
     {/if}
   {/if}
 {/snippet}

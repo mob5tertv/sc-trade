@@ -323,26 +323,6 @@ export const SCENES: readonly Scene[] = [
       await app.expand('preview');
     },
   },
-  // the tutorial of 1.3 (`vm/tutorial.ts`): its first step, the ship, and two steps that mark an element of the window
-  { name: 'tutorial-ship', title: 'Обучение 1.3, шаг 1: корабль', dataset: 'default', act: (app) => app.startTutorial('preview') },
-  {
-    name: 'tutorial-location',
-    title: 'Обучение 1.3, шаг 2: поле локации отмечено',
-    dataset: 'default',
-    act: (app) => {
-      app.startTutorial('preview');
-      app.nextTutorialStep();
-    },
-  },
-  {
-    name: 'tutorial-mini',
-    title: 'Обучение 1.3, последний шаг: кнопка «свернуть» отмечена',
-    dataset: 'default',
-    act: (app) => {
-      app.startTutorial('preview');
-      for (let i = 0; i < 5; i++) app.nextTutorialStep();
-    },
-  },
   {
     // The database was written by a newer version of the application: the start stops at the check of the schema, before
     // it backs anything up or migrates, and the screen says so in the words of the error itself, not in the general sentence.

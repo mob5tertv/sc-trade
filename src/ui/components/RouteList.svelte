@@ -99,13 +99,13 @@
       <span role="columnheader" class="r" title={LEGEND.profitTrip}>{tr('Прибыль')}</span>
       <span role="columnheader" class="r">ROI</span>
     </div>
-    {#each rows as { option, row } (row.key)}
+    {#each rows as { option, row }, index (row.key)}
       {@const expanded = expandedKey === row.key}
       {#if row.key === firstElsewhere}
         <p class="elsewhere" title={tr('Закупка на другом терминале рядом: рейс приносит больше, чем отсюда. «Цель» у такого варианта ведёт сначала на закупку, потом на продажу')}>{tr('Выгоднее: закупка рядом')}</p>
       {/if}
       <div class="row tier-{row.tier}" class:expanded role="row">
-        <button type="button" class="grid line" aria-expanded={expanded} onclick={() => toggle(row.key, option)}>
+        <button type="button" class="grid line" data-tour={index === 0 ? 'option-first' : undefined} aria-expanded={expanded} onclick={() => toggle(row.key, option)}>
           <span class="where" title={row.whereTitle}>
             {#if showCommodity}<span class="code">{row.commodity}</span>{/if}
             <span class="end">{row.bothEnds ? row.origin : row.terminal}</span>
@@ -162,7 +162,7 @@
               {#if row.isTarget && onClearTarget}
                 <button type="button" class="sc-btn sc-btn--act" title={tr('Это цель рейса: убрать её')} onclick={() => onClearTarget?.()}>{tr('Снять цель')}</button>
               {:else if onTarget}
-                <button type="button" class="sc-btn sc-btn--act" disabled={row.isTarget} title={row.isTarget ? tr('Уже цель рейса') : tr('Сделать целью рейса')} onclick={() => onTarget?.(option)}>{tr('Цель')}</button>
+                <button type="button" class="sc-btn sc-btn--act" data-tour="set-target" disabled={row.isTarget} title={row.isTarget ? tr('Уже цель рейса') : tr('Сделать целью рейса')} onclick={() => onTarget?.(option)}>{tr('Цель')}</button>
               {/if}
             </div>
           </div>
