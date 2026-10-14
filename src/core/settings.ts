@@ -91,6 +91,8 @@ export interface Settings {
   targetThenId: number | null;
   /** The one-time hint about the keys of "Взлетел" and "Прилетел" was shown, or such a key was assigned: it is never shown (again). */
   keysHintShown: boolean;
+  /** The tutorial of version 1.3 was gone through or left: it does not open by itself (again); the settings open it. */
+  tutorialShown: boolean;
   /** The one-time word about the larger window was said («Авто» picked more than 100 %), or the player chose the scale himself: it is never said (again). */
   scaleNoticeShown: boolean;
 }
@@ -107,5 +109,5 @@ export const DEFAULT_SETTINGS: Settings = {
   idleCollapseSec: 40, openSections: 'terminal,options,settings:ship',
   opacity: 0.92, showStrip: true, stripRangeTurns: true, logLevel: 'debug',
   serverChangedAt: null, currentTerminalId: null, targetTerminalId: null, targetThenId: null,
-  keysHintShown: false, scaleNoticeShown: false,
+  keysHintShown: false, tutorialShown: false, scaleNoticeShown: false,
 };

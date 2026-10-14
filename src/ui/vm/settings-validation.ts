@@ -144,6 +144,7 @@ export function validateSetting<K extends keyof Settings>(key: K, value: Setting
     case 'showStrip':
     case 'windowLocked':
     case 'keysHintShown':
+    case 'tutorialShown':
     case 'scaleNoticeShown':
       return typeof v === 'boolean' ? null : tr('Нужно да или нет');
 

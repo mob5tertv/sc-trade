@@ -56,7 +56,7 @@
      main button and the icons. The ship and the system are in the settings. -->
 <header class="bar" class:compact={headerCompact(app.settings.panelWidth)}>
   <WindowGrip />
-  <div class="location">
+  <div class="location" data-tour="location">
     <SearchBox
       {items}
       find={searchTerminals}
@@ -94,7 +94,7 @@
     <span class="face" class:ghost={face.sign}><span class="mark" aria-hidden="true"></span>{header.uex.text}</span>
     {#if face.sign}<span class="keys">{face.text}</span>{/if}
   </button>
-  <button class="sc-btn sc-btn--primary route" type="button" title={tr('Лучшие рейсы из текущей локации')} onclick={() => app.bestRoutes()}>
+  <button class="sc-btn sc-btn--primary route" type="button" data-tour="best" title={tr('Лучшие рейсы из текущей локации')} onclick={() => app.bestRoutes()}>
     {tr('Лучшее')}
   </button>
   <button
@@ -140,7 +140,7 @@
     <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label={tr('Настройки')} title={tr('Настройки')} onclick={() => app.openSettings()}>
       <Icon name="gear" />
     </button>
-    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label={tr('Свернуть')} title={tr('Свернуть')} onclick={() => app.collapse('close button')}>
+    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" data-tour="collapse" aria-label={tr('Свернуть')} title={tr('Свернуть')} onclick={() => app.collapse('close button')}>
       <Icon name="minus" />
     </button>
   </div>

@@ -80,6 +80,7 @@ import { PRICE_SYNC_IDLE, type PriceSync } from './vm/window-header';
 import { langOf, setLang, tr, type Lang } from '../i18n';
 import { setTrayLabels } from '../platform/tray';
 import type { BootStage } from './vm/boot-status';
+import { nextTutorialStep as tutorialAfter, opensTutorialByItself } from './vm/tutorial';
 
 // The one application state. Everything the screens show lives here, and every action of the player
 // goes through a method of `app`, which logs it under `ui`. Later tasks add their fields and methods
@@ -361,6 +362,8 @@ class AppState {
   bootStage = $state<BootStage>('start');
   /** The language the window speaks (version 1.3): `App.svelte` draws the window anew when it changes. */
   language = $state<Lang>('ru');
+  /** The step of the tutorial on the screen (version 1.3, `vm/tutorial.ts`), `null` when there is none. */
+  tutorialStep = $state<number | null>(null);
   bootError = $state<string | null>(null);
   notice = $state<Notice | null>(null);
   /** The reference is being downloaded by the button. */
@@ -507,6 +510,34 @@ class AppState {
     this.useLanguage(next);
     await this.updateSetting('language', next);
     if (this.view === 'language') this.view = 'main';
+    if (this.settings.tutorialShown) return;
+    // a new database (no ship yet) gets the tutorial by itself; a player who updated from 1.2 is told where it is, once
+    if (opensTutorialByItself(this.settings)) this.startTutorial('first start');
+    else {
+      await this.updateSetting('tutorialShown', true);
+      this.notify(tr('Новое в 1.3: короткое обучение — в настройках, раздел «Данные».'), 'info');
+    }
+  }
+
+  /** Opens the tutorial at its first step, over the main view of the window. */
+  startTutorial(why: string): void {
+    this.#log.info('ui', 'tutorial started', { why });
+    this.view = 'main';
+    this.tutorialStep = 0;
+    void this.expand('tutorial');
+  }
+
+  nextTutorialStep(): void {
+    if (this.tutorialStep === null) return;
+    this.tutorialStep = tutorialAfter(this.tutorialStep);
+    if (this.tutorialStep === null) void this.endTutorial('done');
+  }
+
+  /** The tutorial is over, gone through or left at a step: it does not open by itself again. */
+  async endTutorial(how: 'done' | 'skipped'): Promise<void> {
+    this.#log.info('ui', 'tutorial ended', { how, atStep: this.tutorialStep });
+    this.tutorialStep = null;
+    if (!this.settings.tutorialShown) await this.updateSetting('tutorialShown', true);
   }
 
   /**

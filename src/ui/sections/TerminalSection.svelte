@@ -287,6 +287,7 @@
     <button
       type="button"
       class="sc-btn sc-btn--act entry"
+      data-tour="price"
       aria-pressed={entryOpen}
       title={tr('Ввести цену, которую ты видишь в игре')}
       data-opens-entry={entryOpen ? undefined : 'quick'}

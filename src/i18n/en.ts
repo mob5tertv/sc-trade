@@ -386,6 +386,8 @@ export const EN: Readonly<Record<string, string>> = {
   'В мини-строке рейса минимум и максимум цены продажи в точке цели сменяют друг друга. Выключи — будут стоять рядом: «мин–макс».': 'In the mini line of a trip, the minimum and maximum sale price at the target take turns. Switch it off, and they stand side by side: "min–max".',
   'Сменять мин и макс в мини-строке': 'Alternate min and max in the mini line',
   'Уровень журнала': 'Log level',
+  'Короткое обучение по окну: корабль, локация, цена, куда везти, рейс, мини-строка': 'A short tutorial of the window: ship, location, price, where to haul, trip, mini line',
+  'Обучение': 'Tutorial',
   'Открыть папку логов': 'Open the logs folder',
   'Обновление…': 'Updating…',
   'Обновить справочник': 'Update reference data',
@@ -423,6 +425,7 @@ export const EN: Readonly<Record<string, string>> = {
   'Не удалось прочитать рейс из базы. Подробности в логе.': 'Could not read the trip from the database. Details are in the log.',
   'Сначала укажи, где ты находишься: выбери локацию в поиске (в рейсе — Ctrl+Enter или «Я здесь»).': 'First say where you are: pick a location in the search (in a trip: Ctrl+Enter or "I\'m here").',
   'Показать панель': 'Show the panel',
+  'Новое в 1.3: короткое обучение — в настройках, раздел «Данные».': 'New in 1.3: a short tutorial, in the settings, section "Data".',
   'Не удалось обновить данные рынка. Подробности в логе.': 'Could not update market data. Details are in the log.',
   'Не удалось прочитать справочник из локальной базы. Подробности в логе.': 'Could not read reference data from the local database. Details are in the log.',
   'Справочник обновлён.': 'Reference data updated.',
@@ -442,6 +445,11 @@ export const EN: Readonly<Record<string, string>> = {
   'Не удалось выйти. Закрой приложение через значок в трее.': 'Could not quit. Close the program from the tray icon.',
   // src/ui/Strip.svelte
   'Ошибка запуска': 'Start failed',
+  // src/ui/TutorialCard.svelte
+  'Список кораблей ещё не загружен — впиши вместимость трюма:': 'The list of ships has not loaded yet; type in the capacity of your hold:',
+  'Пропустить': 'Skip',
+  'Готово': 'Done',
+  'Далее': 'Next',
   // src/ui/vm/boot-status.ts
   'Загрузка справочника UEX…': 'Loading UEX reference data…',
   'Запуск…': 'Starting…',
@@ -695,6 +703,17 @@ export const EN: Readonly<Record<string, string>> = {
   'неизвестный модификатор: {name}': 'unknown modifier: {name}',
   'модификатор «{name}» указан дважды': 'modifier "{name}" is given twice',
   'неизвестная клавиша: {name}': 'unknown key: {name}',
+  // src/ui/vm/tutorial.ts
+  'От вместимости трюма зависят все расчёты: сколько взять, прибыль за рейс и ROI. Выбери корабль — вместимость подставится сама.': 'Every calculation depends on the capacity of your hold: how much to take, the profit per trip and the ROI. Pick your ship, and its capacity is filled in.',
+  'Где ты': 'Where you are',
+  'Впиши в это поле три буквы станции и нажми Enter: откроется таблица её терминала с ценами покупки и продажи.': 'Type three letters of a station into this field and press Enter: the table of its terminal opens, with the buy and sell prices.',
+  'Своя цена': 'Your own price',
+  'Видишь цену на терминале в игре — нажми «+ цена» и впиши товар и цену. Пока ты печатаешь, клавиатура у окна; Esc или клик в игру возвращают её.': 'See a price at a terminal in the game? Press "+ price" and type in the commodity and the price. While you type, the window has the keyboard; Esc or a click in the game gives it back.',
+  '«Лучшее» — лучшие рейсы из твоей локации: что взять, куда везти, сколько это принесёт и сколько займёт. Клик по товару в таблице — куда везти именно его.': '"Best" shows the best trips from your location: what to take, where to haul it, how much it brings and how long it takes. A click on a commodity in the table shows where to haul that one.',
+  'Первая покупка начинает рейс: таймер, груз и ожидаемая прибыль. Кнопки «Взлетел» и «Прилетел» — отметки рейса; на них можно назначить клавиши в настройках.': 'The first purchase starts a trip: a timer, the cargo and the expected profit. The "Departed" and "Arrived" buttons mark the trip; you can assign keys to them in the settings.',
+  'Мини-строка': 'Mini line',
+  'Эта кнопка сворачивает окно в мини-строку: в полёте она показывает рейс и не мешает игре. Клик по мини-строке разворачивает окно снова.': 'This button folds the window into the mini line: in flight it shows the trip and stays out of the game\'s way. A click on the mini line unfolds the window again.',
+  'Шаг {n} из {total}': 'Step {n} of {total}',
   // src/ui/vm/uex-error.ts
   'Нет связи с UEX. Проверь подключение к интернету.': 'No connection to UEX. Check your internet connection.',
   'Сервер UEX ответил ошибкой. Попробуй позже.': 'The UEX server answered with an error. Try again later.',
