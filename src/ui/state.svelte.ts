@@ -376,6 +376,8 @@ class AppState {
   #demoDb: { db: Db; close: () => Promise<void> } | null = null;
   /** The demo was asked for before the start was over (the language of the first start is chosen while the reference loads). */
   #demoAfterStart = false;
+  /** A demo is being prepared: a second press of «Демо-рейс» meanwhile does nothing. */
+  #demoStarting = false;
   bootError = $state<string | null>(null);
   notice = $state<Notice | null>(null);
   /** The reference is being downloaded by the button. */
@@ -559,7 +561,8 @@ class AppState {
    * settings for the window. His own data and settings are not touched and come back with `endDemo`. Only when the start is over.
    */
   async startDemo(why: string): Promise<void> {
-    if (this.demo !== null || this.#data === null || this.phase !== 'ready') return;
+    if (this.demo !== null || this.#demoStarting || this.#data === null || this.phase !== 'ready') return;
+    this.#demoStarting = true;
     this.#log.info('ui', 'demo starts', { why });
     const player = { data: this.#data, settings: this.settings };
     let opened: { db: Db; close: () => Promise<void> } | null = null;
@@ -579,6 +582,8 @@ class AppState {
       this.#demoDb = null;
       this.notify(tr('Не удалось начать демо-рейс. Подробности в логе.'), 'error');
       return;
+    } finally {
+      this.#demoStarting = false;
     }
     this.demo = { step: 0, newPlayer: player.settings.scuCapacity === 0 };
     await this.expand('demo');
@@ -627,8 +632,8 @@ class AppState {
         .catch((err: unknown) => this.#log.warn('ui', 'cannot empty the database of the demo', { err }))
         .finally(() => void demoDb.close().catch(() => undefined));
     }
-    // a new player goes on to his own ship (the list of ships may still be coming: the field says so)
-    if (how === 'done' && demo.newPlayer) {
+    // a new player goes on to his own ship, whether he went through the demo or left it (the list of ships may still be coming: the field says so)
+    if (demo.newPlayer) {
       this.openSettings();
       void this.openSection('settings:ship');
     }
