@@ -45,10 +45,26 @@ export function keptChanges(player: Settings, demo: Settings): Partial<Settings>
   return changes;
 }
 
-/** Drops every table of the database and its version of the schema: what is left is an empty file. */
+/**
+ * Drops every table of the database and its version of the schema: what is left is an empty file. A table that others refer to
+ * (`run_event.run_id` → `run`) goes after them: the foreign keys are on, and dropping it while their rows are there is refused
+ * (1.3.0: after a whole trip the database of the demo stayed full, and the demo could not start again).
+ */
 export async function emptyDb(db: Db): Promise<void> {
   const tables = await db.select<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
-  for (const { name } of tables) await db.execute(`DROP TABLE IF EXISTS "${name.replace(/"/g, '""')}"`);
+  const refers = new Map<string, Set<string>>();
+  for (const { name } of tables) {
+    const keys = await db.select<{ table: string }>('SELECT "table" FROM pragma_foreign_key_list(?)', [name]);
+    refers.set(name, new Set(keys.map((key) => key.table).filter((parent) => parent !== name)));
+  }
+  const left = new Set(refers.keys());
+  while (left.size > 0) {
+    const free = [...left].filter((name) => ![...left].some((other) => refers.get(other)?.has(name)));
+    for (const name of free.length > 0 ? free : [...left]) {
+      await db.execute(`DROP TABLE IF EXISTS "${name.replace(/"/g, '""')}"`);
+      left.delete(name);
+    }
+  }
   await db.execute('PRAGMA user_version = 0');
 }
 

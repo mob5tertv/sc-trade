@@ -125,4 +125,25 @@ export const DEMO_SCENES: readonly Scene[] = [
       if (refused !== null) throw new Error(`after the demo a setting is not saved: ${refused}`);
     },
   },
+  {
+    // the whole trip up to «Готово», then the window folded: the mini line is as tall as the line, not as the last hint (1.3.0 kept the
+    // height of the hint on the window after the demo, the author: the mini line in a tall empty box)
+    name: 'demo-done-folded',
+    title: 'Демо-рейс закончен, окно свёрнуто: мини-строка без пустоты под ней',
+    dataset: 'default',
+    act: async (app) => {
+      await app.startDemo('preview');
+      await pause(400);
+      for (const { go } of PATH) await go(app);
+      await press('.coach .sc-btn--primary');
+      await pause(500);
+      await app.collapse('preview');
+      await pause(500);
+      const root = document.querySelector<HTMLElement>('.sc-root');
+      const strip = document.querySelector<HTMLElement>('.strip');
+      if (root === null || strip === null) throw new Error('the scene wants the folded window with its line, and there is none');
+      const tall = root.getBoundingClientRect().height - strip.getBoundingClientRect().height;
+      if (tall > 4) throw new Error(`the folded window is ${Math.round(tall)} px taller than its line after the demo`);
+    },
+  },
 ];

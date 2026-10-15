@@ -28,11 +28,14 @@
     const current = coach;
     const element = bubble;
     if (current === null || element === null) return;
+    // The root is taken now, while the bubble is in it: when the hint goes away for good (the end of the demo) Svelte takes the bubble out
+    // of the page before the cleanup below runs, and the bubble could not find the root any more to take its height back (1.3.0: every
+    // mini line after the demo was as tall as the last hint).
+    const root = element.closest<HTMLElement>('.sc-root');
+    if (root === null) return;
     const target = current.target === null ? null : document.querySelector<HTMLElement>(current.target);
     target?.classList.add('sc-tour-target');
     let frame = requestAnimationFrame(function measure() {
-      const root = element.closest<HTMLElement>('.sc-root');
-      if (root === null) return;
       const box = root.getBoundingClientRect();
       const zoom = box.width / root.offsetWidth || 1; // the root is zoomed by the scale of the window: positions inside it are not
       const width = element.offsetWidth;
@@ -65,7 +68,7 @@
     return () => {
       cancelAnimationFrame(frame);
       target?.classList.remove('sc-tour-target');
-      element.closest<HTMLElement>('.sc-root')?.style.removeProperty('--sc-coach-min-h');
+      root.style.removeProperty('--sc-coach-min-h');
     };
   });
 </script>

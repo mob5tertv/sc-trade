@@ -51,6 +51,17 @@ describe('the database of the demo', () => {
     expect(await db.select<{ user_version: number }>('PRAGMA user_version')).toEqual([{ user_version: 0 }]);
   });
 
+  it('is emptied after a whole trip too, and the demo starts again (the events of a run refer to it)', async () => {
+    const db = testDb();
+    await prepareDemoDb(db, log, 1_800_000_000, player);
+    const { lastInsertId: run } = await db.execute("INSERT INTO run (scu_capacity, started_at, status) VALUES (96, 1, 'done')");
+    await db.execute("INSERT INTO run_event (run_id, ts, type) VALUES (?, 2, 'depart')", [run]);
+    await emptyDb(db);
+    expect(await db.select("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")).toEqual([]);
+    await prepareDemoDb(db, log, 1_800_000_000, player);
+    expect((await loadSettings(db, log)).scuCapacity).toBe(DEMO_CAPACITY);
+  });
+
   it('has no network: every question to UEX is refused at once', async () => {
     await expect(OFFLINE_UEX.prices([1])).rejects.toThrow(/no network/);
     await expect(OFFLINE_UEX.distance(1, 2)).rejects.toThrow(/no network/);

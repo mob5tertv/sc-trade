@@ -43,7 +43,8 @@
   <div class="table" role="table" aria-label={tr('Мои маршруты')}>
     <div class="grid head sc-label" role="row">
       <span role="columnheader">{tr('Маршрут')}</span>
-      <span role="columnheader">{tr('Товар')}</span>
+      <!-- a column of 38 px for the code of the commodity: the English word of it is a short one ("Commodity" ran into the next head) -->
+      <span role="columnheader">{tr('@code-column:Товар')}</span>
       {@render head('perRun', tr('За рейс'), tr('Сколько в среднем приносит один рейс по маршруту. Нажми, чтобы отсортировать'))}
       {@render head('runs', tr('Рейс'), tr('Сортировать по числу завершённых рейсов'))}
       {@render head('time', tr('Время'), tr('Сортировать по медианному времени: быстрые сверху'))}

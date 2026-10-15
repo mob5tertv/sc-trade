@@ -23,6 +23,7 @@ export const EN: Readonly<Record<string, string>> = {
   // src/ui/components/QuickEntry.svelte
   'Быстрый ввод цены': 'Quick price entry',
   'Товар': 'Commodity',
+  '@code-column:Товар': 'Cargo',
   'Товар: три буквы кода или названия и Enter': 'Commodity: three letters of its code or name, then Enter',
   'Сторона': 'Side',
   'Этот товар здесь не продают': 'This commodity is not sold here',
