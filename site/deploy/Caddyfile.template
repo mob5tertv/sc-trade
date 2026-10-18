@@ -118,3 +118,8 @@
 #	import security
 #	redir https://{{domain}}{uri} permanent
 # }
+
+# Other sites of this server, each in a file of its own that its own setup puts there (need4stream:
+# /etc/caddy/sites.d/need4stream.caddy). Keep this line: without it, putting this file in place would drop those sites.
+# A pattern that matches no file is no error.
+import /etc/caddy/sites.d/*.caddy
