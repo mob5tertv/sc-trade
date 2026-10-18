@@ -1,6 +1,6 @@
 <script lang="ts">
+  import CollapseButton from './components/CollapseButton.svelte';
   import { boot } from './boot';
-  import Icon from './components/Icon.svelte';
   import GuideView from './GuideView.svelte';
   import Header from './Header.svelte';
   import LanguageView from './LanguageView.svelte';
@@ -33,9 +33,7 @@
   <header class="bar">
     <WindowGrip />
     <strong class="title sc-label">SC Trade</strong>
-    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label={tr('Свернуть')} title={tr('Свернуть')} onclick={() => app.collapse('close button')}>
-      <Icon name="minus" />
-    </button>
+    <CollapseButton />
   </header>
   {#if app.phase === 'failed'}
     <div class="boot">
@@ -78,11 +76,11 @@
     border-bottom: 1px solid var(--sc-border);
   }
 
-  .bar .sc-btn {
+  .bar :global(.sc-btn) {
     color: var(--sc-label);
   }
 
-  .bar .sc-btn:hover {
+  .bar :global(.sc-btn:hover) {
     color: var(--sc-accent);
   }
 

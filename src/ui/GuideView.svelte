@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CollapseButton from './components/CollapseButton.svelte';
   import { bestPlaces } from '../core/places';
   import { cargoOf } from '../core/run';
   import type { Side } from '../core/types';
@@ -57,9 +58,7 @@
   </button>
   <strong class="title">{tr('Справочная')}</strong>
   <KeyboardBadge />
-  <button class="sc-btn sc-btn--ghost sc-btn--icon collapse" type="button" aria-label={tr('Свернуть')} title={tr('Свернуть')} onclick={() => app.collapse('close button')}>
-    <Icon name="minus" />
-  </button>
+  <CollapseButton extra="collapse" />
 </header>
 
 <MessageLines />
@@ -153,11 +152,11 @@
     border-bottom: 1px solid var(--sc-border);
   }
 
-  .bar .sc-btn {
+  .bar :global(.sc-btn) {
     color: var(--sc-label);
   }
 
-  .bar .sc-btn:hover {
+  .bar :global(.sc-btn:hover) {
     color: var(--sc-accent);
   }
 

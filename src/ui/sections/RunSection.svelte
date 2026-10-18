@@ -7,7 +7,7 @@
   import { app } from '../state.svelte';
   import { stats } from '../stats.svelte';
   import { runOutlook } from '../vm/run-outlook';
-  import { cardMarks, phaseLine, runPhases } from '../vm/run-phase';
+  import { cardMarks, goesOnward, phaseLine, runPhases } from '../vm/run-phase';
   import { tradeLines } from '../vm/run-trades';
   import {
     cargoRows, decisionAtClock, planSummary, runHeader, runSectionKind, sellDecisionKey, sellDecisions, sellLogContext, targetOffer,
@@ -34,7 +34,7 @@
 
   // the three phases of the leg and the money, on the clock of the window (once a second); the money of a run that goes on
   // is its EXPECTED result (a run that is not finished is not a loss)
-  const phases = $derived(active === null ? null : phaseLine(runPhases(active.run, active.events, app.now)));
+  const phases = $derived(active === null ? null : phaseLine(runPhases(active.run, active.events, app.now, goesOnward(app.settings))));
   const outlook = $derived(active === null ? null : runOutlook(active, app.market, app.reference, app.settings, app.routeCtx()));
   const cargo = $derived(active === null ? [] : cargoRows(active.events, app.reference));
   // the header offers the mark that comes next; the body only what the header does not

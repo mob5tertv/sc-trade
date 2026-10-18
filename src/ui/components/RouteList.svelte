@@ -102,7 +102,8 @@
     {#each rows as { option, row }, index (row.key)}
       {@const expanded = expandedKey === row.key}
       {#if row.key === firstElsewhere}
-        <p class="elsewhere" title={tr('Закупка на другом терминале рядом: рейс приносит больше, чем отсюда. «Цель» у такого варианта ведёт сначала на закупку, потом на продажу')}>{tr('Выгоднее: закупка рядом')}</p>
+        <!-- the trips below start elsewhere: the line says what is done there (1.4, the author: «не понимаю, о каком грузе идёт речь») -->
+        <p class="elsewhere" title={tr('Строка: товар, где его купить, сколько лететь туда пустым → где продать. Такой рейс приносит больше, чем отсюда. «Цель» ведёт сначала на закупку, потом на продажу')}>{tr('Выгоднее: слетать пустым и купить там')}</p>
       {/if}
       <div class="row tier-{row.tier}" class:expanded role="row">
         <button type="button" class="grid line" data-tour={index === 0 ? 'option-first' : undefined} aria-expanded={expanded} onclick={() => toggle(row.key, option)}>
@@ -141,8 +142,8 @@
             {#if row.loadBar}<p class="stock-note bar-note">{tr('Твой корабль в точке закупки не загрузится: {loadBar}', { loadBar: row.loadBar })}</p>{/if}
             {#if row.boxes}<p class="stock-note" title={tr('По размерам ящиков, которые продаёт терминал закупки и которые берёт твой корабль')}>{row.boxes}</p>{/if}
             <div class="prices">
-              {@render price(tr('Купить'), row.buy)}
-              {@render price(tr('Продать'), row.sell)}
+              {@render price(row.bothEnds ? tr('Купить · {place}', { place: row.origin }) : tr('Купить'), row.buy)}
+              {@render price(row.bothEnds ? tr('Продать · {place}', { place: row.dest }) : tr('Продать'), row.sell)}
             </div>
             <div class="foot">
               <span class="inline" title={legendTitle(LEGEND.time, row.timeTitle)}><span class="sc-label">{tr('Время')}</span><span class="sc-num">{row.time}</span></span>

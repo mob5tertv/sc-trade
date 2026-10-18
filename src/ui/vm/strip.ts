@@ -4,7 +4,7 @@ import { cargoOf } from '../../core/run';
 import type { Settings } from '../../core/settings';
 import type { CargoLine, Market, Reference, RunWithEvents } from '../../core/types';
 import { expectedProfitText, saleTerminalId } from './run-outlook';
-import { nextMarkOf, phaseCaps, runPhases, type RunPhase } from './run-phase';
+import { goesOnward, nextMarkOf, phaseCaps, runPhases, type RunPhase } from './run-phase';
 import { expectedRun, priceAtTarget, type PricedLine } from './run-rate';
 import type { SessionFigure } from './stats-view';
 import { terminalName } from './terminal-name';
@@ -157,12 +157,13 @@ export function stripModel(
   const { run, events } = active;
   const elapsedSec = Math.max(0, ctx.now - run.startedAt);
   const cargo = cargoOf(events);
-  const phases = runPhases(run, events, ctx.now);
+  const onward = goesOnward(s);
+  const phases = runPhases(run, events, ctx.now, onward);
   const head = {
     kind: 'run' as const,
     timer: formatDuration(elapsedSec),
     phase: phases.phase, phaseLabel: phaseCaps(phases.phase), phaseTimer: formatDuration(phases.sinceSec),
-    next: nextMarkOf(active, ctx.now),
+    next: nextMarkOf(active, ctx.now, onward),
     cargo: cargoText(ref, cargo),
   };
 

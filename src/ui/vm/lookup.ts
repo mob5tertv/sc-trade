@@ -38,7 +38,7 @@ const commodityLabel = (ref: Reference, id: number): string => ref.commodities.g
  * 'Где купить Medical Supplies для HUR-L1 · продажа 5 088', 'Куда везти Gold с ARC-L1'. The title names the terminal that was
  * asked about and nothing else. With «выгоднее» on, some trips are bought at another terminal nearby; the title used to end with
  * 'и рядом' for that, and the author took it out (14.10.2026): the list itself sets those trips apart, under its line
- * «Выгоднее: закупка рядом», and each of them names both of its ends.
+ * «Выгоднее: слетать пустым и купить там» (until 1.4 «Выгоднее: закупка рядом», which the author could not read), and each of them names both of its ends.
  */
 export function lookupTitle(request: LookupRequest, ref: Reference): string {
   const terminal = terminalLabel(ref, request.terminalId);

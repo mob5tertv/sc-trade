@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CollapseButton from './components/CollapseButton.svelte';
   import Icon from './components/Icon.svelte';
   import SearchBox from './components/SearchBox.svelte';
   import { app } from './state.svelte';
@@ -140,9 +141,7 @@
     <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label={tr('Настройки')} title={tr('Настройки')} onclick={() => app.openSettings()}>
       <Icon name="gear" />
     </button>
-    <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" data-tour="collapse" aria-label={tr('Свернуть')} title={tr('Свернуть')} onclick={() => app.collapse('close button')}>
-      <Icon name="minus" />
-    </button>
+    <CollapseButton tour="collapse" />
   </div>
 </header>
 
@@ -275,7 +274,7 @@
     align-items: center;
   }
 
-  .icons .sc-btn {
+  .icons :global(.sc-btn) {
     color: var(--sc-label);
   }
 
@@ -296,7 +295,7 @@
     padding: 0 6px;
   }
 
-  .bar.compact .icons .sc-btn {
+  .bar.compact .icons :global(.sc-btn) {
     width: 22px;
   }
 
@@ -307,16 +306,16 @@
   }
 
   /* «Сменил сервер» asked once more: the question stands in the place of the icon, in the colour of a thing that cannot be taken back */
-  .icons .sc-btn.sure,
-  .bar.compact .icons .sc-btn.sure {
+  .icons :global(.sc-btn.sure),
+  .bar.compact .icons :global(.sc-btn.sure) {
     width: auto;
     padding: 0 6px;
     border-color: var(--sc-bad);
     color: var(--sc-bad);
   }
 
-  .icons .sc-btn:hover:not(:disabled),
-  .icons .sc-btn[aria-pressed='true'] {
+  .icons :global(.sc-btn:hover:not(:disabled)),
+  .icons :global(.sc-btn[aria-pressed='true']) {
     color: var(--sc-accent);
   }
 </style>

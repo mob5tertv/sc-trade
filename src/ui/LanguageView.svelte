@@ -1,6 +1,6 @@
 <script lang="ts">
+  import CollapseButton from './components/CollapseButton.svelte';
   import { LANG_NAMES, LANGS, LANGUAGE_SCREEN, langOf, tr, type Lang } from '../i18n';
-  import Icon from './components/Icon.svelte';
   import { app } from './state.svelte';
   import WindowGrip from './WindowGrip.svelte';
 
@@ -14,9 +14,7 @@
 <header class="bar">
   <WindowGrip />
   <strong class="title sc-label">SC Trade</strong>
-  <button class="sc-btn sc-btn--ghost sc-btn--icon" type="button" aria-label={tr('Свернуть')} title={tr('Свернуть')} onclick={() => app.collapse('close button')}>
-    <Icon name="minus" />
-  </button>
+  <CollapseButton />
 </header>
 <div class="choose" role="group" aria-labelledby="choose-language">
   <p class="question" id="choose-language">{LANGUAGE_SCREEN.title}</p>
@@ -41,11 +39,11 @@
     border-bottom: 1px solid var(--sc-border);
   }
 
-  .bar .sc-btn {
+  .bar :global(.sc-btn) {
     color: var(--sc-label);
   }
 
-  .bar .sc-btn:hover {
+  .bar :global(.sc-btn:hover) {
     color: var(--sc-accent);
   }
 

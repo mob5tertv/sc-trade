@@ -254,6 +254,30 @@ export const SCENES: readonly Scene[] = [
     },
   },
   {
+    // version 1.4: «Свернуть» held puts the window away, mini line and all; opened again and folded, it is the mini line once more
+    name: 'collapse-held',
+    title: 'Долгое нажатие на «Свернуть» прячет окно совсем; развернул и свернул — мини-строка снова есть',
+    dataset: 'default',
+    act: async (app) => {
+      const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+      const visible = async (): Promise<boolean> => (await import('@tauri-apps/api/window')).getCurrentWindow().isVisible();
+      await app.expand('preview');
+      await pause(300);
+      const button = document.querySelector<HTMLElement>('[data-tour="collapse"]');
+      if (button === null) throw new Error('the scene wants the button «Свернуть» of the header, and there is none');
+      button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+      await pause(800);
+      button.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 }));
+      button.click();
+      await pause(300);
+      if (app.mode !== 'mini' || !app.hiddenAway || await visible()) throw new Error(`held «Свернуть» did not put the window away: mode ${app.mode}, hidden ${app.hiddenAway}`);
+      await app.expandByHand('preview: the tray');
+      await app.collapse('preview');
+      await pause(300);
+      if (app.hiddenAway || !await visible()) throw new Error('opened again and folded, the window shows no mini line');
+    },
+  },
+  {
     name: 'expanded-short-bottom-left',
     title: 'Низкое окно в левом нижнем углу',
     dataset: 'default',

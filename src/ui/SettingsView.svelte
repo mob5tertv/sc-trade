@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CollapseButton from './components/CollapseButton.svelte';
   import { onDestroy, onMount, type Snippet } from 'svelte';
   import type { Settings } from '../core/settings';
   import type { TriggerName } from '../platform/triggers';
@@ -467,9 +468,7 @@
   </button>
   <strong class="title">{tr('Настройки')}</strong>
   <KeyboardBadge />
-  <button class="sc-btn sc-btn--ghost sc-btn--icon collapse" type="button" aria-label={tr('Свернуть')} title={tr('Свернуть')} onclick={() => app.collapse('close button')}>
-    <Icon name="minus" />
-  </button>
+  <CollapseButton extra="collapse" />
 </header>
 
 <!-- the question of a button (the clearing of the history) and the message after it, under the header that stands still -->
@@ -497,11 +496,11 @@
     border-bottom: 1px solid var(--sc-border);
   }
 
-  .bar .sc-btn {
+  .bar :global(.sc-btn) {
     color: var(--sc-label);
   }
 
-  .bar .sc-btn:hover {
+  .bar :global(.sc-btn:hover) {
     color: var(--sc-accent);
   }
 

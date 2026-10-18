@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { phases } from '../../src/core/run';
-import { cardMarks, markRefusal, nextMarkOf, phaseCaps, phaseLine, runPhases } from '../../src/ui/vm/run-phase';
+import { cardMarks, goesOnward, markRefusal, nextMarkOf, phaseCaps, phaseLine, runPhases } from '../../src/ui/vm/run-phase';
 import { bought, marked, runOf, sold, T0, TITA } from '../helpers/run-wiring-fixtures';
 
 /** `runPhases` of a run with these events, `at` seconds after the first purchase. */
@@ -124,6 +124,22 @@ describe('nextMarkOf', () => {
     expect(nextMarkOf(leg2, T0 + 800)).toBe('arrive');
     const rebought = runOf(bought(0), marked(60, 'depart'), marked(600, 'arrive'), bought(900, TITA, 10, 1));
     expect(nextMarkOf(rebought, T0 + 1000)).toBe('depart');
+  });
+  it('is the take-off again once the target is somewhere else after the arrival: the stop before the next leg is loading', () => {
+    // version 1.4: the player did not sell where it did not pay and set the next target; the window kept «ВЫГРУЗКА» and no button
+    const stop = runOf(bought(0), marked(60, 'depart'), marked(600, 'arrive'));
+    expect(nextMarkOf(stop, T0 + 700, true)).toBe('depart');
+    expect(runPhases(stop.run, stop.events, T0 + 700, true)).toMatchObject({ phase: 'loading', sinceSec: 100, slots: { loading: 100, flight: null, unloading: null } });
+    // an arrival with no take-off before it: the loading simply goes on
+    const unmarked = runOf(bought(0), marked(600, 'arrive'));
+    expect(runPhases(unmarked.run, unmarked.events, T0 + 700, true)).toMatchObject({ phase: 'loading', sinceSec: 700 });
+    // in flight the target changes nothing
+    expect(nextMarkOf(runOf(bought(0), marked(60, 'depart')), T0 + 120, true)).toBe('arrive');
+  });
+  it('knows the target is elsewhere when it is set and is not the place where the ship stands', () => {
+    expect(goesOnward({ targetTerminalId: 7, currentTerminalId: 3 })).toBe(true);
+    expect(goesOnward({ targetTerminalId: 3, currentTerminalId: 3 })).toBe(false);
+    expect(goesOnward({ targetTerminalId: null, currentTerminalId: 3 })).toBe(false);
   });
 });
 

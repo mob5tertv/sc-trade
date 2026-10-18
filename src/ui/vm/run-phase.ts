@@ -40,8 +40,20 @@ export interface RunPhases {
 
 interface Segment { phase: RunPhase; from: number }
 
-/** The phases the run went through, in order: the run is loading from its start; the marks and a purchase after an arrival move it on. */
-function segmentsOf(run: Run, events: RunEvent[]): Segment[] {
+/**
+ * The player has a target that is not the place where the ship stands: a run that has arrived and is unloading goes on to another leg
+ * (version 1.4, the author: he chose to fly on from a place where selling did not pay, set the new target, and the window kept saying he
+ * was unloading at the old place, with no «Взлетел»). The arrival makes its target the location (`landingView`), so a target set after it
+ * that is somewhere else is the next leg.
+ */
+export const goesOnward = (s: { targetTerminalId: number | null; currentTerminalId: number | null }): boolean =>
+  s.targetTerminalId !== null && s.targetTerminalId !== s.currentTerminalId;
+
+/**
+ * The phases the run went through, in order: the run is loading from its start; the marks and a purchase after an arrival move it on.
+ * `onward` (`goesOnward`): an unloading that is still going is the stop before the next leg, which is loading, as a purchase there makes it.
+ */
+function segmentsOf(run: Run, events: RunEvent[], onward = false): Segment[] {
   const segments: Segment[] = [{ phase: 'loading', from: run.startedAt }];
   const enter = (phase: RunPhase, from: number): void => {
     if (segments[segments.length - 1].phase !== phase) segments.push({ phase, from });
@@ -51,6 +63,11 @@ function segmentsOf(run: Run, events: RunEvent[]): Segment[] {
     else if (e.type === 'arrive') enter('unloading', e.ts);
     else if (e.type === 'buy' && segments[segments.length - 1].phase === 'unloading') enter('loading', e.ts);
   }
+  const last = segments[segments.length - 1];
+  if (onward && last.phase === 'unloading') {
+    if (segments.length > 1 && segments[segments.length - 2].phase === 'loading') segments.pop(); // an arrival with no take-off before it
+    else last.phase = 'loading';
+  }
   return segments;
 }
 
@@ -58,8 +75,8 @@ function segmentsOf(run: Run, events: RunEvent[]): Segment[] {
  * What the run is doing at `now` (Unix seconds), from its events; the events are in the order the database gives them
  * (time, then id). A run that has ended counts to its end, not to `now`: every number of a finished run stands still.
  */
-export function runPhases(run: Run, events: RunEvent[], now: number): RunPhases {
-  const segments = segmentsOf(run, events);
+export function runPhases(run: Run, events: RunEvent[], now: number, onward = false): RunPhases {
+  const segments = segmentsOf(run, events, onward);
   const current = segments[segments.length - 1];
   const end = run.endedAt ?? now;
   const length = (i: number): number => Math.max(0, (segments[i + 1]?.from ?? end) - segments[i].from);
@@ -82,9 +99,9 @@ export function runPhases(run: Run, events: RunEvent[], now: number): RunPhases 
  * The mark the button of the mini line and of the section header gives: the take-off while loading, the arrival in flight,
  * none while unloading (the sale ends the run). A second take-off with cargo aboard is the key or the card of the run.
  */
-export function nextMarkOf(active: RunWithEvents | null, now: number): 'depart' | 'arrive' | null {
+export function nextMarkOf(active: RunWithEvents | null, now: number, onward = false): 'depart' | 'arrive' | null {
   if (active === null) return null;
-  const { phase } = runPhases(active.run, active.events, now);
+  const { phase } = runPhases(active.run, active.events, now, onward);
   return phase === 'loading' ? 'depart' : phase === 'flight' ? 'arrive' : null;
 }
 

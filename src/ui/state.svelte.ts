@@ -289,6 +289,8 @@ class AppState {
 
   // ---- window and screen ------------------------------------------------------------------------
   mode = $state<WindowMode>('mini');
+  /** The long press on "свернуть" put the window away: folded, it shows no mini line until it is opened again (`hideAway`). */
+  hiddenAway = $state(false);
   /**
    * The primary monitor in logical pixels as the start told it (`knowMonitor`) or as the window layer last placed the window on it; `null` until either. «Авто»
    * of the scale reads it (and the field of the settings, to say what «Авто» picked). Taken at every fit (`#followMonitorScale`).
@@ -880,9 +882,9 @@ class AppState {
     return this.settings.windowLocked;
   }
 
-  /** The window is on the screen when it is expanded, or collapsed with the mini bar switched on. */
+  /** The window is on the screen when it is expanded, or collapsed with the mini bar switched on and not put away (`hideAway`). */
   #wantVisible(): boolean {
-    return this.mode === 'expanded' || this.settings.showStrip;
+    return this.mode === 'expanded' || (this.settings.showStrip && !this.hiddenAway);
   }
 
   /** Marks "the player is here now": the idle time counts from this moment. */
@@ -940,6 +942,7 @@ class AppState {
         // the player is done with the window: the keyboard goes back to the game, the window may fold
         await this.keyboard.release('field').catch(() => undefined); // a failure is logged by the window layer
       }
+      if (next === 'expanded') this.hiddenAway = false; // opened again: the next fold is the mini line
       this.mode = next;
       this.#touch();
       if (next === 'expanded') {
@@ -1056,6 +1059,21 @@ class AppState {
   collapse(reason: string): Promise<void> {
     this.#log.info('ui', 'collapse', { reason });
     return this.#changeMode(() => 'mini', reason);
+  }
+
+  /**
+   * A long press on "свернуть" (version 1.4, the author: «с помощью долгого нажатия на свёртывание сворачивать окно полностью»): the window
+   * folds and the mini line is not shown either, until the window is opened again (the tray, the key of the panel); folded after that, it is
+   * the mini line as before. For this time only: the next start shows the mini line (the setting «Мини-строка» hides it for good).
+   */
+  async hideAway(reason: string): Promise<void> {
+    this.#log.info('ui', 'hide away', { reason });
+    this.hiddenAway = true;
+    await this.#changeMode(() => 'mini', reason);
+    await this.#modeQueue(async () => {
+      if (!this.#windowReady) return;
+      await this.#syncVisibility().catch(() => undefined); // already logged by the window layer
+    });
   }
 
   toggleMode(): Promise<void> {
