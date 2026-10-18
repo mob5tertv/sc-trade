@@ -282,7 +282,7 @@
     if (form === null) return;
     tradeState = { ...form, error: null };
     const cell = app.terminalRows.find((r) => r.commodityId === form.commodityId)?.[form.side] ?? null;
-    const input = { terminalId: form.terminalId, commodityId: form.commodityId, ...trade, knownScu: knownScuOf(cell) };
+    const input = { terminalId: form.terminalId, commodityId: form.commodityId, ...trade, knownScu: knownScuOf(cell, form.side) };
     const failure = await (form.side === 'buy' ? app.buy(input) : app.sell(input, form.mode === 'income', form.mode === 'storage' ? form.storageFrom ?? null : null));
     // the answer belongs to the form the write was started from: the player may have gone to another row meanwhile
     if (failure === null) closeTrade('written', form.id);

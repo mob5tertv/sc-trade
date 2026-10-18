@@ -56,6 +56,27 @@ export const STORAGE_SCENES: readonly Scene[] = [
     },
   },
   {
+    // version 1.4.1: the row showed the stock of UEX only (948); bought 900 through the form, the station has 48 left, a number of mine
+    // (the author bought 960 where UEX said about 1000, and the station kept showing 1000 until he typed 0)
+    name: 'storage-buy-stock-left',
+    title: 'Склад: куплено 900 при запасе UEX 948 — на станции осталось 48, своим числом',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      app.setViewTerminal(HUR);
+      await pause(200);
+      await press('[data-tour-row="STIM"]');
+      await press('[data-tour-open="STIM"] [data-tour="trade"]');
+      type('form.trade .in-scu', '900');
+      type('form.trade .in-price', '2860');
+      await pause(200);
+      await press('form.trade button[type="submit"]');
+      await pause(800);
+      const row = app.terminalRows.find((r) => r.commodityId === stim(app));
+      if (row?.buy?.ownScu !== 48) throw new Error(`after buying 900 of 948 the station shows ${row?.buy?.ownScu ?? row?.buy?.hintScu} instead of 48 of mine`);
+    },
+  },
+  {
     name: 'storage-tab',
     title: 'Склад: вкладка «Склад · 1» терминала HUR-L1, строка Stims раскрыта',
     dataset: 'default',

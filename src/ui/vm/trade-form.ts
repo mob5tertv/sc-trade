@@ -70,13 +70,18 @@ export const STOCK_UNKNOWN_NOTE = (): string => tr('Запас неизвест�
  * started from, `ownScuBase`), the row shows the ESTIMATE, and the estimate is what is taken: the diary then keeps "what the
  * row said less what was bought" (spec 14.3: was 340, bought 300, so 40), and the row goes on from there. A record with
  * no quantity would leave the old reading in the diary to be grown by the timer again, as if nothing had been bought.
- * A quantity of UEX is not mine, so it is not taken: the record carries no quantity reading then.
+ *
+ * A purchase takes the quantity of UEX too when the row has none of mine (version 1.4.1, the author: «купил 960 … груза на станции не
+ * стало 0, писал ± 1000 … пришлось 0 проставлять вручную»): what the row showed less what was bought is what is left at the seller,
+ * never below zero, and it is a reading of mine from then on. Before, a quantity of UEX was not taken, and a stock bought out stayed at
+ * the number of UEX. A sale keeps to my own (what the buyer holds, spec 14.5): the record carries no quantity without one.
  *
  * This is not what a table cell saves when it is edited: an estimate is never written as if the player had typed it
  * (`cellEditBase`); a trade is a change to a quantity, not a reading of it.
  */
-export function knownScuOf(cell: Pick<Cell, 'ownScu'> | null): number | null {
-  return cell === null ? null : cell.ownScu;
+export function knownScuOf(cell: Pick<Cell, 'ownScu' | 'hintScu'> | null, side: Side = 'sell'): number | null {
+  if (cell === null) return null;
+  return side === 'buy' ? cellStock(cell) : cell.ownScu;
 }
 
 /**

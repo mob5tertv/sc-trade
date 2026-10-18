@@ -33,7 +33,7 @@ SC Trade is an unofficial fan-made tool. It is not affiliated with Cloud Imperiu
 
 ## Install and first start
 
-1. Run the installer `SC-Trade-1.4.0-setup.exe` (that is the file's name on the site and in the GitHub release). It first asks for its language — the one of Windows is preselected, English if Windows speaks neither — and installs for the current user, without administrator rights, into `%LOCALAPPDATA%\SC Trade` by default; if the program was installed before, it offers the old folder. A Start menu shortcut is made; a desktop shortcut and starting the program are offered on the last page.
+1. Run the installer `SC-Trade-1.4.1-setup.exe` (that is the file's name on the site and in the GitHub release). It first asks for its language — the one of Windows is preselected, English if Windows speaks neither — and installs for the current user, without administrator rights, into `%LOCALAPPDATA%\SC Trade` by default; if the program was installed before, it offers the old folder. A Start menu shortcut is made; a desktop shortcut and starting the program are offered on the last page.
 2. The file is not signed, so Windows SmartScreen may warn you. Whether to run it is your decision; the checksum is on the site and in the release.
 3. The window appears as a mini line in a corner of the screen, with an SC Trade icon in the tray (menu: "Show the panel", "Quit"). The window has no taskbar button. On Windows 11 the icon may be hidden behind the "^" arrow.
 4. At the first start the window asks "Язык · Language": one click picks it. You can change it later in Settings → Window → Language.
@@ -118,7 +118,7 @@ Node.js 24 with npm 11, Rust 1.90 or newer, and the Microsoft C++ build tools an
 - `npm run check` — the type check (svelte-check);
 - `cargo test --manifest-path src-tauri/Cargo.toml` — the Rust tests;
 - `npm run build` — the interface (`dist`);
-- `npm run tauri build` — the installer: `src-tauri/target/release/bundle/nsis/SC Trade_1.4.0_x64-setup.exe`, the program: `src-tauri/target/release/sc-trade.exe`. On the first build Tauri downloads NSIS.
+- `npm run tauri build` — the installer: `src-tauri/target/release/bundle/nsis/SC Trade_1.4.1_x64-setup.exe`, the program: `src-tauri/target/release/sc-trade.exe`. On the first build Tauri downloads NSIS.
 
 `npm run preview:ui` shows the interface in a browser (Edge or Chrome) without Tauri or the game; `npm run preview:shot -- --scene expanded --lang en` takes a picture of a scene in English.
 

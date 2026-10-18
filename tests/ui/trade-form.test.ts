@@ -148,10 +148,16 @@ describe('knownScuOf', () => {
   it('is the quantity when the estimate has not moved away from the reading', () => {
     expect(knownScuOf(cell({ ownScu: 380 }))).toBe(380);
   });
-  it('is unknown without one: a quantity of UEX is not what the player saw', () => {
+  it('is unknown for a sale without one of mine: a quantity of UEX is not what the buyer holds', () => {
     expect(knownScuOf(cell({ hintScu: 500 }))).toBeNull();
-    expect(knownScuOf(cell({ own: 6120, hintScu: 500 }))).toBeNull();
+    expect(knownScuOf(cell({ own: 6120, hintScu: 500 }), 'sell')).toBeNull();
     expect(knownScuOf(null)).toBeNull();
+  });
+  it('is the quantity of UEX for a purchase without one of mine: a stock bought out does not stay at the number of UEX (1.4.1)', () => {
+    // the author bought 960 where the row showed about 1000 of UEX, and the station kept showing 1000 until he typed 0
+    expect(knownScuOf(cell({ hintScu: 1000 }), 'buy')).toBe(1000);
+    expect(knownScuOf(cell({ ownScu: 340, hintScu: 1000 }), 'buy')).toBe(340);
+    expect(knownScuOf(cell({}), 'buy')).toBeNull();
   });
   it('is the quantity the buyer holds on the side of a sale (it has no estimate there)', () => {
     expect(knownScuOf(cell({ own: 6900, ownScu: 120, ownScuBase: null }))).toBe(120);
