@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { formatUec } from '../../core/format';
   import { parseScu } from '../../core/input';
   import type { Side } from '../../core/types';
@@ -97,28 +97,26 @@
   let checkShown = $state(false);
   let priceInput = $state<HTMLInputElement | null>();
 
-  // A purchase over the free space of the hold (version 1.4): the rest is left at the storage of the place. The number that goes into the
-  // hold is the free space until the player types his own (he may load less, or nothing at all).
-  const typedScu = $derived.by(() => {
-    const scu = parseScu(scuText);
-    return scu === null || scu === 0 ? null : scu;
-  });
+  // A purchase over the free space of the hold (version 1.4.1, the author: «после покупки отдельный этап: погрузка SCU — из максимума
+  // корабля»; a number of the hold typed into the form itself was easy to get wrong, and then «Купил» wrote nothing). «Купил» of such a
+  // purchase goes on to the step «Погрузка»: how much went into the hold, the free space of the ship unless the player says less; the
+  // rest is left at the storage of the place. A purchase that fits is written at once, as always.
+  let loading = $state<{ scu: number; price: number } | null>(null);
   let holdText = $state('');
-  let holdTouched = $state(false);
-  const splits = $derived(side === 'buy' && free !== null && typedScu !== null && (typedScu > free || holdTouched));
-  const holdDefault = $derived(typedScu === null || free === null ? 0 : Math.max(0, Math.min(typedScu, free)));
-  const hold = $derived.by(() => {
-    if (!splits) return typedScu;
-    if (!holdTouched) return holdDefault;
-    return parseScu(holdText);
+  let holdInput = $state<HTMLInputElement | null>();
+  const hold = $derived(loading === null ? null : parseScu(holdText));
+  const badHold = $derived(loading !== null && (hold === null || hold > loading.scu || (free !== null && hold > free)));
+  const stored = $derived(loading !== null && hold !== null && !badHold ? loading.scu - hold : 0);
+  const overHold = (scu: number): boolean => side === 'buy' && free !== null && scu > free;
+  // a purchase above the stock the seller is known to have is probably a typo (5120 for 512): said under the fields, before anything is written
+  const aboveStock = $derived.by(() => {
+    const scu = parseScu(scuText);
+    return side === 'buy' && scu !== null && stockScu !== null && scu > stockScu;
   });
-  const stored = $derived(splits && typedScu !== null && hold !== null ? typedScu - hold : 0);
-  const badHold = $derived(splits && (hold === null || typedScu === null || hold > typedScu || (free !== null && hold > free)));
-  const aboveStock = $derived(splits && typedScu !== null && stockScu !== null && typedScu > stockScu);
 
   const stepFor = (scu: number) => confirmStep({
     priceIsOwn: defaultPriceIsOwn || defaultPrice === null, priceTouched, asked: priceAsked,
-    fits: splits ? !badHold : maxScu === null || scu <= maxScu,
+    fits: overHold(scu) || maxScu === null || scu <= maxScu,
   });
   // The next press on the button of the form asks about the price. For the keyboard the button is then one that opens an entry
   // (ui/keyboard.ts): the press on it brings the keyboard to the window, and the cursor goes into the price.
@@ -130,6 +128,14 @@
   function submit(e: SubmitEvent & { currentTarget: HTMLFormElement }): void {
     e.preventDefault();
     if (confirmed) return;
+    if (loading !== null) {
+      // the step «Погрузка»: the line under it says what is wrong with the number of the hold
+      if (badHold || hold === null) return;
+      const toStorage = loading.scu - hold;
+      confirmed = true;
+      onConfirm(toStorage > 0 ? { ...loading, toStorage } : { ...loading });
+      return;
+    }
     const trade = resolveTrade(scuText, priceText);
     if (!trade.ok) {
       // the same refusal again (a held Enter) is one refusal: typing clears the marks, so a new one is a new report
@@ -152,10 +158,18 @@
       }
       return;
     }
-    if (splits && badHold) return; // the line of the storage says what is wrong with the number of the hold
     checkShown = false;
+    if (overHold(trade.scu)) {
+      loading = { scu: trade.scu, price: trade.price };
+      holdText = String(Math.max(0, Math.min(trade.scu, free ?? 0)));
+      // Enter in a field: the keyboard is with the window, and the cursor goes into the number of the hold, selected
+      if (document.activeElement instanceof HTMLInputElement && e.currentTarget.contains(document.activeElement)) {
+        void tick().then(() => { holdInput?.focus(); holdInput?.select(); });
+      }
+      return;
+    }
     confirmed = true;
-    onConfirm(stored > 0 ? { scu: trade.scu, price: trade.price, toStorage: stored } : { scu: trade.scu, price: trade.price });
+    onConfirm({ scu: trade.scu, price: trade.price });
   }
 
   // Esc takes the form back and is left to go on: the window hands the keyboard back to the game (it never closes by Esc).
@@ -193,7 +207,7 @@
       placeholder="SCU"
       aria-invalid={badScu ? 'true' : undefined}
       value={scuText}
-      oninput={(e) => { scuText = e.currentTarget.value; badScu = false; confirmed = false; }}
+      oninput={(e) => { scuText = e.currentTarget.value; badScu = false; confirmed = false; loading = null; }}
       onkeydown={onKeydown}
     />
     {#if stockUnknown}<span class="unsure" role="img" aria-label={STOCK_UNKNOWN_NOTE()} title={STOCK_UNKNOWN_NOTE()}>?</span>{/if}
@@ -212,7 +226,7 @@
       placeholder="UEC"
       aria-invalid={badPrice ? 'true' : undefined}
       value={priceText}
-      oninput={(e) => { priceText = e.currentTarget.value; priceTouched = true; checkShown = false; badPrice = false; confirmed = false; }}
+      oninput={(e) => { priceText = e.currentTarget.value; priceTouched = true; checkShown = false; badPrice = false; confirmed = false; loading = null; }}
       onkeydown={onKeydown}
     />
     <span class="unit">UEC</span>
@@ -226,27 +240,36 @@
     >{side === 'buy' ? tr('Купил') : tr('Продал')}</button>
     <button type="button" class="sc-btn" title={tr('Не записывать (Esc)')} onclick={() => onCancel()}>{tr('Отмена')}</button>
   </div>
-  {#if splits}
-    <!-- version 1.4: bought over the hold, the rest is left at the storage of the place; the number of the hold may be changed -->
-    <p class="split" class:above={aboveStock}>
-      <span>{tr('В трюм')}</span>
+  {#if aboveStock && loading === null}<p class="hint check">{tr('Больше, чем запас станции ({stock} SCU) — проверь цифру', { stock: stockScu ?? 0 })}</p>{/if}
+  {#if loading !== null}
+    <!-- version 1.4.1: the step «Погрузка» of a purchase over the hold: how much went into the hold, the rest is left at the storage -->
+    <div class="load" role="group" aria-label={tr('Погрузка')}>
+      <span class="caption">{tr('Погрузка')}</span>
       <input
+        bind:this={holdInput}
         class="sc-input sc-num in-hold"
         type="text"
         inputmode="numeric"
         autocomplete="off"
         data-select-on-focus
+        data-entry-field="trade-hold"
         aria-label={tr('Сколько погрузить в трюм, SCU')}
         title={tr('Сколько погрузить в трюм, SCU: остальное останется на складе')}
         aria-invalid={badHold ? 'true' : undefined}
-        value={holdTouched ? holdText : String(holdDefault)}
-        oninput={(e) => { holdText = e.currentTarget.value; holdTouched = true; confirmed = false; }}
+        value={holdText}
+        oninput={(e) => { holdText = e.currentTarget.value; confirmed = false; }}
         onkeydown={onKeydown}
       />
-      <span class="sc-num">· {tr('на склад {place}: {scu} SCU', { place: storagePlace, scu: Math.max(0, stored) })}</span>
-    </p>
-    {#if badHold}<p class="hint bad">{tr('В трюм — от нуля до свободного места ({free} SCU) и не больше купленного', { free: free ?? 0 })}</p>{/if}
-    {#if aboveStock}<p class="hint check">{tr('Больше, чем запас станции ({stock} SCU) — проверь цифру', { stock: stockScu ?? 0 })}</p>{/if}
+      <span class="unit">{tr('из {scu} SCU', { scu: loading.scu })}</span>
+      <span class="spacer"></span>
+      <button type="submit" class="sc-btn sc-btn--primary" title={tr('Записать покупку: это в трюм, остальное на склад (Enter)')} onclick={onSubmitClick}>{tr('Погрузил')}</button>
+      <button type="button" class="sc-btn" title={tr('Вернуться к количеству и цене')} onclick={() => (loading = null)}>{tr('Назад')}</button>
+    </div>
+    {#if badHold}
+      <p class="hint bad">{tr('В трюм — от нуля до свободного места ({free} SCU) и не больше купленного', { free: free ?? 0 })}</p>
+    {:else if stored > 0}
+      <p class="hint split">{tr('Остальное {scu} SCU останется на складе {place}', { scu: stored, place: storagePlace })}</p>
+    {/if}
   {/if}
   {#if note}
     <p class="hint note">{note}{#if noteAction}<button type="button" class="link" title={noteAction.title} onclick={() => noteAction?.run()}>{noteAction.label}</button>{/if}</p>
@@ -336,20 +359,30 @@
     color: var(--sc-bad);
   }
 
-  /* bought over the hold (version 1.4): how much goes into the hold, and what the storage of the place keeps; in the colour of a
-     caution, so that a typo (5120 for 512) does not go to the storage unseen */
-  .split {
+  /* the step «Погрузка» of a purchase over the hold (version 1.4.1): the number of the hold, and what the storage of the place keeps,
+     in the colour of a caution */
+  .load {
     display: flex;
     align-items: center;
     gap: 4px;
-    margin: 4px 0 0;
-    color: var(--sc-warn);
-    font-size: var(--sc-font-sm);
+    min-height: var(--sc-ctl-h);
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px dashed var(--sc-border);
     white-space: nowrap;
   }
 
-  .split.above {
-    color: var(--sc-bad);
+  .load .caption {
+    color: var(--sc-warn);
+    font-weight: 600;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+
+  .split {
+    color: var(--sc-warn);
   }
 
   .in-hold {

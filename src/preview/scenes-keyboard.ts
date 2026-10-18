@@ -906,13 +906,11 @@ export const KEYBOARD_SCENES: readonly Scene[] = [
     // the price. With the quantity put right the form asks, and the confirmation after that writes.
     name: 'trade-check-price-hold',
     // version 1.4: more than the hold is no refusal any more, the rest goes to the storage of the place; the price of UEX is asked about all the same
-    title: '«Купил» с ценой UEX и количеством больше трюма: строка «В трюм 696 · на склад …: 4 SCU», первое подтверждение спрашивает о цене',
+    title: '«Купил» с ценой UEX и количеством больше трюма: первое подтверждение спрашивает о цене, погрузка — после него',
     dataset: 'default',
     act: async (app) => {
       await openForeignPurchase(app);
       typeInto('form.trade .in-scu', '700');
-      await pause(100);
-      if (document.querySelector('form.trade .split') === null) throw new Error('a purchase over the hold shows no line of the storage');
       await confirmTrade();
       expectForm('with more than the hold takes', { asks: true, written: 0, error: null });
     },

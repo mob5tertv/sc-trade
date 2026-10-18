@@ -834,10 +834,8 @@ export const EN: Readonly<Record<string, string>> = {
   'Нужно целое число SCU от 1': 'A whole number of SCU from 1 is needed',
   'Количество — целое от нуля, цена больше нуля': 'The quantity is a whole number from zero, the price above zero',
   'Здесь на складе лежит твой груз: «Погрузил» — на вкладке «Склад» терминала': 'Your cargo lies at the storage here: "Loaded" is on the "Storage" tab of the terminal',
-  'В трюм': 'Into the hold',
   'Сколько погрузить в трюм, SCU': 'How much goes into the hold, SCU',
   'Сколько погрузить в трюм, SCU: остальное останется на складе': 'How much goes into the hold, SCU: the rest stays at the storage',
-  'на склад {place}: {scu} SCU': 'to the storage of {place}: {scu} SCU',
   'В трюм — от нуля до свободного места ({free} SCU) и не больше купленного': 'Into the hold: from zero up to the free space ({free} SCU), and no more than bought',
   'Больше, чем запас станции ({stock} SCU) — проверь цифру': 'More than the stock of the station ({stock} SCU): check the number',
   'Твой склад на этой станции: что ты купил сверх трюма и оставил здесь': 'Your storage at this station: what you bought over your hold and left here',
@@ -869,4 +867,8 @@ export const EN: Readonly<Record<string, string>> = {
   'Количество — от нуля, цена больше нуля': 'The quantity from zero, the price above zero',
   'Возврат на склад не исправляется: поправь склад': 'A putting back into the storage is not corrected: correct the storage',
   'Цена погрузки — цена закупки на складе, её не исправить': 'The price of a load is the purchase price at the storage and cannot be corrected',
+  // version 1.4.1: the step «Погрузка» of a purchase over the hold
+  'Записать покупку: это в трюм, остальное на склад (Enter)': 'Write the purchase: this into the hold, the rest to the storage (Enter)',
+  'Вернуться к количеству и цене': 'Back to the quantity and the price',
+  'Остальное {scu} SCU останется на складе {place}': 'The other {scu} SCU stay at the storage of {place}',
 };

@@ -117,7 +117,7 @@
     },
     "storage-buy": {
       "caption": "Bought more than the hold takes: the rest is left at the storage of the station",
-      "alt": "The Bought form under a commodity row: 900 SCU at 2,860, and under the fields the line “Into the hold 696 · to the storage of HUR-L1: 204 SCU”."
+      "alt": "The Bought form under a commodity row: 900 SCU at 2,860, and under it the step “Loading 696 of 900 SCU” with the Loaded button and the line “The other 204 SCU stay at the storage of HUR-L1”."
     },
     "storage": {
       "caption": "The Storage tab: what lies at the station, Where to haul and Loaded",

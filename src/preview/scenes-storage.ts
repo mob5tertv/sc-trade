@@ -42,7 +42,7 @@ async function overTheHold(app: SceneApp, intoHold = 696): Promise<void> {
 export const STORAGE_SCENES: readonly Scene[] = [
   {
     name: 'storage-buy-split',
-    title: 'Склад: «Купил» 900 при трюме 696 — строка «В трюм 696 · на склад HUR-L1: 204 SCU»',
+    title: 'Склад: «Купил» 900 при трюме 696 — шаг «Погрузка 696 из 900 SCU», остальное 204 SCU на склад HUR-L1',
     dataset: 'default',
     act: async (app) => {
       await app.expand('preview');
@@ -52,7 +52,10 @@ export const STORAGE_SCENES: readonly Scene[] = [
       await press('[data-tour-open="STIM"] [data-tour="trade"]');
       type('form.trade .in-scu', '900');
       await pause(200);
-      if (document.querySelector('form.trade .split') === null) throw new Error('the form shows no line of the storage for a purchase over the hold');
+      await press('form.trade button[type="submit"]');
+      await pause(200);
+      const hold = document.querySelector<HTMLInputElement>('form.trade .load .in-hold');
+      if (hold === null || hold.value !== '696') throw new Error(`a purchase over the hold goes on to no step «Погрузка» with the free space: ${hold?.value}`);
     },
   },
   {
@@ -71,6 +74,7 @@ export const STORAGE_SCENES: readonly Scene[] = [
       type('form.trade .in-price', '2860');
       await pause(200);
       await press('form.trade button[type="submit"]');
+      await press('form.trade .load button[type="submit"]');
       await pause(800);
       const row = app.terminalRows.find((r) => r.commodityId === stim(app));
       if (row?.buy?.ownScu !== 48) throw new Error(`after buying 900 of 948 the station shows ${row?.buy?.ownScu ?? row?.buy?.hintScu} instead of 48 of mine`);
