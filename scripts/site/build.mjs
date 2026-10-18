@@ -65,7 +65,7 @@ const CONSENT_SCRIPTS = ['consent-core.js', 'consent.js'];
 
 /** The pictures of the application each block of the home page shows (site/assets/shots/<name>.png). */
 const FEATURE_SHOTS = ['terminal-options', 'mini-run', 'my-routes'];
-const GALLERY_SHOTS = ['price-entry', 'sell-or-fly', 'history', 'settings'];
+const GALLERY_SHOTS = ['price-entry', 'storage-buy', 'storage', 'sell-or-fly', 'history', 'settings'];
 
 /** The files of the background video, all three or none (`npm run site:video` makes them). */
 const VIDEO_FILES = /** @type {const} */ ({ webm: 'hero.webm', mp4: 'hero.mp4', poster: 'hero.jpg' });

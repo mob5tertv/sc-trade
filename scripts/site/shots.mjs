@@ -33,6 +33,9 @@ export const SHOTS = [
   { name: 'terminal-options', scene: 'expanded-options' },
   { name: 'my-routes', scene: 'stats-routes' },
   { name: 'price-entry', scene: 'expanded-row' },
+  // version 1.4: the storage of a station — a purchase over the hold, and the tab «Склад»
+  { name: 'storage-buy', scene: 'storage-buy-split' },
+  { name: 'storage', scene: 'storage-tab' },
   { name: 'sell-or-fly', scene: 'run-sell-decision' },
   { name: 'history', scene: 'stats-history' },
   { name: 'settings', scene: 'settings' },

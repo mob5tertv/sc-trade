@@ -64,6 +64,10 @@
           {
             "title": "Correcting a trade",
             "text": "Typed a wrong price or quantity? Correct the trade instead of writing the cargo off. The profit of the trip, the routes and what the session earned follow by themselves."
+          },
+          {
+            "title": "Storage at the station",
+            "text": "Bought more than your hold takes? The rest is left at the storage of the station with its purchase price. The Storage tab tells where to haul it, Loaded starts the next trip, and the mini line reminds you of what lies there."
           }
         ]
       },
@@ -110,6 +114,14 @@
     "price-entry": {
       "caption": "A commodity row opened: price, quantity, Where to sell and Bought",
       "alt": "The terminal table with a commodity row opened: the price and quantity fields, the Where to sell and Bought buttons, and the mark “mine · 7 min”."
+    },
+    "storage-buy": {
+      "caption": "Bought more than the hold takes: the rest is left at the storage of the station",
+      "alt": "The Bought form under a commodity row: 900 SCU at 2,860, and under the fields the line “Into the hold 696 · to the storage of HUR-L1: 204 SCU”."
+    },
+    "storage": {
+      "caption": "The Storage tab: what lies at the station, Where to haul and Loaded",
+      "alt": "The terminal table on the tab “Storage · 1”: Stims 1000 SCU at 2,860, the row opened with what it cost and the buttons Where to haul, Loaded, Write off and Correct."
     },
     "sell-or-fly": {
       "caption": "A trip: phases, cargo, totals and the “sell here or fly on” comparison",
@@ -214,12 +226,12 @@
     "intro": "These are plans, not promises: the order and the contents of the versions may change.",
     "items": [
       {
-        "title": "1.4 — Prices at one key press",
-        "text": "Reading prices from the terminal on your key: one screenshot, recognised on your own computer. Sending your prices to UEX. All of it optional and off by default."
-      },
-      {
         "title": "2.0 — Trade Fleet",
         "text": "Shared prices and stock readings for a group of up to 10 players on one server. Optional and off by default."
+      },
+      {
+        "title": "2.x — Prices at one key press",
+        "text": "Reading prices from the terminal on your key: one screenshot, recognised on your own computer. Sending your prices to UEX. All of it optional and off by default."
       }
     ]
   },

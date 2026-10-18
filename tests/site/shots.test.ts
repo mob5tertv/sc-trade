@@ -127,7 +127,7 @@ describe('the pictures on the page', () => {
     const shown = (text: string) => [...text.matchAll(/assets\/shots\/([a-z-]+)\.png/g)].map((match) => match[1]);
     expect(shown(part('top'))).toEqual(['hero-strip', 'hero-window']);
     expect(shown(part('features'))).toEqual(['terminal-options', 'mini-run', 'my-routes']);
-    expect([...new Set(shown(part('gallery')))]).toEqual(['price-entry', 'sell-or-fly', 'history', 'settings']);
+    expect([...new Set(shown(part('gallery')))]).toEqual(['price-entry', 'storage-buy', 'storage', 'sell-or-fly', 'history', 'settings']);
   });
 
   it('links to the gallery from the header of every page', () => {
@@ -140,7 +140,7 @@ describe('the pictures on the page', () => {
     const html = site.read('index.html');
     const gallery = /<section[^>]*\sid="gallery"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
     const links = [...gallery.matchAll(/<a class="stage__screen" href="([^"]+)" data-full data-width="(\d+)" data-height="(\d+)"/g)];
-    expect(links).toHaveLength(4);
+    expect(links).toHaveLength(6);
     for (const link of links) expect(link[1]).toMatch(/^assets\/shots\/[a-z-]+\.png\?v=[0-9a-f]+$/);
     expect(gallery).toMatch(/<dialog class="lightbox" data-lightbox/);
     for (const control of ['data-lightbox-close', 'data-lightbox-prev', 'data-lightbox-next']) expect(gallery).toMatch(new RegExp(`<button[^>]*${control}[^>]*aria-label="[^"]+"`));

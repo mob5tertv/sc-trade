@@ -42,7 +42,7 @@ async function overTheHold(app: SceneApp, intoHold = 696): Promise<void> {
 export const STORAGE_SCENES: readonly Scene[] = [
   {
     name: 'storage-buy-split',
-    title: 'Склад: «Купил» 1000 при трюме 696 — строка «В трюм 696 · на склад HUR-L1: 304 SCU»',
+    title: 'Склад: «Купил» 900 при трюме 696 — строка «В трюм 696 · на склад HUR-L1: 204 SCU»',
     dataset: 'default',
     act: async (app) => {
       await app.expand('preview');
@@ -50,7 +50,7 @@ export const STORAGE_SCENES: readonly Scene[] = [
       await pause(200);
       await press('[data-tour-row="STIM"]');
       await press('[data-tour-open="STIM"] [data-tour="trade"]');
-      type('form.trade .in-scu', '1000');
+      type('form.trade .in-scu', '900');
       await pause(200);
       if (document.querySelector('form.trade .split') === null) throw new Error('the form shows no line of the storage for a purchase over the hold');
     },
