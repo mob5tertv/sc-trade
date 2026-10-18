@@ -8,7 +8,7 @@ describe('migrations', () => {
   it('creates all tables and reports the latest version', async () => {
     const db = testDb();
     const log = createLogger(memorySink());
-    expect(await migrate(db, log)).toBe(4);
+    expect(await migrate(db, log)).toBe(5);
     const names = (await db.select<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'")).map(
       (r) => r.name,
     );
@@ -23,28 +23,29 @@ describe('migrations', () => {
       'observation',
       'run',
       'run_event',
+      'storage_entry',
       'setting',
     ])
       expect(names).toContain(t);
   });
 
-  it('stores the schema version in PRAGMA user_version (4)', async () => {
+  it('stores the schema version in PRAGMA user_version (5)', async () => {
     const db = await migratedDb();
-    expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 4 }]);
+    expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 5 }]);
   });
 
   it('is a no-op when run twice', async () => {
     const db = testDb();
     const log = createLogger(memorySink());
     await migrate(db, log);
-    expect(await migrate(db, log)).toBe(4);
+    expect(await migrate(db, log)).toBe(5);
   });
 
   it('can be re-run after a migration was interrupted half-way', async () => {
     // Migrations run without a transaction, so an interrupted run leaves some tables behind.
     const db = testDb();
     for (const sql of MIGRATIONS[0].statements.slice(0, 3)) await db.execute(sql);
-    expect(await migrate(db, createLogger(memorySink()))).toBe(4);
+    expect(await migrate(db, createLogger(memorySink()))).toBe(5);
     const tables = await db.select<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'");
     expect(tables.map((r) => r.name)).toContain('setting');
   });
@@ -93,7 +94,7 @@ describe('migrations', () => {
       await db.execute('PRAGMA user_version = 99');
       const tablesBefore = await tablesOf(db);
 
-      await expect(migrate(db, createLogger(memorySink()))).rejects.toThrow('схема 99, эта версия знает 4');
+      await expect(migrate(db, createLogger(memorySink()))).rejects.toThrow('схема 99, эта версия знает 5');
 
       expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 99 }]);
       expect(await tablesOf(db)).toEqual(tablesBefore); // migration 2 did not run
@@ -226,9 +227,9 @@ describe('migrations', () => {
     await db.execute("INSERT INTO uex_meta (key, value) VALUES ('prices_synced_at', '123'), ('routes_fetched:1', 'ok')");
     await db.execute("INSERT INTO observation (ts, terminal_id, commodity_id, side, price, scu) VALUES (1, 1, 10, 'buy', 6000, 0)");
 
-    expect(await migrate(db, createLogger(memorySink()))).toBe(4);
+    expect(await migrate(db, createLogger(memorySink()))).toBe(5);
 
-    expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 4 }]);
+    expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 5 }]);
     const cols = (await db.select<{ name: string }>('PRAGMA table_info(uex_price)')).map((c) => c.name);
     expect(cols).toContain('scu_buy_max');
     expect(cols).toContain('scu_sell_max');
@@ -244,7 +245,7 @@ describe('migrations', () => {
     await db.execute('PRAGMA user_version = 1');
     for (const sql of MIGRATIONS[1].statements.slice(0, 2)) await db.execute(sql);      // the table is rebuilt, the mark is still there
     await db.execute("INSERT INTO uex_meta (key, value) VALUES ('prices_synced_at', '123')");
-    expect(await migrate(db, createLogger(memorySink()))).toBe(4);
+    expect(await migrate(db, createLogger(memorySink()))).toBe(5);
     expect(await db.select("SELECT 1 FROM uex_meta WHERE key = 'prices_synced_at'")).toEqual([]);
   });
 
@@ -254,7 +255,7 @@ describe('migrations', () => {
     await db.execute('PRAGMA user_version = 2');
     await db.execute("INSERT INTO run (scu_capacity, started_at, ended_at, status) VALUES (696, 1000, 2000, 'lost')");
 
-    expect(await migrate(db, createLogger(memorySink()))).toBe(4);
+    expect(await migrate(db, createLogger(memorySink()))).toBe(5);
     expect(await db.select('SELECT * FROM run_target')).toEqual([]);
     expect(await db.select('SELECT status FROM run')).toEqual([{ status: 'lost' }]);
     // the statement can be run again: a migration that was cut off before its version was written is repeated
@@ -268,7 +269,7 @@ describe('migrations', () => {
     await db.execute("INSERT INTO uex_vehicle (id, name, name_full, scu) VALUES (7, 'C2', 'Crusader C2 Hercules', 696)");
     await db.execute("INSERT INTO uex_meta (key, value) VALUES ('reference_synced_at', '123'), ('prices_synced_at', '456')");
 
-    expect(await migrate(db, createLogger(memorySink()))).toBe(4);
+    expect(await migrate(db, createLogger(memorySink()))).toBe(5);
     expect(await db.select('SELECT * FROM uex_terminal_cargo')).toEqual([]);
     expect(await db.select('SELECT * FROM uex_vehicle_cargo')).toEqual([]);
     expect(await db.select('SELECT name FROM uex_vehicle')).toEqual([{ name: 'C2' }]);                       // the reference is not rebuilt

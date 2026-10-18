@@ -1,6 +1,7 @@
 <script lang="ts">
   import ConfirmButton from './ConfirmButton.svelte';
   import { formatUec } from '../../core/format';
+  import { parseScu } from '../../core/input';
   import { approxTitle, LEGEND } from '../vm/legend';
   import type { PhaseLine } from '../vm/run-phase';
   import type { RunOutlook } from '../vm/run-outlook';
@@ -15,10 +16,29 @@
     /** The marks of the body: the ones the header of the section does not offer (`cardMarks`). */
     marks: Array<'depart' | 'arrive'>;
     onMark: (type: 'depart' | 'arrive') => void;
-    /** Called when the player pressed «Груз потерян» and then «Точно потерян?» on the same button: the question is asked here, in its own place. */
-    onLost: () => void;
+    /**
+     * Called when the player pressed «Груз потерян» and then «Точно потерян?» on the same button: the question is asked here, in its own place.
+     * With one commodity in the hold the question also asks how much was really aboard (version 1.4, the author: killed while loading):
+     * `aboard` is that number, and the rest goes back to the storage it came from.
+     */
+    onLost: (aboard?: number) => void;
   }
   let { cargo, phases, outlook, marks, onMark, onLost }: Props = $props();
+
+  // the question of a hold of one commodity: how much was aboard, all of it unless the player says less
+  let asking = $state(false);
+  let aboardText = $state('');
+  const single = $derived(cargo.length === 1 ? cargo[0] : null);
+  const aboard = $derived.by(() => {
+    const n = parseScu(aboardText);
+    return n === null || single === null || n > single.scu ? null : n;
+  });
+
+  function ask(): void {
+    if (single === null) return;
+    aboardText = String(single.scu);
+    asking = true;
+  }
 
   const NONE = '—';
   const MARK_LABEL = { depart: tr('Взлетел'), arrive: tr('Прилетел') } as const;
@@ -27,13 +47,17 @@
 </script>
 
 {#snippet lost()}
-  <ConfirmButton
-    danger
-    label={tr('Груз потерян')}
-    sureLabel={tr('Точно потерян?')}
-    title={tr('Рейс закроется как потерянный, груз спишется')}
-    onConfirm={() => onLost()}
-  />
+  {#if single !== null}
+    <button type="button" class="sc-btn sc-btn--act danger" aria-expanded={asking} title={tr('Рейс закроется как потерянный, груз спишется')} onclick={() => (asking ? (asking = false) : ask())}>{tr('Груз потерян')}</button>
+  {:else}
+    <ConfirmButton
+      danger
+      label={tr('Груз потерян')}
+      sureLabel={tr('Точно потерян?')}
+      title={tr('Рейс закроется как потерянный, груз спишется')}
+      onConfirm={() => onLost()}
+    />
+  {/if}
 {/snippet}
 
 <section class="card" aria-label={tr('Текущий рейс')}>
@@ -59,6 +83,29 @@
       <span class="spacer"></span>
       {@render lost()}
     </div>
+  {/if}
+
+  {#if asking && single !== null}
+    <!-- version 1.4: what was never aboard (killed while loading) goes back to the storage it came from; only what was aboard is lost -->
+    <div class="ask" role="group" aria-label={tr('Сколько было на борту')}>
+      <span>{tr('На борту было')}</span>
+      <input
+        class="sc-input sc-num qty"
+        type="text"
+        inputmode="numeric"
+        autocomplete="off"
+        data-select-on-focus
+        aria-label={tr('Сколько SCU было на борту')}
+        aria-invalid={aboard === null ? 'true' : undefined}
+        value={aboardText}
+        oninput={(e) => (aboardText = e.currentTarget.value)}
+      />
+      <span class="unit">{tr('из {scu} SCU', { scu: single.scu })}</span>
+      <span class="spacer"></span>
+      <button type="button" class="sc-btn sc-btn--act danger" disabled={aboard === null} title={tr('Списать то, что было на борту; остальное вернётся на склад, откуда взято')} onclick={() => { asking = false; onLost(aboard ?? undefined); }}>{tr('Потерян')}</button>
+      <button type="button" class="sc-btn sc-btn--act" onclick={() => (asking = false)}>{tr('Отмена')}</button>
+    </div>
+    {#if aboard !== null && aboard < single.scu}<p class="back">{tr('{scu} SCU вернётся на склад, откуда взято', { scu: single.scu - aboard })}</p>{/if}
   {/if}
 
   {#if cargo.length === 0}
@@ -92,6 +139,37 @@
 <style>
   .card {
     padding: 0 var(--sc-pad-x);
+  }
+
+  .danger {
+    border-color: var(--sc-bad);
+    color: var(--sc-bad);
+  }
+
+  /* how much was aboard, asked before the cargo is written off (version 1.4) */
+  .ask {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: var(--sc-ctl-h);
+    color: var(--sc-bad);
+    white-space: nowrap;
+  }
+
+  .ask .qty {
+    flex: none;
+    width: 48px;
+  }
+
+  .ask .unit {
+    color: var(--sc-muted);
+    font-size: var(--sc-font-sm);
+  }
+
+  .back {
+    margin: 0 0 4px;
+    color: var(--sc-warn);
+    font-size: var(--sc-font-sm);
   }
 
   /* the phases of the leg on one line: the finished ones fixed, the running one in the accent, the ones to come as a dash */

@@ -7,6 +7,7 @@ import { anchorFromRect, WINDOW_MARGIN, type Corner, type Rect, type Size } from
 import type { RouteCtx, RouteOption } from '../core/routes';
 import { estimate } from '../core/estimate';
 import { cargoOf } from '../core/run';
+import { linesAt, storageLines, type StorageLine } from '../core/storage';
 import { sellOrContinue } from '../core/sell';
 import { DEFAULT_SETTINGS, type Settings } from '../core/settings';
 import type { Market, Reference, RunWithEvents, Side } from '../core/types';
@@ -14,16 +15,17 @@ import type { Db } from '../data/db';
 import { createLogger, type Logger } from '../data/logger';
 import { addObservation, editObservation, removeLatestObservation } from '../data/repo/diary';
 import { getActiveRun } from '../data/repo/runs';
+import { listStorageEntries } from '../data/repo/storage';
 import { loadSettings, saveSetting } from '../data/repo/settings';
 import { getMeta, loadDistances, loadReference } from '../data/repo/uex-cache';
 import {
-  loadMarket, suggestFromDetailed, suggestToDetailed, type SuggestDeps, type SuggestProgress, type SuggestRun,
+  loadMarket, suggestFromDetailed, suggestFromLot, suggestToDetailed, type SuggestDeps, type SuggestProgress, type SuggestRun,
 } from '../data/suggest';
 import { syncPrices, syncReference, type SyncDeps } from '../data/sync';
 import {
-  clearHistory as clearRunHistory, ClearHistoryError, editTrade as correctTrade, loseCargo as closeAsLost, recordBuy, recordIncome, recordMark, recordSell,
-  removeRunRecord, TradeError,
-  type ClearedHistory, type TradeDeps, type TradeEdit, type TradeInput,
+  clearHistory as clearRunHistory, ClearHistoryError, editTrade as correctTrade, fixStorage as correctStorage, loadFromStorage, loseCargo as closeAsLost,
+  recordIncome, recordMark, recordPurchase, recordSell, recordSellFromStorage, removeRunRecord, TradeError, writeOffStorage,
+  type ClearedHistory, type StorageTake, type TradeDeps, type TradeEdit, type TradeInput,
 } from '../data/trade';
 import { UexError, type UexClient } from '../data/uex-client';
 import { applyLogLevel } from '../platform/tauri-logger';
@@ -67,6 +69,7 @@ import { validateSetting } from './vm/settings-validation';
 import { WORSE_PRICE_ACTION, worsePrice, worsePriceText } from './vm/worse-price';
 import { META_PRICES_SYNCED_AT, META_REFERENCE_SYNCED_AT, metaSeconds, refreshPlan, reloadsMidSync, syncPlan } from './vm/sync-plan';
 import { stripModel, type StripModel } from './vm/strip';
+import { storageLeftText, stripStorageText } from './vm/storage';
 import { rowRoiMap, type RowRoi } from './vm/row-roi';
 import { sideCounts, terminalRows as buildTerminalRows, type TerminalRow } from './vm/terminal-rows';
 import { arrivalAsksWhere, askedInRun, pickEffect } from './vm/terminal-pick';
@@ -135,7 +138,7 @@ import { openDemoDb } from '../platform/tauri-db';
 //    ever awaits the mode queue. A drag (`dragBegin` .. `dragEnd`) is the one thing that stops `#refit`.
 
 /** What the expanded window shows: the main screen or the settings, which take the whole window. */
-export type View = 'main' | 'settings' | 'guide' | 'language';
+export type View = 'main' | 'settings' | 'guide' | 'language' | 'storage';
 export type Phase = 'booting' | 'ready' | 'failed';
 /** A button of the notice line next to its cross: what it says and what a click does. */
 export interface NoticeAction { label: string; run: () => void }
@@ -283,7 +286,10 @@ class AppState {
    */
   strip = $derived.by((): StripModel => (
     this.phase === 'ready'
-      ? stripModel(this.activeRun, this.market, this.reference, this.settings, this.routeCtx(), stats.sessionNow)
+      ? stripModel(
+        this.activeRun, this.market, this.reference, this.settings, this.routeCtx(), stats.sessionNow,
+        stripStorageText(this.storageAt(this.settings.currentTerminalId), this.reference),
+      )
       : { kind: 'idle', location: '', target: null, session: null }
   ));
 
@@ -313,6 +319,10 @@ class AppState {
    * as "buy"; the player switches it, and a terminal that has no rows on it brings the other side (`#settleSide`).
    */
   terminalSide = $state<Side>('buy');
+  /** The table of the terminal shows the storage of its place (its third tab, version 1.4) instead of a side of the market. */
+  terminalStorage = $state(false);
+  /** What lies in the storages of the places (version 1.4, `core/storage.ts`): the lines that hold something, the oldest first. */
+  storage = $state.raw<StorageLine[]>([]);
   /** The keyboard is with the window: the player is typing. */
   keyboardHeld = $state(false);
   /**
@@ -678,6 +688,7 @@ class AppState {
     this.reference = await loadReference(db);
     await this.#loadMarketData();
     this.activeRun = await getActiveRun(db);
+    await this.#reloadStorage();
     await stats.reload('data loaded'); // never throws; from here on the statistics follow `activeRun` by themselves
     // the rows of the viewed terminal are known only now: a terminal that has nothing on the "buy" side opens on "sell"
     this.#settleSide();
@@ -1634,9 +1645,112 @@ class AppState {
 
   /** The Buy / Sell switch of the Terminal section. */
   setTerminalSide(side: Side): void {
+    if (this.terminalStorage) {
+      this.#log.info('ui', 'terminal side', { from: 'storage', to: side });
+      this.terminalStorage = false;
+    }
     if (side === this.terminalSide) return;
     this.#log.info('ui', 'terminal side', { from: this.terminalSide, to: side });
     this.terminalSide = side;
+  }
+
+  // ---- the storage (version 1.4, party-mode.md sections 22–23) ----------------------------------------------------------
+
+  /** «Склад» of the Terminal section: the table shows what lies at the place of the viewed terminal. */
+  showTerminalStorage(): void {
+    if (this.terminalStorage) return;
+    this.#log.info('ui', 'terminal side', { from: this.terminalSide, to: 'storage' });
+    this.terminalStorage = true;
+  }
+
+  /** The lines that lie at the place of a terminal (its own and those of the other terminals of its station). */
+  storageAt(terminalId: number | null): StorageLine[] {
+    return terminalId === null ? [] : linesAt(this.storage, this.reference.terminals, terminalId);
+  }
+
+  /** «Склад N» of the header: the list of every storage. A question that is still up is answered "no", as when the settings are opened. */
+  openStorage(): void {
+    this.#log.info('ui', 'open storage', { lines: this.storage.length });
+    if (this.confirm !== null) this.answer(false, 'storage');
+    this.view = 'storage';
+    this.#touch();
+  }
+
+  closeStorage(): void {
+    if (this.view !== 'storage') return;
+    this.#log.info('ui', 'close storage');
+    this.view = 'main';
+    this.#touch();
+  }
+
+  /** A place of the list of storages: the window shows its terminal, on the tab «Склад». */
+  showStorageAt(terminalId: number): void {
+    this.#log.info('ui', 'show storage at', { terminalId });
+    this.view = 'main';
+    this.#showTerminal(terminalId);
+    this.terminalStorage = true;
+    void this.openSection('terminal');
+    this.#touch();
+  }
+
+  /**
+   * «Погрузил»: a part of a line of the storage goes into the hold (the run starts with it when none goes). The place of the storage is
+   * where the ship stands. Returns the sentence to show at the row when it was not written, `null` when it was.
+   */
+  loadStorage(take: StorageTake): Promise<string | null> {
+    return this.#tradeQueue(async () => {
+      this.#log.info('ui', 'load from the storage', { ...take });
+      const startsRun = this.activeRun === null;
+      let failure: string | null = null;
+      let mayHaveWritten = true;
+      try {
+        await loadFromStorage(this.#tradeDeps(), take);
+      } catch (err) {
+        failure = this.#tradeFailure('load from the storage', err, { ...take });
+        mayHaveWritten = !(err instanceof TradeError);
+      }
+      await this.#reloadRun(mayHaveWritten);
+      if (failure === null) {
+        this.#askedInRun = null;
+        await this.#locateAt(take.terminalId);
+        if (startsRun) void this.openSection(RUN_SECTION);
+        this.#say(tr('Погружено со склада: {scu} SCU', { scu: take.scu }));
+      }
+      return failure;
+    });
+  }
+
+  /** «Списать»: a part of a line of the storage is gone; what it cost is a loss of this session. `null` when it was written. */
+  writeOffStorage(take: StorageTake): Promise<string | null> {
+    return this.#storageChange('write off', { ...take }, () => writeOffStorage(this.#tradeDeps(), take));
+  }
+
+  /** «Исправить» a line of the storage: it holds `scu` at `price` from now on, no money of any session changes. `null` when it was written. */
+  fixStorage(fix: { terminalId: number; commodityId: number; scu: number; price: number }): Promise<string | null> {
+    return this.#storageChange('correct', { ...fix }, () => correctStorage(this.#tradeDeps(), fix));
+  }
+
+  /** «Очистить всё» of the list of storages (a wipe): every line is written off. `null` when it worked. */
+  clearStorage(): Promise<string | null> {
+    const lines = [...this.storage];
+    return this.#storageChange('clear', { lines: lines.length }, async () => {
+      for (const line of lines) await writeOffStorage(this.#tradeDeps(), { terminalId: line.terminalId, commodityId: line.commodityId, scu: line.scu });
+    });
+  }
+
+  #storageChange(what: string, context: Record<string, unknown>, write: () => Promise<void>): Promise<string | null> {
+    return this.#tradeQueue(async () => {
+      this.#log.info('ui', `storage: ${what}`, context);
+      let failure: string | null = null;
+      try {
+        await write();
+      } catch (err) {
+        failure = this.#tradeFailure(`storage: ${what}`, err, context);
+      }
+      await this.#reloadStorage();
+      void stats.reload('storage changed'); // a write-off is a loss of the session
+      return failure;
+    });
   }
 
   /**
@@ -1646,6 +1760,8 @@ class AppState {
   #showTerminal(id: number | null): void {
     this.viewTerminalId = id;
     this.#settleSide();
+    // a place with nothing in its storage shows its market (the tab «Склад» stays for a place that has something there)
+    if (this.terminalStorage && this.storageAt(id).length === 0) this.terminalStorage = false;
   }
 
   /** The drawn side is one that has rows, when the viewed terminal has rows on either. */
@@ -1872,6 +1988,10 @@ class AppState {
       const freeScu = this.settings.scuCapacity;
       const deps = this.suggestDeps();
       const commodityId = request.commodityId ?? undefined;
+      // a line of the storage to carry on (version 1.4): its trips are counted from what lies there and what it cost
+      if (request.lot !== undefined && commodityId !== undefined) {
+        return suggestFromLot(deps, { terminalId: request.terminalId, commodityId, ...request.lot }, freeScu, run);
+      }
       return request.kind === 'from'
         ? suggestFromDetailed(deps, request.terminalId, freeScu, commodityId, run)
         : suggestToDetailed(deps, request.terminalId, freeScu, commodityId, run);
@@ -2050,7 +2170,17 @@ class AppState {
     }
     if (!mayHaveWritten) return;
     await this.reloadMarket();
+    await this.#reloadStorage();
     this.rowsNow = nowSec();
+  }
+
+  /** Reads the storage again (a trade or a line of it may have changed it). Never throws. */
+  async #reloadStorage(): Promise<void> {
+    try {
+      this.storage = storageLines(await listStorageEntries(this.#syncDeps().db));
+    } catch (err) {
+      this.#log.error('ui', 'cannot read the storage', { err });
+    }
   }
 
   /** The sentence for a trade that was not written: the text of a refusal of the service, else a general one (the cause is in the log). */
@@ -2088,7 +2218,11 @@ class AppState {
    */
   async #announceClosed(closed: RunWithEvents): Promise<void> {
     try {
-      const notice = closedRunNotice(closed);
+      const base = closedRunNotice(closed);
+      // version 1.4: goods of this run that still lie at a storage are the next trip, and the notice says so
+      const carried = [...new Set(closed.events.flatMap((e) => (e.commodityId === null ? [] : [e.commodityId])))];
+      const left = base.closesRun ? storageLeftText(carried, this.storage, this.reference) : null;
+      const notice = left === null ? base : { ...base, text: `${base.text}${left}` };
       this.#log.info('ui', 'run closed', { runId: closed.run.id, status: closed.run.status });
       this.#say(notice.text, notice.kind, stayTimes(notice, FLASH_MS, NOTICE_MS));
       // the hint has a button to press: it is for the notice line of the expanded window, not for the mini line that lets a message go in three seconds
@@ -2181,7 +2315,10 @@ class AppState {
    */
   async #followTarget(view: ArrivalView, say = 'arrival: the view follows the target'): Promise<void> {
     if (view.show === null) return;
-    if (view.preferSide !== null) this.terminalSide = view.preferSide;
+    if (view.preferSide !== null) {
+      this.terminalSide = view.preferSide;
+      this.terminalStorage = false; // the side asked for is a side of the market
+    }
     this.#showTerminal(view.show);
     this.#log.info('ui', say, { terminalId: view.show, side: this.terminalSide });
     if (view.locateAt !== null) await this.#setLocation(view.locateAt);
@@ -2199,7 +2336,7 @@ class AppState {
       let failure: string | null = null;
       let mayHaveWritten = true;
       try {
-        await recordBuy(this.#tradeDeps(), input);
+        await recordPurchase(this.#tradeDeps(), input);
       } catch (err) {
         failure = this.#tradeFailure('buy', err, { ...input });
         mayHaveWritten = !(err instanceof TradeError);
@@ -2208,8 +2345,11 @@ class AppState {
       if (failure === null) {
         this.#askedInRun = null; // a trade says where the ship is: it is the terminal of the trade
         await this.#locateAt(input.terminalId);
-        await this.#advanceTarget(input.terminalId);
-        if (startsRun) void this.openSection(RUN_SECTION);
+        // a purchase that went to the storage alone carried nothing on: the target in two steps waits for the load
+        if (this.activeRun !== null) await this.#advanceTarget(input.terminalId);
+        if (startsRun && this.activeRun !== null) void this.openSection(RUN_SECTION);
+        const stored = input.toStorage ?? 0;
+        if (stored > 0) this.#say(tr('На складе {place}: {scu} SCU', { place: terminalLabel(this.reference, input.terminalId), scu: stored }));
       }
       return failure;
     });
@@ -2226,10 +2366,10 @@ class AppState {
    * statistics by itself. They are told to here, once, because the history, the sessions and the profit of the session have
    * changed. A refusal of the service wrote nothing and re-reads nothing.
    */
-  sell(input: TradeInput, income = false): Promise<string | null> {
-    const what = income ? 'sell without purchase' : 'sell';
+  sell(input: TradeInput, income = false, fromStorage: number | null = null): Promise<string | null> {
+    const what = income ? 'sell without purchase' : fromStorage !== null ? 'sell from the storage' : 'sell';
     return this.#tradeQueue(async () => {
-      this.#log.info('ui', what, { ...input });
+      this.#log.info('ui', what, { ...input, fromStorage });
       let failure: string | null = null;
       let finished = false;
       let mayHaveWritten = true;
@@ -2238,7 +2378,10 @@ class AppState {
       try {
         if (income) closed = await recordIncome(this.#tradeDeps(), input);
         else {
-          const sale = await recordSell(this.#tradeDeps(), input);
+          // version 1.4: goods that lie at a storage and are not in the hold were loaded there with «Погрузил» forgotten
+          const sale = fromStorage !== null
+            ? await recordSellFromStorage(this.#tradeDeps(), input, fromStorage)
+            : await recordSell(this.#tradeDeps(), input);
           finished = sale.finished;
           if (finished) closed = sale.run;
         }
@@ -2292,15 +2435,18 @@ class AppState {
     });
   }
 
-  /** "Груз потерян" (after the question was answered with yes): the run is closed as lost, the hold is written off, the target goes. */
-  loseCargo(): Promise<string | null> {
+  /**
+   * "Груз потерян" (after the question was answered with yes): the run is closed as lost, the hold is written off, the target goes.
+   * `aboard` (version 1.4): how much was really aboard; of a hold of one commodity the rest goes back to the storage it came from.
+   */
+  loseCargo(aboard?: number): Promise<string | null> {
     return this.#tradeQueue(async () => {
-      this.#log.info('ui', 'lose cargo');
+      this.#log.info('ui', 'lose cargo', { aboard: aboard ?? null });
       let failure: string | null = null;
       let mayHaveWritten = true;
       let closed: RunWithEvents | null = null;
       try {
-        closed = await closeAsLost(this.#tradeDeps());
+        closed = await closeAsLost(this.#tradeDeps(), aboard);
       } catch (err) {
         failure = this.#tradeFailure('lose cargo', err, {});
         mayHaveWritten = !(err instanceof TradeError);

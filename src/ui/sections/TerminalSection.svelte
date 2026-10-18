@@ -15,6 +15,7 @@
   import Icon from '../components/Icon.svelte';
   import QuickEntry from '../components/QuickEntry.svelte';
   import Section from '../components/Section.svelte';
+  import StorageTable from '../components/StorageTable.svelte';
   import TerminalTable from '../components/TerminalTable.svelte';
   import TradeDialog from '../components/TradeDialog.svelte';
   import { app } from '../state.svelte';
@@ -24,8 +25,9 @@
   import { kindForSide, lookupPrice } from '../vm/lookup';
   import { defaultSide, entryCommodities, entrySides, uexSides } from '../vm/quick-entry';
   import { crossedRows, roiCells, type RoiSnapshot } from '../vm/row-roi';
-  import { sideCounts, type TerminalRow } from '../vm/terminal-rows';
-  import { terminalFullName } from '../vm/terminal-name';
+  import { storageElsewhere, storageRows, type StorageRow } from '../vm/storage';
+  import { cellStock, sideCounts, type TerminalRow } from '../vm/terminal-rows';
+  import { terminalFullName, terminalLabel } from '../vm/terminal-name';
   import { terminalFullPlace } from '../vm/terminal-place';
   import { clickedTerminalSort, type TerminalSortKey } from '../vm/terminal-order';
   import { selectedCommodity, type RowPick } from '../vm/terminal-side';
@@ -49,6 +51,18 @@
   const counts = $derived(sideCounts(rows));
   // what is in the hold while a run goes on: on the sell side the table puts these commodities first and marks them
   const cargo = $derived(cargoOf(app.activeRun?.events ?? []));
+  // version 1.4: the third tab, what lies at the storage of the place of the viewed terminal
+  const storageTab = $derived(app.terminalStorage);
+  const storedHere = $derived(app.storageAt(viewedId));
+
+  // «Куда везти» of a line of the storage: the trips are counted from what lies there and what it cost
+  function lookupStorage(row: StorageRow): void {
+    const line = storedHere.find((l) => l.terminalId === row.terminalId && l.commodityId === row.commodityId);
+    if (line === undefined) return;
+    void app.runLookup({
+      kind: 'from', terminalId: line.terminalId, commodityId: line.commodityId, price: null, lot: { scu: line.scu, price: line.price },
+    });
+  }
 
   // the name of the viewed terminal as the location field of the header names it (one name for a terminal everywhere)
   const name = $derived(
@@ -174,7 +188,11 @@
    * was opened after the player went to another row (or the same row again). `mode` is what the form promises the player
    * when it opens, and what it writes: a sale of goods that are not in the hold is an `income`.
    */
-  interface TradeFormState { id: number; terminalId: number; side: Side; mode: TradeMode; commodityId: number; defaults: TradeDefaults; error: string | null }
+  interface TradeFormState {
+    id: number; terminalId: number; side: Side; mode: TradeMode; commodityId: number; defaults: TradeDefaults; error: string | null;
+    /** A sale guessed to come from the storage of another place (`mode: 'storage'`): the terminal of that storage. */
+    storageFrom?: number;
+  }
   let tradeState = $state.raw<TradeFormState | null>(null);
   let tradeFormCount = 0;
   const tradeFor = $derived(tradeState === null ? null : tradeState.commodityId);
@@ -198,7 +216,7 @@
   $effect(() => {
     const form = tradeState;
     if (form === null) return;
-    if (!(open && viewedId === form.terminalId && side === form.side && selectedCommodityId === form.commodityId)) {
+    if (!(open && !storageTab && viewedId === form.terminalId && side === form.side && selectedCommodityId === form.commodityId)) {
       untrack(() => closeTrade('its row is gone'));
     }
   });
@@ -217,25 +235,55 @@
     if (tradeState !== null && tradeState.commodityId === e.commodityId && tradeState.side === e.side) return;
     const cell = rows.find((r) => r.commodityId === e.commodityId)?.[e.side];
     if (!cell) return;
-    const mode = tradeMode(e.side, app.activeRun, e.commodityId);
-    const defaults = tradeDefaults({
+    let mode = tradeMode(e.side, app.activeRun, e.commodityId);
+    let defaults = tradeDefaults({
       side: e.side, commodityId: e.commodityId, cell,
       cargo: cargoOf(app.activeRun?.events ?? []), capacity: app.settings.scuCapacity, budget: app.settings.budget,
     });
-    app.log.info('ui', 'trade form', { terminalId: viewedId, ...e, mode, ...defaults });
-    tradeState = { id: ++tradeFormCount, terminalId: viewedId, side: e.side, mode, commodityId: e.commodityId, defaults, error: null };
+    // version 1.4: goods that are not in the hold but lie at the storage of another place were loaded there and «Погрузил» was forgotten
+    const lot = mode === 'income' ? storageElsewhere(app.storage, app.reference.terminals, viewedId, e.commodityId) : undefined;
+    if (lot !== undefined) {
+      mode = 'storage';
+      defaults = { ...defaults, scu: lot.scu };
+    }
+    app.log.info('ui', 'trade form', { terminalId: viewedId, ...e, mode, ...defaults, storageFrom: lot?.terminalId ?? null });
+    tradeState = {
+      id: ++tradeFormCount, terminalId: viewedId, side: e.side, mode, commodityId: e.commodityId, defaults, error: null,
+      ...(lot === undefined ? {} : { storageFrom: lot.terminalId }),
+    };
+  }
+
+  // «не со склада»: the sale guessed to come from a storage is an income after all (the goods came from elsewhere)
+  function notFromStorage(): void {
+    if (tradeState === null || tradeState.mode !== 'storage') return;
+    app.log.info('ui', 'trade form: not from the storage', { commodityId: tradeState.commodityId });
+    const { storageFrom: _, ...rest } = tradeState;
+    tradeState = { ...rest, mode: 'income', defaults: { ...rest.defaults, scu: null }, error: null };
+  }
+
+  // the free space of the hold for a purchase (version 1.4): what does not fit is left at the storage; `null` without a ship
+  const freeScu = $derived(app.settings.scuCapacity > 0 ? Math.max(0, app.settings.scuCapacity - cargo.reduce((sum, line) => sum + line.scu, 0)) : null);
+
+  /** The line under the form of a sale: an income says the goods are not in the hold, a sale from a storage names it. */
+  function saleNote(form: TradeFormState): string | null {
+    if (form.mode === 'income') return INCOME_NOTE();
+    if (form.mode === 'storage' && form.storageFrom !== undefined) {
+      const line = app.storage.find((l) => l.terminalId === form.storageFrom && l.commodityId === form.commodityId);
+      return tr('Со склада {place} ({scu} SCU): запишется рейсом оттуда сюда', { place: terminalLabel(app.reference, form.storageFrom), scu: line?.scu ?? 0 });
+    }
+    return null;
   }
 
   // The error of the form is cleared when the write starts, so that the same refusal twice in a row is a change for the form.
   // The quantity the player sees at the terminal is the one of the row at this moment (knownScu): the diary keeps "was minus
   // bought" after a purchase and "was plus sold" after a sale.
-  async function confirmTrade(trade: { scu: number; price: number }): Promise<void> {
+  async function confirmTrade(trade: { scu: number; price: number; toStorage?: number }): Promise<void> {
     const form = tradeState;
     if (form === null) return;
     tradeState = { ...form, error: null };
     const cell = app.terminalRows.find((r) => r.commodityId === form.commodityId)?.[form.side] ?? null;
     const input = { terminalId: form.terminalId, commodityId: form.commodityId, ...trade, knownScu: knownScuOf(cell) };
-    const failure = await (form.side === 'buy' ? app.buy(input) : app.sell(input, form.mode === 'income'));
+    const failure = await (form.side === 'buy' ? app.buy(input) : app.sell(input, form.mode === 'income', form.mode === 'storage' ? form.storageFrom ?? null : null));
     // the answer belongs to the form the write was started from: the player may have gone to another row meanwhile
     if (failure === null) closeTrade('written', form.id);
     else if (goodsCameAboard(form.mode, app.activeRun, form.commodityId)) {
@@ -276,8 +324,10 @@
       >{tr('цель')}</button>
     {/if}
     <div class="sc-seg" role="group" aria-label={tr('Какую сторону терминала показать')}>
-      <button type="button" aria-pressed={side === 'buy'} title={tr('Что можно купить здесь')} onclick={() => app.setTerminalSide('buy')}>{tr('Купить · {buy}', { buy: counts.buy })}</button>
-      <button type="button" aria-pressed={side === 'sell'} title={tr('Что можно продать здесь')} onclick={() => app.setTerminalSide('sell')}>{tr('Продать · {sell}', { sell: counts.sell })}</button>
+      <button type="button" aria-pressed={!storageTab && side === 'buy'} title={tr('Что можно купить здесь')} onclick={() => app.setTerminalSide('buy')}>{tr('Купить · {buy}', { buy: counts.buy })}</button>
+      <button type="button" aria-pressed={!storageTab && side === 'sell'} title={tr('Что можно продать здесь')} onclick={() => app.setTerminalSide('sell')}>{tr('Продать · {sell}', { sell: counts.sell })}</button>
+      <!-- version 1.4: what the player left at the storage of this place -->
+      <button type="button" data-tour="storage-tab" aria-pressed={storageTab} title={tr('Твой склад на этой станции: что ты купил сверх трюма и оставил здесь')} onclick={() => app.showTerminalStorage()}>{tr('Склад · {n}', { n: storedHere.length })}</button>
     </div>
     <button type="button" class="sc-btn sc-btn--act sc-btn--icon search" aria-label={searchTitle} title={searchTitle} onclick={searchAll}>
       <Icon name="search" />
@@ -321,7 +371,11 @@
       defaultPriceIsOwn={tradeState.defaults.priceIsOwn}
       stockUnknown={tradeState.defaults.stockUnknown}
       maxScu={tradeMaxScu}
-      note={tradeState.mode === 'income' ? INCOME_NOTE() : tradeState.side === 'buy' ? boxes : null}
+      note={tradeState.side === 'buy' ? boxes : saleNote(tradeState)}
+      noteAction={tradeState.mode === 'storage' ? { label: tr('не со склада'), title: tr('Этот груз не со склада: записать как доход без закупки'), run: notFromStorage } : null}
+      free={tradeState.side === 'buy' ? freeScu : null}
+      storagePlace={name}
+      stockScu={tradeState.side === 'buy' && row.buy !== null ? cellStock(row.buy) : null}
       error={tradeState.error}
       onConfirm={(trade) => void confirmTrade(trade)}
       onCancel={() => closeTrade('cancelled')}
@@ -349,6 +403,16 @@
         {tr('{ship} здесь не загрузится: {reason}', { ship: app.vehicle?.name ?? tr('Корабль'), reason: cannotLoad })}
       </p>
     {/if}
+    {#if storageTab}
+      <StorageTable
+        rows={storageRows(storedHere, app.reference, app.now, viewedId)}
+        free={freeScu}
+        onLookup={lookupStorage}
+        onLoad={(row, scu) => app.loadStorage({ terminalId: row.terminalId, commodityId: row.commodityId, scu })}
+        onWriteOff={(row, scu) => app.writeOffStorage({ terminalId: row.terminalId, commodityId: row.commodityId, scu })}
+        onFix={(row, scu, price) => app.fixStorage({ terminalId: row.terminalId, commodityId: row.commodityId, scu, price })}
+      />
+    {:else}
     <TerminalTable
       {rows}
       {side}
@@ -375,6 +439,7 @@
       sort={terminalSort}
       onSort={sortBy}
     />
+    {/if}
   {/if}
 </Section>
 

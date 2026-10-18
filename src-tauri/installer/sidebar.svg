@@ -36,5 +36,5 @@
   <!-- The version of the application under the chart: bold, in the text colour of the theme, with air between the signs so that
        the dots do not fuse with the digits at the 164 px of this picture. Written by hand: it is the version of package.json,
        and a test fails when it is not (then change it and run `npm run installer:images`). -->
-  <text id="version" x="18" y="302" font-family="'Bahnschrift SemiCondensed', Bahnschrift, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700" letter-spacing="2.6" fill="#d6eef5">v1.3.1</text>
+  <text id="version" x="18" y="302" font-family="'Bahnschrift SemiCondensed', Bahnschrift, 'Segoe UI', sans-serif" font-size="13.5" font-weight="700" letter-spacing="2.6" fill="#d6eef5">v1.4.0</text>
 </svg>

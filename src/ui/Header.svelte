@@ -6,6 +6,7 @@
   import { searchTerminals, terminalSearchItems, headerCompact } from './vm/header';
   import { indicatorClick, indicatorFace } from './vm/keyboard-badge';
   import { locationFieldTitle, locationPlaceholder } from './vm/terminal-pick';
+  import { storageButton } from './vm/storage';
   import { windowHeader } from './vm/window-header';
   import WindowGrip from './WindowGrip.svelte';
   import { tr } from '../i18n';
@@ -34,6 +35,7 @@
   }
 
   const locked = $derived(app.windowLocked);
+  const storageBtn = $derived(storageButton(app.storage));
   const lockTitle = $derived(locked ? tr('Открепить окно') : tr('Закрепить окно'));
 
   // One misclick would make every price of mine cold, so the button asks, and in its own place (the author, 14.10.2026): the first
@@ -108,6 +110,12 @@
     {tr('Маршрут')}
   </button>
   <div class="icons">
+    <!-- version 1.4: the storage at the stations, only while something lies there -->
+    {#if storageBtn !== null}
+      <button class="sc-btn sc-btn--ghost stored" type="button" data-tour="storage" aria-label={storageBtn.label} title={storageBtn.title} onclick={() => app.openStorage()}>
+        <Icon name="crate" /><span class="count">{app.storage.length}</span>
+      </button>
+    {/if}
     <button
       class="sc-btn sc-btn--ghost sc-btn--icon"
       type="button"
@@ -312,6 +320,21 @@
     padding: 0 6px;
     border-color: var(--sc-bad);
     color: var(--sc-bad);
+  }
+
+  /* the storage (version 1.4): the crate and how many lines lie there, in the colour of a caution so that it is not forgotten */
+  .stored {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-right: 3px;
+    padding: 0 4px;
+    color: var(--sc-warn) !important;
+  }
+
+  .count {
+    font-size: var(--sc-font-sm);
+    font-weight: 600;
   }
 
   .icons :global(.sc-btn:hover:not(:disabled)),

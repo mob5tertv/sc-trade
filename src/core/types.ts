@@ -96,6 +96,16 @@ export interface Run {
   /** Цель, которая стояла у рейса, когда груз списали как потерянный (таблица `run_target`); у остальных рейсов её нет. */
   targetId?: number | null;
 }
-export interface RunEvent { id: number; runId: number; ts: number; type: RunEventType; terminalId: number | null; commodityId: number | null; scu: number | null; price: number | null }
+/**
+ * Сделка рейса, которая на самом деле движение склада (версия 1.4, `core/storage.ts`): покупка — погрузка со склада по средней цене
+ * закупки ('load'; 'late' — записана при продаже, когда «Погрузил» забыли нажать), продажа — возврат на склад по той же цене ('back',
+ * при потере груза то, чего на борту не было). Деньги рейса она меняет как обычная сделка; рынок и дневник цен — нет.
+ */
+export type StorageMove = 'load' | 'late' | 'back';
+export interface RunEvent {
+  id: number; runId: number; ts: number; type: RunEventType; terminalId: number | null; commodityId: number | null; scu: number | null; price: number | null;
+  /** Нет поля — обычная сделка на рынке. */
+  storage?: StorageMove;
+}
 export interface RunWithEvents { run: Run; events: RunEvent[] }
 export interface CargoLine { commodityId: number; scu: number; avgBuyPrice: number }

@@ -37,6 +37,8 @@ export type StripModel =
     then?: string | null;
     /** What the play session that is going has earned ('+1,24M'); `null` when there is no such session or nothing ended in it. */
     session: SessionFigure | null;
+    /** What lies at the storage of the place the ship stands at (version 1.4): 'склад 488 LARA'; absent when nothing lies there. */
+    stored?: string;
   }
   | {
     kind: 'run';
@@ -144,12 +146,14 @@ export function stripLot(
  */
 export function stripModel(
   active: RunWithEvents | null, m: Market, ref: Reference, s: Settings, ctx: RouteCtx, session: SessionFigure | null = null,
+  stored: string | null = null,
 ): StripModel {
   const target = s.targetTerminalId === null ? undefined : ref.terminals.get(s.targetTerminalId);
   if (active === null) {
     const then = target && s.targetThenId !== null ? ref.terminals.get(s.targetThenId) : undefined;
     return {
       kind: 'idle', location: locationOf(ref, s.currentTerminalId), target: target ? terminalName(target) : null, session,
+      ...(stored === null ? {} : { stored }),
       ...(then ? { then: terminalName(then) } : {}),
     };
   }

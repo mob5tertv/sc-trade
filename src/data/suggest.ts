@@ -1,6 +1,6 @@
 import { buildMarket } from '../core/market';
-import { routesFrom, routesTo, stockKnown } from '../core/routes';
-import type { RouteCtx, RouteOption, RouteResult } from '../core/routes';
+import { routesForLot, routesFrom, routesTo, stockKnown } from '../core/routes';
+import type { RouteCtx, RouteOption, RouteResult, StorageLot } from '../core/routes';
 import type { Settings } from '../core/settings';
 import { distKey } from '../core/types';
 import type { Estimate, Market, Reference } from '../core/types';
@@ -276,6 +276,25 @@ export async function suggestFromDetailed(
     now, currentTerminalId, origins, freeScu,
     filters: { ...describeFilters(d.settings, commodityId), nearby: d.settings.nearby },
     distances: mode, missing, ensured, trace: result.trace, options: result.options.map((o) => describeOption(d, o)),
+  });
+  return { options: result.options, missing };
+}
+
+/**
+ * Where to carry a line of the storage (version 1.4, `routesForLot`): ranked trips from the place of the storage to every terminal that
+ * buys the commodity, counted from what the goods cost and what lies there. `run` is the same as for `suggestFromDetailed`.
+ */
+export async function suggestFromLot(d: SuggestDeps, lot: StorageLot, freeScu: number, run: SuggestRun = {}): Promise<Suggestion> {
+  const now = d.now();
+  const market = await loadMarket(d.db);
+  const { result, ensured, missing, mode } = await rank(
+    d, now, freeScu,
+    (ctx) => routesForLot(market, lot, ctx),
+    (o) => [{ from: lot.terminalId, pair: [lot.terminalId, o.destId] }],
+    run,
+  );
+  d.log.debug('suggest', 'storage lot', {
+    now, lot, freeScu, distances: mode, missing, ensured, trace: result.trace, options: result.options.map((o) => describeOption(d, o)),
   });
   return { options: result.options, missing };
 }

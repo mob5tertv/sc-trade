@@ -79,8 +79,11 @@ export function knownScuOf(cell: Pick<Cell, 'ownScu'> | null): number | null {
   return cell === null ? null : cell.ownScu;
 }
 
-/** What the form under a row writes: a purchase, a sale from the hold of the run, or a sale of goods that are not in the hold (an income). */
-export type TradeMode = 'buy' | 'sell' | 'income';
+/**
+ * What the form under a row writes: a purchase, a sale from the hold of the run, a sale of goods that are not in the hold (an income), or a
+ * sale of goods that lie at the storage of another place and were loaded there with «Погрузил» forgotten (`storage`, version 1.4).
+ */
+export type TradeMode = 'buy' | 'sell' | 'income' | 'storage';
 
 /**
  * The mode of the form that "Купил" / "Продал" opens (spec 14.10). A purchase is always a purchase: the first one starts the
@@ -129,7 +132,7 @@ export const GOODS_ABOARD_NOTICE = (): string => tr('Этот товар уже 
  * The same counts as in the service (`recordSell`, `recordBuy`), which stays the one that refuses and says why.
  */
 export function tradeLimit(i: { mode: TradeMode; commodityId: number; cargo: CargoLine[]; capacity: number }): number | null {
-  if (i.mode === 'income') return null;
+  if (i.mode === 'income' || i.mode === 'storage') return null;
   if (i.mode === 'sell') return i.cargo.find((line) => line.commodityId === i.commodityId)?.scu ?? 0;
   if (i.capacity <= 0) return null;
   return Math.max(0, i.capacity - i.cargo.reduce((sum, line) => sum + line.scu, 0));

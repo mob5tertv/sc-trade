@@ -1,6 +1,6 @@
 [package]
 name = "sc-trade"
-version = "1.3.1"
+version = "1.4.0"
 description = "Price diary and trade-route helper overlay for Star Citizen, with UEX data"
 authors = ["mob5tertv"]
 license = "MIT"

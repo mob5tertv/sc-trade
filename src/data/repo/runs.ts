@@ -1,4 +1,4 @@
-import type { Run, RunEvent, RunWithEvents } from '../../core/types';
+import type { Run, RunEvent, RunWithEvents, StorageMove } from '../../core/types';
 import type { Db } from '../db';
 
 // Trade runs and their events. A run is the status row, its events are the trades and marks; what is
@@ -15,12 +15,15 @@ interface RunRow {
 interface EventRow {
   id: number; run_id: number; ts: number; type: RunEvent['type'];
   terminal_id: number | null; commodity_id: number | null; scu: number | null; price: number | null;
+  storage: StorageMove | null;
 }
 
 // `target_id` is the target recorded for the run in `run_target` (written when a cargo is written off), NULL for a run without one.
 const RUN_COLUMNS = 'id, vehicle_id, scu_capacity, started_at, ended_at, status, '
   + '(SELECT terminal_id FROM run_target WHERE run_target.run_id = run.id) AS target_id';
-const EVENT_COLUMNS = 'id, run_id, ts, type, terminal_id, commodity_id, scu, price';
+// `storage`: the trade is a movement of the storage (version 1.4): the entry of the ledger that names the event says which one.
+const EVENT_COLUMNS = 'id, run_id, ts, type, terminal_id, commodity_id, scu, price, '
+  + "(SELECT kind FROM storage_entry WHERE storage_entry.event_id = run_event.id AND storage_entry.kind IN ('load', 'late', 'back') LIMIT 1) AS storage";
 
 const orNull = (v: number | null): number | null => (v === null ? null : Number(v));
 
@@ -46,6 +49,7 @@ function toEvent(r: EventRow): RunEvent {
     commodityId: orNull(r.commodity_id),
     scu: orNull(r.scu),
     price: orNull(r.price),
+    ...(r.storage === null || r.storage === undefined ? {} : { storage: r.storage }),
   };
 }
 
@@ -88,10 +92,10 @@ export async function listRuns(db: Db): Promise<RunWithEvents[]> {
   return runRows.map(row => ({ run: toRun(row), events: byRun.get(Number(row.id)) ?? [] }));
 }
 
-/** The time of every diary observation and every run event, ascending, duplicates kept: the raw material of sessions. */
+/** The time of every diary observation, every run event and every entry of the storage, ascending, duplicates kept: the raw material of sessions. */
 export async function allRecordTimestamps(db: Db): Promise<number[]> {
   const rows = await db.select<{ ts: number }>(
-    'SELECT ts FROM (SELECT ts FROM observation UNION ALL SELECT ts FROM run_event) ORDER BY ts',
+    'SELECT ts FROM (SELECT ts FROM observation UNION ALL SELECT ts FROM run_event UNION ALL SELECT ts FROM storage_entry) ORDER BY ts',
   );
   return rows.map(r => Number(r.ts));
 }

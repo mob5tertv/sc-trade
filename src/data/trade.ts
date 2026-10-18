@@ -3,7 +3,9 @@ import type { Settings } from '../core/settings';
 import type { RunEvent, RunWithEvents } from '../core/types';
 import type { Db } from './db';
 import type { Logger } from './logger';
+import { storageLine, storageLines, type StorageLine } from '../core/storage';
 import { addObservation, amendTradeObservation } from './repo/diary';
+import { addStorageEntry, entryOfEvent, listStorageEntries, updateStorageEntry } from './repo/storage';
 import {
   addFinishedRun, addRunEvent, closeRun, emptyActiveRuns, getActiveRun, getRun, removeEmptyActiveRun, removeEmptyFinishedRuns, removeEmptyRun,
   removeFinishedRun, removeFinishedRunEvents, removeFinishedRuns, removeOrphanRunTargets, removeRunEventsOf, reopenRun, runOfEvent, setRunTarget, startRun,
@@ -38,8 +40,9 @@ import { tr } from '../i18n';
 // the first of them should pass.
 
 const LOG = 'run';
+const STORAGE_LOG = 'storage';
 
-export type TradeErrorCode = 'no_active_run' | 'oversell' | 'no_space' | 'bad_input' | 'on_board' | 'no_trade' | 'run_active';
+export type TradeErrorCode = 'no_active_run' | 'oversell' | 'no_space' | 'bad_input' | 'on_board' | 'no_trade' | 'run_active' | 'no_stock';
 
 /** A trade that cannot happen. `message` is meant for the player; `code` is for the caller's logic. */
 export class TradeError extends Error {
@@ -57,8 +60,11 @@ export interface TradeDeps { db: Db; log: Logger; now: () => number; settings: S
 /** What the repair of the runs needs: no clock (a run is closed at the time of its own last sale) and no settings. */
 export type RepairDeps = Pick<TradeDeps, 'db' | 'log'>;
 
-/** `knownScu` is the quantity the player saw at the terminal before the trade: the stock to buy from (when buying) or what the buyer already holds (when selling). */
-export interface TradeInput { terminalId: number; commodityId: number; scu: number; price: number; knownScu?: number | null }
+/**
+ * `knownScu` is the quantity the player saw at the terminal before the trade: the stock to buy from (when buying) or what the buyer already holds (when selling).
+ * `toStorage` (a purchase, version 1.4): how much of `scu` was left at the storage of the place, not taken into the hold.
+ */
+export interface TradeInput { terminalId: number; commodityId: number; scu: number; price: number; knownScu?: number | null; toStorage?: number }
 
 const noActiveRun = (): TradeError => new TradeError('no_active_run', tr('Нет активного рейса'));
 
@@ -194,32 +200,104 @@ async function writeTrade(d: TradeDeps, runId: number, type: 'buy' | 'sell', t: 
   return { id, ...draft };
 }
 
+/** The free space of the hold for `scu` more: refused when it does not fit (checked only when the settings know a capacity). */
+function checkSpace(d: TradeDeps, active: RunWithEvents | null, scu: number): void {
+  if (d.settings.scuCapacity <= 0) return;
+  const free = d.settings.scuCapacity - holdScu(active?.events ?? []);
+  if (scu > free) throw new TradeError('no_space', tr('Свободно только {v1} SCU', { v1: Math.max(0, free) }));
+}
+
+/** The id of the active run, started now when there is none (with the ship and capacity from the settings). */
+async function runFor(d: TradeDeps, active: RunWithEvents | null, ts: number): Promise<number> {
+  if (active !== null) return active.run.id;
+  const { vehicleId, scuCapacity } = d.settings;
+  const runId = await startRun(d.db, { vehicleId, scuCapacity, startedAt: ts });
+  d.log.info(LOG, 'started', { runId, vehicleId, scuCapacity, startedAt: ts });
+  return runId;
+}
+
 /**
  * Buys into the active run, starting one when there is none (with the ship and capacity from the settings).
  * Rejects the purchase when it does not fit the hold: the free space is checked only when the settings know a capacity.
+ * Everything bought goes into the hold; a purchase that leaves a part at the storage is `recordPurchase`.
  */
-export function recordBuy(d: TradeDeps, t: TradeInput): Promise<RunWithEvents> {
+export async function recordBuy(d: TradeDeps, t: TradeInput): Promise<RunWithEvents> {
+  const run = await recordPurchase(d, { ...t, toStorage: 0 });
+  if (run === null) throw new Error('a purchase into the hold left no run');
+  return run;
+}
+
+/**
+ * A purchase (version 1.4): `toStorage` of it is left at the storage of the place (bought over the hold, for another trip), the rest goes
+ * into the hold as `recordBuy` puts it there. Only that rest is in the run, which invests only what it carries; what lies at the storage
+ * is the money of no run until it is loaded (`loadFromStorage`). The diary keeps the WHOLE purchase as gone from the seller (was 1500,
+ * bought 1000: 500). A purchase that leaves everything at the storage starts no run. Returns the active run, `null` when there is none.
+ */
+export function recordPurchase(d: TradeDeps, t: TradeInput): Promise<RunWithEvents | null> {
   return serialized(d, async () => {
     checkInput(t);
-    const active = await getActiveRun(d.db);
-    if (d.settings.scuCapacity > 0) {
-      const free = d.settings.scuCapacity - holdScu(active?.events ?? []);
-      if (t.scu > free) throw new TradeError('no_space', tr('Свободно только {v1} SCU', { v1: Math.max(0, free) }));
+    const stored = t.toStorage ?? 0;
+    if (!(Number.isInteger(stored) && stored >= 0 && stored <= t.scu)) {
+      throw new TradeError('bad_input', tr('На склад — от нуля до купленного'));
     }
+    const aboard = t.scu - stored;
+    const active = await getActiveRun(d.db);
+    checkSpace(d, active, aboard);
 
     const ts = d.now();
     await writeObservation(d, 'buy', t, ts);
-    let runId: number;
-    if (active === null) {
-      const { vehicleId, scuCapacity } = d.settings;
-      runId = await startRun(d.db, { vehicleId, scuCapacity, startedAt: ts });
-      d.log.info(LOG, 'started', { runId, vehicleId, scuCapacity, startedAt: ts });
-    } else {
-      runId = active.run.id;
+    let runId = active?.run.id ?? null;
+    if (aboard > 0) {
+      runId = await runFor(d, active, ts);
+      await writeTrade(d, runId, 'buy', { ...t, scu: aboard }, ts);
     }
-    await writeTrade(d, runId, 'buy', t, ts);
-    return reload(d.db, runId);
+    if (stored > 0) {
+      const entryId = await addStorageEntry(d.db, {
+        ts, terminalId: t.terminalId, commodityId: t.commodityId, scu: stored, cost: stored * t.price, kind: 'put', runId, eventId: null,
+      });
+      d.log.info(STORAGE_LOG, 'put', { entryId, runId, ts, terminalId: t.terminalId, commodityId: t.commodityId, scu: stored, price: t.price });
+    }
+    return runId === null ? null : reload(d.db, runId);
   });
+}
+
+/** What the storage of a terminal holds of a commodity now: the line, or a refusal that says how much there is. */
+async function requireStock(d: RepairDeps, terminalId: number, commodityId: number, scu: number): Promise<StorageLine> {
+  const line = storageLine(storageLines(await listStorageEntries(d.db)), terminalId, commodityId);
+  if (line === undefined || line.scu < scu) throw new TradeError('no_stock', tr('На складе только {v1} SCU', { v1: line?.scu ?? 0 }));
+  return line;
+}
+
+/**
+ * The load of `scu` from the storage of `terminalId` into the hold, inside a turn of the queue: a purchase of the run at the place of
+ * the storage and at its average price, and the entry of the ledger that makes it a load (`late`: written at the sale far away). The
+ * event goes first: should the entry fail, the goods are in the hold and still listed at the storage, where the player sees them and
+ * corrects it; the other order could lose them.
+ */
+async function loadJob(d: TradeDeps, s: StorageTake, late: boolean): Promise<number> {
+  if (!(Number.isInteger(s.scu) && s.scu > 0)) throw new TradeError('bad_input', tr('Количество должно быть больше нуля'));
+  const line = await requireStock(d, s.terminalId, s.commodityId, s.scu);
+  const active = await getActiveRun(d.db);
+  checkSpace(d, active, s.scu);
+  const ts = d.now();
+  const runId = await runFor(d, active, ts);
+  const event = await writeTrade(d, runId, 'buy', { terminalId: s.terminalId, commodityId: s.commodityId, scu: s.scu, price: line.price }, ts, late ? 'load at the sale' : 'load');
+  await addStorageEntry(d.db, {
+    ts, terminalId: s.terminalId, commodityId: s.commodityId, scu: -s.scu, cost: -s.scu * line.price, kind: late ? 'late' : 'load', runId, eventId: event.id,
+  });
+  return runId;
+}
+
+/** A part of a line of the storage: the terminal it lies at, the commodity, how much. */
+export interface StorageTake { terminalId: number; commodityId: number; scu: number }
+
+/**
+ * «Погрузил» (version 1.4): `scu` of a line of the storage goes into the hold, at the average price it was bought for. It is a purchase
+ * of the run at the place of the storage (the run starts with it when none goes), so the trip that follows is a run of its own route,
+ * with its own money and time; the market and the diary are not touched. Refused: more than lies there, more than the hold takes.
+ */
+export function loadFromStorage(d: TradeDeps, s: StorageTake): Promise<RunWithEvents> {
+  return serialized(d, async () => reload(d.db, await loadJob(d, s, false)));
 }
 
 /**
@@ -227,25 +305,42 @@ export function recordBuy(d: TradeDeps, t: TradeInput): Promise<RunWithEvents> {
  * empty finishes the run (`done`, ending at the time of that sale). `finished` tells whether it did.
  */
 export function recordSell(d: TradeDeps, t: TradeInput): Promise<{ run: RunWithEvents; finished: boolean }> {
+  return serialized(d, async () => sellJob(d, t));
+}
+
+/** The sale of `recordSell` inside a turn of the queue. */
+async function sellJob(d: TradeDeps, t: TradeInput): Promise<{ run: RunWithEvents; finished: boolean }> {
+  checkInput(t);
+  const active = await requireActiveRun(d.db);
+  const onBoard = cargoOf(active.events).find(line => line.commodityId === t.commodityId)?.scu ?? 0;
+  if (t.scu > onBoard) throw new TradeError('oversell', tr('В трюме только {onBoard} SCU', { onBoard }));
+
+  const runId = active.run.id;
+  const ts = d.now();
+  await writeObservation(d, 'sell', t, ts);
+  const sale = await writeTrade(d, runId, 'sell', t, ts);
+
+  const finished = cargoOf([...active.events, sale]).length === 0;
+  if (finished) await closeRun(d.db, runId, 'done', ts);
+  const run = await reload(d.db, runId);
+  if (finished) {
+    const { invested, revenue, profit, durationSec } = runTotals(run.run, run.events, ts);
+    d.log.info(LOG, 'finished', { runId, endedAt: ts, invested, revenue, profit, durationSec });
+  }
+  return { run, finished };
+}
+
+/**
+ * A sale of goods that are not in the hold but lie at the storage of `storageTerminalId` (version 1.4): they were loaded there and
+ * «Погрузил» was forgotten. The load is written now, as late (`storage: 'late'`), and the sale after it: the run goes from the place of
+ * the storage to here, with its money, and stays out of every time (it lasted a moment on paper). The goods cannot be sold at the
+ * storage itself, in the game they are only carried on.
+ */
+export function recordSellFromStorage(d: TradeDeps, t: TradeInput, storageTerminalId: number): Promise<{ run: RunWithEvents; finished: boolean }> {
   return serialized(d, async () => {
     checkInput(t);
-    const active = await requireActiveRun(d.db);
-    const onBoard = cargoOf(active.events).find(line => line.commodityId === t.commodityId)?.scu ?? 0;
-    if (t.scu > onBoard) throw new TradeError('oversell', tr('В трюме только {onBoard} SCU', { onBoard }));
-
-    const runId = active.run.id;
-    const ts = d.now();
-    await writeObservation(d, 'sell', t, ts);
-    const sale = await writeTrade(d, runId, 'sell', t, ts);
-
-    const finished = cargoOf([...active.events, sale]).length === 0;
-    if (finished) await closeRun(d.db, runId, 'done', ts);
-    const run = await reload(d.db, runId);
-    if (finished) {
-      const { invested, revenue, profit, durationSec } = runTotals(run.run, run.events, ts);
-      d.log.info(LOG, 'finished', { runId, endedAt: ts, invested, revenue, profit, durationSec });
-    }
-    return { run, finished };
+    await loadJob(d, { terminalId: storageTerminalId, commodityId: t.commodityId, scu: t.scu }, true);
+    return sellJob(d, t);
   });
 }
 
@@ -295,19 +390,78 @@ export function recordMark(d: TradeDeps, type: 'depart' | 'arrive'): Promise<voi
  * player had is recorded with the run first (spec 14.19): it says which route the lost run was an attempt at. A target that
  * cannot be written is only logged: the cargo is lost all the same, and the run then belongs to no route.
  */
-export function loseCargo(d: TradeDeps): Promise<RunWithEvents> {
+export function loseCargo(d: TradeDeps, aboard?: number): Promise<RunWithEvents> {
   return serialized(d, async () => {
     const active = await requireActiveRun(d.db);
     const runId = active.run.id;
     const ts = d.now();
+    await putBackNeverAboard(d, active, aboard, ts);
     // with a target in two steps the cargo was going to the place of the sale, not to the place of the purchase
     const targetId = d.settings.targetThenId ?? d.settings.targetTerminalId;
     if (targetId !== null) {
       await setRunTarget(d.db, runId, targetId).catch((err: unknown) => d.log.warn(LOG, 'cannot record the target of the lost run', { runId, targetId, err }));
     }
     await closeRun(d.db, runId, 'lost', ts);
-    d.log.info(LOG, 'lost', { runId, endedAt: ts, targetId, cargo: cargoOf(active.events) });
+    d.log.info(LOG, 'lost', { runId, endedAt: ts, targetId, cargo: cargoOf(active.events), aboard: aboard ?? null });
     return reload(d.db, runId);
+  });
+}
+
+/**
+ * «Груз потерян» with how much was really aboard (version 1.4, the author: killed while loading): of a hold of ONE commodity, what was
+ * never aboard goes back to the storage of the place it was bought or loaded at, at the price of the run, and only what was aboard is
+ * lost. A putting back is a sale of the run at the purchase price (`storage: 'back'`): the run loses exactly what was aboard. `aboard`
+ * absent, not below the hold, or a hold of several commodities: everything is lost, as before.
+ */
+async function putBackNeverAboard(d: TradeDeps, active: RunWithEvents, aboard: number | undefined, ts: number): Promise<void> {
+  const cargo = cargoOf(active.events);
+  if (aboard === undefined || cargo.length !== 1 || !Number.isFinite(aboard)) return;
+  const [line] = cargo;
+  const back = line.scu - Math.max(0, Math.floor(aboard));
+  if (back <= 0) return;
+  const lastBuy = [...active.events].reverse().find(e => e.type === 'buy' && e.commodityId === line.commodityId && e.terminalId !== null);
+  if (lastBuy?.terminalId == null) return;
+  const terminalId = lastBuy.terminalId;
+  const event = await writeTrade(d, active.run.id, 'sell', { terminalId, commodityId: line.commodityId, scu: back, price: line.avgBuyPrice }, ts, 'back to the storage');
+  await addStorageEntry(d.db, {
+    ts, terminalId, commodityId: line.commodityId, scu: back, cost: back * line.avgBuyPrice, kind: 'back', runId: active.run.id, eventId: event.id,
+  });
+}
+
+/**
+ * «Списать» a part of a line of the storage (version 1.4): it is gone (lost, a wipe). What it cost is a loss of the session of this
+ * moment; no route is touched. Refused: more than lies there.
+ */
+export function writeOffStorage(d: TradeDeps, s: StorageTake): Promise<void> {
+  return serialized(d, async () => {
+    if (!(Number.isInteger(s.scu) && s.scu > 0)) throw new TradeError('bad_input', tr('Количество должно быть больше нуля'));
+    const line = await requireStock(d, s.terminalId, s.commodityId, s.scu);
+    const ts = d.now();
+    const entryId = await addStorageEntry(d.db, {
+      ts, terminalId: s.terminalId, commodityId: s.commodityId, scu: -s.scu, cost: -s.scu * line.price, kind: 'lost', runId: null, eventId: null,
+    });
+    d.log.info(STORAGE_LOG, 'written off', { entryId, ts, ...s, price: line.price });
+  });
+}
+
+/**
+ * «Исправить» a line of the storage (version 1.4): it holds `scu` at `price` from now on (a number typed in wrong). No money of any session
+ * changes. Zero empties the line without a loss.
+ */
+export function fixStorage(d: TradeDeps, s: { terminalId: number; commodityId: number; scu: number; price: number }): Promise<void> {
+  return serialized(d, async () => {
+    if (!(Number.isInteger(s.scu) && s.scu >= 0 && Number.isFinite(s.price) && s.price > 0)) {
+      throw new TradeError('bad_input', tr('Количество — от нуля, цена больше нуля'));
+    }
+    const line = storageLine(storageLines(await listStorageEntries(d.db)), s.terminalId, s.commodityId);
+    const was = { scu: line?.scu ?? 0, cost: line?.cost ?? 0 };
+    const cost = s.scu * s.price;
+    if (s.scu === was.scu && Math.abs(cost - was.cost) < 0.005) return;
+    const ts = d.now();
+    const entryId = await addStorageEntry(d.db, {
+      ts, terminalId: s.terminalId, commodityId: s.commodityId, scu: s.scu - was.scu, cost: cost - was.cost, kind: 'fix', runId: null, eventId: null,
+    });
+    d.log.info(STORAGE_LOG, 'corrected', { entryId, ts, terminalId: s.terminalId, commodityId: s.commodityId, was, now: { scu: s.scu, price: s.price } });
   });
 }
 
@@ -346,6 +500,13 @@ export function editTrade(d: TradeDeps, edit: TradeEdit): Promise<RunWithEvents>
     if (before === null || event === undefined || (event.type !== 'buy' && event.type !== 'sell') || event.commodityId === null || event.scu === null || event.price === null) {
       throw new TradeError('no_trade', tr('Такой сделки нет: она уже удалена или изменена'));
     }
+    // version 1.4: a load from the storage is corrected in its quantity, and the storage with it; its price is the one of the storage
+    if (event.storage === 'back') throw new TradeError('no_trade', tr('Возврат на склад не исправляется: поправь склад'));
+    const load = event.storage === 'load' || event.storage === 'late' ? await entryOfEvent(d.db, event.id) : null;
+    if (load !== null) {
+      if (Math.abs(edit.price - event.price) > 0.005) throw new TradeError('bad_input', tr('Цена погрузки — цена закупки на складе, её не исправить'));
+      if (edit.scu > event.scu) await requireStock(d, load.terminalId, load.commodityId, edit.scu - event.scu);
+    }
 
     const after = before.events.map(e => (e.id === edit.eventId ? { ...e, scu: edit.scu, price: edit.price } : e));
     const traded = (type: 'buy' | 'sell'): number => after
@@ -371,7 +532,7 @@ export function editTrade(d: TradeDeps, edit: TradeEdit): Promise<RunWithEvents>
       await reopenRun(d.db, before.run.id);
       d.log.info(LOG, 'reopened', { runId: before.run.id, by: 'edit' });
     }
-    if (event.terminalId !== null) {
+    if (event.terminalId !== null && load === null) {
       // after a purchase the diary holds the stock that was left, after a sale what the buyer then held
       const scuDelta = event.type === 'buy' ? event.scu - edit.scu : edit.scu - event.scu;
       const was = { ts: event.ts, terminalId: event.terminalId, commodityId: event.commodityId, side: event.type, price: event.price };
@@ -379,6 +540,7 @@ export function editTrade(d: TradeDeps, edit: TradeEdit): Promise<RunWithEvents>
         .catch((err: unknown) => d.log.warn(LOG, 'cannot correct the observation of the edited trade', { eventId: edit.eventId, err }));
     }
     await updateTradeEvent(d.db, edit.eventId, edit.scu, edit.price);
+    if (load !== null) await updateStorageEntry(d.db, load.id, -edit.scu, -edit.scu * event.price);
     d.log.info(LOG, 'edited', {
       runId: before.run.id, eventId: edit.eventId, type: event.type, terminalId: event.terminalId, commodityId: event.commodityId,
       was: { scu: event.scu, price: event.price }, now: { scu: edit.scu, price: edit.price },

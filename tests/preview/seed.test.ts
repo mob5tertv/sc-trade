@@ -49,7 +49,7 @@ describe('the empty-no-strip dataset', () => {
   it('is a first launch of a player who switched the mini line off: the schema and that setting, and no reference', async () => {
     const db = testDb();
     await prepareAnyDataset(db, 'empty-no-strip', NOW);
-    expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 4 }]);
+    expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 5 }]);
     expect((await loadSettings(db, log())).showStrip).toBe(false);
     expect((await loadReference(db)).terminals.size).toBe(0);
   });
@@ -66,7 +66,7 @@ describe('the empty dataset', () => {
 describe('the default dataset', () => {
   it('has the schema the real migrations make', async () => {
     const db = await dataset('default');
-    expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 4 }]);
+    expect(await db.select('PRAGMA user_version')).toEqual([{ user_version: 5 }]);
   });
 
   it('has three star systems, real terminals, commodities and ships', async () => {

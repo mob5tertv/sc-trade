@@ -13,6 +13,7 @@
   import RunSection from './sections/RunSection.svelte';
   import TerminalSection from './sections/TerminalSection.svelte';
   import SettingsView from './SettingsView.svelte';
+  import StorageView from './StorageView.svelte';
   import { app } from './state.svelte';
   import { runSectionKind } from './vm/run-section';
   import WindowGrip from './WindowGrip.svelte';
@@ -53,6 +54,8 @@
   <SettingsView />
 {:else if app.view === 'guide'}
   <GuideView />
+{:else if app.view === 'storage'}
+  <StorageView />
 {:else}
   <Header />
   {#if app.routeBar}<RouteBar />{/if}

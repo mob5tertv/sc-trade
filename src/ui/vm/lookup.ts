@@ -20,11 +20,17 @@ export interface LookupRequest {
   commodityId: number | null;
   /** The price the player entered that started the lookup; shown in the title. `null` when none did. */
   price: number | null;
+  /**
+   * A line of the storage of the terminal to carry on (version 1.4): the trips are counted from what lies there and what it cost
+   * (`routesForLot`), not from the market of the terminal. Only with `kind: 'from'` and a commodity.
+   */
+  lot?: { scu: number; price: number };
 }
 
 /** Whether two requests ask the same thing (the one on screen asked again keeps its answer until the new one comes). */
 export function sameRequest(a: LookupRequest | null, b: LookupRequest): boolean {
-  return a !== null && a.kind === b.kind && a.terminalId === b.terminalId && a.commodityId === b.commodityId && a.price === b.price;
+  return a !== null && a.kind === b.kind && a.terminalId === b.terminalId && a.commodityId === b.commodityId && a.price === b.price
+    && a.lot?.scu === b.lot?.scu && a.lot?.price === b.lot?.price;
 }
 
 /** A buy price asks where to sell it on (trips from the terminal); a sell price asks where to buy (trips to the terminal). */
@@ -43,6 +49,7 @@ const commodityLabel = (ref: Reference, id: number): string => ref.commodities.g
 export function lookupTitle(request: LookupRequest, ref: Reference): string {
   const terminal = terminalLabel(ref, request.terminalId);
   const commodity = request.commodityId === null ? null : commodityLabel(ref, request.commodityId);
+  if (request.lot !== undefined) return tr('Со склада {terminal}: {commodity} {scu} SCU', { commodity: commodity ?? '', terminal, scu: request.lot.scu });
   const what = request.kind === 'to'
     ? tr('Где купить{v1} для {terminal}', { v1: commodity === null ? '' : ` ${commodity}`, terminal })
     : tr('Куда везти{v1} с {terminal}', { v1: commodity === null ? '' : ` ${commodity}`, terminal });

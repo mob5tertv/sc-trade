@@ -84,14 +84,14 @@
     {/if}
   {/if}
   {#if open && request !== null && !toTarget}
-    {#if request.commodityId !== null}
+    {#if request.commodityId !== null && request.lot === undefined}
       <button type="button" class="sc-btn sc-btn--act" title={tr('Искать по всем товарам точки')} onclick={showAllCommodities}>{tr('все товары')}</button>
     {/if}
     <div class="sc-seg" role="group" aria-label={tr('Сортировка')}>
       <button type="button" aria-pressed={app.settings.sort !== 'roi'} title={legendTitle(tr('Сначала то, что приносит больше за рейс'), LEGEND.profitTrip)} onclick={() => setSort('profit')}>{tr('Прибыль')}</button>
       <button type="button" aria-pressed={app.settings.sort === 'roi'} title={tr('Сначала то, что выгоднее по отношению прибыли к вложенному')} onclick={() => setSort('roi')}>ROI</button>
     </div>
-    {#if request.kind === 'from'}
+    {#if request.kind === 'from' && request.lot === undefined}
       <div class="sc-seg" role="group" aria-label={tr('Где искать')}>
         <button
           type="button"

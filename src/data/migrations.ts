@@ -123,6 +123,20 @@ export const MIGRATIONS: Migration[] = [
       `DELETE FROM uex_meta WHERE key = 'reference_synced_at'`,
     ],
   },
+  {
+    // Version 1.4 (party-mode.md sections 22–23): the storage of a place, a ledger of what was left at a station and taken from it
+    // (`core/storage.ts`). No foreign keys: an entry whose run left the history still tells what lies at the station. `event_id` is
+    // the event of the run that a load or a putting back is, which is how the run tells such a trade from one at the market.
+    version: 5,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS storage_entry (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, terminal_id INTEGER NOT NULL, commodity_id INTEGER NOT NULL,
+        scu INTEGER NOT NULL, cost REAL NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('put','load','late','back','lost','fix')),
+        run_id INTEGER, event_id INTEGER)`,
+      `CREATE INDEX IF NOT EXISTS storage_entry_event ON storage_entry (event_id)`,
+    ],
+  },
 ];
 
 /**

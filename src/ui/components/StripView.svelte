@@ -38,6 +38,7 @@
     {:else if model.kind === 'idle'}
       {#if favourites.length > 0}<span class="part fav" title={favourites.join('\n')}>★{favourites.length}</span>{/if}
       <span class="part location">{model.location}{#if model.target !== null}<span class="to">→</span>{#if model.then}<span class="step">{tr('закупка')}</span>{/if}<span class="goal">{model.target}</span>{#if model.then}<span class="step then">{tr('потом {then}', { then: model.then })}</span>{/if}{/if}</span>
+      {#if model.stored}<span class="part stored" title={tr('Здесь на складе лежит твой груз: «Погрузил» — на вкладке «Склад» терминала')}>{model.stored}</span>{/if}
       {#if model.session !== null}
         <span class="part session {model.session.tone}"><span class="caption">{tr('сессия')}</span>{model.session.short}</span>
       {/if}
@@ -297,6 +298,12 @@
   /* what the session that is going has earned: the colour of a profit, of a loss, or none for an even one */
   .session {
     gap: 6px;
+    font-weight: 600;
+  }
+
+  /* the storage of the place the ship stands at (version 1.4): goods of the player lie here, in the colour of a caution */
+  .stored {
+    color: var(--sc-warn);
     font-weight: 600;
   }
 

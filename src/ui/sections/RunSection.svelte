@@ -68,7 +68,7 @@
   const trades = $derived(editing && active !== null ? tradeLines(active, app.reference) : []);
 
   // «Груз потерян» asks in its own place (the button of the card turns into the question): by the time this is called the player has said yes
-  const lost = (): void => void app.loseCargo();
+  const lost = (aboard?: number): void => void app.loseCargo(aboard);
 </script>
 
 {#snippet actions()}

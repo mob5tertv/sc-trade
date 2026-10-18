@@ -34,6 +34,12 @@ export interface RouteStat {
 interface Finished {
   originId: number; destId: number; commodityIds: number[];
   durationSec: number; profit: number; roi: number | null; phases: Phases | null;
+  /**
+   * Its time is the time of the trip. Not so for a run whose cargo was taken from the storage only at the sale, «Погрузил» having been
+   * forgotten (version 1.4, `storage: 'late'`): it lasted a moment on paper. It counts as a run of its route, with its profit, and
+   * stays out of every time and every rate.
+   */
+  timed: boolean;
 }
 
 /** Median of a non-empty list; the mean of the two middle values when the count is even. */
@@ -56,7 +62,10 @@ function finishedRoutes(runs: RunWithEvents[]): Finished[] {
     const route = routeOf(events);
     if (route === null) continue;
     const totals = runTotals(run, events, run.startedAt);
-    out.push({ ...route, durationSec: totals.durationSec, profit: totals.profit, roi: totals.roi, phases: phases(events) });
+    out.push({
+      ...route, durationSec: totals.durationSec, profit: totals.profit, roi: totals.roi, phases: phases(events),
+      timed: !events.some(e => e.storage === 'late'),
+    });
   }
   return out;
 }
@@ -115,20 +124,23 @@ export function routeStats(runs: RunWithEvents[]): RouteStat[] {
   for (const [key, group] of groups) {
     const { originId, destId, commodityIds } = group[0];
     const totalProfit = group.reduce((sum, f) => sum + f.profit, 0);
-    const totalSec = group.reduce((sum, f) => sum + f.durationSec, 0);
+    // the rate is the profit of the runs that have a time over their time (a run loaded only at its sale has none)
+    const timed = group.filter(f => f.timed);
+    const timedProfit = timed.reduce((sum, f) => sum + f.profit, 0);
+    const totalSec = timed.reduce((sum, f) => sum + f.durationSec, 0);
     const rois = group.flatMap(f => (f.roi === null ? [] : [f.roi]));
     const lost = lostByRoute.get(key) ?? [];
     const lostProfit = lost.reduce((sum, l) => sum + l.profit, 0);
     const allSec = totalSec + lost.reduce((sum, l) => sum + l.durationSec, 0);
     stats.push({
       originId, destId, commodityIds, runs: group.length,
-      medianDurationSec: median(group.map(f => f.durationSec)),
+      medianDurationSec: median((timed.length > 0 ? timed : group).map(f => f.durationSec)),
       medianPhases: medianPhases(group.flatMap(f => (f.phases === null ? [] : [f.phases]))),
       totalProfit,
       avgRoi: rois.length > 0 ? rois.reduce((sum, r) => sum + r, 0) / rois.length : 0,
-      uecPerHour: totalSec > 0 ? (totalProfit * SEC_PER_HOUR) / totalSec : null,
+      uecPerHour: totalSec > 0 ? (timedProfit * SEC_PER_HOUR) / totalSec : null,
       lostRuns: lost.length, lostProfit,
-      uecPerHourWithLosses: allSec > 0 ? ((totalProfit + lostProfit) * SEC_PER_HOUR) / allSec : null,
+      uecPerHourWithLosses: allSec > 0 ? ((timedProfit + lostProfit) * SEC_PER_HOUR) / allSec : null,
     });
   }
   return stats.sort((a, b) => {
@@ -144,6 +156,7 @@ export function routeStats(runs: RunWithEvents[]): RouteStat[] {
 export function ownMedianIndex(runs: RunWithEvents[]): Map<string, number> {
   const durations = new Map<string, number[]>();
   for (const f of finishedRoutes(runs)) {
+    if (!f.timed) continue;
     const key = pairKey(f.originId, f.destId);
     const list = durations.get(key);
     if (list) list.push(f.durationSec); else durations.set(key, [f.durationSec]);
@@ -201,10 +214,13 @@ export const DEFAULT_SESSION_GAP_SEC = 7200;
  * Play sessions: the record timestamps cut into stretches wherever two neighbours are more than
  * `gapSec` apart (exactly `gapSec` still counts as one stretch). A session spans from its first to its
  * last timestamp. A run belongs to the session whose span contains the run's start; a run starting
- * outside every span is left out. Runs that are done or lost count towards a session's profit, active ones do not.
+ * outside every span is left out. Runs that are done or lost count towards a session's profit, active ones do not; so do the write-offs of
+ * the storage (`losses`, version 1.4), in the session of their moment.
  * The rate is profit over the session's span, `null` when the span is empty. Newest session first.
  */
-export function sessions(recordTs: number[], runs: RunWithEvents[], gapSec = DEFAULT_SESSION_GAP_SEC): Session[] {
+export function sessions(
+  recordTs: number[], runs: RunWithEvents[], gapSec = DEFAULT_SESSION_GAP_SEC, losses: ReadonlyArray<{ ts: number; cost: number }> = [],
+): Session[] {
   const out: Session[] = [];
   for (const ts of [...recordTs].sort((a, b) => a - b)) {
     const last = out[out.length - 1];
@@ -221,6 +237,11 @@ export function sessions(recordTs: number[], runs: RunWithEvents[], gapSec = DEF
     session.runIds.push(run.id);
     if (!isIncomeRun(events)) session.runCount += 1;
     session.profit += runTotals(run, events, run.startedAt).profit;
+  }
+  // what was written off the storage is a loss of the session it was written off in (version 1.4)
+  for (const { ts, cost } of losses) {
+    const session = out.find(s => s.startTs <= ts && ts <= s.endTs);
+    if (session) session.profit -= cost;
   }
 
   for (const s of out) {

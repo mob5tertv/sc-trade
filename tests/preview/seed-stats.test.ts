@@ -104,7 +104,7 @@ describe('the no-records dataset', () => {
     expect(await db.select('SELECT id FROM run')).toEqual([]);
     expect(await db.select('SELECT id FROM observation')).toEqual([]);
     const history = await loadHistory(db);
-    expect(history).toEqual({ runs: [], recordTs: [] });
+    expect(history).toEqual({ runs: [], recordTs: [], losses: [] });
     expect(figuresOf(history).sessions).toEqual([]);
     expect(await db.select('SELECT terminal_id FROM uex_price LIMIT 1')).toHaveLength(1);
     expect(reference.terminals.size).toBe(19); // the window dataset has the 17 of the default one and two gateways

@@ -18,9 +18,11 @@ export interface History {
    * diary alone.
    */
   recordTs: number[];
+  /** What was written off the storage (version 1.4): a loss of the session it falls in. Absent: none. */
+  losses?: ReadonlyArray<{ ts: number; cost: number }>;
 }
 
-export const EMPTY_HISTORY: History = { runs: [], recordTs: [] };
+export const EMPTY_HISTORY: History = { runs: [], recordTs: [], losses: [] };
 
 /** The lists the section shows, one at a time. */
 export type StatsView = 'routes' | 'history' | 'sessions' | 'records';
@@ -131,7 +133,7 @@ export function figuresOf(history: History, routesSince: number | null = null): 
     ownMedian: ownMedianIndex(counted),
     ownLeg: ownLegIndex(counted),
     runCounts: ownRunCounts(counted),
-    sessions: sessions(recordTs, runs),
+    sessions: sessions(recordTs, runs, undefined, history.losses),
   };
 }
 

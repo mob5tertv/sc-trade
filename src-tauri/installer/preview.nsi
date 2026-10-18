@@ -27,7 +27,7 @@ ManifestDPIAwareness PerMonitorV2
 RequestExecutionLevel user
 
 !ifndef VERSION
-  !define VERSION "1.3.1"
+  !define VERSION "1.4.0"
 !endif
 !define PRODUCTNAME "SC Trade"
 !ifndef OUTFILE

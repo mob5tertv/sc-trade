@@ -9,6 +9,7 @@ import { ROI_SCENES } from './scenes-roi';
 import { POLISH_SCENES } from './scenes-polish';
 import { REPAIR_SCENES } from './scenes-repairs';
 import { DEMO_SCENES } from './scenes-demo';
+import { STORAGE_SCENES } from './scenes-storage';
 import { RUN_SCENES } from './scenes-run';
 import { SCALE_SCENES } from './scenes-scale';
 import { STATS_SCENES } from './scenes-stats';
@@ -54,6 +55,7 @@ export const SCENES: readonly Scene[] = [
   ...ROI_SCENES,
   ...RUN_SCENES,
   ...DEMO_SCENES,
+  ...STORAGE_SCENES,
   ...SCALE_SCENES,
   { name: 'mini', title: 'Мини-строка, без рейса', dataset: 'default' },
   { name: 'mini-run', title: 'Мини-строка в рейсе', dataset: 'run' },

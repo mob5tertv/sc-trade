@@ -16,6 +16,15 @@ function tradesOf(events: RunEvent[]): Trade[] {
 }
 
 /**
+ * The trades of a run at the market: a putting back into the storage (`storage: 'back'`, version 1.4) moves the money of the run as a sale
+ * at the purchase price does, but it is no sale at a terminal and says nothing of where the run went. A load from the storage is a
+ * purchase at the place of the storage, which is where the run starts.
+ */
+function marketTrades(events: RunEvent[]): Trade[] {
+  return tradesOf(events.filter(e => e.storage !== 'back'));
+}
+
+/**
  * What is in the hold: per commodity the SCU bought minus the SCU sold, for the lines that still
  * have some. The price is the weighted average over all purchases of the commodity, whatever was
  * sold since. Selling more than was bought never makes a negative line.
@@ -88,7 +97,7 @@ export interface RunRoute {
  * is unknown, or a purchase and a sale at the same terminal.
  */
 export function routeOf(events: RunEvent[]): RunRoute | null {
-  const trades = tradesOf(events);
+  const trades = marketTrades(events);
   const originIds = new Set(trades.filter(t => t.type === 'buy').map(t => t.terminalId));
   const destIds = new Set(trades.filter(t => t.type === 'sell').map(t => t.terminalId));
   if (originIds.size !== 1 || destIds.size !== 1) return null;
@@ -106,7 +115,7 @@ export function routeOf(events: RunEvent[]): RunRoute | null {
 export function intendedRoute(run: Run, events: RunEvent[]): RunRoute | null {
   const route = routeOf(events);
   if (route !== null) return route;
-  const trades = tradesOf(events);
+  const trades = marketTrades(events);
   const destId = run.targetId ?? null;
   if (destId === null || trades.length === 0 || trades.some(t => t.type === 'sell')) return null;
   const originIds = new Set(trades.map(t => t.terminalId));

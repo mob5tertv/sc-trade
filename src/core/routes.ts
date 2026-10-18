@@ -273,6 +273,32 @@ export function routesFrom(m: Market, originIds: number[], currentTerminalId: nu
   return finish(betterElsewhere(found, currentTerminalId, ctx, trace), trace, ctx.settings, currentTerminalId);
 }
 
+/** A line of the storage to carry on: where it lies, what, how much, and the average price it was bought for. */
+export interface StorageLot { terminalId: number; commodityId: number; scu: number; price: number }
+
+/**
+ * Where to carry a line of the storage (version 1.4, the author: «ищем оптимальный маршрут, необязательно же что я повезу его туда же»):
+ * every terminal that buys the commodity, as a trip from the place of the storage. The purchase is the lot itself: its price is what
+ * the goods cost, its stock is what lies there, and the budget limits nothing (it is paid already). The trips rank as any others.
+ */
+export function routesForLot(m: Market, lot: StorageLot, ctx: RouteCtx): RouteResult {
+  const trace = newTrace();
+  const found: RouteOption[] = [];
+  const buy: Estimate = {
+    price: lot.price, low: lot.price, high: lot.price, source: 'own', temp: null, ageSec: 0, ageKnown: true,
+    ownLast: null, uexRange: null, scu: lot.scu, scuOrigin: 'own', stock: null, prev: null,
+  };
+  const paid: RouteCtx = { ...ctx, settings: { ...ctx.settings, budget: null } };
+  for (const destId of m.byCommodity.get(lot.commodityId) ?? []) {
+    if (destId === lot.terminalId) continue;
+    const sell = estimate(m, destId, lot.commodityId, 'sell', ctx);
+    if (!sell) continue;
+    const option = evaluate(trace, paid, lot.terminalId, lot.commodityId, lot.terminalId, buy, destId, sell);
+    if (option) found.push(option);
+  }
+  return finish(found, trace, ctx.settings);
+}
+
 /**
  * Ranked trips that end at `destId`: every commodity the terminal buys, from every terminal that
  * sells it. `commodityId` narrows the search to one commodity before the `topN` cut.
