@@ -374,6 +374,7 @@
       note={tradeState.side === 'buy' ? boxes : saleNote(tradeState)}
       noteAction={tradeState.mode === 'storage' ? { label: tr('не со склада'), title: tr('Этот груз не со склада: записать как доход без закупки'), run: notFromStorage } : null}
       free={tradeState.side === 'buy' ? freeScu : null}
+      canStore={tradeState.side === 'buy'}
       storagePlace={name}
       stockScu={tradeState.side === 'buy' && row.buy !== null ? cellStock(row.buy) : null}
       error={tradeState.error}

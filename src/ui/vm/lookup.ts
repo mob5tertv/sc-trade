@@ -24,13 +24,13 @@ export interface LookupRequest {
    * A line of the storage of the terminal to carry on (version 1.4): the trips are counted from what lies there and what it cost
    * (`routesForLot`), not from the market of the terminal. Only with `kind: 'from'` and a commodity.
    */
-  lot?: { scu: number; price: number };
+  lot?: { scu: number; price: number; from?: 'storage' | 'hold' };
 }
 
 /** Whether two requests ask the same thing (the one on screen asked again keeps its answer until the new one comes). */
 export function sameRequest(a: LookupRequest | null, b: LookupRequest): boolean {
   return a !== null && a.kind === b.kind && a.terminalId === b.terminalId && a.commodityId === b.commodityId && a.price === b.price
-    && a.lot?.scu === b.lot?.scu && a.lot?.price === b.lot?.price;
+    && a.lot?.scu === b.lot?.scu && a.lot?.price === b.lot?.price && a.lot?.from === b.lot?.from;
 }
 
 /** A buy price asks where to sell it on (trips from the terminal); a sell price asks where to buy (trips to the terminal). */
@@ -39,6 +39,7 @@ export function kindForSide(side: Side): LookupKind {
 }
 
 const commodityLabel = (ref: Reference, id: number): string => ref.commodities.get(id)?.name || `#${id}`;
+const commodityCode = (ref: Reference, id: number | null): string => (id === null ? '' : ref.commodities.get(id)?.code || `#${id}`);
 
 /**
  * 'Где купить Medical Supplies для HUR-L1 · продажа 5 088', 'Куда везти Gold с ARC-L1'. The title names the terminal that was
@@ -49,6 +50,10 @@ const commodityLabel = (ref: Reference, id: number): string => ref.commodities.g
 export function lookupTitle(request: LookupRequest, ref: Reference): string {
   const terminal = terminalLabel(ref, request.terminalId);
   const commodity = request.commodityId === null ? null : commodityLabel(ref, request.commodityId);
+  if (request.lot?.from === 'hold') {
+    // version 1.4.1: the cargo of the run, from where the ship is (the author: «Куда везти» in the section «Рейс»)
+    return tr('Из трюма: {code} {scu} SCU по {price} · от {terminal}', { code: commodityCode(ref, request.commodityId), scu: request.lot.scu, price: formatUec(Math.round(request.lot.price)), terminal });
+  }
   if (request.lot !== undefined) return tr('Со склада {terminal}: {commodity} {scu} SCU', { commodity: commodity ?? '', terminal, scu: request.lot.scu });
   const what = request.kind === 'to'
     ? tr('Где купить{v1} для {terminal}', { v1: commodity === null ? '' : ` ${commodity}`, terminal })

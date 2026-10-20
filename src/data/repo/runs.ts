@@ -251,3 +251,13 @@ export async function removeOrphanRunTargets(db: Db): Promise<number> {
 export async function closeRun(db: Db, id: number, status: 'done' | 'lost', endedAt: number): Promise<void> {
   await db.execute("UPDATE run SET status = ?, ended_at = ? WHERE id = ? AND status = 'active'", [status, endedAt, id]);
 }
+
+/** Deletes one event of a run (a purchase that went to the storage whole, version 1.4.1). */
+export async function removeRunEvent(db: Db, eventId: number): Promise<void> {
+  await db.execute('DELETE FROM run_event WHERE id = ?', [eventId]);
+}
+
+/** Moves the start of the active run `id` (its first purchase went to the storage, version 1.4.1). Any other run stays. */
+export async function setRunStart(db: Db, id: number, startedAt: number): Promise<void> {
+  await db.execute("UPDATE run SET started_at = ? WHERE id = ? AND status = 'active'", [startedAt, id]);
+}

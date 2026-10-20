@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { quantity, routesFrom, routesTo, stockKnown, travelSec } from '../../src/core/routes';
+import { quantity, routesForLot, routesFrom, routesTo, stockKnown, travelSec } from '../../src/core/routes';
 import { buildMarket } from '../../src/core/market';
 import { distKey, pairKey } from '../../src/core/types';
 import type { Estimate } from '../../src/core/types';
@@ -344,5 +344,18 @@ describe('«Выгоднее»: a purchase at another terminal is offered only w
     const wide = routesFrom(many, [1, 5], 1, { ...within(10), terminals, settings: { ...within(10).settings, topN: 5 } });
     expect(origins(wide.options).filter(id => id === 5)).toHaveLength(3);
     expect(origins(wide.options).lastIndexOf(1)).toBeLessThan(origins(wide.options).indexOf(5));
+  });
+});
+
+describe('routesForLot (version 1.4.1)', () => {
+  // a lot of Gold at A (terminal 1): B pays 6900 (UEX), C 6840 (own), D is another system
+  it('counts the trips of a lot from what it cost, the budget limiting nothing', () => {
+    const { options } = routesForLot(market, { terminalId: 1, commodityId: GOLD, scu: 300, price: 6000 }, { ...ctx, settings: { ...ctx.settings, budget: 1000 } });
+    expect(options.map((o) => [o.destId, o.qty, o.profit])).toEqual([[2, 300, 270_000], [3, 300, 252_000]]);
+  });
+  it('gives the three places of least loss when nowhere pays more than it cost', () => {
+    const { options } = routesForLot(market, { terminalId: 1, commodityId: GOLD, scu: 100, price: 8000 }, ctx);
+    expect(options.map((o) => [o.destId, o.profit])).toEqual([[2, -110_000], [3, -116_000]]);
+    expect(options.every((o) => o.profit < 0)).toBe(true);
   });
 });

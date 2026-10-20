@@ -30,6 +30,8 @@
   let busy = $state(false);
 
   const offered = (row: StorageRow): number => (free === null ? row.scu : Math.max(0, Math.min(free, row.scu)));
+  // the one-click load: as much as the hold takes (with no ship chosen, all of it)
+  const loadable = offered;
 
   function toggle(row: StorageRow): void {
     if (openKey === row.key) {
@@ -101,24 +103,35 @@
       <span role="columnheader">{tr('Товар')}</span>
       <span role="columnheader" class="r">SCU</span>
       <span role="columnheader" class="r" title={tr('Средняя цена закупки за SCU')}>{tr('Закупка')}</span>
-      <span role="columnheader" class="r" title={tr('Сколько лежит на складе')}>{tr('Лежит')}</span>
+      <span role="columnheader"></span>
     </div>
     {#each rows as row (row.key)}
       {@const opened = openKey === row.key}
       <div class="row" class:opened role="row">
-        <button type="button" class="grid line" data-tour-storage={row.code} aria-expanded={opened} onclick={() => toggle(row)}>
-          <span class="what" title={row.name}>
-            <span class="code">{row.code}</span><span class="name">{row.name}</span>
-            {#if row.otherTerminal !== null}<span class="other">· {row.otherTerminal}</span>{/if}
-          </span>
-          <span class="sc-num r strong">{row.scuText}</span>
-          <span class="sc-num r">{row.price}</span>
-          <span class="sc-num r muted">{row.age}</span>
-        </button>
+        <div class="line">
+          <button type="button" class="toggle" data-tour-storage={row.code} aria-expanded={opened} title={tr('Раскрыть: «Куда везти», своё число, «Списать», «Исправить»')} onclick={() => toggle(row)}>
+            <span class="what" title={row.name}>
+              <span class="code">{row.code}</span><span class="name">{row.name}</span>
+              {#if row.otherTerminal !== null}<span class="other">· {row.otherTerminal}</span>{/if}
+            </span>
+            <span class="sc-num r strong">{row.scuText}</span>
+            <span class="sc-num r">{row.price}</span>
+          </button>
+          <!-- version 1.4.1: the load is one click, always in sight (the author: «на складе нет кнопки погрузить»): as much as the hold takes -->
+          <button
+            type="button"
+            class="sc-btn sc-btn--primary load"
+            data-tour="storage-load-row"
+            disabled={busy || loadable(row) === 0}
+            title={loadable(row) === 0 ? tr('Трюм полон: места нет') : tr('Погрузил в трюм {n} SCU — сколько влезет; ошибся — «на склад» в карточке рейса', { n: loadable(row) })}
+            onclick={() => void run(() => onLoad(row, loadable(row)))}
+          >{tr('Погрузил {n}', { n: loadable(row) })}</button>
+        </div>
         {#if opened}
           <div class="detail sc-reveal">
             <div class="facts">
               <span><span class="sc-label">{tr('Вложено')}</span> <span class="sc-num">{row.cost}</span></span>
+              <span class="muted" title={tr('Сколько лежит на складе')}><span class="sc-label">{tr('Лежит')}</span> {row.age}</span>
               <span class="spacer"></span>
               <button type="button" class="sc-btn sc-btn--act" data-tour="storage-lookup" title={tr('Куда выгоднее отвезти этот груз: прибыль от цены закупки')} onclick={() => onLookup(row)}>{tr('Куда везти')}</button>
             </div>
@@ -167,10 +180,52 @@
 <style>
   .grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 48px 70px 52px;
+    grid-template-columns: minmax(0, 1fr) 48px 70px var(--load-w);
     column-gap: 4px;
     align-items: center;
     padding: 0 var(--sc-pad-x);
+  }
+
+  .table {
+    --load-w: 96px;
+  }
+
+  /* a row: what lies there (a click opens it), and the load in one click */
+  .line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--load-w);
+    column-gap: 4px;
+    align-items: center;
+    height: var(--sc-row-h);
+    padding: 0 var(--sc-pad-x);
+    border-bottom: 1px solid var(--sc-surface-2);
+  }
+
+  .toggle {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px 70px;
+    column-gap: 4px;
+    align-items: center;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .toggle > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .load {
+    height: 22px;
+    padding: 0 6px;
+    white-space: nowrap;
   }
 
   .head {
@@ -184,29 +239,9 @@
     text-align: right;
   }
 
-  .line {
-    width: 100%;
-    height: var(--sc-row-h);
-    padding-top: 0;
-    padding-bottom: 0;
-    border: 0;
-    border-bottom: 1px solid var(--sc-surface-2);
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-
   .line:hover,
   .opened .line {
     background: var(--sc-surface-2);
-  }
-
-  .line > span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .what {

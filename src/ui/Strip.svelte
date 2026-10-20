@@ -25,6 +25,7 @@
     {flash}
     flashKind={app.phase === 'failed' ? 'error' : app.flashKind}
     onOpen={() => app.expandByHand('mini click')}
+    onStored={() => { const here = app.settings.currentTerminalId; if (here !== null) app.showStorageAt(here); void app.expandByHand('storage of the mini line'); }}
     onDepart={next === 'depart' ? () => void app.mark('depart') : undefined}
     onArrive={next === 'arrive' ? () => void app.mark('arrive') : undefined}
     rangeStill={!app.settings.stripRangeTurns}

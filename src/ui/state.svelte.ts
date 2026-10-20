@@ -24,7 +24,7 @@ import {
 import { syncPrices, syncReference, type SyncDeps } from '../data/sync';
 import {
   clearHistory as clearRunHistory, ClearHistoryError, editTrade as correctTrade, fixStorage as correctStorage, loadFromStorage, loseCargo as closeAsLost,
-  recordIncome, recordMark, recordPurchase, recordSell, recordSellFromStorage, removeRunRecord, TradeError, writeOffStorage,
+  recordIncome, recordMark, recordPurchase, recordSell, recordSellFromStorage, removeRunRecord, storeFromHold, TradeError, writeOffStorage,
   type ClearedHistory, type StorageTake, type TradeDeps, type TradeEdit, type TradeInput,
 } from '../data/trade';
 import { UexError, type UexClient } from '../data/uex-client';
@@ -1720,6 +1720,48 @@ class AppState {
     });
   }
 
+  /**
+   * «На склад» of a line of the hold (version 1.4.1): `scu` of a commodity goes to the storage of the place it was bought at, before the
+   * take-off. A run left with nothing is removed (it was a purchase for the storage). Returns the sentence to show when it was not written.
+   */
+  storeFromHold(commodityId: number, scu: number): Promise<string | null> {
+    return this.#tradeQueue(async () => {
+      this.#log.info('ui', 'from the hold to the storage', { commodityId, scu });
+      let failure: string | null = null;
+      let mayHaveWritten = true;
+      try {
+        await storeFromHold(this.#tradeDeps(), { commodityId, scu });
+      } catch (err) {
+        failure = this.#tradeFailure('from the hold to the storage', err, { commodityId, scu });
+        mayHaveWritten = !(err instanceof TradeError);
+      }
+      await this.#reloadRun(mayHaveWritten);
+      if (failure === null) {
+        void stats.reload('cargo to the storage'); // a run that was removed leaves the history and the sessions
+        this.#say(tr('Положено на склад: {scu} SCU', { scu }));
+      }
+      return failure;
+    });
+  }
+
+  /**
+   * «Куда везти» of the section «Рейс» (version 1.4.1, the author): where to carry a commodity of the hold, counted from what it cost in
+   * this run and how much of it is aboard, from where the ship is (the location; without one, the place it was last bought at). The
+   * budget limits nothing: it is paid. Never throws.
+   */
+  async holdLookup(commodityId: number): Promise<void> {
+    const events = this.activeRun?.events ?? [];
+    const line = cargoOf(events).find((l) => l.commodityId === commodityId);
+    if (line === undefined) return;
+    const lastBuy = [...events].reverse().find((e) => e.type === 'buy' && e.commodityId === commodityId && e.terminalId !== null);
+    const from = this.settings.currentTerminalId ?? lastBuy?.terminalId ?? null;
+    if (from === null) {
+      this.notify(NO_CURRENT_LOCATION(), 'info');
+      return;
+    }
+    await this.runLookup({ kind: 'from', terminalId: from, commodityId, price: null, lot: { scu: line.scu, price: line.avgBuyPrice, from: 'hold' } });
+  }
+
   /** «Списать»: a part of a line of the storage is gone; what it cost is a loss of this session. `null` when it was written. */
   writeOffStorage(take: StorageTake): Promise<string | null> {
     return this.#storageChange('write off', { ...take }, () => writeOffStorage(this.#tradeDeps(), take));
@@ -2346,7 +2388,7 @@ class AppState {
         this.#askedInRun = null; // a trade says where the ship is: it is the terminal of the trade
         await this.#locateAt(input.terminalId);
         // a purchase that went to the storage alone carried nothing on: the target in two steps waits for the load
-        if (this.activeRun !== null) await this.#advanceTarget(input.terminalId);
+        if (this.activeRun !== null && (input.toStorage ?? 0) < input.scu) await this.#advanceTarget(input.terminalId);
         if (startsRun && this.activeRun !== null) void this.openSection(RUN_SECTION);
         const stored = input.toStorage ?? 0;
         if (stored > 0) this.#say(tr('На складе {place}: {scu} SCU', { place: terminalLabel(this.reference, input.terminalId), scu: stored }));

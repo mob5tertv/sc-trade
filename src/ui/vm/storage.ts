@@ -38,10 +38,19 @@ export function storageRows(lines: readonly StorageLine[], ref: Reference, now: 
   }));
 }
 
-export interface StoragePlace { key: string; terminalId: number; place: string; rows: StorageRow[]; value: string }
+export interface StoragePlace {
+  key: string; terminalId: number; place: string; rows: StorageRow[]; value: string;
+  /** The ship stands here (the location): its lines are loaded from the list itself (version 1.4.1). */
+  here: boolean;
+}
 
-/** The list of every storage: the places in the order of their oldest line, each with its rows and what lies there. */
-export function storagePlaces(lines: readonly StorageLine[], ref: Reference, now: number): StoragePlace[] {
+/**
+ * The list of every storage: the place where the ship stands first (`hereTerminalId`, the location), then the others in the order of their
+ * oldest line, each with its rows and what lies there.
+ */
+export function storagePlaces(lines: readonly StorageLine[], ref: Reference, now: number, hereTerminalId: number | null = null): StoragePlace[] {
+  const hereTerminal = hereTerminalId === null ? undefined : ref.terminals.get(hereTerminalId);
+  const hereKey = hereTerminal === undefined ? (hereTerminalId === null ? null : `terminal:${hereTerminalId}`) : placeKey(hereTerminal);
   const places = new Map<string, StorageLine[]>();
   for (const line of lines) {
     const terminal = ref.terminals.get(line.terminalId);
@@ -49,10 +58,12 @@ export function storagePlaces(lines: readonly StorageLine[], ref: Reference, now
     const list = places.get(key);
     if (list) list.push(line); else places.set(key, [line]);
   }
-  return [...places].map(([key, list]) => ({
-    key, terminalId: list[0].terminalId, place: terminalLabel(ref, list[0].terminalId),
-    rows: storageRows(list, ref, now), value: formatUec(Math.round(storageValue(list))),
-  }));
+  return [...places]
+    .map(([key, list]) => ({
+      key, terminalId: list[0].terminalId, place: terminalLabel(ref, list[0].terminalId),
+      rows: storageRows(list, ref, now), value: formatUec(Math.round(storageValue(list))), here: key === hereKey,
+    }))
+    .sort((a, b) => Number(b.here) - Number(a.here));
 }
 
 /**

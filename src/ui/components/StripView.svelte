@@ -15,10 +15,12 @@
     onArrive?: () => void;
     /** The two ends of the range take turns (the default), or stand side by side as 'мин–макс' (the setting; also what a system that asks for less motion gets). */
     rangeStill?: boolean;
+    /** The part «склад …» was clicked: the window opens on the tab «Склад» of this station (version 1.4.1). Default: as a click on the line. */
+    onStored?: () => void;
     /** The favourite routes whose stock is full now, in the words of their alerts: the line wears «★N» while there are any. */
     favourites?: readonly string[];
   }
-  let { model, flash, flashKind = 'info', onOpen, onDepart, onArrive, rangeStill = false, favourites = [] }: Props = $props();
+  let { model, flash, flashKind = 'info', onOpen, onDepart, onArrive, onStored, rangeStill = false, favourites = [] }: Props = $props();
 
   const lot = $derived(model.kind === 'run' ? model.lot ?? null : null);
 
@@ -38,7 +40,6 @@
     {:else if model.kind === 'idle'}
       {#if favourites.length > 0}<span class="part fav" title={favourites.join('\n')}>★{favourites.length}</span>{/if}
       <span class="part location">{model.location}{#if model.target !== null}<span class="to">→</span>{#if model.then}<span class="step">{tr('закупка')}</span>{/if}<span class="goal">{model.target}</span>{#if model.then}<span class="step then">{tr('потом {then}', { then: model.then })}</span>{/if}{/if}</span>
-      {#if model.stored}<span class="part stored" title={tr('Здесь на складе лежит твой груз: «Погрузил» — на вкладке «Склад» терминала')}>{model.stored}</span>{/if}
       {#if model.session !== null}
         <span class="part session {model.session.tone}"><span class="caption">{tr('сессия')}</span>{model.session.short}</span>
       {/if}
@@ -75,6 +76,10 @@
       {#if outlook}<span class="part outlook" class:loss={model.profitLoss} title={LEGEND.approxStrip}>{outlook}</span>{/if}
     {/if}
   </button>
+  {#if model.kind === 'idle' && model.stored && flash === null}
+    <!-- version 1.4.1: what lies at the storage here is a button of its own: it opens the tab «Склад» of this station -->
+    <button type="button" class="stored" data-tour="strip-storage" title={tr('Здесь на складе лежит твой груз: открыть вкладку «Склад» и погрузить')} onclick={() => (onStored ?? onOpen)()}>{model.stored}</button>
+  {/if}
   {#if showMarks}
     <div class="marks">
       {#if onDepart}<button type="button" class="sc-btn sc-btn--act" data-tour="mark" onclick={() => onDepart?.()}>{tr('Взлетел')}</button>{/if}
@@ -301,10 +306,23 @@
     font-weight: 600;
   }
 
-  /* the storage of the place the ship stands at (version 1.4): goods of the player lie here, in the colour of a caution */
+  /* the storage of the place the ship stands at (version 1.4): goods of the player lie here, in the colour of a caution; a button of its own
+     (version 1.4.1) that opens the tab «Склад» */
   .stored {
+    flex: none;
+    padding: 0 var(--sc-pad-x);
+    border: 0;
+    border-left: 1px solid var(--sc-border);
+    background: transparent;
     color: var(--sc-warn);
+    font: inherit;
     font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .stored:hover {
+    background: var(--sc-surface-2);
   }
 
   /* «★N»: so many favourite routes have a full stock now; it stays while that is true, the alert itself is a moment */

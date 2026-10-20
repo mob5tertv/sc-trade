@@ -48,3 +48,8 @@ export async function entryOfEvent(db: Db, eventId: number): Promise<StorageEntr
 export async function updateStorageEntry(db: Db, id: number, scu: number, cost: number): Promise<void> {
   await db.execute('UPDATE storage_entry SET scu = ?, cost = ? WHERE id = ?', [scu, cost, id]);
 }
+
+/** Deletes one entry (a load whose purchase was taken back whole, version 1.4.1). */
+export async function removeStorageEntry(db: Db, id: number): Promise<void> {
+  await db.execute('DELETE FROM storage_entry WHERE id = ?', [id]);
+}

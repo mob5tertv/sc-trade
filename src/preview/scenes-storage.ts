@@ -81,6 +81,78 @@ export const STORAGE_SCENES: readonly Scene[] = [
     },
   },
   {
+    // version 1.4.1 (the author: «уже гружусь, увидел ещё 512, хочу купить на следующий рейс»): «На склад» of the form, the run untouched
+    name: 'storage-buy-to-storage',
+    title: 'Склад: «На склад» в форме покупки — 300 Stims легли на склад HUR-L1, рейс не начался',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      app.setViewTerminal(HUR);
+      await pause(200);
+      await press('[data-tour-row="STIM"]');
+      await press('[data-tour-open="STIM"] [data-tour="trade"]');
+      type('form.trade .in-scu', '300');
+      type('form.trade .in-price', '2860');
+      await pause(150);
+      await press('[data-tour="buy-to-storage"]');
+      await pause(600);
+      if (app.activeRun !== null) throw new Error('«На склад» of the form started a run');
+      if (app.storage[0]?.scu !== 300) throw new Error(`«На склад» of the form left ${app.storage[0]?.scu ?? 0} at the storage instead of 300`);
+    },
+  },
+  {
+    // version 1.4.1 (the author: «на складе нет кнопки погрузить»): the load is in the row, one click
+    name: 'storage-row-load',
+    title: 'Склад: «Погрузил 696» прямо в строке вкладки «Склад»',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      app.setViewTerminal(HUR);
+      await overTheHold(app, 0);
+      app.showTerminalStorage();
+      await pause(300);
+    },
+  },
+  {
+    name: 'run-hold-to-storage',
+    title: 'Рейс: «на склад» у строки груза до «Взлетел» — спрашивает, сколько',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      const failure = await app.buy({ terminalId: HUR, commodityId: stim(app), scu: 300, price: 2860 });
+      if (failure !== null) throw new Error(failure);
+      await pause(300);
+      await press('[data-tour="hold-to-storage"]');
+      type('.store .qty', '120');
+      await pause(150);
+    },
+  },
+  {
+    name: 'run-hold-lookup',
+    title: 'Рейс: «Куда везти» груз из трюма — от цены закупки, от места, где ты',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      const failure = await app.buy({ terminalId: HUR, commodityId: stim(app), scu: 300, price: 2860 });
+      if (failure !== null) throw new Error(failure);
+      await pause(300);
+      await press('[data-tour="hold-lookup"]');
+      await pause(800);
+      if (app.lookup.request?.lot?.from !== 'hold') throw new Error('«Куда везти» of the run asked no lookup of the hold');
+    },
+  },
+  {
+    name: 'storage-view-here',
+    title: 'Склад: список складов — станция, где стоишь, первой и с «Погрузил»',
+    dataset: 'default',
+    act: async (app) => {
+      await app.expand('preview');
+      await overTheHold(app, 0);
+      app.openStorage();
+      await pause(300);
+    },
+  },
+  {
     name: 'storage-tab',
     title: 'Склад: вкладка «Склад · 1» терминала HUR-L1, строка Stims раскрыта',
     dataset: 'default',

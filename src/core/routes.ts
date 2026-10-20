@@ -128,7 +128,7 @@ const newTrace = (): RouteTrace => ({
 /** Prices both ends of one trip, or `null` after counting the reason it is dropped. */
 function evaluate(
   trace: RouteTrace, ctx: RouteCtx, currentTerminalId: number | null,
-  commodityId: number, originId: number, buy: Estimate, destId: number, sell: Estimate,
+  commodityId: number, originId: number, buy: Estimate, destId: number, sell: Estimate, allowLoss = false,
 ): RouteOption | null {
   trace.considered++;
   const origin = ctx.terminals.get(originId);
@@ -139,7 +139,7 @@ function evaluate(
   if (starSystemId !== null && (origin.starSystemId !== starSystemId || dest.starSystemId !== starSystemId)) {
     trace.dropped.systemFilter++; return null;
   }
-  if (sell.price <= buy.price) { trace.dropped.nonPositiveProfit++; return null; }
+  if (!allowLoss && sell.price <= buy.price) { trace.dropped.nonPositiveProfit++; return null; }
 
   const qty = quantity({ freeScu: ctx.freeScu, stockScu: buy.scu, budget, buyPrice: buy.price });
   if (qty === 0) { trace.dropped.zeroQty++; return null; }
@@ -273,13 +273,17 @@ export function routesFrom(m: Market, originIds: number[], currentTerminalId: nu
   return finish(betterElsewhere(found, currentTerminalId, ctx, trace), trace, ctx.settings, currentTerminalId);
 }
 
-/** A line of the storage to carry on: where it lies, what, how much, and the average price it was bought for. */
+/** How many places a lot that cannot be carried at a profit anywhere is offered: the ones that lose the least. */
+const LEAST_LOSS = 3;
+
+/** A line of the storage (or of the hold) to carry on: where it lies, what, how much, and the average price it was bought for. */
 export interface StorageLot { terminalId: number; commodityId: number; scu: number; price: number }
 
 /**
  * Where to carry a line of the storage (version 1.4, the author: «ищем оптимальный маршрут, необязательно же что я повезу его туда же»):
  * every terminal that buys the commodity, as a trip from the place of the storage. The purchase is the lot itself: its price is what
  * the goods cost, its stock is what lies there, and the budget limits nothing (it is paid already). The trips rank as any others.
+ * When no place pays more than the goods cost, the three places that lose the least are given (each option says its loss).
  */
 export function routesForLot(m: Market, lot: StorageLot, ctx: RouteCtx): RouteResult {
   const trace = newTrace();
@@ -289,14 +293,20 @@ export function routesForLot(m: Market, lot: StorageLot, ctx: RouteCtx): RouteRe
     ownLast: null, uexRange: null, scu: lot.scu, scuOrigin: 'own', stock: null, prev: null,
   };
   const paid: RouteCtx = { ...ctx, settings: { ...ctx.settings, budget: null } };
-  for (const destId of m.byCommodity.get(lot.commodityId) ?? []) {
-    if (destId === lot.terminalId) continue;
-    const sell = estimate(m, destId, lot.commodityId, 'sell', ctx);
-    if (!sell) continue;
-    const option = evaluate(trace, paid, lot.terminalId, lot.commodityId, lot.terminalId, buy, destId, sell);
-    if (option) found.push(option);
-  }
-  return finish(found, trace, ctx.settings);
+  const search = (allowLoss: boolean): void => {
+    for (const destId of m.byCommodity.get(lot.commodityId) ?? []) {
+      if (destId === lot.terminalId) continue;
+      const sell = estimate(m, destId, lot.commodityId, 'sell', ctx);
+      if (!sell) continue;
+      const option = evaluate(trace, paid, lot.terminalId, lot.commodityId, lot.terminalId, buy, destId, sell, allowLoss);
+      if (option) found.push(option);
+    }
+  };
+  search(false);
+  if (found.length > 0) return finish(found, trace, ctx.settings);
+  // nowhere pays (bought dear, the prices fell): the places that lose the least, three of them (version 1.4.1, the author's choice)
+  search(true);
+  return finish(found, trace, { ...ctx.settings, sort: 'profit', topN: Math.min(ctx.settings.topN, LEAST_LOSS) });
 }
 
 /**

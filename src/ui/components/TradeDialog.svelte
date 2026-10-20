@@ -54,6 +54,8 @@
      */
     free?: number | null;
     storagePlace?: string;
+    /** A purchase may be left at the storage whole («На склад», version 1.4.1). Default: no such button. */
+    canStore?: boolean;
     /** A button after the line `note` (a sale guessed to come from a storage offers «не со склада»). */
     noteAction?: { label: string; title: string; run: () => void } | null;
     /** The stock the seller is known to have: a purchase above it is probably a typo, and the line of the storage says so. */
@@ -61,7 +63,7 @@
   }
   let {
     title, side, defaultScu, defaultPrice, defaultPriceIsOwn = true, maxScu = null, note = null, error, onConfirm, onCancel, onReject, onPriceCheck,
-    stockUnknown = false, free = null, storagePlace = '', stockScu = null, noteAction = null,
+    stockUnknown = false, free = null, storagePlace = '', stockScu = null, noteAction = null, canStore = false,
   }: Props = $props();
 
   // Seeded from the defaults once, when the form opens: they are plain numbers in the fields, easy to overtype. What the
@@ -172,6 +174,32 @@
     onConfirm({ scu: trade.scu, price: trade.price });
   }
 
+  // «На склад» (version 1.4.1, the author: «уже гружусь, увидел, что есть ещё 512, хочу купить, чтоб сразу быть готовым в следующий рейс»):
+  // the whole purchase is left at the storage of the place, the run is neither started nor touched. The price of somebody else is asked
+  // about first, as for «Купил».
+  function storeAll(): void {
+    if (confirmed) return;
+    const trade = resolveTrade(scuText, priceText);
+    if (!trade.ok) {
+      const again = badScu === trade.scu && badPrice === trade.price;
+      badScu = trade.scu;
+      badPrice = trade.price;
+      if (!again) onReject?.({ scu: trade.scu, price: trade.price });
+      return;
+    }
+    const step = confirmStep({ priceIsOwn: defaultPriceIsOwn || defaultPrice === null, priceTouched, asked: priceAsked, fits: true });
+    if (step === 'check-price') {
+      priceAsked = true;
+      checkShown = true;
+      onPriceCheck?.();
+      return;
+    }
+    checkShown = false;
+    loading = null;
+    confirmed = true;
+    onConfirm({ scu: trade.scu, price: trade.price, toStorage: trade.scu });
+  }
+
   // Esc takes the form back and is left to go on: the window hands the keyboard back to the game (it never closes by Esc).
   // A held Enter is one confirmation: its repeats submit nothing, so the confirmation that follows a question is a press of its own.
   function onKeydown(e: KeyboardEvent): void {
@@ -238,6 +266,9 @@
       data-opens-entry={asksNext ? 'trade-price' : undefined}
       onclick={onSubmitClick}
     >{side === 'buy' ? tr('Купил') : tr('Продал')}</button>
+    {#if side === 'buy' && canStore}
+      <button type="button" class="sc-btn" data-tour="buy-to-storage" title={tr('Купил и оставил всё на складе этой станции — на следующую ходку; рейс не трогается')} onclick={storeAll}>{tr('На склад')}</button>
+    {/if}
     <button type="button" class="sc-btn" title={tr('Не записывать (Esc)')} onclick={() => onCancel()}>{tr('Отмена')}</button>
   </div>
   {#if aboveStock && loading === null}<p class="hint check">{tr('Больше, чем запас станции ({stock} SCU) — проверь цифру', { stock: stockScu ?? 0 })}</p>{/if}

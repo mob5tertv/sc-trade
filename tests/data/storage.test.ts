@@ -8,7 +8,7 @@ import { latestObservations } from '../../src/data/repo/diary';
 import { allRecordTimestamps, getActiveRun, listRuns } from '../../src/data/repo/runs';
 import { listStorageEntries } from '../../src/data/repo/storage';
 import {
-  editTrade, fixStorage, loadFromStorage, loseCargo, recordMark, recordPurchase, recordSell, recordSellFromStorage, TradeError, writeOffStorage,
+  editTrade, fixStorage, loadFromStorage, loseCargo, recordMark, recordPurchase, recordSell, recordSellFromStorage, storeFromHold, TradeError, writeOffStorage,
 } from '../../src/data/trade';
 import type { TradeDeps } from '../../src/data/trade';
 import { NOW, sellIn, tradeFixture } from '../helpers/trade-fixtures';
@@ -152,5 +152,47 @@ describe('the lines of the storage', () => {
     const line = { terminalId: 1, commodityId: 10, scu: 5, cost: 5, price: 1, since: 0 };
     expect(linesAt([line], terminals, 2)).toEqual([line]);
     expect(linesAt([line], terminals, 3)).toEqual([]);
+  });
+});
+
+describe('«на склад» from the hold (version 1.4.1)', () => {
+  it('takes a purchase that went into the hold back to the storage: the run that was only that purchase is removed', async () => {
+    await recordPurchase(deps, { ...GOLD, scu: 300, price: 6000 });
+    expect(await storeFromHold(deps, { commodityId: 10, scu: 300 })).toBeNull();
+    expect(await getActiveRun(db)).toBeNull();
+    expect((await lines())[0]).toMatchObject({ ...GOLD, scu: 300, price: 6000 });
+    expect(await listRuns(db)).toEqual([]);
+  });
+
+  it('takes a part back: the run goes on with what it carries, and invests only that', async () => {
+    await recordPurchase(deps, { ...GOLD, scu: 300, price: 6000 });
+    const run = await storeFromHold(deps, { commodityId: 10, scu: 100 });
+    expect(run?.events.map((e) => [e.type, e.scu])).toEqual([['buy', 200]]);
+    expect(runTotals(run!.run, run!.events, NOW).invested).toBe(200 * 6000);
+    expect((await lines())[0].scu).toBe(100);
+  });
+
+  it('leaves another commodity and its start alone; a run that began with the commodity taken back starts at what is left', async () => {
+    await recordPurchase(deps, { ...GOLD, scu: 100, price: 6000 });
+    clock.advance(120);
+    await recordPurchase(deps, { terminalId: 1, commodityId: 11, scu: 50, price: 1000 });
+    const run = await storeFromHold(deps, { commodityId: 10, scu: 100 });
+    expect(run?.events.map((e) => e.commodityId)).toEqual([11]);
+    expect(run?.run.startedAt).toBe(NOW + 120);
+  });
+
+  it('puts a load back where it came from: the line of the storage is whole again', async () => {
+    await recordPurchase(deps, { ...GOLD, scu: 400, price: 6000, toStorage: 400 });
+    await loadFromStorage(deps, { ...GOLD, scu: 400 });
+    expect(await lines()).toEqual([]);
+    expect(await storeFromHold(deps, { commodityId: 10, scu: 400 })).toBeNull();
+    expect((await lines())[0]).toMatchObject({ scu: 400, price: 6000 });
+  });
+
+  it('is refused after the take-off (the storage is the place of the purchase) and for more than the hold has', async () => {
+    await recordPurchase(deps, { ...GOLD, scu: 300, price: 6000 });
+    await expect(storeFromHold(deps, { commodityId: 10, scu: 301 })).rejects.toMatchObject({ code: 'oversell' });
+    await recordMark(deps, 'depart');
+    await expect(storeFromHold(deps, { commodityId: 10, scu: 10 })).rejects.toMatchObject({ code: 'no_trade' });
   });
 });

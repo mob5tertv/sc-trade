@@ -6,6 +6,7 @@
   import { app } from './state.svelte';
   import { storagePlaces } from './vm/storage';
   import { formatUec } from '../core/format';
+  import { cargoOf } from '../core/run';
   import { storageValue } from '../core/storage';
   import WindowGrip from './WindowGrip.svelte';
   import { tr } from '../i18n';
@@ -13,7 +14,22 @@
   // «Склад N» of the header (version 1.4): every storage, by place, with what lies there and what it cost. A place opens its terminal on the
   // tab «Склад», where its lines are loaded, corrected and written off. «Очистить всё» is for a wipe: everything is written off, as a loss.
 
-  const places = $derived(storagePlaces(app.storage, app.reference, app.now));
+  const places = $derived(storagePlaces(app.storage, app.reference, app.now, app.settings.currentTerminalId));
+  // the free space of the hold, for the load in one click at the place where the ship stands (version 1.4.1); `null`: no ship chosen
+  const free = $derived.by(() => {
+    if (app.settings.scuCapacity <= 0) return null;
+    const held = cargoOf(app.activeRun?.events ?? []).reduce((sum, line) => sum + line.scu, 0);
+    return Math.max(0, app.settings.scuCapacity - held);
+  });
+  const loadable = (scu: number): number => (free === null ? scu : Math.min(free, scu));
+  let busy = $state(false);
+
+  async function load(terminalId: number, commodityId: number, scu: number): Promise<void> {
+    if (busy) return;
+    busy = true;
+    error = await app.loadStorage({ terminalId, commodityId, scu });
+    busy = false;
+  }
   const total = $derived(formatUec(Math.round(storageValue(app.storage))));
 
   // «Очистить всё» asks in its own place, as «Сменил сервер» does: the first click turns it into «Точно?», the second writes
@@ -58,8 +74,9 @@
     {#each places as place (place.key)}
       <section class="place">
         <button type="button" class="head" title={tr('Открыть склад этой станции')} onclick={() => app.showStorageAt(place.terminalId)}>
-          <span class="name">{place.place}</span>
+          <span class="name">{place.place}{#if place.here}<span class="here">{tr('ты здесь')}</span>{/if}</span>
           <span class="sc-num value">{place.value}</span>
+          {#if !place.here}<span class="open">{tr('Открыть ›')}</span>{/if}
         </button>
         {#each place.rows as row (row.key)}
           <div class="line">
@@ -68,6 +85,10 @@
             <span class="sc-num strong">{row.scuText} SCU</span>
             <span class="sc-num muted">{tr('по {price}', { price: row.price })}</span>
             <span class="sc-num muted age">{row.age}</span>
+            {#if place.here}
+              <!-- the ship stands here: the line is loaded from the list (elsewhere a click would start a run at the wrong place) -->
+              <button type="button" class="sc-btn sc-btn--primary load" disabled={busy || loadable(row.scu) === 0} title={loadable(row.scu) === 0 ? tr('Трюм полон: места нет') : tr('Погрузил в трюм {n} SCU — сколько влезет; ошибся — «на склад» в карточке рейса', { n: loadable(row.scu) })} onclick={() => void load(row.terminalId, row.commodityId, loadable(row.scu))}>{tr('Погрузил {n}', { n: loadable(row.scu) })}</button>
+            {/if}
           </div>
         {/each}
       </section>
@@ -160,6 +181,25 @@
 
   .value {
     color: var(--sc-label);
+  }
+
+  .here {
+    margin-left: 8px;
+    color: var(--sc-warn);
+    font-size: var(--sc-font-sm);
+    font-weight: 400;
+  }
+
+  .open {
+    margin-left: 10px;
+    color: var(--sc-accent);
+    font-size: var(--sc-font-sm);
+    font-weight: 400;
+  }
+
+  .load {
+    height: 22px;
+    padding: 0 6px;
   }
 
   .line {

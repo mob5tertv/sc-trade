@@ -112,13 +112,13 @@ describe('targetOffer (task 44)', () => {
 describe('cargoRows', () => {
   it('lists the hold by code with what is left and the average price', () => {
     expect(cargoRows(mixedRun.events, ref)).toEqual([
-      { code: 'GOLD', scu: 96, avgBuyPrice: 6120 }, { code: 'TITA', scu: 40, avgBuyPrice: 2500 },
+      { commodityId: 10, code: 'GOLD', scu: 96, avgBuyPrice: 6120 }, { commodityId: TITA, code: 'TITA', scu: 40, avgBuyPrice: 2500 },
     ]);
   });
   it('is empty for an empty hold, and names a commodity that left the reference by its number', () => {
     expect(cargoRows([], ref)).toEqual([]);
     const odd = [ev({ id: 3, runId: 1, ts: NOW - 800, type: 'buy', terminalId: 1, commodityId: 99, scu: 5, price: 100 })];
-    expect(cargoRows(odd, ref)).toEqual([{ code: '#99', scu: 5, avgBuyPrice: 100 }]);
+    expect(cargoRows(odd, ref)).toEqual([{ commodityId: 99, code: '#99', scu: 5, avgBuyPrice: 100 }]);
   });
 });
 

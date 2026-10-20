@@ -5,10 +5,11 @@ import type { Db } from './db';
 import type { Logger } from './logger';
 import { storageLine, storageLines, type StorageLine } from '../core/storage';
 import { addObservation, amendTradeObservation } from './repo/diary';
-import { addStorageEntry, entryOfEvent, listStorageEntries, updateStorageEntry } from './repo/storage';
+import { addStorageEntry, entryOfEvent, listStorageEntries, removeStorageEntry, updateStorageEntry } from './repo/storage';
 import {
   addFinishedRun, addRunEvent, closeRun, emptyActiveRuns, getActiveRun, getRun, removeEmptyActiveRun, removeEmptyFinishedRuns, removeEmptyRun,
-  removeFinishedRun, removeFinishedRunEvents, removeFinishedRuns, removeOrphanRunTargets, removeRunEventsOf, reopenRun, runOfEvent, setRunTarget, startRun,
+  removeFinishedRun, removeFinishedRunEvents, removeFinishedRuns, removeOrphanRunTargets, removeRunEvent, removeRunEventsOf, reopenRun, runOfEvent, setRunStart,
+  setRunTarget, startRun,
   updateTradeEvent,
 } from './repo/runs';
 import { tr } from '../i18n';
@@ -425,6 +426,68 @@ async function putBackNeverAboard(d: TradeDeps, active: RunWithEvents, aboard: n
   const event = await writeTrade(d, active.run.id, 'sell', { terminalId, commodityId: line.commodityId, scu: back, price: line.avgBuyPrice }, ts, 'back to the storage');
   await addStorageEntry(d.db, {
     ts, terminalId, commodityId: line.commodityId, scu: back, cost: back * line.avgBuyPrice, kind: 'back', runId: active.run.id, eventId: event.id,
+  });
+}
+
+/**
+ * «На склад» of a line of the hold (version 1.4.1, party-mode.md sections 24–25; the author: «я купил товар, но мне даже не предложило
+ * положить на склад, я обязан его вести»): `scu` of a commodity goes to the storage of the place it was bought at, as if it had never gone
+ * aboard. The purchases of the run shrink, the latest first, and the storage gets each part at the price it was bought for; a load from the
+ * storage simply goes back where it came from (its entry shrinks). It is no sale: the money of the run is only what it still carries. The
+ * diary of prices is not touched (the goods left the seller all the same). A run that is left with no trade is removed: it was a purchase
+ * for the storage, no trip; else it starts at its first event that is left. Only before the first take-off of the run: the storage is the
+ * place of the purchase. Returns the active run, `null` when it was removed.
+ */
+export function storeFromHold(d: TradeDeps, s: { commodityId: number; scu: number }): Promise<RunWithEvents | null> {
+  return serialized(d, async () => {
+    if (!(Number.isInteger(s.scu) && s.scu > 0)) throw new TradeError('bad_input', tr('Количество должно быть больше нуля'));
+    const active = await requireActiveRun(d.db);
+    if (active.events.some(e => e.type === 'depart')) {
+      throw new TradeError('no_trade', tr('На склад можно положить только до «Взлетел»: склад — там, где куплено'));
+    }
+    const onBoard = cargoOf(active.events).find(line => line.commodityId === s.commodityId)?.scu ?? 0;
+    if (s.scu > onBoard) throw new TradeError('oversell', tr('В трюме только {onBoard} SCU', { onBoard }));
+
+    const runId = active.run.id;
+    const ts = d.now();
+    let left = s.scu;
+    const buys = active.events.filter(e => e.type === 'buy' && e.commodityId === s.commodityId && e.terminalId !== null && e.scu !== null && e.scu > 0 && e.price !== null);
+    for (const e of [...buys].reverse()) {
+      if (left === 0) break;
+      const scu = e.scu ?? 0;
+      const price = e.price ?? 0;
+      const terminalId = e.terminalId ?? 0;
+      const take = Math.min(left, scu);
+      const rest = scu - take;
+      left -= take;
+      if (e.storage === 'load' || e.storage === 'late') {
+        // a load goes back where it came from: its entry shrinks with it
+        const entry = await entryOfEvent(d.db, e.id);
+        if (rest === 0) {
+          await removeRunEvent(d.db, e.id);
+          if (entry !== null) await removeStorageEntry(d.db, entry.id);
+        } else {
+          await updateTradeEvent(d.db, e.id, rest, price);
+          if (entry !== null) await updateStorageEntry(d.db, entry.id, -rest, -rest * price);
+        }
+      } else {
+        // the storage first: should the purchase not shrink then, the goods are listed twice where the player sees and corrects them
+        await addStorageEntry(d.db, { ts, terminalId, commodityId: s.commodityId, scu: take, cost: take * price, kind: 'put', runId, eventId: null });
+        if (rest === 0) await removeRunEvent(d.db, e.id);
+        else await updateTradeEvent(d.db, e.id, rest, price);
+      }
+      d.log.info(STORAGE_LOG, 'from the hold', { runId, eventId: e.id, terminalId, commodityId: s.commodityId, scu: take, price, load: e.storage ?? null });
+    }
+
+    const after = await reload(d.db, runId);
+    if (after.events.length === 0) {
+      await removeEmptyActiveRun(d.db, runId);
+      d.log.info(LOG, 'removed: everything it had went to the storage', { runId });
+      return null;
+    }
+    const first = after.events[0].ts;
+    if (first > after.run.startedAt) await setRunStart(d.db, runId, first);
+    return reload(d.db, runId);
   });
 }
 

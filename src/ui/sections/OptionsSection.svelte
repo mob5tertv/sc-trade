@@ -130,6 +130,10 @@
     {:else if lookup.loading && lookup.options.length === 0}
       <p class="line" role="status">{tr('Ищу варианты…')}</p>
     {:else}
+      {#if asked.lot !== undefined && lookup.options.length > 0 && lookup.options.every((o) => o.profit < 0)}
+        <!-- version 1.4.1: a lot that pays nowhere — the places that lose the least (the author's choice) -->
+        <p class="line loss" role="note">{tr('В плюс некуда — вот где потеряешь меньше всего')}</p>
+      {/if}
       <RouteList
         options={lookup.options}
         reference={app.reference}
@@ -164,6 +168,10 @@
     height: var(--sc-row-h);
     color: var(--sc-muted);
     line-height: var(--sc-row-h);
+  }
+
+  .line.loss {
+    color: var(--sc-warn);
   }
 
   .failure {

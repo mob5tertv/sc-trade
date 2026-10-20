@@ -39,6 +39,10 @@
   const cargo = $derived(active === null ? [] : cargoRows(active.events, app.reference));
   // the header offers the mark that comes next; the body only what the header does not
   const marks = $derived(model.kind === 'run' ? cardMarks(model.phase) : []);
+  // «на склад» of the lines of the hold is offered only before the first take-off: the storage is the place of the purchase (version 1.4.1)
+  const beforeTakeOff = $derived(active !== null && !active.events.some((e) => e.type === 'depart'));
+  // «Куда везти» with several commodities aboard asks which one first
+  let choosing = $state(false);
 
   // "Sell here or fly on": for the commodities of the hold that have a price of my own at the viewed terminal. The
   // alternatives (every terminal that buys the commodity) are counted when their inputs change (the market, the viewed
@@ -100,8 +104,29 @@
     {#if kind === 'plan'}
       <p class="plan">{tr('Таймер пойдёт с первой покупки')}</p>
     {:else if active !== null && phases !== null && outlook !== null}
-      <RunCard {cargo} {phases} {outlook} {marks} onMark={(type) => void app.mark(type)} onLost={lost} />
+      <RunCard
+        {cargo} {phases} {outlook} {marks} onMark={(type) => void app.mark(type)} onLost={lost}
+        onStore={beforeTakeOff ? (commodityId, scu) => app.storeFromHold(commodityId, scu) : undefined}
+      />
       <p class="fix">
+        <!-- version 1.4.1: where to carry the cargo of the hold, from what it cost (the author: «Куда везти» here, by the correction) -->
+        {#if cargo.length > 0}
+          {#if choosing && cargo.length > 1}
+            <span class="pick">{tr('Какой товар?')}</span>
+            {#each cargo as line (line.commodityId)}
+              <button type="button" class="sc-btn sc-btn--act" onclick={() => { choosing = false; void app.holdLookup(line.commodityId); }}>{line.code}</button>
+            {/each}
+          {:else}
+            <button
+              type="button"
+              class="sc-btn sc-btn--act"
+              data-tour="hold-lookup"
+              title={tr('Куда выгоднее отвезти груз из трюма: прибыль от цены закупки, от места, где ты')}
+              onclick={() => (cargo.length > 1 ? (choosing = true) : void app.holdLookup(cargo[0].commodityId))}
+            >{tr('Куда везти')}</button>
+          {/if}
+          <span class="spacer"></span>
+        {/if}
         <button
           type="button"
           class="sc-btn"
@@ -150,9 +175,19 @@
 
   .fix {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
+    gap: 4px;
     margin: 0;
     padding: 2px var(--sc-pad-x);
+  }
+
+  .fix .spacer {
+    flex: 1;
+  }
+
+  .pick {
+    color: var(--sc-label);
   }
 
   .plan {

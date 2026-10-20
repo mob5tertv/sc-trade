@@ -78,8 +78,8 @@ const codeOf = (ref: Reference, commodityId: number): string => {
 };
 
 /** The hold line by line for the card of the run: what is left of each commodity and what it cost on average. */
-export function cargoRows(events: RunWithEvents['events'], ref: Reference): Array<{ code: string; scu: number; avgBuyPrice: number }> {
-  return cargoOf(events).map((line) => ({ code: codeOf(ref, line.commodityId), scu: line.scu, avgBuyPrice: line.avgBuyPrice }));
+export function cargoRows(events: RunWithEvents['events'], ref: Reference): Array<{ commodityId: number; code: string; scu: number; avgBuyPrice: number }> {
+  return cargoOf(events).map((line) => ({ commodityId: line.commodityId, code: codeOf(ref, line.commodityId), scu: line.scu, avgBuyPrice: line.avgBuyPrice }));
 }
 
 // ---- sell here or fly on ----------------------------------------------------------------------------------------

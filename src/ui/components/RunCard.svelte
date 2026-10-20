@@ -8,7 +8,7 @@
   import { tr } from '../../i18n';
 
   interface Props {
-    cargo: Array<{ code: string; scu: number; avgBuyPrice: number }>;
+    cargo: Array<{ commodityId: number; code: string; scu: number; avgBuyPrice: number }>;
     /** The three phases of the current leg and the whole time, for the line at the top. */
     phases: PhaseLine;
     /** The money: what is put in and sold (facts), and the EXPECTED result of the whole run. A run that goes on is not a loss. */
@@ -22,8 +22,39 @@
      * `aboard` is that number, and the rest goes back to the storage it came from.
      */
     onLost: (aboard?: number) => void;
+    /**
+     * «на склад» of a line of the hold (version 1.4.1): given only before the first take-off, when the storage is still the place of the
+     * purchase. Returns the sentence to show when it was not written.
+     */
+    onStore?: (commodityId: number, scu: number) => Promise<string | null>;
   }
-  let { cargo, phases, outlook, marks, onMark, onLost }: Props = $props();
+  let { cargo, phases, outlook, marks, onMark, onLost, onStore }: Props = $props();
+
+  // the line whose «на склад» is open, with how much of it goes there (all of it unless the player says less)
+  let storing = $state<number | null>(null);
+  let storeText = $state('');
+  let storeError = $state<string | null>(null);
+  let storeBusy = $state(false);
+
+  function openStore(line: { commodityId: number; scu: number }): void {
+    storing = storing === line.commodityId ? null : line.commodityId;
+    storeText = String(line.scu);
+    storeError = null;
+  }
+
+  async function store(line: { commodityId: number; scu: number }): Promise<void> {
+    const n = parseScu(storeText);
+    if (n === null || n === 0 || n > line.scu) {
+      storeError = tr('От 1 до {scu} SCU', { scu: line.scu });
+      return;
+    }
+    if (onStore === undefined || storeBusy) return;
+    storeBusy = true;
+    const failure = await onStore(line.commodityId, n);
+    storeBusy = false;
+    if (failure === null) storing = null;
+    else storeError = failure;
+  }
 
   // the question of a hold of one commodity: how much was aboard, all of it unless the player says less
   let asking = $state(false);
@@ -112,12 +143,25 @@
     <p class="empty">{tr('В трюме пусто')}</p>
   {:else}
     <ul class="cargo">
-      {#each cargo as line}
+      {#each cargo as line (line.commodityId)}
         <li class="line">
           <span class="code">{line.code}</span>
           <span class="sc-num">{line.scu} SCU</span>
           <span class="muted sc-num" title={tr('Средневзвешенная цена закупки')}>{tr('по {v1}', { v1: formatUec(line.avgBuyPrice) })}</span>
+          {#if onStore}
+            <button type="button" class="sc-btn sc-btn--act to-storage" data-tour="hold-to-storage" aria-expanded={storing === line.commodityId} title={tr('Не повезёшь сейчас: положить на склад этой станции, рейс этого не везёт')} onclick={() => openStore(line)}>{tr('на склад')}</button>
+          {/if}
         </li>
+        {#if storing === line.commodityId}
+          <li class="store">
+            <input class="sc-input sc-num qty" type="text" inputmode="numeric" autocomplete="off" data-select-on-focus aria-label={tr('Сколько SCU положить на склад')} value={storeText} oninput={(e) => { storeText = e.currentTarget.value; storeError = null; }} />
+            <span class="unit">{tr('из {scu} SCU', { scu: line.scu })}</span>
+            <span class="spacer"></span>
+            <button type="button" class="sc-btn sc-btn--primary" disabled={storeBusy} onclick={() => void store(line)}>{tr('Положил')}</button>
+            <button type="button" class="sc-btn" onclick={() => (storing = null)}>{tr('Отмена')}</button>
+          </li>
+          {#if storeError}<li class="store-error" role="alert">{storeError}</li>{/if}
+        {/if}
       {/each}
     </ul>
   {/if}
@@ -225,9 +269,38 @@
     list-style: none;
   }
 
+  /* «на склад» of a line of the hold (version 1.4.1): how much, then «Положил» */
+  .store {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: var(--sc-ctl-h);
+    padding-bottom: 4px;
+  }
+
+  .store .qty {
+    flex: none;
+    width: 48px;
+  }
+
+  .store .unit {
+    color: var(--sc-muted);
+    font-size: var(--sc-font-sm);
+  }
+
+  .store-error {
+    color: var(--sc-bad);
+    font-size: var(--sc-font-sm);
+  }
+
+  .to-storage {
+    height: 20px;
+    padding: 0 6px;
+  }
+
   .line {
     display: grid;
-    grid-template-columns: 52px 84px minmax(0, 1fr);
+    grid-template-columns: 52px 84px minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--sc-gap);
     height: var(--sc-row-h);

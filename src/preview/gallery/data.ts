@@ -96,7 +96,7 @@ export interface GalleryData {
      */
     cargo: { single: StripModel; one: StripModel; two: StripModel; three: StripModel };
   };
-  runCard: { cargo: Array<{ code: string; scu: number; avgBuyPrice: number }>; timer: string; phases: PhaseLine; outlook: RunOutlook };
+  runCard: { cargo: Array<{ commodityId: number; code: string; scu: number; avgBuyPrice: number }>; timer: string; phases: PhaseLine; outlook: RunOutlook };
   sell: { commodityCode: string; here: SellHere; alternatives: SellAlternative[] };
   history: HistoryRow[];
   sessions: SessionRow[];
@@ -366,7 +366,7 @@ export async function loadGalleryData(deps: GalleryDeps): Promise<GalleryData> {
   const lines = active === null ? [] : cargoOf(active.events);
   const codeOf = (commodityId: number): string => reference.commodities.get(commodityId)?.code ?? `#${commodityId}`;
   const runCard = {
-    cargo: lines.map((l) => ({ code: codeOf(l.commodityId), scu: l.scu, avgBuyPrice: l.avgBuyPrice })),
+    cargo: lines.map((l) => ({ commodityId: l.commodityId, code: codeOf(l.commodityId), scu: l.scu, avgBuyPrice: l.avgBuyPrice })),
     timer: active === null ? '0:00' : formatDuration(now - active.run.startedAt),
     // the leg of the run in progress: loading since the first purchase
     phases: phaseLine(runPhases(active?.run ?? { id: 0, vehicleId: null, scuCapacity: 0, startedAt: now, endedAt: null, status: 'active' }, active?.events ?? [], now)),
