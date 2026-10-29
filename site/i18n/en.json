@@ -297,11 +297,11 @@
   "data": {
     "label": "About data",
     "title": "What the site collects, and what it does not",
-    "lead": "In short: the app sends nothing to this site, and the site keeps only what you send through the form yourself. The address a request comes from stays on the server for a short time: see “What the server sees” below.",
+    "lead": "In short: the app sends nothing to this site, and the site keeps only what you send through the form yourself, and a count of presses of Download that says nothing of who pressed. The address a request comes from stays on the server for a short time: see “What the server sees” below.",
     "back": "Home",
     "analytics_title": "Analytics on the site",
     "analytics_off": [
-      "The site has no analytics. Its pages load no counters and no third-party scripts, and set no cookies."
+      "The site has no analytics. Its pages load no third-party counters or scripts, and set no cookies. Its own count of presses of Download is under “What the server sees”."
     ],
     "analytics_on": [
       "The site uses Google Analytics 4 — only after you click “Allow” in the banner. Until then the analytics script is not loaded and its cookies are not set.",
@@ -319,7 +319,8 @@
     "server": [
       "As on any site, your IP address and the headers your browser sends reach the server with every request.",
       "They are not stored with a message.",
-      "The address stays for a short time in two places: in the server's error log, for up to 30 days, and in the rate limiter, for up to a day. The limiter keeps one address from writing too often and from guessing the password of the author's service page."
+      "The address stays for a short time in two places: in the server's error log, for up to 30 days, and in the rate limiter, for up to a day. The limiter keeps one address from writing too often and from guessing the password of the author's service page, and from running the count of downloads up.",
+      "When you press Download, the page tells the server the version of the program and the language of the page, and the server adds one to the count of that day. Who pressed is not kept: no address, no cookie, nothing of the browser."
     ],
     "app_title": "The app itself",
     "app": [

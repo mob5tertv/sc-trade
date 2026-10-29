@@ -51,7 +51,7 @@ function layout({ title, body, csrf }) {
 </head>
 <body>
 <header class="top">
-<a class="brand" href="/admin/">SC Trade — обращения</a>${logout}
+<a class="brand" href="/admin/">SC Trade — обращения</a>${csrf === undefined ? '' : ' <a class="nav" href="/admin/downloads">Скачивания</a>'}${logout}
 </header>
 <main>
 ${body}
@@ -208,5 +208,38 @@ ${token(csrf)}
 <label><input type="checkbox" name="confirm" value="yes" required> Удалить это обращение и его файлы навсегда</label>
 <button type="submit" class="danger">Удалить</button>
 </form>`,
+  });
+}
+
+/** 2026-10-29 → 29.10.2026. @param {string} day */
+const dayText = (day) => `${day.slice(8, 10)}.${day.slice(5, 7)}.${day.slice(0, 4)}`;
+
+/**
+ * How many times the buttons «Скачать» of the site were pressed (downloads.mjs): in all, per version, per language of the page, and the
+ * last thirty days one by one. Who pressed is not known and not shown: the service keeps no address.
+ * @param {{ csrf: string, summary: { total: number, versions: Array<{ version: string, count: number }>, langs: Record<string, number>, days: Array<{ day: string, count: number }> } }} page
+ */
+export function downloadsPage({ csrf, summary }) {
+  const versions = summary.versions.map(({ version, count }) => `<li><span class="when">${esc(version)}</span> <span class="amount">${count}</span></li>`);
+  const langs = Object.entries(summary.langs).map(([lang, count]) => `${esc(LANGUAGES[lang] ?? lang)}: ${count}`);
+  const days = summary.days.map(({ day, count }) => `<li><span class="when">${esc(dayText(day))}</span> <span class="amount">${count}</span></li>`);
+  const body = summary.total === 0
+    ? '<p class="empty">Пока никто не нажимал «Скачать» — или служба обновлена недавно.</p>'
+    : `<p class="count">Всего: ${summary.total}${langs.length === 0 ? '' : ` · страница: ${langs.join(', ')}`}</p>
+<h2>По версиям</h2>
+<ul class="list">
+${versions.join('\n')}
+</ul>
+<h2>По дням (UTC), последние 30</h2>
+<ul class="list">
+${days.join('\n')}
+</ul>`;
+  return layout({
+    title: 'Скачивания',
+    csrf,
+    body: `<h1>Скачивания</h1>
+<p class="muted">Сколько раз на сайте нажали «Скачать». Кто нажал, не хранится: ни адреса, ни браузера. Один адрес считается не больше трёх раз в час. Ссылка на файл, открытая не с сайта, и скачивания с GitHub сюда не входят.</p>
+${body}
+<p><a href="/admin/">← Обращения</a></p>`,
   });
 }

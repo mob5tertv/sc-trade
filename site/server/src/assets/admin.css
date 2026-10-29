@@ -86,6 +86,11 @@ bdi {
   text-decoration: none;
 }
 
+/* the second page of the author: the count of the downloads */
+.nav {
+  margin-right: auto;
+}
+
 main {
   max-width: 960px;
   margin: 0 auto;

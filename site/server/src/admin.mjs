@@ -18,7 +18,7 @@
 import { createReadStream, readFileSync } from 'node:fs';
 import { lstat } from 'node:fs/promises';
 import { pipeline } from 'node:stream';
-import { deleteFoundPage, listPage, loginPage, messagePage, notePage } from './admin-pages.mjs';
+import { deleteFoundPage, downloadsPage, listPage, loginPage, messagePage, notePage } from './admin-pages.mjs';
 import { clientAddress } from './address.mjs';
 import { answer, errorWord } from './http.mjs';
 import { verifyPassword } from './password.mjs';
@@ -128,13 +128,14 @@ const listAddress = (/** @type {string} */ q) => (q === '' ? '/admin/' : `/admin
  *   settings: import('./config.mjs').Settings,
  *   store: import('./store.mjs').Store,
  *   logins: import('./limiter.mjs').Limiter,
+ *   downloads?: import('./downloads.mjs').Downloads,
  *   now: () => number,
  *   log: (text: string) => void,
  *   sleep: (ms: number) => Promise<unknown>,
  * }} parts `logins` counts wrong passwords and nothing else: nothing the form of the site does reaches that table
  * @returns {((req: Request, res: Response, path: string, query: string) => Promise<void>) & { waiting: () => number }}
  */
-export function createAdmin({ settings, store, logins, now, log, sleep }) {
+export function createAdmin({ settings, store, logins, downloads, now, log, sleep }) {
   const { limits } = settings;
   const sessions = createSessions({ now, lifeMs: limits.sessionMs });
 
@@ -380,6 +381,11 @@ export function createAdmin({ settings, store, logins, now, log, sleep }) {
     const { csrf } = session;
 
     if (path === '/admin/') return reading ? list(req, res, csrf, query) : notAllowed('GET, HEAD', csrf);
+    // how many times the buttons «Скачать» of the site were pressed (downloads.mjs)
+    if (path === '/admin/downloads') {
+      if (!reading) return notAllowed('GET, HEAD', csrf);
+      return html(req, res, 200, downloadsPage({ csrf, summary: downloads?.summary() ?? { total: 0, versions: [], langs: {}, days: [] } }));
+    }
 
     /** The form of a request that changes something, once it is known to come from the pages of this session. */
     const trustedForm = async () => {

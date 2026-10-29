@@ -58,7 +58,7 @@ const PAGES = /** @type {const} */ ([
 const STYLES = ['base.css', 'hero.css', 'sections.css', 'shots.css', 'feedback.css', 'consent.css', 'data.css'];
 
 /** The scripts (site/js), joined in this order into assets/js/site.js; see bundle.mjs. */
-const MAIN_SCRIPTS = ['menu.js', 'copy.js', 'hero-video.js', 'lightbox.js', 'feedback-rules.js', 'feedback.js'];
+const MAIN_SCRIPTS = ['menu.js', 'copy.js', 'hero-video.js', 'lightbox.js', 'feedback-rules.js', 'feedback.js', 'downloads.js'];
 
 /** The scripts of the consent banner: assets/js/consent.js, written only when a GA4 id is set. */
 const CONSENT_SCRIPTS = ['consent-core.js', 'consent.js'];

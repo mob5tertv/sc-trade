@@ -2,12 +2,14 @@
 // reaches it through the web server in front (Caddy), which passes /api and /admin on to it.
 //
 //   POST /api/feedback    a message of the form of the site (feedback.mjs)
+//   POST /api/download    a press of a button «Скачать» of the site, counted without who pressed (downloads.mjs)
 //   /api, /api/           "the service is up"
 //   /admin/…              the author's page, behind a password (admin.mjs)
 //
 // It sends nothing anywhere: it calls no other server and makes no connection of its own. What it is given, it keeps.
 import { createServer } from 'node:http';
 import { createAdmin } from './admin.mjs';
+import { createDownloads } from './downloads.mjs';
 import { createFeedback } from './feedback.mjs';
 import { answer, errorWord, JSON_HEADERS, splitUrl } from './http.mjs';
 import { createLimiter } from './limiter.mjs';
@@ -43,13 +45,17 @@ export function createService({ settings, now = Date.now, log = console.log, sle
   const limiter = createLimiter({ now, maxKeys: limits.limiterKeys });
   const everybody = createLimiter({ now });
   const loginLimiter = createLimiter({ now, maxKeys: limits.limiterKeys });
+  // a fourth one: how often an address presses «Скачать» (counted three times an hour at the most)
+  const downloadLimiter = createLimiter({ now, maxKeys: limits.limiterKeys });
   const feedback = createFeedback({ settings, store, limiter, everybody, now, log: say });
-  const admin = createAdmin({ settings, store, logins: loginLimiter, now, log: say, sleep });
+  const downloads = createDownloads({ dir: settings.dataDir, limiter: downloadLimiter, now, log: say, lingerMs: limits.lingerMs });
+  const admin = createAdmin({ settings, store, logins: loginLimiter, downloads, now, log: say, sleep });
 
   /** @param {import('./http.mjs').Request} req @param {import('./http.mjs').Response} res */
   const route = (req, res) => {
     const { path, query } = splitUrl(req.url);
     if (path === '/api/feedback') return feedback(req, res);
+    if (path === '/api/download') return void downloads.count(req, res);
     if (path === '/admin' || path.startsWith('/admin/')) return void admin(req, res, path, query);
     const up = path === '/api' || path === '/api/';
     answer(req, res, limits.lingerMs, up ? 200 : 404, JSON_HEADERS, up ? UP : NOT_FOUND);
@@ -91,6 +97,8 @@ export function createService({ settings, now = Date.now, log = console.log, sle
     limiter,
     everybody,
     loginLimiter,
+    downloadLimiter,
+    downloads,
     /** How many logins wait for their password to be looked at. */
     loginsWaiting: admin.waiting,
     sweep,
@@ -102,8 +110,9 @@ export function createService({ settings, now = Date.now, log = console.log, sle
      */
     async listen(port = settings.port) {
       await store.open();
+      await downloads.load();
       await sweep();
-      const prune = () => [limiter, everybody, loginLimiter].forEach((table) => table.prune());
+      const prune = () => [limiter, everybody, loginLimiter, downloadLimiter].forEach((table) => table.prune());
       timers = [setInterval(sweep, SWEEP_EVERY_MS), setInterval(prune, PRUNE_EVERY_MS)];
       for (const timer of timers) timer.unref();
       await new Promise((resolve, reject) => {
@@ -130,6 +139,7 @@ export function createService({ settings, now = Date.now, log = console.log, sle
         server.close(() => resolve(undefined));
         server.closeAllConnections();
       });
+      await downloads.settled();
     },
   };
 }
